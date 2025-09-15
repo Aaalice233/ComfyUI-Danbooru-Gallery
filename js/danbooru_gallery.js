@@ -143,9 +143,8 @@ class DanbooruGalleryDialog extends ComfyDialog {
 
         this.postsGrid = $el("div.danbooru-posts-grid", {
             style: {
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-                gap: "15px",
+                columnCount: this.getColumnCount(),
+                columnGap: "15px",
                 padding: "20px",
                 overflowY: "auto",
                 height: "calc(100% - 200px)"
@@ -162,6 +161,11 @@ class DanbooruGalleryDialog extends ComfyDialog {
         }, [
             $el("div", { textContent: "Loading..." })
         ]);
+
+        // 添加窗口大小变化监听
+        window.addEventListener('resize', () => {
+            this.updateColumnCount();
+        });
 
         return $el("div.danbooru-content", {
             style: {
@@ -302,7 +306,11 @@ class DanbooruGalleryDialog extends ComfyDialog {
                 overflow: "hidden",
                 cursor: "pointer",
                 transition: "transform 0.2s",
-                backgroundColor: "#fff"
+                backgroundColor: "#fff",
+                breakInside: "avoid",
+                marginBottom: "15px",
+                display: "inline-block",
+                width: "100%"
             },
             onmouseover: (e) => {
                 e.target.style.transform = "scale(1.02)";
@@ -315,7 +323,7 @@ class DanbooruGalleryDialog extends ComfyDialog {
             $el("div.post-image-container", {
                 style: {
                     position: "relative",
-                    height: "200px",
+                    width: "100%",
                     overflow: "hidden"
                 }
             }, [
@@ -379,6 +387,20 @@ class DanbooruGalleryDialog extends ComfyDialog {
             case "questionable": return "#FF9800";
             case "explicit": return "#F44336";
             default: return "#9E9E9E";
+        }
+    }
+
+    getColumnCount() {
+        const width = window.innerWidth;
+        if (width < 600) return 1;
+        if (width < 900) return 2;
+        if (width < 1200) return 3;
+        return 4;
+    }
+
+    updateColumnCount() {
+        if (this.postsGrid) {
+            this.postsGrid.style.columnCount = this.getColumnCount();
         }
     }
 
@@ -656,6 +678,15 @@ style.textContent = `
 
     .danbooru-gallery .post-item:hover {
         transform: scale(1.02);
+    }
+
+    .danbooru-gallery .danbooru-posts-grid {
+        column-fill: balance;
+    }
+
+    .danbooru-gallery .post-item {
+        break-inside: avoid;
+        page-break-inside: avoid;
     }
 
     .danbooru-gallery .loading-indicator {
