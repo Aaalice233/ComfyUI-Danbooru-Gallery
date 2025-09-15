@@ -35,6 +35,8 @@ class DanbooruGalleryDialog extends ComfyDialog {
         this.isLoading = false;
         this.selectedItem = null;
         this.currentTab = "search"; // search, favorites
+        this.debugMode = false;
+        this.debugLogs = [];
     }
 
     createHeader() {
@@ -57,6 +59,22 @@ class DanbooruGalleryDialog extends ComfyDialog {
                 $el("button.btn-secondary", {
                     textContent: "Settings",
                     onclick: () => this.showSettings()
+                }),
+                $el("button.btn-secondary", {
+                    textContent: this.debugMode ? "🐛 Debug ON" : "Debug OFF",
+                    onclick: () => {
+                        const enabled = this.toggleDebugMode();
+                        event.target.textContent = enabled ? "🐛 Debug ON" : "Debug OFF";
+                        if (enabled) {
+                            this.showDebugPanel();
+                        } else if (this.debugPanel) {
+                            this.debugPanel.remove();
+                        }
+                    },
+                    style: {
+                        backgroundColor: this.debugMode ? "#28a745" : "#6c757d",
+                        color: "white"
+                    }
                 }),
                 $el("button.btn-secondary", {
                     textContent: "Close",
@@ -141,15 +159,27 @@ class DanbooruGalleryDialog extends ComfyDialog {
             })
         ]);
 
-        this.postsGrid = $el("div.danbooru-posts-grid", {
+        // 创建瀑布流容器
+        this.postsContainer = $el("div.danbooru-posts-container", {
             style: {
-                columnCount: this.getColumnCount(),
-                columnGap: "15px",
-                padding: "20px",
+                position: "relative",
+                width: "100%",
+                height: "calc(100% - 200px)",
                 overflowY: "auto",
-                height: "calc(100% - 200px)"
+                padding: "20px"
             }
         });
+
+        this.postsGrid = $el("div.danbooru-posts-grid", {
+            style: {
+                display: "grid",
+                gridTemplateColumns: `repeat(${this.getColumnCount()}, 1fr)`,
+                gap: "15px",
+                width: "100%"
+            }
+        });
+
+        this.postsContainer.appendChild(this.postsGrid);
 
         this.loadingIndicator = $el("div.loading-indicator", {
             style: {
@@ -175,7 +205,7 @@ class DanbooruGalleryDialog extends ComfyDialog {
             }
         }, [
             this.tabsContainer,
-            this.postsGrid,
+            this.postsContainer,
             this.loadingIndicator
         ]);
     }
@@ -200,14 +230,20 @@ class DanbooruGalleryDialog extends ComfyDialog {
     }
 
     async searchPosts(page = 1) {
-        if (this.isLoading) return;
+        if (this.isLoading) {
+            this.logDebug("Search already in progress, skipping");
+            return;
+        }
 
+        this.logDebug("Starting search", { page, currentPosts: this.posts.length });
         this.isLoading = true;
         this.showLoading(true);
 
         try {
             const tags = this.searchInput.value.trim();
             const rating = this.ratingSelect.value;
+
+            this.logDebug("Search parameters", { tags, rating, page });
 
             const params = new URLSearchParams({
                 tags: tags,
@@ -219,23 +255,34 @@ class DanbooruGalleryDialog extends ComfyDialog {
             const response = await fetch(`/danbooru_gallery/posts?${params}`);
             const data = await response.json();
 
+            this.logDebug("API response received", {
+                status: response.status,
+                postsCount: data.posts?.length || 0,
+                hasMore: data.pagination?.has_more,
+                totalPosts: this.posts.length + (data.posts?.length || 0)
+            });
+
             if (page === 1) {
                 this.posts = [];
+                this.logDebug("Reset posts array for new search");
             }
 
             this.posts = [...this.posts, ...data.posts];
             this.currentPage = page;
             this.hasMore = data.pagination.has_more;
 
+            this.logDebug("About to render posts", { totalPosts: this.posts.length });
             this.renderPosts();
             this.updateLoadMoreButton();
 
         } catch (error) {
+            this.logDebug("Search error", { error: error.message, stack: error.stack });
             console.error("Error searching posts:", error);
             this.showError("Failed to load posts. Please try again.");
         } finally {
             this.isLoading = false;
             this.showLoading(false);
+            this.logDebug("Search completed");
         }
     }
 
@@ -275,25 +322,118 @@ class DanbooruGalleryDialog extends ComfyDialog {
     }
 
     renderPosts() {
+        this.logDebug("Starting renderPosts", {
+            totalPosts: this.posts.length,
+            currentTab: this.currentTab,
+            containerExists: !!this.postsGrid
+        });
+
+        if (!this.postsGrid) {
+            this.logDebug("ERROR: postsGrid not found!");
+            return;
+        }
+
         this.postsGrid.innerHTML = "";
+        this.logDebug("Cleared postsGrid content");
 
         if (this.posts.length === 0) {
+            this.logDebug("No posts to render, showing empty message");
             this.postsGrid.appendChild($el("div.no-posts", {
                 textContent: "No posts found.",
                 style: {
                     textAlign: "center",
                     color: "#666",
                     fontSize: "16px",
-                    padding: "40px"
+                    padding: "40px",
+                    gridColumn: "1 / -1"
                 }
             }));
             return;
         }
 
-        this.posts.forEach(post => {
-            const postElement = this.createPostElement(post);
-            this.postsGrid.appendChild(postElement);
+        this.logDebug("Rendering posts with waterfall layout");
+        // 使用瀑布流布局算法
+        this.renderWaterfallPosts();
+    }
+
+    renderWaterfallPosts() {
+        const columns = this.getColumnCount();
+        this.logDebug("Starting waterfall layout", {
+            totalPosts: this.posts.length,
+            columns: columns,
+            containerWidth: this.postsContainer?.offsetWidth,
+            containerHeight: this.postsContainer?.offsetHeight
         });
+
+        const columnHeights = new Array(columns).fill(0);
+        const columnElements = [];
+
+        // 清空现有内容
+        this.postsGrid.innerHTML = "";
+        this.logDebug("Cleared existing grid content");
+
+        // 创建列容器
+        for (let i = 0; i < columns; i++) {
+            const column = $el("div.waterfall-column", {
+                style: {
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "15px",
+                    flex: "1"
+                }
+            });
+            columnElements.push(column);
+            this.postsGrid.appendChild(column);
+            this.logDebug(`Created column ${i}`);
+        }
+
+        // 将每个帖子分配到最短的列
+        this.posts.forEach((post, index) => {
+            this.logDebug(`Processing post ${index + 1}/${this.posts.length}`, {
+                postId: post.id,
+                hasImage: !!(post.preview_file_url || post.file_url),
+                tags: post.tag_string?.split(" ").length || 0
+            });
+
+            const postElement = this.createPostElement(post);
+
+            // 找到最短的列
+            let shortestColumnIndex = 0;
+            let shortestHeight = columnHeights[0];
+
+            for (let i = 1; i < columns; i++) {
+                if (columnHeights[i] < shortestHeight) {
+                    shortestHeight = columnHeights[i];
+                    shortestColumnIndex = i;
+                }
+            }
+
+            this.logDebug(`Assigning post to column ${shortestColumnIndex}`, {
+                columnHeights: [...columnHeights],
+                shortestColumnIndex,
+                shortestHeight
+            });
+
+            // 添加到最短的列
+            columnElements[shortestColumnIndex].appendChild(postElement);
+
+            // 更新列的高度（估算）
+            const estimatedHeight = 200 + Math.random() * 100; // 基于图片高度的估算
+            columnHeights[shortestColumnIndex] += estimatedHeight + 15; // 15px gap
+
+            this.logDebug(`Updated column ${shortestColumnIndex} height`, {
+                newHeight: columnHeights[shortestColumnIndex],
+                estimatedPostHeight: estimatedHeight
+            });
+        });
+
+        this.logDebug("Waterfall layout completed", {
+            finalColumnHeights: columnHeights,
+            totalColumns: columns
+        });
+
+        // 更新调试面板
+        this.updateDebugPanel();
     }
 
     createPostElement(post) {
@@ -307,9 +447,6 @@ class DanbooruGalleryDialog extends ComfyDialog {
                 cursor: "pointer",
                 transition: "transform 0.2s",
                 backgroundColor: "#fff",
-                breakInside: "avoid",
-                marginBottom: "15px",
-                display: "inline-block",
                 width: "100%"
             },
             onmouseover: (e) => {
@@ -399,9 +536,145 @@ class DanbooruGalleryDialog extends ComfyDialog {
     }
 
     updateColumnCount() {
-        if (this.postsGrid) {
-            this.postsGrid.style.columnCount = this.getColumnCount();
+        if (this.postsGrid && this.posts.length > 0) {
+            this.logDebug("Updating column count", { oldColumns: this.getColumnCount(), newColumns: this.getColumnCount() });
+            // 重新渲染瀑布流布局
+            this.renderPosts();
         }
+    }
+
+    // 调试相关方法
+    logDebug(message, data = null) {
+        if (!this.debugMode) return;
+
+        const timestamp = new Date().toISOString();
+        const logEntry = {
+            timestamp,
+            message,
+            data,
+            stack: new Error().stack.split('\n')[2]?.trim()
+        };
+
+        this.debugLogs.push(logEntry);
+        console.log(`[DanbooruGallery Debug] ${message}`, data || '');
+    }
+
+    toggleDebugMode() {
+        this.debugMode = !this.debugMode;
+        if (this.debugMode) {
+            this.debugLogs = [];
+            this.logDebug("Debug mode enabled");
+            console.log("DanbooruGallery: Debug mode enabled. Check debugLogs array for detailed logs.");
+        } else {
+            console.log("DanbooruGallery: Debug mode disabled");
+        }
+        return this.debugMode;
+    }
+
+    showDebugPanel() {
+        const debugPanel = $el("div.debug-panel", {
+            style: {
+                position: "fixed",
+                top: "10px",
+                right: "10px",
+                width: "400px",
+                maxHeight: "80vh",
+                backgroundColor: "rgba(0,0,0,0.9)",
+                color: "#fff",
+                padding: "10px",
+                borderRadius: "5px",
+                fontSize: "12px",
+                fontFamily: "monospace",
+                zIndex: "10000",
+                overflowY: "auto",
+                display: this.debugMode ? "block" : "none"
+            }
+        }, [
+            $el("div.debug-header", {
+                style: {
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "10px",
+                    paddingBottom: "5px",
+                    borderBottom: "1px solid #555"
+                }
+            }, [
+                $el("h4", {
+                    textContent: "Debug Panel",
+                    style: { margin: 0, color: "#4CAF50" }
+                }),
+                $el("button", {
+                    textContent: "×",
+                    onclick: () => debugPanel.remove(),
+                    style: {
+                        background: "none",
+                        border: "none",
+                        color: "#fff",
+                        fontSize: "16px",
+                        cursor: "pointer"
+                    }
+                })
+            ]),
+            $el("div.debug-content", {
+                style: { maxHeight: "70vh", overflowY: "auto" }
+            }, [
+                $el("div", { textContent: "Logs will appear here when debug mode is active..." })
+            ])
+        ]);
+
+        document.body.appendChild(debugPanel);
+        this.debugPanel = debugPanel;
+        this.updateDebugPanel();
+    }
+
+    updateDebugPanel() {
+        if (!this.debugPanel || !this.debugMode) return;
+
+        const content = this.debugPanel.querySelector(".debug-content");
+        content.innerHTML = "";
+
+        if (this.debugLogs.length === 0) {
+            content.appendChild($el("div", {
+                textContent: "No logs yet. Perform some actions to see debug information.",
+                style: { color: "#888", fontStyle: "italic" }
+            }));
+            return;
+        }
+
+        this.debugLogs.slice(-20).forEach(log => {
+            const logEntry = $el("div.log-entry", {
+                style: {
+                    marginBottom: "5px",
+                    padding: "5px",
+                    backgroundColor: "rgba(255,255,255,0.1)",
+                    borderRadius: "3px"
+                }
+            }, [
+                $el("div", {
+                    textContent: `[${log.timestamp.split('T')[1].split('.')[0]}] ${log.message}`,
+                    style: { color: "#4CAF50", fontWeight: "bold" }
+                })
+            ]);
+
+            if (log.data) {
+                logEntry.appendChild($el("pre", {
+                    textContent: JSON.stringify(log.data, null, 2),
+                    style: {
+                        margin: "5px 0 0 0",
+                        fontSize: "10px",
+                        color: "#ccc",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-all"
+                    }
+                }));
+            }
+
+            content.appendChild(logEntry);
+        });
+
+        // 自动滚动到底部
+        content.scrollTop = content.scrollHeight;
     }
 
     selectPost(post) {
@@ -601,10 +874,21 @@ class DanbooruGalleryDialog extends ComfyDialog {
     }
 
     show(node) {
+        this.logDebug("Showing gallery dialog", { nodeExists: !!node });
         this.node = node;
         super.show();
 
+        // 验证DOM元素是否正确创建
+        this.logDebug("DOM elements check", {
+            element: !!this.element,
+            postsGrid: !!this.postsGrid,
+            postsContainer: !!this.postsContainer,
+            searchInput: !!this.searchInput,
+            tabsContainer: !!this.tabsContainer
+        });
+
         // 加载初始数据
+        this.logDebug("Starting initial search");
         this.searchPosts(1);
     }
 }
@@ -681,12 +965,31 @@ style.textContent = `
     }
 
     .danbooru-gallery .danbooru-posts-grid {
-        column-fill: balance;
+        width: 100%;
+        display: flex;
+        gap: 15px;
+    }
+
+    .danbooru-gallery .waterfall-column {
+        flex: 1;
     }
 
     .danbooru-gallery .post-item {
+        width: 100%;
+        margin-bottom: 0;
         break-inside: avoid;
-        page-break-inside: avoid;
+    }
+
+    .danbooru-gallery .post-image-container {
+        width: 100%;
+        position: relative;
+    }
+
+    .danbooru-gallery .post-image-container img {
+        width: 100%;
+        height: auto;
+        border-radius: 4px;
+        object-fit: cover;
     }
 
     .danbooru-gallery .loading-indicator {

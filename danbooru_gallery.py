@@ -226,10 +226,13 @@ async def get_danbooru_posts(request):
         limit = int(request.query.get('limit', '20'))
         rating = request.query.get('rating', 'all')  # safe, questionable, explicit, all
 
+        print(f"DanbooruGallery: API called with params - tags: '{tags}', page: {page}, limit: {limit}, rating: {rating}")
+
         # 检查缓存
         cache_key = get_cache_key(tags, page, limit)
         cached_result = get_cached_result(cache_key)
         if cached_result:
+            print(f"DanbooruGallery: Returning cached result for key: {cache_key}")
             return web.json_response(cached_result)
 
         # 初始化 Danbooru 客户端
@@ -255,11 +258,13 @@ async def get_danbooru_posts(request):
             params['rating'] = rating
 
         # 获取数据
+        print(f"DanbooruGallery: Making API request to Danbooru with params: {params}")
         posts = client.post_list(**params)
+        print(f"DanbooruGallery: Received {len(posts)} posts from API")
 
         # 处理响应数据
         processed_posts = []
-        for post in posts:
+        for i, post in enumerate(posts):
             processed_post = {
                 'id': post.get('id'),
                 'file_url': post.get('file_url'),
@@ -274,6 +279,9 @@ async def get_danbooru_posts(request):
             }
             processed_posts.append(processed_post)
 
+            if i < 3:  # 只打印前3个帖子的详细信息
+                print(f"DanbooruGallery: Post {i+1} - ID: {processed_post['id']}, Rating: {processed_post['rating']}, Has Image: {bool(processed_post['file_url'])}")
+
         result = {
             'posts': processed_posts,
             'pagination': {
@@ -283,8 +291,11 @@ async def get_danbooru_posts(request):
             }
         }
 
+        print(f"DanbooruGallery: Processed {len(processed_posts)} posts, has_more: {result['pagination']['has_more']}")
+
         # 保存缓存
         save_cache_result(cache_key, result)
+        print(f"DanbooruGallery: Saved result to cache with key: {cache_key}")
 
         return web.json_response(result)
 

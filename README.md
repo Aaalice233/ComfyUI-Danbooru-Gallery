@@ -11,6 +11,9 @@
 - 🎨 **图像预览**: 高质量图像预览和下载
 - 🔧 **设置管理**: 支持 API 密钥配置
 - 🎯 **ComfyUI 集成**: 完美集成到 ComfyUI 工作流
+- 🌊 **瀑布流布局**: 创新的瀑布流图像排列，提升视觉体验
+- 🐛 **调试模式**: 内置调试工具，帮助排查问题
+- 📱 **响应式设计**: 自适应不同屏幕尺寸
 
 ## 安装
 
@@ -36,13 +39,33 @@
    ```
 
 2. 安装依赖：
-   ```bash
-   pip install -r requirements.txt
-   ```
-   或者手动安装：
-   ```bash
-   pip install pybooru>=4.2.0 aiohttp>=3.8.0 Pillow>=9.0.0 torch>=1.12.0 numpy>=1.21.0
-   ```
+    ```bash
+    pip install -r requirements.txt
+    ```
+    或者手动安装核心依赖：
+    ```bash
+    pip install pybooru>=4.2.0 aiohttp>=3.8.0 Pillow>=9.0.0 torch>=1.12.0 numpy>=1.21.0
+    ```
+
+### 依赖说明
+
+#### 核心依赖
+- **pybooru**: Danbooru API 客户端库
+- **aiohttp**: 异步HTTP客户端，用于API请求
+- **Pillow**: 图像处理库
+- **torch**: PyTorch，用于图像张量处理
+- **numpy**: 数值计算库
+
+#### 可选依赖
+- **requests**: HTTP请求库（备选）
+- **opencv-python**: OpenCV图像处理
+- **scikit-image**: 高级图像处理
+- **beautifulsoup4**: HTML解析（扩展功能）
+
+#### 开发依赖
+- **pytest**: 测试框架
+- **black**: 代码格式化
+- **flake8**: 代码检查
 
 3. 重启 ComfyUI
 
@@ -91,6 +114,25 @@
 - 在 "Favorites" 标签页查看所有收藏的图像
 - 支持标签过滤收藏夹
 
+### 瀑布流布局
+
+插件采用创新的瀑布流布局算法：
+
+- **智能排列**: 图像自动分配到最短的列中，形成自然的瀑布效果
+- **响应式设计**: 根据屏幕宽度自动调整列数（1-4列）
+- **性能优化**: 使用JavaScript算法确保流畅的用户体验
+- **视觉美观**: 不同高度的图像排列更加自然美观
+
+### 调试功能
+
+内置完整的调试系统帮助排查问题：
+
+- **调试模式开关**: 点击右上角"Debug OFF"按钮启用
+- **实时日志**: 显示详细的操作日志和错误信息
+- **API监控**: 跟踪所有网络请求和响应
+- **布局调试**: 监控瀑布流算法的执行过程
+- **性能分析**: 显示加载时间和渲染统计
+
 ## 节点输出
 
 Danbooru Gallery 节点提供以下输出：
@@ -130,19 +172,45 @@ Danbooru Gallery 节点提供以下输出：
 - 检查 Python 依赖是否正确安装
 - 查看 ComfyUI 控制台是否有错误信息
 
+### 瀑布流不生效
+
+- 确认浏览器支持现代CSS和JavaScript
+- 检查调试模式日志，查看是否有JavaScript错误
+- 尝试刷新浏览器缓存（Ctrl+F5）
+- 确认窗口大小是否足够显示多列布局
+
+### 调试模式相关问题
+
+- 启用调试模式后查看右下角的调试面板
+- 检查浏览器控制台的详细日志信息
+- 验证API请求是否正常响应
+- 确认瀑布流算法是否正确执行
+
+### 性能问题
+
+- 启用调试模式检查加载时间
+- 考虑减少同时显示的图像数量
+- 检查网络连接稳定性
+- 清理缓存文件释放磁盘空间
+
 ## 开发
 
 ### 项目结构
 
 ```
 ComfyUI-Danbooru-Gallery/
-├── __init__.py              # 插件入口
-├── danbooru_gallery.py      # 主要后端逻辑
+├── __init__.py                    # 插件入口
+├── danbooru_gallery.py            # 主要后端逻辑
+├── install.py                     # 智能安装脚本
+├── requirements.txt               # 依赖清单
 ├── js/
-│   └── danbooru_gallery.js  # 前端界面
-├── cache/                   # 缓存目录
-├── pyproject.toml          # 项目配置
-└── README.md               # 说明文档
+│   └── danbooru_gallery.js        # 前端界面（含瀑布流和调试功能）
+├── cache/                         # 缓存目录
+│   ├── images/                    # 图像缓存
+│   └── *.json                     # 搜索结果缓存
+├── *.json                         # 配置文件
+├── pyproject.toml                 # 项目配置
+└── README.md                      # 说明文档
 ```
 
 ### 扩展开发
