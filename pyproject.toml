@@ -1,0 +1,29 @@
+[project]
+name = "comfyui-danbooru-gallery"
+version = "1.0.0"
+description = "ComfyUI plugin for browsing and importing images from Danbooru"
+authors = [
+    {name = "Developer", email = "dev@example.com"}
+]
+dependencies = [
+    "Pybooru>=4.2.0",
+    "aiohttp>=3.8.0",
+    "Pillow>=9.0.0",
+    "torch>=1.12.0",
+    "numpy>=1.21.0"
+]
+requires-python = ">=3.8"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["."]
+
+[tool.setuptools.package-data]
+"." = ["js/*.js"]
+
+[project.urls]
+Homepage = "https://github.com/your-repo/comfyui-danbooru-gallery"
+Repository = "https://github.com/your-repo/comfyui-danbooru-gallery.git"
