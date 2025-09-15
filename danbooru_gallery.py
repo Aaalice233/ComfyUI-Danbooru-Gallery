@@ -10,9 +10,9 @@ class DanbooruGalleryNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {
-            "required": {
-                # This custom widget is defined and handled entirely in JS.
-                "danbooru_gallery_widget": ("DANBOORU_WIDGET",), 
+            "required": {},
+            "optional": {
+               "blacklist_tags": ("STRING", {"forceInput": True}),
             },
             "hidden": {
                 # This receives the selected image data from the JS widget.
@@ -26,7 +26,7 @@ class DanbooruGalleryNode:
     CATEGORY = "📜Asset Gallery/Danbooru"
     OUTPUT_NODE = True
 
-    def execute(self, danbooru_gallery_widget, selected_post_json="{}"):
+    def execute(self, blacklist_tags=None, selected_post_json="{}"):
         try:
             post = json.loads(selected_post_json)
         except json.JSONDecodeError:
@@ -51,13 +51,21 @@ prompt_server = server.PromptServer.instance
 async def get_danbooru_posts(request):
     """API endpoint to fetch posts. This is called by the JS frontend."""
     try:
-        tags = request.query.get('tags', '1girl')
+        tags = request.query.get('tags', '1girl').replace(',', ' ')
         page = int(request.query.get('page', '1'))
         rating = request.query.get('rating', 'g')
         
+        blacklist_str = request.query.get('blacklist', '')
+        blacklist_tags = blacklist_str.split(',') if blacklist_str else []
+
         client = Danbooru('danbooru')
+        
+        # Add blacklisted tags to the query
+        blacklist_query = " ".join(f"-{tag.strip()}" for tag in blacklist_tags if tag.strip())
+        
         # Use a more specific query to ensure results
-        posts = client.post_list(limit=50, page=page, tags=f"rating:{rating} {tags} order:rank")
+        full_tags = f"rating:{rating} {tags} {blacklist_query} order:rank"
+        posts = client.post_list(limit=50, page=page, tags=full_tags)
         return web.json_response(posts)
     except Exception as e:
         print(f"[Danbooru Gallery] API Error: {e}")
