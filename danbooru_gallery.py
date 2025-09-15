@@ -28,7 +28,13 @@ def load_settings():
             "watermark", "sample_watermark", "weibo_username", "weibo", "weibo_logo",
             "weibo_watermark", "censored", "mosaic_censoring", "artist_name", "twitter_username"
         ],
-        "filter_enabled": True  # 默认开启过滤
+        "filter_enabled": True,  # 默认开启过滤
+        "danbooru_username": "",
+        "danbooru_api_key": "",
+        "debug_mode": False,
+        "cache_enabled": True,
+        "max_cache_age": 3600,
+        "default_page_size": 20
     }
     
     try:
