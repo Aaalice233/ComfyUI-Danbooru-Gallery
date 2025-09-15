@@ -71,5 +71,17 @@ async def get_danbooru_posts(request):
         print(f"[Danbooru Gallery] API Error: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
+@prompt_server.routes.get("/danbooru_gallery/status")
+async def check_danbooru_status(request):
+    """API endpoint to check Danbooru connectivity."""
+    try:
+        client = Danbooru('danbooru')
+        # Try to fetch a single popular post to test connectivity
+        client.post_list(limit=1, tags="order:rank")
+        return web.json_response({"status": "ok"})
+    except Exception as e:
+        print(f"[Danbooru Gallery] Connectivity Error: {e}")
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+
 NODE_CLASS_MAPPINGS = {"DanbooruGalleryNode": DanbooruGalleryNode}
 NODE_DISPLAY_NAME_MAPPINGS = {"DanbooruGalleryNode": "Danbooru Gallery"}

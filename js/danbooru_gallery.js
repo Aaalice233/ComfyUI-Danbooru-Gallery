@@ -8,7 +8,7 @@ app.registerExtension({
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
-                this.setSize([500, 625]);
+                this.setSize([750, 938]);
 
                 const container = $el("div.danbooru-gallery");
                 const widget = this.addDOMWidget("danbooru_gallery_widget", "div", container, {
@@ -32,10 +32,17 @@ app.registerExtension({
                 const fetchAndRender = async (reset = false) => {
                     if (isLoading) return;
                     isLoading = true;
+
+                    const loadingIndicator = imageGrid.querySelector('.danbooru-loading');
+                    if (!loadingIndicator) {
+                        imageGrid.insertAdjacentHTML('beforeend', `<p class="danbooru-status danbooru-loading">Loading...</p>`);
+                    }
+
                     if (reset) {
                         currentPage = 1;
                         posts = [];
                         imageGrid.innerHTML = "";
+                        imageGrid.insertAdjacentHTML('beforeend', `<p class="danbooru-status danbooru-loading">Loading...</p>`);
                     }
 
                     try {
@@ -84,16 +91,35 @@ app.registerExtension({
                         imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
                     } finally {
                         isLoading = false;
+                        const indicator = imageGrid.querySelector('.danbooru-loading');
+                        if (indicator) {
+                            indicator.remove();
+                        }
                     }
                 };
+
+                const resizeGrid = () => {
+                    const rowGap = parseInt(window.getComputedStyle(imageGrid).getPropertyValue('grid-row-gap'));
+                    const rowHeight = parseInt(window.getComputedStyle(imageGrid).getPropertyValue('grid-auto-rows'));
+
+                    Array.from(imageGrid.children).forEach((wrapper) => {
+                        const img = wrapper.querySelector('img');
+                        if (img && img.clientHeight > 0) {
+                            const spans = Math.ceil((img.clientHeight + rowGap) / (rowHeight + rowGap));
+                            wrapper.style.gridRowEnd = `span ${spans}`;
+                        }
+                    });
+                }
 
                 const renderPost = (post) => {
                     if (!post.id || !post.preview_file_url) return;
 
+                    const wrapper = $el("div.danbooru-image-wrapper");
                     const img = $el("img", {
                         src: post.preview_file_url,
                         loading: "lazy",
                         title: post.tag_string,
+                        onload: resizeGrid, // Recalculate grid on image load
                         onclick: () => {
                             const jsonWidget = this.widgets.find(w => w.name === "selected_post_json");
                             if (jsonWidget) {
@@ -102,8 +128,13 @@ app.registerExtension({
                             this.setDirtyCanvas(true);
                         },
                     });
-                    imageGrid.appendChild(img);
+
+                    wrapper.appendChild(img);
+                    imageGrid.appendChild(wrapper);
                 };
+
+                const observer = new ResizeObserver(resizeGrid);
+                observer.observe(imageGrid);
 
                 imageGrid.addEventListener("scroll", () => {
                     if (imageGrid.scrollHeight - imageGrid.scrollTop - imageGrid.clientHeight < 400) {
@@ -119,13 +150,29 @@ app.registerExtension({
                 container.appendChild($el("div.danbooru-controls", [searchInput, ratingSelect]));
                 container.appendChild(imageGrid);
 
-                fetchAndRender(true);
+                const checkStatusAndFetch = async () => {
+                    try {
+                        const response = await fetch('/danbooru_gallery/status');
+                        if (!response.ok) {
+                            throw new Error(`Danbooru is currently unreachable.`);
+                        }
+                        const data = await response.json();
+                        if (data.status !== 'ok') {
+                            throw new Error(`Danbooru is currently unreachable.`);
+                        }
+                        fetchAndRender(true);
+                    } catch (e) {
+                         imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
+                    }
+                };
+
+                checkStatusAndFetch();
 
                 this.onResize = (size) => {
                     const [width, height] = size;
                     const controlsHeight = container.querySelector('.danbooru-controls')?.offsetHeight || 0;
                     if (controlsHeight > 0) {
-                        imageGrid.style.height = `${height - controlsHeight - 15}px`;
+                        imageGrid.style.height = `${height - controlsHeight - 10}px`;
                     }
                 }
             };
@@ -139,8 +186,9 @@ $el("style", {
     .danbooru-controls { display: flex; gap: 5px; margin-bottom: 5px; }
     .danbooru-controls > * { flex-grow: 1; padding: 5px; border-radius: 4px; border: 1px solid var(--input-border-color); background-color: var(--comfy-input-bg); color: var(--comfy-input-text); }
     .danbooru-controls > select { flex-grow: 0; min-width: 100px; }
-    .danbooru-image-grid {  display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 5px; overflow-y: auto; background-color: var(--comfy-input-bg); padding: 5px; border-radius: 4px; flex-grow: 1; height: 0; }
-    .danbooru-image-grid img { width: 100%; height: 100px; object-fit: cover; cursor: pointer; border-radius: 4px; transition: filter 0.2s; }
+    .danbooru-image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-gap: 5px; grid-auto-rows: 1px; overflow-y: auto; background-color: var(--comfy-input-bg); padding: 5px; border-radius: 4px; flex-grow: 1; height: 0; }
+    .danbooru-image-wrapper { grid-row-start: auto; }
+    .danbooru-image-grid img { width: 100%; height: auto; cursor: pointer; border-radius: 4px; transition: filter 0.2s; display: block; }
     .danbooru-image-grid img:hover { filter: contrast(1.2) brightness(1.2); }
     .danbooru-status { text-align: center; width: 100%; margin: 10px 0; color: #ccc; }
     .danbooru-status.error { color: #f55; }
