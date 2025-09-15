@@ -1,0 +1,8 @@
+{
+    "danbooru_username": "",
+    "danbooru_api_key": "",
+    "debug_mode": false,
+    "cache_enabled": true,
+    "max_cache_age": 3600,
+    "default_page_size": 20
+}
