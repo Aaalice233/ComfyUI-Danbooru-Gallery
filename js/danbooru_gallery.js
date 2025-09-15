@@ -846,7 +846,7 @@ app.registerExtension({
                                 console.log(`[Danbooru Gallery] 提示词过滤已更新: ${newFilterEnabled ? '启用' : '禁用'}, 过滤标签: ${newFilterTags.join(', ')}`);
 
                                 // 重新过滤当前已加载的帖子
-                                const filteredPosts = posts.filter(post => !isPostBlacklisted(post));
+                                const filteredPosts = posts.filter(post => !isPostFiltered(post));
                                 imageGrid.innerHTML = "";
                                 filteredPosts.forEach(renderPost);
 
@@ -980,6 +980,31 @@ app.registerExtension({
                 };
 
 
+                // 文件类型过滤函数 - 只允许静态图像
+                const isValidImageType = (post) => {
+                    // 允许的静态图像文件扩展名
+                    const allowedImageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tiff', 'tif'];
+
+                    // 检查文件扩展名
+                    if (post.file_ext) {
+                        const fileExt = post.file_ext.toLowerCase();
+                        return allowedImageExtensions.includes(fileExt);
+                    }
+
+                    // 如果没有file_ext字段，尝试从file_url中提取扩展名
+                    if (post.file_url) {
+                        const url = post.file_url.toLowerCase();
+                        const extMatch = url.match(/\.([^.?#]+)(?:\?|#|$)/);
+                        if (extMatch) {
+                            const fileExt = extMatch[1];
+                            return allowedImageExtensions.includes(fileExt);
+                        }
+                    }
+
+                    // 如果无法确定文件类型，默认拒绝
+                    return false;
+                };
+
                 // 本地黑名单过滤函数
                 const isPostBlacklisted = (post) => {
                     if (!currentBlacklist || currentBlacklist.length === 0) {
@@ -1003,6 +1028,17 @@ app.registerExtension({
                         }
                     }
                     return false;
+                };
+
+                // 综合过滤函数 - 检查文件类型和黑名单
+                const isPostFiltered = (post) => {
+                    // 首先检查是否为有效的图像类型
+                    if (!isValidImageType(post)) {
+                        return true; // 如果不是有效图像类型，则过滤掉
+                    }
+
+                    // 然后检查黑名单
+                    return isPostBlacklisted(post);
                 };
 
                 const fetchAndRender = async (reset = false) => {
@@ -1036,15 +1072,13 @@ app.registerExtension({
 
                         if (!Array.isArray(newPosts)) throw new Error("API did not return a valid list of posts.");
 
-                        // 应用本地黑名单过滤
-                        const filteredPosts = newPosts.filter(post => !isPostBlacklisted(post));
+                        // 应用文件类型和黑名单过滤
+                        const filteredPosts = newPosts.filter(post => !isPostFiltered(post));
 
                         console.log(`[Danbooru Gallery] 原始帖子数量: ${newPosts.length}, 过滤后: ${filteredPosts.length}`);
-                        if (currentBlacklist.length > 0) {
-                            const filteredCount = newPosts.length - filteredPosts.length;
-                            if (filteredCount > 0) {
-                                console.log(`[Danbooru Gallery] 已过滤 ${filteredCount} 个包含黑名单标签的帖子`);
-                            }
+                        const filteredCount = newPosts.length - filteredPosts.length;
+                        if (filteredCount > 0) {
+                            console.log(`[Danbooru Gallery] 已过滤 ${filteredCount} 个帖子 (包括非图像文件和黑名单标签)`);
                         }
 
                         if (filteredPosts.length === 0 && reset) {

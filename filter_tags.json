@@ -1,15 +1,4 @@
 {
-  "filter_tags": [
-    "watermark",
-    "sample watermark",
-    "weibo username",
-    "weibo",
-    "weibo logo",
-    "weibo watermark",
-    "censored",
-    "mosaic censoring",
-    "artist name",
-    "twitter username"
-  ],
+  "filter_tags": [],
   "filter_enabled": true
 }
