@@ -59,7 +59,12 @@ const i18n = {
         // 详细信息
         details: "详细信息",
         uploaded: "上传时间",
-        resolution: "分辨率"
+        resolution: "分辨率",
+
+        // 社交链接
+        socialLinks: "社交链接",
+        githubTooltip: "访问GitHub项目页面",
+        discordTooltip: "加入Discord服务器"
     },
     en: {
         // 搜索和控制
@@ -117,7 +122,12 @@ const i18n = {
         // 详细信息
         details: "Details",
         uploaded: "Uploaded",
-        resolution: "Resolution"
+        resolution: "Resolution",
+
+        // 社交链接
+        socialLinks: "Social Links",
+        githubTooltip: "Visit GitHub repository",
+        discordTooltip: "Join Discord server"
     }
 };
 
@@ -412,7 +422,18 @@ app.registerExtension({
                             minWidth: "480px",
                             maxWidth: "600px",
                             maxHeight: "80vh",
-                            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)"
+                            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
+                            display: "flex",
+                            flexDirection: "column"
+                        }
+                    });
+
+                    const scrollContainer = $el("div.danbooru-settings-scroll-container", {
+                        style: {
+                            flex: "1",
+                            overflowY: "auto",
+                            marginBottom: "16px",
+                            paddingRight: "8px"
                         }
                     });
 
@@ -672,13 +693,95 @@ app.registerExtension({
                     filterSection.appendChild(filterDescription);
                     filterSection.appendChild(filterTextarea);
 
+                    // 将所有section添加到滚动容器
+                    scrollContainer.appendChild(languageSection);
+                    scrollContainer.appendChild(blacklistSection);
+                    scrollContainer.appendChild(filterSection);
+
+                    // 社交按钮
+                    const githubButton = $el("button", {
+                        innerHTML: `
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+                            </svg>
+                            <span style="margin-left: 8px;">GitHub</span>
+                        `,
+                        title: t('githubTooltip'),
+                        style: {
+                            padding: "10px 16px",
+                            border: "1px solid #24292e",
+                            borderRadius: "6px",
+                            backgroundColor: "#24292e",
+                            color: "white",
+                            cursor: "pointer",
+                            fontSize: "14px",
+                            fontWeight: "500",
+                            transition: "all 0.2s ease",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minWidth: "80px"
+                        },
+                        onclick: () => {
+                            window.open('https://github.com/Aaalice233/ComfyUI-Danbooru-Gallery', '_blank');
+                        }
+                    });
+
+                    const discordButton = $el("button", {
+                        innerHTML: `
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.196.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.30z"></path>
+                            </svg>
+                            <span style="margin-left: 8px;">Discord</span>
+                        `,
+                        title: t('discordTooltip'),
+                        style: {
+                            padding: "10px 16px",
+                            border: "1px solid #5865F2",
+                            borderRadius: "6px",
+                            backgroundColor: "#5865F2",
+                            color: "white",
+                            cursor: "pointer",
+                            fontSize: "14px",
+                            fontWeight: "500",
+                            transition: "all 0.2s ease",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minWidth: "80px"
+                        },
+                        onclick: () => {
+                            window.open('https://discord.gg/aaalice', '_blank');
+                        }
+                    });
+
                     // 按钮区域
                     const buttonContainer = $el("div", {
                         style: {
                             display: "flex",
                             gap: "12px",
                             marginTop: "24px",
-                            justifyContent: "flex-end"
+                            justifyContent: "space-between",
+                            alignItems: "center"
+                        }
+                    });
+
+                    // 左侧社交按钮容器
+                    const socialButtonsContainer = $el("div", {
+                        style: {
+                            display: "flex",
+                            gap: "8px"
+                        }
+                    });
+
+                    socialButtonsContainer.appendChild(githubButton);
+                    socialButtonsContainer.appendChild(discordButton);
+
+                    // 右侧主要按钮容器
+                    const mainButtonsContainer = $el("div", {
+                        style: {
+                            display: "flex",
+                            gap: "12px"
                         }
                     });
 
@@ -757,13 +860,14 @@ app.registerExtension({
                         }
                     });
 
-                    buttonContainer.appendChild(cancelButton);
-                    buttonContainer.appendChild(saveButton);
+                    mainButtonsContainer.appendChild(cancelButton);
+                    mainButtonsContainer.appendChild(saveButton);
+
+                    buttonContainer.appendChild(socialButtonsContainer);
+                    buttonContainer.appendChild(mainButtonsContainer);
 
                     dialogContent.appendChild(title);
-                    dialogContent.appendChild(languageSection);
-                    dialogContent.appendChild(blacklistSection);
-                    dialogContent.appendChild(filterSection);
+                    dialogContent.appendChild(scrollContainer);
                     dialogContent.appendChild(buttonContainer);
 
                     dialog.appendChild(dialogContent);
@@ -1584,6 +1688,60 @@ $el("style", {
         .danbooru-settings-dialog textarea:focus {
             outline: 2px solid #7B68EE;
             outline-offset: 1px;
+        }
+        
+        /* 设置对话框滚动容器样式 */
+        .danbooru-settings-scroll-container {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(123, 104, 238, 0.6) transparent;
+        }
+        
+        .danbooru-settings-scroll-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .danbooru-settings-scroll-container::-webkit-scrollbar-track {
+            background: transparent;
+            border-radius: 4px;
+        }
+        
+        .danbooru-settings-scroll-container::-webkit-scrollbar-thumb {
+            background: rgba(123, 104, 238, 0.6);
+            border-radius: 4px;
+            transition: background 0.2s ease;
+        }
+        
+        .danbooru-settings-scroll-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(123, 104, 238, 0.8);
+        }
+        
+        /* 社交链接按钮样式 */
+        .danbooru-settings-dialog button[title*="GitHub"]:hover {
+            background-color: #1c2128 !important;
+            border-color: #1c2128 !important;
+            transform: translateY(-1px);
+        }
+        
+        .danbooru-settings-dialog button[title*="Discord"]:hover {
+            background-color: #4752c4 !important;
+            border-color: #4752c4 !important;
+            transform: translateY(-1px);
+        }
+        
+        .danbooru-settings-dialog button[title*="GitHub"]:hover svg,
+        .danbooru-settings-dialog button[title*="Discord"]:hover svg {
+            transform: scale(1.1);
+        }
+        
+        /* 移除社交链接按钮的focus效果 */
+        .danbooru-settings-dialog button[title*="GitHub"]:focus,
+        .danbooru-settings-dialog button[title*="Discord"]:focus {
+            outline: none !important;
+        }
+        
+        .danbooru-settings-dialog button svg {
+            flex-shrink: 0;
+            transition: transform 0.2s ease;
         }
         `,
     parent: document.head,
