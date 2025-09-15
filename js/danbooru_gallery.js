@@ -22,7 +22,7 @@ app.registerExtension({
 
                 let posts = [], currentPage = 1, isLoading = false;
 
-                const searchInput = $el("input", { type: "text", placeholder: "Tags (e.g., 1girl, blue_eyes)..." });
+                const searchInput = $el("input", { type: "text", placeholder: "Tags (Max 2, e.g., 1girl, blue_eyes)..." });
                 const ratingSelect = $el("select", {}, [
                     ["", "ALL"], ["general", "General"], ["sensitive", "Sensitive"], ["questionable", "Questionable"], ["explicit", "Explicit"]
                 ].map(r => $el("option", { value: r[0], textContent: r[1] })));
@@ -73,7 +73,7 @@ app.registerExtension({
                         }
 
                         const params = new URLSearchParams({
-                            "search[tags]": searchInput.value,
+                            "search[tags]": searchInput.value.replace(/,/g, ' ').trim(),
                             "search[rating]": ratingSelect.value,
                             limit: "100",
                             page: currentPage,
@@ -135,11 +135,55 @@ app.registerExtension({
                         loading: "lazy",
                         onload: resizeGrid,
                         onerror: () => { wrapper.style.display = 'none'; },
-                        onclick: () => {
+                        onclick: async () => {
+                            const isSelected = wrapper.classList.contains('selected');
+                            // 在单选模式下，清除所有其他选项
                             imageGrid.querySelectorAll('.danbooru-image-wrapper').forEach(w => w.classList.remove('selected'));
-                            wrapper.classList.add('selected');
-                            // 直接设置输出属性的值，ComfyUI 会自动处理
-                            this.setOutputData(0, post.file_url);
+
+                            if (!isSelected) {
+                                wrapper.classList.add('selected');
+                                try {
+                                    const response = await fetch('/danbooru_gallery/fetch_image', {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                        },
+                                        body: JSON.stringify({ url: post.file_url }),
+                                    });
+                                    if (!response.ok) {
+                                        throw new Error(`Failed to fetch image: ${response.statusText}`);
+                                    }
+                                    const data = await response.json();
+
+                                    // 设置第一个输出为 ComfyUI 的图像张量
+                                    this.setOutputData(0, {
+                                        "ui": {
+                                            "images": [
+                                                {
+                                                    "filename": "danbooru_image.png",
+                                                    "subfolder": "",
+                                                    "type": "temp",
+                                                    "format": "image/png"
+                                                }
+                                            ]
+                                        },
+                                        "result": [data.image_data]
+                                    });
+
+                                    // 设置第二个输出为提示词
+                                    this.setOutputData(1, post.tag_string);
+
+                                } catch (error) {
+                                    console.error("Danbooru Gallery: " + error);
+                                    // Handle error, maybe show a notification to the user
+                                }
+                            } else {
+                                // 如果再次点击，则取消选择
+                                wrapper.classList.remove('selected');
+                                // 清空两个输出
+                                this.setOutputData(0, null);
+                                this.setOutputData(1, null);
+                            }
                         },
                     });
 
@@ -243,7 +287,12 @@ app.registerExtension({
                 searchInput.addEventListener("keydown", (e) => {
                     if (e.key === "Enter") fetchAndRender(true);
                 });
-                ratingSelect.addEventListener("change", () => fetchAndRender(true));
+                ratingSelect.addEventListener("change", () => {
+                    // Hide any visible tooltips before fetching new content
+                    const tooltips = document.querySelectorAll('.danbooru-tag-tooltip');
+                    tooltips.forEach(tooltip => tooltip.style.display = 'none');
+                    fetchAndRender(true);
+                });
                 refreshButton.addEventListener("click", () => fetchAndRender(true));
 
                 const sortIndicator = $el("div.danbooru-sort-indicator", {
@@ -300,6 +349,7 @@ $el("style", {
         transition: border-color 0.2s, transform 0.2s ease-out, box-shadow 0.2s ease-out;
         border-radius: 6px;
         overflow: hidden;
+        position: relative; /* Add relative positioning */
     }
     .danbooru-image-wrapper:hover {
         transform: scale(1.05);
@@ -308,7 +358,36 @@ $el("style", {
         position: relative;
     }
     .danbooru-image-wrapper.selected {
-        border-color: #5865F2; /* A highlight color */
+        border-color: #7B68EE; /* A more vibrant purple */
+        box-shadow: 0 0 20px rgba(123, 104, 238, 0.8); /* Stronger glow */
+        transform: scale(1.05);
+        z-index: 11;
+    }
+
+    .danbooru-image-wrapper.selected::after {
+        content: "✓";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: white;
+        font-size: 50px;
+        font-weight: bold;
+        text-shadow: 0 0 10px rgba(0, 0, 0, 0.7);
+        z-index: 12;
+        pointer-events: none;
+    }
+    
+    .danbooru-image-wrapper.selected::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(123, 104, 238, 0.3); /* Semi-transparent overlay */
+        z-index: 11;
+        pointer-events: none;
     }
     .danbooru-image-grid img {
         width: 100%;
@@ -393,7 +472,7 @@ $el("style", {
             50% { transform: scale(1.1); background-color: #ffffff; color: #000000; }
             100% { transform: scale(1); }
         }
-    
+        
         /* Tag Colors */
         /* Tag Colors based on new categories */
         .danbooru-tooltip-tag.tag-category-artist { background-color: #FFF3CD; color: #664D03; } /* Artist: Light Yellow */

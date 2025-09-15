@@ -25,7 +25,7 @@ async def get_posts_for_front(request):
     # 前端现在直接发送 search[tags] 和 search[rating]，后端不需要再手动拼接
     # Danbooru API v1 通过独立的参数处理 tags 和 rating
     # 直接调用 get_posts_internal，认证逻辑已移入该函数
-    posts_json_str, = DanbooruGalleryNode.get_posts_internal(tags=tags, limit=int(limit), page=int(page), rating=rating)
+    posts_json_str, = DanbooruGalleryNode.get_posts_internal(tags=tags, limit=int(limit), page=int(page), rating=rating, blacklisted_tags_str=blacklisted_tags_str)
     
     # get_posts_internal 返回的是包含帖子的'JSON字符串'
     # 我们需要将其解析为Python列表，然后再将其作为JSON响应发送
@@ -34,13 +34,6 @@ async def get_posts_for_front(request):
     except json.JSONDecodeError:
         posts_list = []
 
-    if blacklisted_tags_str:
-        blacklisted_tags = {tag.strip() for tag in blacklisted_tags_str.split(',') if tag.strip()}
-        if blacklisted_tags:
-            posts_list = [
-                post for post in posts_list
-                if not any(blacklisted_tag in post.get('tag_string', '').split() for blacklisted_tag in blacklisted_tags)
-            ]
 
     return web.json_response(posts_list, headers={
         "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -62,24 +55,38 @@ class DanbooruGalleryNode:
             }
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("image_urls",)
+    RETURN_TYPES = ("IMAGE", "STRING",)
+    RETURN_NAMES = ("image", "prompt",)
     FUNCTION = "get_posts"
     CATEGORY = "Danbooru"
     OUTPUT_NODE = True
 
     def get_posts(self, blacklisted_tags=""):
-        # 黑名单输入不应该产生任何输出，它的作用是过滤图库中的内容。
-        # 因此，我们返回空字符串。
-        return ("",)
+        # This node doesn't produce output on its own.
+        # It's a gallery viewer, and outputs are set from the frontend.
+        # We must return a value for each output pin.
+        return (None, "",)
 
     @staticmethod
-    def get_posts_internal(tags: str, limit: int = 100, page: int = 1, rating: str = None):
+    def get_posts_internal(tags: str, limit: int = 100, page: int = 1, rating: str = None, blacklisted_tags_str: str = ""):
         """
         从 Danbooru API 获取帖子。
         这个方法是静态的，因为它不依赖于节点实例。
         """
         posts_url = f"{BASE_URL}/posts.json"
+        
+        # Danbooru API v1 a PI's tag limit is 2
+        # We process the tags to respect this limit.
+        tag_list = [tag for tag in tags.split(' ') if tag.strip()]
+        if len(tag_list) > 2:
+            tag_list = tag_list[:2]
+        tags = ' '.join(tag_list)
+
+        # 处理黑名单标签，将其转换为排除格式
+        if blacklisted_tags_str:
+            blacklisted_tags = {f"-{tag.strip()}" for tag in blacklisted_tags_str.split(',') if tag.strip()}
+            tags = f"{tags} {' '.join(blacklisted_tags)}".strip()
+
         # Since the rating is now passed directly, we can add it to the tags query
         if rating and rating.lower() != 'all':
             tags = f"{tags} rating:{rating}".strip()
@@ -104,6 +111,39 @@ class DanbooruGalleryNode:
         except Exception as e:
             print(f"[*] Danbooru Gallery: 发生未知错误: {e}")
             return ("[]",)
+
+@PromptServer.instance.routes.post("/danbooru_gallery/fetch_image")
+async def fetch_image(request):
+    data = await request.json()
+    image_url = data.get("url")
+
+    if not image_url:
+        return web.Response(status=400, text="Image URL is required")
+
+    try:
+        response = requests.get(image_url, timeout=10)
+        response.raise_for_status()
+
+        import io
+        import torch
+        from PIL import Image
+        import numpy as np
+
+        img = Image.open(io.BytesIO(response.content))
+        if img.mode == 'RGBA':
+            img = img.convert('RGB')
+        
+        img_np = np.array(img).astype(np.float32) / 255.0
+        img_tensor = torch.from_numpy(img_np)[None,]
+
+        return web.json_response({"image_data": img_tensor.tolist()})
+
+    except requests.exceptions.RequestException as e:
+        print(f"[*] Danbooru Gallery: Error fetching image: {e}")
+        return web.Response(status=500, text=str(e))
+    except Exception as e:
+        print(f"[*] Danbooru Gallery: Error processing image: {e}")
+        return web.Response(status=500, text=str(e))
 
 # ComfyUI 必须的字典
 NODE_CLASS_MAPPINGS = {
