@@ -14,6 +14,22 @@
 
 ## 安装
 
+### 方法一：自动安装（推荐）
+
+1. 将此插件文件夹放置到 ComfyUI 的 `custom_nodes` 目录下：
+   ```
+   ComfyUI/custom_nodes/ComfyUI-Danbooru-Gallery/
+   ```
+
+2. 运行安装脚本：
+   ```bash
+   python install.py
+   ```
+
+3. 重启 ComfyUI
+
+### 方法二：手动安装
+
 1. 将此插件文件夹放置到 ComfyUI 的 `custom_nodes` 目录下：
    ```
    ComfyUI/custom_nodes/ComfyUI-Danbooru-Gallery/
@@ -21,10 +37,18 @@
 
 2. 安装依赖：
    ```bash
-   pip install Pybooru aiohttp Pillow
+   pip install -r requirements.txt
+   ```
+   或者手动安装：
+   ```bash
+   pip install pybooru>=4.2.0 aiohttp>=3.8.0 Pillow>=9.0.0 torch>=1.12.0 numpy>=1.21.0
    ```
 
 3. 重启 ComfyUI
+
+### 方法三：通过 ComfyUI-Manager 安装
+
+如果您安装了 ComfyUI-Manager，可以通过其界面搜索并安装此插件，依赖会自动安装。
 
 ## 配置
 
