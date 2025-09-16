@@ -342,3 +342,9 @@ MIT License
 - 感谢 Danbooru 提供优秀的 API | Thanks to Danbooru for the excellent API
 - 感谢 ComfyUI 社区 | Thanks to the ComfyUI community
 - 参考了 ComfyUI_Civitai_Gallery 项目 | Inspired by ComfyUI_Civitai_Gallery project
+
+#### 翻译文件来源 | Translation Data Sources
+
+- [danbooru-diffusion-prompt-builder](https://github.com/wfjsw/danbooru-diffusion-prompt-builder) - Danbooru 标签翻译数据
+- [zh_CN-Tags](https://github.com/Yellow-Rush/zh_CN-Tags) - 中文标签数据
+- [ComfyUI_Mira](https://github.com/mirabarukaso/ComfyUI_Mira) - 角色翻译数据
