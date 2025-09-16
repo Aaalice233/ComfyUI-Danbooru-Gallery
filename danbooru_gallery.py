@@ -132,18 +132,21 @@ def save_filter_tags(filter_tags, enabled):
 def load_ui_settings():
     """从统一设置文件加载UI设置"""
     settings = load_settings()
-    return {
+    logger.info(f"[UI_SETTINGS] 加载的设置: autocomplete_enabled={settings.get('autocomplete_enabled', True)}, tooltip_enabled={settings.get('tooltip_enabled', True)}, autocomplete_max_results={settings.get('autocomplete_max_results', 'NOT_FOUND')}")
+    result = {
         "autocomplete_enabled": settings.get("autocomplete_enabled", True),
         "tooltip_enabled": settings.get("tooltip_enabled", True),
-        "autocomplete_max_results": settings.get("autocomplete_max_suggestions", 20)
+        "autocomplete_max_results": settings.get("autocomplete_max_results", 20)
     }
+    logger.info(f"[UI_SETTINGS] 返回结果: {result}")
+    return result
 
 def save_ui_settings(ui_settings):
     """保存UI设置到统一设置文件"""
     settings = load_settings()
     settings["autocomplete_enabled"] = ui_settings.get("autocomplete_enabled", True)
     settings["tooltip_enabled"] = ui_settings.get("tooltip_enabled", True)
-    settings["autocomplete_max_suggestions"] = ui_settings.get("autocomplete_max_results", 20)
+    settings["autocomplete_max_results"] = ui_settings.get("autocomplete_max_results", 20)
     return save_settings(settings)
 
 def check_network_connection():
@@ -442,35 +445,56 @@ async def get_posts_for_front(request):
 
 @PromptServer.instance.routes.get("/danbooru_gallery/autocomplete")
 async def get_autocomplete(request):
-    """代理 Danbooru 的 autocomplete.json API"""
+    """代理 Danbooru 的 tags.json API 并按热度排序"""
     try:
         query = request.query.get("query", "")
+        # 从请求中获取 limit 参数，并设置默认值为 20
         limit = request.query.get("limit", "20")
 
+        logger.info(f"[AUTOCOMPLETE] 收到请求: query='{query}', limit='{limit}'")
+
         if not query:
+            logger.warning("[AUTOCOMPLETE] 查询为空，返回空结果")
             return web.json_response([], status=400)
 
-        # 改用 /tags.json 以获得更好的模糊匹配
         tags_url = f"{BASE_URL}/tags.json"
-        # 使用 name_matches 参数进行模糊匹配
+        
+        # --- 核心修正 ---
+        # 1. 使用 search[name_or_alias_matches] 进行更广泛的匹配
+        # 2. 添加 search[order]=count 来按热度降序排序
+        # 3. 直接使用前端传递的 limit 参数
         params = {
-            "search[name_matches]": f"{query}*",
+            "search[name_or_alias_matches]": f"{query}*",
+            "search[order]": "count",
             "limit": limit
         }
-        
+
         username, api_key = load_user_auth()
         auth = HTTPBasicAuth(username, api_key) if username and api_key else None
-        
+
+        logger.info(f"[AUTOCOMPLETE] 调用Danbooru API: {tags_url} with params={params}")
+
         response = requests.get(tags_url, params=params, auth=auth, timeout=10)
         response.raise_for_status()
-        
-        return web.json_response(response.json())
+
+        result = response.json()
+        logger.info(f"[AUTOCOMPLETE] Danbooru API 返回了 {len(result) if isinstance(result, list) else 'N/A'} 个结果")
+
+        # API已经排序好了，这里的日志用于验证
+        if isinstance(result, list) and len(result) > 0:
+            logger.info(f"[AUTOCOMPLETE] 第一个返回的标签: name='{result[0].get('name', 'N/A')}', post_count={result[0].get('post_count', 'N/A')}")
+
+        # 手动排序不再是必须的，但可以作为双重保险保留
+        if isinstance(result, list):
+            result.sort(key=lambda x: x.get('post_count', 0), reverse=True)
+
+        return web.json_response(result)
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"调用 Danbooru autocomplete API 失败: {e}")
+        logger.error(f"[AUTOCOMPLETE] 调用 Danbooru API 失败: {e}")
         return web.json_response({"error": "Failed to fetch autocomplete data from Danbooru"}, status=502)
     except Exception as e:
-        logger.error(f"处理 autocomplete 请求时发生错误: {e}")
+        logger.error(f"[AUTOCOMPLETE] 处理请求时发生错误: {e}")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 @PromptServer.instance.routes.get("/danbooru_gallery/blacklist")
@@ -526,12 +550,13 @@ async def save_filter_tags_route(request):
 async def get_ui_settings(request):
     try:
         ui_settings = load_ui_settings()
+        logger.info(f"[UI_SETTINGS] 返回UI设置: {ui_settings}")
         return web.json_response({
             "success": True,
             "settings": ui_settings
         })
     except Exception as e:
-        logger.error(f"获取UI设置接口错误: {e}")
+        logger.error(f"[UI_SETTINGS] 获取UI设置接口错误: {e}")
         return web.json_response({"success": False, "error": str(e)})
 
 @PromptServer.instance.routes.post("/danbooru_gallery/ui_settings")

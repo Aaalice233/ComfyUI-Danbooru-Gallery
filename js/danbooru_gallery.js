@@ -87,7 +87,14 @@ const i18n = {
         // 社交链接
         socialLinks: "社交链接",
         githubTooltip: "访问GitHub项目页面",
-        discordTooltip: "加入Discord服务器"
+        discordTooltip: "加入Discord服务器",
+
+        // 设置侧边栏
+        generalSection: "通用",
+        userSection: "用户",
+        contentSection: "内容",
+        promptSection: "提示词",
+        uiSection: "界面"
     },
     en: {
         // 搜索和控制
@@ -173,7 +180,14 @@ const i18n = {
         // 社交链接
         socialLinks: "Social Links",
         githubTooltip: "Visit GitHub repository",
-        discordTooltip: "Join Discord server"
+        discordTooltip: "Join Discord server",
+
+        // 设置侧边栏
+        generalSection: "General",
+        userSection: "User",
+        contentSection: "Content",
+        promptSection: "Prompt",
+        uiSection: "UI"
     }
 };
 
@@ -705,6 +719,18 @@ app.registerExtension({
                     if (loadingElement) {
                         loadingElement.textContent = t('loading');
                     }
+
+                    // 更新侧边栏按钮文本（如果设置对话框已打开）
+                    const sidebarButtons = document.querySelectorAll('.sidebar-button');
+                    sidebarButtons.forEach(button => {
+                        const key = button.dataset.key;
+                        if (key) {
+                            const titleSpan = button.querySelector('.sidebar-button-title');
+                            if (titleSpan) {
+                                titleSpan.textContent = t(key + 'Section');
+                            }
+                        }
+                    });
                 };
 
                 const searchInput = $el("input.danbooru-search-input", { type: "text", placeholder: t('searchPlaceholder'), title: t('searchPlaceholder') });
@@ -1297,11 +1323,11 @@ app.registerExtension({
 
                     // 创建侧边栏按钮和内容区域的映射
                     const sections = {
-                        'general': { title: '通用', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>', elements: [languageSection] },
-                        'user': { title: '用户', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>', elements: [authSection] },
-                        'content': { title: '内容', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18l-1.5 14H4.5L3 6z"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>', elements: [blacklistSection] },
-                        'prompt': { title: '提示词', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>', elements: [filterSection] },
-                        'ui': { title: '界面', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>', elements: [autocompleteSection, tooltipSection] },
+                        'general': { title: t('generalSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>', elements: [languageSection] },
+                        'user': { title: t('userSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>', elements: [authSection] },
+                        'content': { title: t('contentSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18l-1.5 14H4.5L3 6z"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>', elements: [blacklistSection] },
+                        'prompt': { title: t('promptSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>', elements: [filterSection] },
+                        'ui': { title: t('uiSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>', elements: [autocompleteSection, tooltipSection] },
                     };
 
                     const setActiveSection = (key) => {
@@ -1501,6 +1527,8 @@ app.registerExtension({
                                 uiSettings.tooltip_enabled = newTooltipEnabled;
                                 uiSettings.autocomplete_max_results = newAutocompleteMaxResults;
 
+                                console.log('[UI_SETTINGS] 设置已保存并同步到本地状态:', uiSettings);
+
                                 if (selectedLanguage !== currentLanguage) {
                                     currentLanguage = selectedLanguage;
                                     updateInterfaceTexts();
@@ -1593,17 +1621,22 @@ app.registerExtension({
 
                 const loadUiSettings = async () => {
                     try {
+                        console.log('[UI_SETTINGS] Loading UI settings...');
                         const response = await fetch('/danbooru_gallery/ui_settings');
                         const data = await response.json();
+                        console.log('[UI_SETTINGS] Received data:', data);
                         if (data.success) {
                             uiSettings = {
                                 autocomplete_enabled: data.settings.autocomplete_enabled,
                                 tooltip_enabled: data.settings.tooltip_enabled,
-                                autocomplete_max_results: data.settings.autocomplete_max_suggestions || 20
+                                autocomplete_max_results: data.settings.autocomplete_max_results || 20
                             };
+                            console.log('[UI_SETTINGS] Updated uiSettings:', uiSettings);
+                        } else {
+                            console.warn('[UI_SETTINGS] Failed to load settings, success=false');
                         }
                     } catch (e) {
-                        console.warn("加载UI设置失败:", e);
+                        console.warn("[UI_SETTINGS] 加载UI设置失败:", e);
                     }
                 };
 
@@ -2294,7 +2327,9 @@ app.registerExtension({
                 let debounceTimer;
 
                 searchInput.addEventListener('input', () => {
+                    console.log('[AUTOCOMPLETE] Input event triggered, autocomplete_enabled:', uiSettings.autocomplete_enabled);
                     if (!uiSettings.autocomplete_enabled) {
+                        console.log('[AUTOCOMPLETE] Autocomplete disabled, hiding panel');
                         suggestionsPanel.style.display = 'none';
                         return;
                     }
@@ -2303,20 +2338,49 @@ app.registerExtension({
                         const query = searchInput.value;
                         const lastWord = query.split(/[\s,]+/).pop(); // 按空格或逗号分割，取最后一个词
 
+                        console.log('[AUTOCOMPLETE] Processing query:', query, 'lastWord:', lastWord);
+
                         if (lastWord.length < 2) {
+                            console.log('[AUTOCOMPLETE] Last word too short, hiding panel');
                             suggestionsPanel.style.display = 'none';
                             return;
                         }
 
                         try {
                             const maxResults = uiSettings.autocomplete_max_results || 20;
+                            console.log('[AUTOCOMPLETE] Using maxResults:', maxResults, 'from uiSettings:', uiSettings);
                             const response = await fetch(`/danbooru_gallery/autocomplete?query=${encodeURIComponent(lastWord)}&limit=${maxResults}`);
+                            console.log('[AUTOCOMPLETE] Fetch response status:', response.status);
                             const suggestions = await response.json();
+
+                            console.log('[AUTOCOMPLETE] Received suggestions:', suggestions.length, 'items');
+
+                            // 添加详细日志验证前端接收到的数据
+                            if (suggestions.length > 0) {
+                                console.log('[AUTOCOMPLETE] 第一个建议的完整数据结构:', suggestions[0]);
+                                console.log('[AUTOCOMPLETE] 前5个建议的详细信息:');
+                                suggestions.slice(0, 5).forEach((tag, i) => {
+                                    console.log(`[AUTOCOMPLETE] 建议 ${i + 1}: name='${tag.name}', post_count=${tag.post_count}, antecedent_name=${tag.antecedent_name}`);
+                                });
+                                // 检查前端接收到的数据是否按热度降序排序
+                                const isSortedDesc = suggestions.every((tag, i, arr) =>
+                                    i === 0 || arr[i - 1].post_count >= tag.post_count
+                                );
+                                console.log('[AUTOCOMPLETE] 前端接收到的数据是否按post_count降序排序:', isSortedDesc);
+                                // 检查是否有1girl在建议中
+                                const has1girl = suggestions.some(tag => tag.name === '1girl');
+                                console.log('[AUTOCOMPLETE] 建议中是否包含1girl:', has1girl);
+                                if (has1girl) {
+                                    const girlIndex = suggestions.findIndex(tag => tag.name === '1girl');
+                                    console.log('[AUTOCOMPLETE] 1girl在建议中的位置:', girlIndex + 1);
+                                }
+                            }
 
                             suggestionsPanel.innerHTML = ''; // 清空旧建议
                             if (suggestions.length > 0) {
                                 // 限制显示数量为设置的最大值
                                 const limitedSuggestions = suggestions.slice(0, maxResults);
+                                console.log('[AUTOCOMPLETE] Displaying', limitedSuggestions.length, 'suggestions');
                                 limitedSuggestions.forEach(tag => {
                                     const suggestionItem = $el('div.danbooru-suggestion-item', {
                                         innerHTML: `
@@ -2356,10 +2420,11 @@ app.registerExtension({
                                 });
                                 suggestionsPanel.style.display = 'block';
                             } else {
+                                console.log('[AUTOCOMPLETE] No suggestions received, hiding panel');
                                 suggestionsPanel.style.display = 'none';
                             }
                         } catch (error) {
-                            console.error('Error fetching autocomplete suggestions:', error);
+                            console.error('[AUTOCOMPLETE] Error fetching suggestions:', error);
                             suggestionsPanel.style.display = 'none';
                         }
                     }, 250); // 250ms 防抖
@@ -2500,8 +2565,9 @@ $el("style", {
         border-top: none;
         border-radius: 0 0 6px 6px;
         z-index: 1002;
-        max-height: 200px;
+        max-height: 400px;
         overflow-y: auto;
+        overflow-x: hidden;
         box-shadow: 0 8px 16px rgba(0,0,0,0.3);
     }
 
