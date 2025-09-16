@@ -1,4 +1,5 @@
 # ComfyUI Danbooru Gallery
+<img width="966" height="830" alt="image" src="https://github.com/user-attachments/assets/e2a5d34e-0001-417e-bf8e-7753521ea0d3" />
 
 [中文](#中文版本) | [English](#english-version)
 
