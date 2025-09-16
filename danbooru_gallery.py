@@ -420,6 +420,38 @@ async def get_posts_for_front(request):
         "Expires": "0"
     })
 
+@PromptServer.instance.routes.get("/danbooru_gallery/autocomplete")
+async def get_autocomplete(request):
+    """代理 Danbooru 的 autocomplete.json API"""
+    try:
+        query = request.query.get("query", "")
+        if not query:
+            return web.json_response([], status=400)
+
+        # 改用 /tags.json 以获得更好的模糊匹配和排序
+        tags_url = f"{BASE_URL}/tags.json"
+        # 使用 name_matches 并按 post count 排序
+        params = {
+            "search[name_matches]": f"{query}*",
+            "search[order]": "count",
+            "limit": 10
+        }
+        
+        username, api_key = load_user_auth()
+        auth = HTTPBasicAuth(username, api_key) if username and api_key else None
+        
+        response = requests.get(tags_url, params=params, auth=auth, timeout=10)
+        response.raise_for_status()
+        
+        return web.json_response(response.json())
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"调用 Danbooru autocomplete API 失败: {e}")
+        return web.json_response({"error": "Failed to fetch autocomplete data from Danbooru"}, status=502)
+    except Exception as e:
+        logger.error(f"处理 autocomplete 请求时发生错误: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
 @PromptServer.instance.routes.get("/danbooru_gallery/blacklist")
 async def get_blacklist(request):
     blacklist = load_blacklist()
@@ -546,10 +578,17 @@ class DanbooruGalleryNode:
             return ("[]",)
 
 # ComfyUI 必须的字典
-NODE_CLASS_MAPPINGS = {
-    "DanbooruGalleryNode": DanbooruGalleryNode
-}
+def get_node_class_mappings():
+    return {
+        "DanbooruGalleryNode": DanbooruGalleryNode
+    }
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "DanbooruGalleryNode": "Danbooru Image Gallery"
-}
+def get_node_display_name_mappings():
+    return {
+        "DanbooruGalleryNode": "Danbooru Image Gallery"
+    }
+
+NODE_CLASS_MAPPINGS = get_node_class_mappings()
+NODE_DISPLAY_NAME_MAPPINGS = get_node_display_name_mappings()
+
+WEB_DIRECTORY = "./js"

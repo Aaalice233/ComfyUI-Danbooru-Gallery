@@ -1941,29 +1941,6 @@ app.registerExtension({
                             }
 
                             // 在操作收藏前验证用户名和API Key的有效性
-                            try {
-                                const verifyResponse = await fetch('/danbooru_gallery/verify_auth', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ username: userAuth.username, api_key: userAuth.api_key })
-                                });
-                                const verifyData = await verifyResponse.json();
-
-                                if (!verifyData.success || !verifyData.valid) {
-                                    userAuth.has_auth = false; // 更新认证状态
-                                    if (verifyData.network_error) {
-                                        alert('网络错误 - 无法连接到Danbooru服务器，请检查网络连接');
-                                    } else {
-                                        alert('认证无效 - 请检查用户名和API Key设置');
-                                    }
-                                    return;
-                                }
-                            } catch (e) {
-                                console.warn('认证验证失败:', e);
-                                userAuth.has_auth = false; // 更新认证状态
-                                alert('网络错误 - 无法验证认证信息，请检查网络连接');
-                                return;
-                            }
 
                             const currentlyFavorited = userFavorites.includes(String(post.id)) || inFavoritesMode;
                             console.log("计算的收藏状态:", currentlyFavorited);
@@ -2108,30 +2085,6 @@ app.registerExtension({
                         return;
                     }
 
-                    // 在进入收藏夹模式前验证用户名和API Key的有效性
-                    try {
-                        const verifyResponse = await fetch('/danbooru_gallery/verify_auth', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ username: userAuth.username, api_key: userAuth.api_key })
-                        });
-                        const verifyData = await verifyResponse.json();
-
-                        if (!verifyData.success || !verifyData.valid) {
-                            userAuth.has_auth = false; // 更新认证状态
-                            if (verifyData.network_error) {
-                                alert('网络错误 - 无法连接到Danbooru服务器，请检查网络连接');
-                            } else {
-                                alert('认证无效 - 请检查用户名和API Key设置');
-                            }
-                            return;
-                        }
-                    } catch (e) {
-                        console.warn('认证验证失败:', e);
-                        userAuth.has_auth = false; // 更新认证状态
-                        alert('网络错误 - 无法验证认证信息，请检查网络连接');
-                        return;
-                    }
 
                     const favTag = `ordfav:${userAuth.username}`;
                     const currentValue = searchInput.value.trim();
@@ -2154,12 +2107,7 @@ app.registerExtension({
                             newValue = favTag;
                         }
                         searchInput.value = newValue;
-                        // 进入收藏夹模式时，重新加载最新的收藏列表以同步本地缓存
-                        try {
-                            await loadFavorites();
-                        } catch (e) {
-                            console.warn("重新加载收藏列表失败:", e);
-                        }
+                        // 进入收藏夹模式时，不需要手动加载收藏列表，因为 fetchAndRender 会获取
                     }
                     updateFavoritesButtonState();
                     fetchAndRender(true);
@@ -2169,8 +2117,129 @@ app.registerExtension({
                     fetchAndRender(true);
                 });
 
-                container.appendChild($el("div.danbooru-controls", [searchInput, rankingButton, favoritesButton, ratingSelect, categoryDropdown, formattingDropdown, settingsButton, refreshButton]));
+                const searchContainer = $el("div.danbooru-search-container");
+                searchContainer.appendChild(searchInput);
+
+                // 创建自动补全建议的容器
+                const suggestionsPanel = $el("div.danbooru-suggestions-panel");
+                searchContainer.appendChild(suggestionsPanel);
+
+                // 将包含搜索框和建议面板的容器添加到总控件中
+                container.appendChild($el("div.danbooru-controls", [searchContainer, rankingButton, favoritesButton, ratingSelect, categoryDropdown, formattingDropdown, settingsButton, refreshButton]));
                 container.appendChild(imageGrid);
+
+                // --- 自动补全逻辑 ---
+                let debounceTimer;
+
+                searchInput.addEventListener('input', () => {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(async () => {
+                        const query = searchInput.value;
+                        const lastWord = query.split(/[\s,]+/).pop(); // 按空格或逗号分割，取最后一个词
+
+                        if (lastWord.length < 2) {
+                            suggestionsPanel.style.display = 'none';
+                            return;
+                        }
+
+                        try {
+                            const response = await fetch(`/danbooru_gallery/autocomplete?query=${encodeURIComponent(lastWord)}`);
+                            const suggestions = await response.json();
+
+                            suggestionsPanel.innerHTML = ''; // 清空旧建议
+                            if (suggestions.length > 0) {
+                                suggestions.forEach(tag => {
+                                    const suggestionItem = $el('div.danbooru-suggestion-item', {
+                                        innerHTML: `
+                                            <span class="danbooru-suggestion-name">${tag.name}</span>
+                                            <span class="danbooru-suggestion-count">${tag.post_count}</span>
+                                        `
+                                    });
+
+                                    suggestionItem.onclick = () => {
+                                        const currentVal = searchInput.value;
+                                        const lastWordIndex = currentVal.lastIndexOf(lastWord);
+                                        const base = currentVal.substring(0, lastWordIndex).trim();
+
+                                        let newValue;
+                                        if (base && !/,\s*$/.test(base)) {
+                                            // 如果前面有内容且不以逗号结尾，则添加逗号
+                                            newValue = `${base}, ${tag.name}, `;
+                                        } else if (base) {
+                                            // 如果前面有内容且以逗号结尾，直接添加
+                                            newValue = `${base} ${tag.name}, `;
+                                        } else {
+                                            // 如果输入框为空，直接添加
+                                            newValue = `${tag.name}, `;
+                                        }
+
+                                        searchInput.value = newValue;
+                                        suggestionsPanel.style.display = 'none';
+                                        searchInput.focus();
+
+                                        // 触发input事件以更新其他依赖状态
+                                        searchInput.dispatchEvent(new Event('input'));
+
+                                        // 自动刷新
+                                        fetchAndRender(true);
+                                    };
+                                    suggestionsPanel.appendChild(suggestionItem);
+                                });
+                                suggestionsPanel.style.display = 'block';
+                            } else {
+                                suggestionsPanel.style.display = 'none';
+                            }
+                        } catch (error) {
+                            console.error('Error fetching autocomplete suggestions:', error);
+                            suggestionsPanel.style.display = 'none';
+                        }
+                    }, 250); // 250ms 防抖
+                });
+
+                let selectedSuggestionIndex = -1;
+
+                searchInput.addEventListener('keydown', (e) => {
+                    const suggestions = suggestionsPanel.querySelectorAll('.danbooru-suggestion-item');
+                    if (suggestions.length === 0 || suggestionsPanel.style.display === 'none') {
+                        selectedSuggestionIndex = -1;
+                        return;
+                    }
+
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        selectedSuggestionIndex = (selectedSuggestionIndex + 1) % suggestions.length;
+                        updateSelectedSuggestion(suggestions);
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        selectedSuggestionIndex = (selectedSuggestionIndex - 1 + suggestions.length) % suggestions.length;
+                        updateSelectedSuggestion(suggestions);
+                    } else if (e.key === 'Enter') {
+                        if (selectedSuggestionIndex > -1) {
+                            e.preventDefault();
+                            suggestions[selectedSuggestionIndex].click();
+                        }
+                    } else if (e.key === 'Escape') {
+                        suggestionsPanel.style.display = 'none';
+                    }
+                });
+
+                const updateSelectedSuggestion = (suggestions) => {
+                    suggestions.forEach((item, index) => {
+                        if (index === selectedSuggestionIndex) {
+                            item.classList.add('selected');
+                        } else {
+                            item.classList.remove('selected');
+                        }
+                    });
+                };
+
+                // 点击外部区域隐藏建议列表
+                document.addEventListener('click', (e) => {
+                    if (!searchContainer.contains(e.target)) {
+                        suggestionsPanel.style.display = 'none';
+                    }
+                });
+
 
                 const insertNewPost = (post) => {
                     const newElement = createPostElement(post);
@@ -2204,33 +2273,10 @@ app.registerExtension({
                     // 加载用户认证信息
                     await loadUserAuth();
 
-                    // 只有在网络连接正常且有认证信息时才验证认证
                     if (networkConnected && userAuth.has_auth) {
-                        try {
-                            const verifyResponse = await fetch('/danbooru_gallery/verify_auth', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ username: userAuth.username, api_key: userAuth.api_key })
-                            });
-                            const verifyData = await verifyResponse.json();
-                            if (!verifyData.valid) {
-                                userAuth.has_auth = false;
-                                if (verifyData.network_error) {
-                                    showError('网络错误 - 无法连接到Danbooru服务器，请检查网络连接');
-                                } else {
-                                    showError('认证无效 - 请检查用户名和API Key设置');
-                                }
-                            } else {
-                                await loadFavorites();
-                            }
-                        } catch (e) {
-                            console.warn('认证验证失败:', e);
-                            userAuth.has_auth = false;
-                            showError('网络错误 - 无法验证认证信息，请检查网络连接');
-                        }
-                    } else if (!networkConnected) {
-                        // 网络连接失败时，不验证认证，直接标记为无认证状态
-                        userAuth.has_auth = false;
+                        // 如果认证信息存在，则尝试加载收藏夹
+                        // 后续的操作（如添加/删除收藏）会隐式地验证 auth，无需在此处阻塞
+                        await loadFavorites();
                     }
 
                     // 更新界面文本
@@ -2264,6 +2310,55 @@ app.registerExtension({
 
 $el("style", {
     textContent: `
+    /* 搜索容器，用于定位建议面板 */
+    .danbooru-search-container {
+        position: relative;
+        flex-grow: 1;
+        display: flex;
+    }
+
+    /* 自动补全建议面板 */
+    .danbooru-suggestions-panel {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background-color: var(--comfy-menu-bg);
+        border: 1px solid var(--input-border-color);
+        border-top: none;
+        border-radius: 0 0 6px 6px;
+        z-index: 1002;
+        max-height: 200px;
+        overflow-y: auto;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+    }
+
+    .danbooru-suggestion-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: background-color 0.2s;
+    }
+
+    .danbooru-suggestion-item:hover,
+    .danbooru-suggestion-item.selected {
+        background-color: rgba(123, 104, 238, 0.3);
+    }
+
+    .danbooru-suggestion-name {
+        color: var(--comfy-input-text);
+        font-weight: 500;
+    }
+
+    .danbooru-suggestion-count {
+        color: #888;
+        font-size: 0.9em;
+    }
+
+
     /* Category Dropdown Styles */
     .danbooru-category-dropdown { position: relative; display: inline-block; }
     
@@ -2355,7 +2450,8 @@ $el("style", {
     .danbooru-gallery { width: 100%; display: flex; flex-direction: column; min-height: 200px; }
     .danbooru-controls { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; align-items: stretch; }
     .danbooru-auth-controls { display: flex; gap: 5px; }
-    .danbooru-controls > * { padding: 5px; border-radius: 4px; border: 1px solid var(--input-border-color); background-color: var(--comfy-input-bg); color: var(--comfy-input-text); }
+    .danbooru-controls > button, .danbooru-controls > div { padding: 5px; border-radius: 4px; border: 1px solid var(--input-border-color); background-color: var(--comfy-input-bg); color: var(--comfy-input-text); }
+    .danbooru-controls > .danbooru-search-container > .danbooru-search-input { background: none; border: none; padding-left: 10px; }
     .danbooru-controls .danbooru-search-input { flex-grow: 1; min-width: 150px; }
     .danbooru-controls > select { min-width: 100px; }
     .danbooru-image-wrapper.new-item { animation: fadeInUp 0.5s ease-out; }
