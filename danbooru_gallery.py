@@ -134,14 +134,11 @@ def save_filter_tags(filter_tags, enabled):
 def load_ui_settings():
     """从统一设置文件加载UI设置"""
     settings = load_settings()
-    logger.info(f"[UI_SETTINGS] 加载的设置: autocomplete_enabled={settings.get('autocomplete_enabled', True)}, tooltip_enabled={settings.get('tooltip_enabled', True)}, autocomplete_max_results={settings.get('autocomplete_max_results', 'NOT_FOUND')}")
-    result = {
+    return {
         "autocomplete_enabled": settings.get("autocomplete_enabled", True),
         "tooltip_enabled": settings.get("tooltip_enabled", True),
         "autocomplete_max_results": settings.get("autocomplete_max_results", 20)
     }
-    logger.info(f"[UI_SETTINGS] 返回结果: {result}")
-    return result
 
 def save_ui_settings(ui_settings):
     """保存UI设置到统一设置文件"""
@@ -188,7 +185,6 @@ class TagTranslationSystem:
             self._build_chinese_search_index()
             
             self.loaded = True
-            logger.info(f"[翻译系统] 加载完成: 英文->中文 {len(self.en_to_cn)} 条, 中文->英文 {len(self.cn_to_en)} 条")
             return True
             
         except Exception as e:
@@ -206,7 +202,6 @@ class TagTranslationSystem:
                         if en_tag and cn_tag:
                             self.en_to_cn[en_tag.strip()] = cn_tag.strip()
                             self.cn_to_en[cn_tag.strip()] = en_tag.strip()
-                logger.info(f"[翻译系统] JSON数据加载: {len(data)} 条")
             except Exception as e:
                 logger.error(f"[翻译系统] JSON加载失败: {e}")
     
@@ -228,7 +223,6 @@ class TagTranslationSystem:
                             if cn_tag not in self.cn_to_en:
                                 self.cn_to_en[cn_tag] = en_tag
                             count += 1
-                logger.info(f"[翻译系统] CSV数据加载: {count} 条")
             except Exception as e:
                 logger.error(f"[翻译系统] CSV加载失败: {e}")
     
@@ -250,7 +244,6 @@ class TagTranslationSystem:
                             if cn_tag not in self.cn_to_en:
                                 self.cn_to_en[cn_tag] = en_tag
                             count += 1
-                logger.info(f"[翻译系统] 角色CSV数据加载: {count} 条")
             except Exception as e:
                 logger.error(f"[翻译系统] 角色CSV加载失败: {e}")
     
@@ -274,7 +267,6 @@ class TagTranslationSystem:
         
         # 添加变体到主字典
         self.en_to_cn.update(variants_to_add)
-        logger.info(f"[翻译系统] 下划线变体生成: {len(variants_to_add)} 条")
     
     def _build_chinese_search_index(self):
         """构建中文搜索索引，支持部分匹配"""
@@ -297,7 +289,6 @@ class TagTranslationSystem:
         for key in self.cn_search_index:
             self.cn_search_index[key] = list(self.cn_search_index[key])
             
-        logger.info(f"[翻译系统] 中文搜索索引构建: {len(self.cn_search_index)} 个索引项")
     
     def translate_tag(self, en_tag):
         """翻译单个英文tag到中文"""
@@ -496,8 +487,6 @@ async def add_favorite(request):
                 timeout=15
             )
 
-            logger.info(f"添加收藏 API 状态码: {response.status_code}")
-            logger.info(f"添加收藏 API 响应内容: {response.text[:500]}")
 
             if response.status_code in [200, 201]:
                 favorites = load_favorites()
@@ -552,11 +541,9 @@ async def add_favorite(request):
 @PromptServer.instance.routes.post("/danbooru_gallery/favorites/remove")
 async def remove_favorite(request):
     """移除收藏"""
-    logger.info("收到取消收藏请求")
     try:
         data = await request.json()
         post_id = data.get("post_id")
-        logger.info(f"post_id: {post_id}")
 
         if not post_id:
             return web.json_response({"success": False, "error": "缺少post_id"})
@@ -577,8 +564,6 @@ async def remove_favorite(request):
             delete_url = f"{BASE_URL}/favorites/{post_id}.json"
             delete_response = requests.delete(delete_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
 
-            logger.info(f"删除收藏 API 状态码: {delete_response.status_code}")
-            logger.info(f"删除收藏 API 响应: {delete_response.text[:500]}")
 
             if delete_response.status_code in [200, 204]:
                 favorites = load_favorites()
@@ -724,10 +709,7 @@ async def get_autocomplete(request):
         # 从请求中获取 limit 参数，并设置默认值为 20
         limit = request.query.get("limit", "20")
 
-        logger.info(f"[AUTOCOMPLETE] 收到请求: query='{query}', limit='{limit}'")
-
         if not query:
-            logger.warning("[AUTOCOMPLETE] 查询为空，返回空结果")
             return web.json_response([], status=400)
 
         tags_url = f"{BASE_URL}/tags.json"
@@ -745,17 +727,10 @@ async def get_autocomplete(request):
         username, api_key = load_user_auth()
         auth = HTTPBasicAuth(username, api_key) if username and api_key else None
 
-        logger.info(f"[AUTOCOMPLETE] 调用Danbooru API: {tags_url} with params={params}")
-
         response = requests.get(tags_url, params=params, auth=auth, timeout=10)
         response.raise_for_status()
 
         result = response.json()
-        logger.info(f"[AUTOCOMPLETE] Danbooru API 返回了 {len(result) if isinstance(result, list) else 'N/A'} 个结果")
-
-        # API已经排序好了，这里的日志用于验证
-        if isinstance(result, list) and len(result) > 0:
-            logger.info(f"[AUTOCOMPLETE] 第一个返回的标签: name='{result[0].get('name', 'N/A')}', post_count={result[0].get('post_count', 'N/A')}")
 
         # 手动排序不再是必须的，但可以作为双重保险保留
         if isinstance(result, list):
@@ -823,7 +798,6 @@ async def save_filter_tags_route(request):
 async def get_ui_settings(request):
     try:
         ui_settings = load_ui_settings()
-        logger.info(f"[UI_SETTINGS] 返回UI设置: {ui_settings}")
         return web.json_response({
             "success": True,
             "settings": ui_settings
@@ -915,10 +889,7 @@ async def get_autocomplete_with_translation(request):
         query = request.query.get("query", "")
         limit = request.query.get("limit", "20")
 
-        logger.info(f"[自动补全翻译] 收到请求: query='{query}', limit='{limit}'")
-
         if not query:
-            logger.warning("[自动补全翻译] 查询为空，返回空结果")
             return web.json_response([], status=400)
 
         # 调用原有的自动补全API逻辑
@@ -944,7 +915,6 @@ async def get_autocomplete_with_translation(request):
                 translation = translation_system.translate_tag(tag_name)
                 tag_data['translation'] = translation
         
-        logger.info(f"[自动补全翻译] 返回 {len(result) if isinstance(result, list) else 'N/A'} 个带翻译的结果")
         return web.json_response(result)
 
     except requests.exceptions.RequestException as e:

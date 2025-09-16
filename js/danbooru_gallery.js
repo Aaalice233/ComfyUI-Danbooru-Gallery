@@ -366,28 +366,21 @@ app.registerExtension({
 
                 // 显示提示消息功能
                 const showToast = (message, type = 'info', anchorElement = null) => {
-                    console.log("Showing toast:", message, type);
-
                     // 尝试使用 ComfyUI 的内置系统
                     if (app.ui && app.ui.showToast) {
-                        console.log("Using app.ui.showToast");
                         app.ui.showToast(message, type);
                         return;
                     }
 
                     if (app.ui && app.ui.notification && app.ui.notification.show) {
-                        console.log("Using app.ui.notification.show");
                         app.ui.notification.show(message, type);
                         return;
                     }
 
                     if (app.ui && app.ui.dialog && app.ui.dialog.showMessage) {
-                        console.log("Using app.ui.dialog.showMessage");
                         app.ui.dialog.showMessage(message);
                         return;
                     }
-
-                    console.log("Using custom toast");
 
                     const toast = $el("div", {
                         textContent: message,
@@ -422,7 +415,6 @@ app.registerExtension({
 
                     // 强制添加到 document.body
                     document.body.appendChild(toast);
-                    console.log("Toast added to body, element:", toast);
 
                     // 立即显示
                     setTimeout(() => {
@@ -435,7 +427,6 @@ app.registerExtension({
                         setTimeout(() => {
                             if (toast.parentNode) {
                                 toast.remove();
-                                console.log("Toast removed");
                             }
                         }, 300);
                     }, 3000);
@@ -516,9 +507,7 @@ app.registerExtension({
                 };
 
                 const removeFromFavorites = async (postId, button = null) => {
-                    console.log("开始取消收藏", postId);
                     if (!userAuth.has_auth) {
-                        console.log("用户未认证，取消操作");
                         alert(t('authRequired'));
                         return { success: false, error: t('authRequired') };
                     }
@@ -532,7 +521,6 @@ app.registerExtension({
                     }
 
                     try {
-                        console.log("发送POST请求到 /danbooru_gallery/favorites/remove", { post_id: postId });
                         const response = await fetch('/danbooru_gallery/favorites/remove', {
                             method: 'POST',
                             headers: {
@@ -540,15 +528,12 @@ app.registerExtension({
                             },
                             body: JSON.stringify({ post_id: postId })
                         });
-                        console.log("fetch 响应状态", response.status);
                         let data;
                         if (response.status === 204) {
                             // 204 No Content 表示成功，但没有响应体
                             data = { success: true, message: "取消收藏成功" };
-                            console.log("204 响应，视为成功");
                         } else {
                             data = await response.json();
-                            console.log("解析响应数据", data);
                         }
 
                         // 恢复按钮状态
@@ -1527,18 +1512,12 @@ app.registerExtension({
                                 uiSettings.tooltip_enabled = newTooltipEnabled;
                                 uiSettings.autocomplete_max_results = newAutocompleteMaxResults;
 
-                                console.log('[UI_SETTINGS] 设置已保存并同步到本地状态:', uiSettings);
-
                                 if (selectedLanguage !== currentLanguage) {
                                     currentLanguage = selectedLanguage;
                                     updateInterfaceTexts();
-                                    console.log(`[Danbooru Gallery] 语言已切换至: ${currentLanguage === 'zh' ? '中文' : 'English'}`);
                                 }
 
                                 dialog.remove();
-                                console.log(`[Danbooru Gallery] 黑名单已更新: ${newBlacklist.join(', ')}`);
-                                console.log(`[Danbooru Gallery] 提示词过滤已更新: ${newFilterEnabled ? '启用' : '禁用'}, 过滤标签: ${newFilterTags.join(', ')}`);
-                                console.log(`[Danbooru Gallery] UI设置已更新: 自动补全 -> ${newAutocompleteEnabled}, 悬浮提示 -> ${newTooltipEnabled}, 最大补全数量 -> ${newAutocompleteMaxResults}`);
 
                                 // 重新过滤当前已加载的帖子
                                 const filteredPosts = posts.filter(post => !isPostFiltered(post));
@@ -1621,22 +1600,17 @@ app.registerExtension({
 
                 const loadUiSettings = async () => {
                     try {
-                        console.log('[UI_SETTINGS] Loading UI settings...');
                         const response = await fetch('/danbooru_gallery/ui_settings');
                         const data = await response.json();
-                        console.log('[UI_SETTINGS] Received data:', data);
                         if (data.success) {
                             uiSettings = {
                                 autocomplete_enabled: data.settings.autocomplete_enabled,
                                 tooltip_enabled: data.settings.tooltip_enabled,
                                 autocomplete_max_results: data.settings.autocomplete_max_results || 20
                             };
-                            console.log('[UI_SETTINGS] Updated uiSettings:', uiSettings);
-                        } else {
-                            console.warn('[UI_SETTINGS] Failed to load settings, success=false');
                         }
                     } catch (e) {
-                        console.warn("[UI_SETTINGS] 加载UI设置失败:", e);
+                        console.warn("加载UI设置失败:", e);
                     }
                 };
 
@@ -1775,6 +1749,29 @@ app.registerExtension({
                     return isPostBlacklisted(post);
                 };
 
+                // 反向转换函数：将显示格式的标签转换回Danbooru API格式
+                const convertTagsToApiFormat = (tagsString) => {
+                    if (!tagsString) return "";
+
+                    // 只按逗号分割标签，保持空格作为标签名称的一部分
+                    const tags = tagsString.split(',').filter(tag => tag.trim() !== '');
+
+                    return tags.map(tag => {
+                        let convertedTag = tag.trim();
+
+                        // 1. 反转义括号：\( -> (, \) -> )
+                        convertedTag = convertedTag.replace(/\\([()])/g, '$1');
+
+                        // 2. 空格转换为下划线（如果包含空格且不是特殊tag）
+                        // 特殊tag通常以冒号开头（如 order:rank, ordfav:username）
+                        if (!convertedTag.includes(':')) {
+                            convertedTag = convertedTag.replace(/\s+/g, '_');
+                        }
+
+                        return convertedTag;
+                    }).join(' ');
+                };
+
                 const fetchAndRender = async (reset = false) => {
                     if (isLoading) return;
                     isLoading = true;
@@ -1816,7 +1813,7 @@ app.registerExtension({
                     try {
                         // 检测tag数量
                         const searchValue = searchInput.value.trim();
-                        const tags = searchValue.split(/[, ]+/).filter(tag => tag.trim() !== '');
+                        const tags = searchValue.split(',').filter(tag => tag.trim() !== '');
                         const tagCount = tags.length;
 
                         // 如果超过2个tag，给用户提示
@@ -1827,8 +1824,11 @@ app.registerExtension({
                             clearTagHint();
                         }
 
+                        // 将搜索框中的标签转换为API格式
+                        const apiFormattedTags = convertTagsToApiFormat(searchValue);
+
                         const params = new URLSearchParams({
-                            "search[tags]": searchValue.replace(/,/g, ' ').trim(),
+                            "search[tags]": apiFormattedTags,
                             "search[rating]": ratingSelect.querySelector('.danbooru-category-button').dataset.value,
                             limit: "100",
                             page: currentPage,
@@ -1842,11 +1842,7 @@ app.registerExtension({
                         // 应用文件类型和黑名单过滤
                         const filteredPosts = newPosts.filter(post => !isPostFiltered(post));
 
-                        console.log(`[Danbooru Gallery] 原始帖子数量: ${newPosts.length}, 过滤后: ${filteredPosts.length}`);
                         const filteredCount = newPosts.length - filteredPosts.length;
-                        if (filteredCount > 0) {
-                            console.log(`[Danbooru Gallery] 已过滤 ${filteredCount} 个帖子 (包括非图像文件和黑名单标签)`);
-                        }
 
                         if (filteredPosts.length === 0 && reset) {
                             imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
@@ -1972,7 +1968,6 @@ app.registerExtension({
                             try {
                                 const imageUrl = post.file_url || post.large_file_url;
                                 if (!imageUrl) {
-                                    console.error('[Danbooru Gallery] 无法获取图片URL');
                                     return;
                                 }
 
@@ -1992,10 +1987,8 @@ app.registerExtension({
                                 a.click();
                                 document.body.removeChild(a);
                                 window.URL.revokeObjectURL(url);
-
-                                console.log(`[Danbooru Gallery] 下载完成: ${fileName}`);
                             } catch (error) {
-                                console.error('[Danbooru Gallery] 下载失败:', error);
+                                // 下载失败，静默处理
                             }
                         }
                     });
@@ -2083,7 +2076,7 @@ app.registerExtension({
                                     }
                                 }
                             } catch (error) {
-                                console.warn('[翻译] 获取翻译失败:', error);
+                                // 翻译获取失败，继续显示英文标签
                             }
                         }
 
@@ -2160,11 +2153,8 @@ app.registerExtension({
                         onclick: async (e) => {
                             e.stopPropagation(); // 阻止事件冒泡，避免触发图片选择
 
-                            console.log("点击收藏按钮", post.id, "当前收藏状态:", userFavorites.includes(String(post.id)), "收藏夹模式:", inFavoritesMode);
-
                             // 如果用户未登录，提示登录
                             if (!userAuth.has_auth) {
-                                console.log("用户未认证");
                                 alert(t('authRequired'));
                                 return;
                             }
@@ -2172,12 +2162,10 @@ app.registerExtension({
                             // 在操作收藏前验证用户名和API Key的有效性
 
                             const currentlyFavorited = userFavorites.includes(String(post.id)) || inFavoritesMode;
-                            console.log("计算的收藏状态:", currentlyFavorited);
                             let result;
 
                             if (currentlyFavorited) {
                                 // 取消收藏
-                                console.log("调用取消收藏函数");
                                 result = await removeFromFavorites(post.id, favoriteButton);
                                 if (result.success) {
                                     // 如果在收藏夹视图中，直接移除元素
@@ -2310,8 +2298,6 @@ app.registerExtension({
 
                 // 自动补全处理函数
                 const handleAutocompletion = () => {
-                    console.log('[AUTOCOMPLETE] Input event triggered, autocomplete_enabled:', uiSettings.autocomplete_enabled);
-
                     // 清除之前的定时器
                     clearTimeout(debounceTimer);
                     clearTimeout(chineseDebounceTimer);
@@ -2319,11 +2305,8 @@ app.registerExtension({
                     const query = searchInput.value;
                     const lastWord = query.split(/[\s,]+/).pop(); // 按空格或逗号分割，取最后一个词
 
-                    console.log('[AUTOCOMPLETE] Processing query:', query, 'lastWord:', lastWord);
-
                     // 检测是否为中文输入（仅在中文模式下启用）
                     if (currentLanguage === 'zh' && containsChinese(lastWord)) {
-                        console.log('[中文搜索] 检测到中文输入:', lastWord);
                         // 立即隐藏英文自动补全
                         suggestionsPanel.style.display = 'none';
 
@@ -2337,8 +2320,6 @@ app.registerExtension({
                             try {
                                 const response = await fetch(`/danbooru_gallery/search_chinese?query=${encodeURIComponent(lastWord)}&limit=10`);
                                 const data = await response.json();
-
-                                console.log('[中文搜索] 搜索结果:', data);
 
                                 // 确保英文面板仍然隐藏
                                 suggestionsPanel.style.display = 'none';
@@ -2385,7 +2366,6 @@ app.registerExtension({
                                     chineseSuggestionsPanel.style.display = 'none';
                                 }
                             } catch (error) {
-                                console.error('[中文搜索] 搜索失败:', error);
                                 chineseSuggestionsPanel.style.display = 'none';
                             }
                         }, 250);
@@ -2397,21 +2377,18 @@ app.registerExtension({
 
                     // 原有的英文自动补全逻辑
                     if (!uiSettings.autocomplete_enabled) {
-                        console.log('[AUTOCOMPLETE] Autocomplete disabled, hiding panel');
                         suggestionsPanel.style.display = 'none';
                         return;
                     }
 
                     debounceTimer = setTimeout(async () => {
                         if (lastWord.length < 2) {
-                            console.log('[AUTOCOMPLETE] Last word too short, hiding panel');
                             suggestionsPanel.style.display = 'none';
                             return;
                         }
 
                         try {
                             const maxResults = uiSettings.autocomplete_max_results || 20;
-                            console.log('[AUTOCOMPLETE] Using maxResults:', maxResults, 'from uiSettings:', uiSettings);
 
                             // 根据语言选择API接口
                             const apiEndpoint = currentLanguage === 'zh' ?
@@ -2419,31 +2396,7 @@ app.registerExtension({
                                 '/danbooru_gallery/autocomplete';
 
                             const response = await fetch(`${apiEndpoint}?query=${encodeURIComponent(lastWord)}&limit=${maxResults}`);
-                            console.log('[AUTOCOMPLETE] Fetch response status:', response.status);
                             const suggestions = await response.json();
-
-                            console.log('[AUTOCOMPLETE] Received suggestions:', suggestions.length, 'items');
-
-                            // 添加详细日志验证前端接收到的数据
-                            if (suggestions.length > 0) {
-                                console.log('[AUTOCOMPLETE] 第一个建议的完整数据结构:', suggestions[0]);
-                                console.log('[AUTOCOMPLETE] 前5个建议的详细信息:');
-                                suggestions.slice(0, 5).forEach((tag, i) => {
-                                    console.log(`[AUTOCOMPLETE] 建议 ${i + 1}: name='${tag.name}', post_count=${tag.post_count}, antecedent_name=${tag.antecedent_name}`);
-                                });
-                                // 检查前端接收到的数据是否按热度降序排序
-                                const isSortedDesc = suggestions.every((tag, i, arr) =>
-                                    i === 0 || arr[i - 1].post_count >= tag.post_count
-                                );
-                                console.log('[AUTOCOMPLETE] 前端接收到的数据是否按post_count降序排序:', isSortedDesc);
-                                // 检查是否有1girl在建议中
-                                const has1girl = suggestions.some(tag => tag.name === '1girl');
-                                console.log('[AUTOCOMPLETE] 建议中是否包含1girl:', has1girl);
-                                if (has1girl) {
-                                    const girlIndex = suggestions.findIndex(tag => tag.name === '1girl');
-                                    console.log('[AUTOCOMPLETE] 1girl在建议中的位置:', girlIndex + 1);
-                                }
-                            }
 
                             // 确保中文面板隐藏
                             chineseSuggestionsPanel.style.display = 'none';
@@ -2452,7 +2405,6 @@ app.registerExtension({
                             if (suggestions.length > 0) {
                                 // 限制显示数量为设置的最大值
                                 const limitedSuggestions = suggestions.slice(0, maxResults);
-                                console.log('[AUTOCOMPLETE] Displaying', limitedSuggestions.length, 'suggestions');
                                 limitedSuggestions.forEach(tag => {
                                     // 只在中文模式下显示翻译
                                     const displayName = (currentLanguage === 'zh' && tag.translation) ?
@@ -2496,11 +2448,9 @@ app.registerExtension({
                                 });
                                 suggestionsPanel.style.display = 'block';
                             } else {
-                                console.log('[AUTOCOMPLETE] No suggestions received, hiding panel');
                                 suggestionsPanel.style.display = 'none';
                             }
                         } catch (error) {
-                            console.error('[AUTOCOMPLETE] Error fetching suggestions:', error);
                             suggestionsPanel.style.display = 'none';
                         }
                     }, 250); // 250ms 防抖
