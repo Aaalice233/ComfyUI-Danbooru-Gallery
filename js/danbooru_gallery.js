@@ -48,6 +48,16 @@ const i18n = {
         promptFilterDescription: "从输出的提示词中移除指定的标签，每行一个标签",
         promptFilterPlaceholder: "输入要过滤的标签，每行一个...\n例如：\nwatermark\nsample_watermark\nweibo_username",
 
+        // 界面设置
+        uiSettings: "界面设置",
+        autocompleteSettings: "自动补全设置",
+        autocompleteEnable: "启用自动补全",
+        autocompleteEnableDescription: "在输入标签时显示建议",
+        autocompleteMaxResults: "最大补全数量",
+        tooltipSettings: "悬浮提示设置",
+        tooltipEnable: "启用悬浮提示",
+        tooltipEnableDescription: "鼠标悬停在图片上时显示详细信息",
+
         // 状态信息
         loading: "加载中...",
         noResults: "未找到结果",
@@ -123,6 +133,16 @@ const i18n = {
         promptFilterEnable: "Enable Prompt Filter",
         promptFilterDescription: "Remove specified tags from output prompts, one tag per line",
         promptFilterPlaceholder: "Enter tags to filter, one per line...\nExample:\nwatermark\nsample_watermark\nweibo_username",
+
+        // UI Settings
+        uiSettings: "UI Settings",
+        autocompleteSettings: "Autocomplete Settings",
+        autocompleteEnable: "Enable Autocomplete",
+        autocompleteEnableDescription: "Show suggestions while typing tags",
+        autocompleteMaxResults: "Max Results",
+        tooltipSettings: "Tooltip Settings",
+        tooltipEnable: "Enable Tooltip",
+        tooltipEnableDescription: "Show details when hovering over an image",
 
         // 状态信息
         loading: "Loading...",
@@ -841,21 +861,40 @@ app.registerExtension({
                             border: "1px solid var(--input-border-color)",
                             borderRadius: "12px",
                             padding: "24px",
-                            minWidth: "480px",
-                            maxWidth: "600px",
-                            maxHeight: "80vh",
+                            width: "800px",
+                            maxWidth: "90vw",
+                            height: "600px",
+                            maxHeight: "90vh",
                             boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
                             display: "flex",
                             flexDirection: "column"
                         }
                     });
 
+                    const mainContainer = $el("div", {
+                        style: {
+                            display: "flex",
+                            flex: "1",
+                            gap: "20px",
+                            overflow: "hidden"
+                        }
+                    });
+
+
+                    const sidebar = $el("div.danbooru-settings-sidebar", {
+                        style: {
+                            width: "180px",
+                            flexShrink: "0",
+                            borderRight: "1px solid var(--input-border-color)"
+                        }
+                    });
+
+
                     const scrollContainer = $el("div.danbooru-settings-scroll-container", {
                         style: {
                             flex: "1",
                             overflowY: "auto",
-                            marginBottom: "16px",
-                            paddingRight: "8px"
+                            padding: "0 16px"
                         }
                     });
 
@@ -1216,11 +1255,87 @@ app.registerExtension({
                     authSection.appendChild(apiKeyInput);
                     authSection.appendChild(apiKeyHelpButton);
 
-                    // 将所有section添加到滚动容器
-                    scrollContainer.appendChild(languageSection);
-                    scrollContainer.appendChild(authSection);
-                    scrollContainer.appendChild(blacklistSection);
-                    scrollContainer.appendChild(filterSection);
+                    // 自动补全设置
+                    const autocompleteSection = $el("div.danbooru-settings-section", { style: { marginBottom: "20px", padding: "16px", border: "1px solid var(--input-border-color)", borderRadius: "8px", backgroundColor: "var(--comfy-input-bg)" } });
+                    const autocompleteTitle = $el("h3", { textContent: t('autocompleteSettings'), style: { margin: "0 0 8px 0", color: "var(--comfy-input-text)", fontSize: "1.1em", fontWeight: "500" } });
+                    const autocompleteDesc = $el("p", { textContent: t('autocompleteEnableDescription'), style: { margin: "0 0 12px 0", color: "#888", fontSize: "0.9em" } });
+                    const autocompleteEnableCheckbox = $el("input", { type: "checkbox", id: "autocompleteEnableCheckbox", checked: uiSettings.autocomplete_enabled, style: { width: "16px", height: "16px" } });
+                    autocompleteEnableCheckbox.onchange = (e) => { /* 用户界面中的临时状态，无需处理 */ };
+                    const autocompleteEnableLabel = $el("label", { htmlFor: "autocompleteEnableCheckbox", textContent: t('autocompleteEnable'), style: { cursor: "pointer", color: "var(--comfy-input-text)", fontSize: "1em", fontWeight: "500" } });
+                    const autocompleteEnableDiv = $el("div", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" } }, [autocompleteEnableCheckbox, autocompleteEnableLabel]);
+
+                    // 新增：最大补全数量
+                    const autocompleteMaxResultsLabel = $el("label", { htmlFor: "autocompleteMaxResultsInput", textContent: t('autocompleteMaxResults'), style: { color: "var(--comfy-input-text)", fontSize: "0.9em", fontWeight: "500" } });
+                    const autocompleteMaxResultsInput = $el("input", {
+                        type: "number",
+                        id: "autocompleteMaxResultsInput",
+                        title: t('autocompleteEnableDescription'),
+                        value: uiSettings.autocomplete_max_results || 20,
+                        min: "1",
+                        max: "50",
+                        style: { width: "60px", padding: '4px', marginLeft: '8px', backgroundColor: 'var(--comfy-menu-bg)', color: 'var(--comfy-input-text)', border: '1px solid var(--input-border-color)', borderRadius: '4px' }
+                    });
+                    const autocompleteMaxResultsDiv = $el("div", { style: { display: "flex", alignItems: "center" } }, [autocompleteMaxResultsLabel, autocompleteMaxResultsInput]);
+
+                    autocompleteSection.appendChild(autocompleteTitle);
+                    autocompleteSection.appendChild(autocompleteDesc);
+                    autocompleteSection.appendChild(autocompleteEnableDiv);
+                    autocompleteSection.appendChild(autocompleteMaxResultsDiv);
+
+                    // 悬浮提示设置
+                    const tooltipSection = $el("div.danbooru-settings-section", { style: { marginBottom: "20px", padding: "16px", border: "1px solid var(--input-border-color)", borderRadius: "8px", backgroundColor: "var(--comfy-input-bg)" } });
+                    const tooltipTitle = $el("h3", { textContent: t('tooltipSettings'), style: { margin: "0 0 8px 0", color: "var(--comfy-input-text)", fontSize: "1.1em", fontWeight: "500" } });
+                    const tooltipDesc = $el("p", { textContent: t('tooltipEnableDescription'), style: { margin: "0 0 12px 0", color: "#888", fontSize: "0.9em" } });
+                    const tooltipEnableCheckbox = $el("input", { type: "checkbox", id: "tooltipEnableCheckbox", checked: uiSettings.tooltip_enabled, style: { width: "16px", height: "16px" } });
+                    tooltipEnableCheckbox.onchange = (e) => { /* 用户界面中的临时状态，无需处理 */ };
+                    const tooltipEnableLabel = $el("label", { htmlFor: "tooltipEnableCheckbox", textContent: t('tooltipEnable'), style: { cursor: "pointer", color: "var(--comfy-input-text)", fontSize: "1em", fontWeight: "500" } });
+                    const tooltipEnableDiv = $el("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [tooltipEnableCheckbox, tooltipEnableLabel]);
+                    tooltipSection.appendChild(tooltipTitle);
+                    tooltipSection.appendChild(tooltipDesc);
+                    tooltipSection.appendChild(tooltipEnableDiv);
+
+
+                    // 创建侧边栏按钮和内容区域的映射
+                    const sections = {
+                        'general': { title: '通用', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>', elements: [languageSection] },
+                        'user': { title: '用户', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>', elements: [authSection] },
+                        'content': { title: '内容', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18l-1.5 14H4.5L3 6z"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>', elements: [blacklistSection] },
+                        'prompt': { title: '提示词', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>', elements: [filterSection] },
+                        'ui': { title: '界面', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>', elements: [autocompleteSection, tooltipSection] },
+                    };
+
+                    const setActiveSection = (key) => {
+                        // 更新按钮样式
+                        sidebar.querySelectorAll('.sidebar-button').forEach(btn => {
+                            if (btn.dataset.key === key) {
+                                btn.classList.add('active');
+                            } else {
+                                btn.classList.remove('active');
+                            }
+                        });
+
+
+                        // 显示对应的内容
+                        scrollContainer.innerHTML = '';
+                        if (sections[key] && sections[key].elements.length > 0) {
+                            sections[key].elements.forEach(el => scrollContainer.appendChild(el));
+                        }
+                    };
+
+                    // 创建侧边栏按钮
+                    Object.keys(sections).forEach(key => {
+                        const section = sections[key];
+                        const button = $el("button.sidebar-button", {
+                            dataset: { key: key },
+                            onclick: () => setActiveSection(key),
+                        });
+                        button.appendChild($el("div.sidebar-button-icon", { innerHTML: section.icon }));
+                        button.appendChild($el("span.sidebar-button-title", { textContent: section.title }));
+                        sidebar.appendChild(button);
+                    });
+
+                    // 设置初始活动区域
+                    setActiveSection('general');
 
                     // 社交按钮
                     const githubButton = $el("button", {
@@ -1361,19 +1476,31 @@ app.registerExtension({
                                 }
                             }
 
-                            // 保存黑名单、提示词过滤和语言设置
-                            const [blacklistSuccess, filterSuccess, languageSuccess] = await Promise.all([
+                            const newAutocompleteEnabled = autocompleteEnableCheckbox.checked;
+                            const newTooltipEnabled = tooltipEnableCheckbox.checked;
+                            const newAutocompleteMaxResults = parseInt(autocompleteMaxResultsInput.value, 10);
+
+                            // 保存所有设置
+                            const [blacklistSuccess, filterSuccess, languageSuccess, uiSettingsSuccess] = await Promise.all([
                                 saveBlacklist(newBlacklist),
                                 saveFilterTags(newFilterTags, newFilterEnabled),
-                                selectedLanguage !== currentLanguage ? saveLanguage(selectedLanguage) : Promise.resolve(true)
+                                selectedLanguage !== currentLanguage ? saveLanguage(selectedLanguage) : Promise.resolve(true),
+                                saveUiSettings({
+                                    autocomplete_enabled: newAutocompleteEnabled,
+                                    tooltip_enabled: newTooltipEnabled,
+                                    autocomplete_max_results: newAutocompleteMaxResults
+                                })
                             ]);
 
-                            if (blacklistSuccess && filterSuccess && languageSuccess && authSuccess) {
+                            if (blacklistSuccess && filterSuccess && languageSuccess && authSuccess && uiSettingsSuccess) {
+                                // 同步本地状态
                                 currentBlacklist = newBlacklist;
                                 currentFilterTags = newFilterTags;
                                 filterEnabled = newFilterEnabled;
+                                uiSettings.autocomplete_enabled = newAutocompleteEnabled;
+                                uiSettings.tooltip_enabled = newTooltipEnabled;
+                                uiSettings.autocomplete_max_results = newAutocompleteMaxResults;
 
-                                // 如果语言发生了变化，更新当前语言并刷新界面
                                 if (selectedLanguage !== currentLanguage) {
                                     currentLanguage = selectedLanguage;
                                     updateInterfaceTexts();
@@ -1383,6 +1510,7 @@ app.registerExtension({
                                 dialog.remove();
                                 console.log(`[Danbooru Gallery] 黑名单已更新: ${newBlacklist.join(', ')}`);
                                 console.log(`[Danbooru Gallery] 提示词过滤已更新: ${newFilterEnabled ? '启用' : '禁用'}, 过滤标签: ${newFilterTags.join(', ')}`);
+                                console.log(`[Danbooru Gallery] UI设置已更新: 自动补全 -> ${newAutocompleteEnabled}, 悬浮提示 -> ${newTooltipEnabled}, 最大补全数量 -> ${newAutocompleteMaxResults}`);
 
                                 // 重新过滤当前已加载的帖子
                                 const filteredPosts = posts.filter(post => !isPostFiltered(post));
@@ -1406,7 +1534,9 @@ app.registerExtension({
                     buttonContainer.appendChild(mainButtonsContainer);
 
                     dialogContent.appendChild(title);
-                    dialogContent.appendChild(scrollContainer);
+                    mainContainer.appendChild(sidebar);
+                    mainContainer.appendChild(scrollContainer);
+                    dialogContent.appendChild(mainContainer);
                     dialogContent.appendChild(buttonContainer);
 
                     dialog.appendChild(dialogContent);
@@ -1459,6 +1589,38 @@ app.registerExtension({
                 // 提示词过滤功能
                 let currentFilterTags = [];
                 let filterEnabled = true; // 默认开启过滤功能
+                let uiSettings = { autocomplete_enabled: true, tooltip_enabled: true, autocomplete_max_results: 20 };
+
+                const loadUiSettings = async () => {
+                    try {
+                        const response = await fetch('/danbooru_gallery/ui_settings');
+                        const data = await response.json();
+                        if (data.success) {
+                            uiSettings = {
+                                autocomplete_enabled: data.settings.autocomplete_enabled,
+                                tooltip_enabled: data.settings.tooltip_enabled,
+                                autocomplete_max_results: data.settings.autocomplete_max_suggestions || 20
+                            };
+                        }
+                    } catch (e) {
+                        console.warn("加载UI设置失败:", e);
+                    }
+                };
+
+                const saveUiSettings = async (settings) => {
+                    try {
+                        const response = await fetch('/danbooru_gallery/ui_settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(settings)
+                        });
+                        const data = await response.json();
+                        return data.success;
+                    } catch (e) {
+                        console.warn("保存UI设置失败:", e);
+                        return false;
+                    }
+                };
 
                 const loadBlacklist = async () => {
                     try {
@@ -1821,7 +1983,7 @@ app.registerExtension({
                     let currentClickHandler = null;
 
                     wrapper.addEventListener("mouseenter", (e) => {
-                        // 清除任何可能的延迟隐藏
+                        if (!uiSettings.tooltip_enabled) return;
                         clearTimeout(globalTooltipTimeout);
 
                         const tagsContainer = globalTooltip.querySelector('.danbooru-tooltip-tags');
@@ -2132,6 +2294,10 @@ app.registerExtension({
                 let debounceTimer;
 
                 searchInput.addEventListener('input', () => {
+                    if (!uiSettings.autocomplete_enabled) {
+                        suggestionsPanel.style.display = 'none';
+                        return;
+                    }
                     clearTimeout(debounceTimer);
                     debounceTimer = setTimeout(async () => {
                         const query = searchInput.value;
@@ -2143,12 +2309,15 @@ app.registerExtension({
                         }
 
                         try {
-                            const response = await fetch(`/danbooru_gallery/autocomplete?query=${encodeURIComponent(lastWord)}`);
+                            const maxResults = uiSettings.autocomplete_max_results || 20;
+                            const response = await fetch(`/danbooru_gallery/autocomplete?query=${encodeURIComponent(lastWord)}&limit=${maxResults}`);
                             const suggestions = await response.json();
 
                             suggestionsPanel.innerHTML = ''; // 清空旧建议
                             if (suggestions.length > 0) {
-                                suggestions.forEach(tag => {
+                                // 限制显示数量为设置的最大值
+                                const limitedSuggestions = suggestions.slice(0, maxResults);
+                                limitedSuggestions.forEach(tag => {
                                     const suggestionItem = $el('div.danbooru-suggestion-item', {
                                         innerHTML: `
                                             <span class="danbooru-suggestion-name">${tag.name}</span>
@@ -2287,6 +2456,8 @@ app.registerExtension({
                     loadBlacklist();
                     // 加载提示词过滤设置
                     loadFilterTags();
+                    // 加载UI设置
+                    await loadUiSettings();
                     // 初始化排行榜按钮状态
                     updateRankingButtonState();
                     // 页面加载时直接获取第一页的帖子
@@ -2782,13 +2953,19 @@ $el("style", {
             }
         }
         
+        .danbooru-settings-dialog-content h2 {
+            padding: 0 10px 12px 10px !important;
+        }
+
         .danbooru-settings-section {
             transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 24px !important;
         }
         
         .danbooru-settings-section:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
         
         .danbooru-settings-dialog button:hover {
@@ -2806,6 +2983,63 @@ $el("style", {
             outline-offset: 1px;
         }
         
+        .danbooru-settings-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            padding-right: 15px;
+            border-right: 1px solid var(--input-border-color);
+            flex-shrink: 0;
+            width: 180px;
+            box-sizing: border-box;
+            overflow: visible;
+        }
+
+        .sidebar-button {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            background-color: transparent;
+            color: var(--comfy-input-text);
+            text-align: left;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s, color 0.2s;
+            width: 100%;
+            border: none;
+            box-sizing: border-box;
+            justify-content: flex-start;
+        }
+
+        .sidebar-button.active {
+            background-color: rgba(123, 104, 238, 0.2) !important;
+            color: #E0E0E0 !important;
+            font-weight: 600 !important;
+            border: none !important;
+            outline: none !important;
+        }
+
+        .sidebar-button:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar-button-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sidebar-button svg {
+            stroke-width: 2;
+        }
+
+        .sidebar-button:focus {
+            outline: none;
+        }
+
         /* 设置对话框滚动容器样式 */
         .danbooru-settings-scroll-container {
             scrollbar-width: thin;

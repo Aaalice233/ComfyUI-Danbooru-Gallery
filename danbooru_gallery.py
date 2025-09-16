@@ -43,7 +43,10 @@ def load_settings():
         "debug_mode": False,
         "cache_enabled": True,
         "max_cache_age": 3600,
-        "default_page_size": 20
+        "default_page_size": 20,
+        "autocomplete_enabled": True,
+        "tooltip_enabled": True,
+        "autocomplete_max_results": 20
     }
     
     try:
@@ -124,6 +127,23 @@ def save_filter_tags(filter_tags, enabled):
     settings = load_settings()
     settings["filter_tags"] = filter_tags
     settings["filter_enabled"] = enabled
+    return save_settings(settings)
+
+def load_ui_settings():
+    """从统一设置文件加载UI设置"""
+    settings = load_settings()
+    return {
+        "autocomplete_enabled": settings.get("autocomplete_enabled", True),
+        "tooltip_enabled": settings.get("tooltip_enabled", True),
+        "autocomplete_max_results": settings.get("autocomplete_max_suggestions", 20)
+    }
+
+def save_ui_settings(ui_settings):
+    """保存UI设置到统一设置文件"""
+    settings = load_settings()
+    settings["autocomplete_enabled"] = ui_settings.get("autocomplete_enabled", True)
+    settings["tooltip_enabled"] = ui_settings.get("tooltip_enabled", True)
+    settings["autocomplete_max_suggestions"] = ui_settings.get("autocomplete_max_results", 20)
     return save_settings(settings)
 
 def check_network_connection():
@@ -425,16 +445,17 @@ async def get_autocomplete(request):
     """代理 Danbooru 的 autocomplete.json API"""
     try:
         query = request.query.get("query", "")
+        limit = request.query.get("limit", "20")
+
         if not query:
             return web.json_response([], status=400)
 
-        # 改用 /tags.json 以获得更好的模糊匹配和排序
+        # 改用 /tags.json 以获得更好的模糊匹配
         tags_url = f"{BASE_URL}/tags.json"
-        # 使用 name_matches 并按 post count 排序
+        # 使用 name_matches 参数进行模糊匹配
         params = {
             "search[name_matches]": f"{query}*",
-            "search[order]": "count",
-            "limit": 10
+            "limit": limit
         }
         
         username, api_key = load_user_auth()
@@ -499,6 +520,33 @@ async def save_filter_tags_route(request):
         return web.json_response({"success": success})
     except Exception as e:
         logger.error(f"保存提示词过滤设置接口错误: {e}")
+        return web.json_response({"success": False, "error": str(e)})
+
+@PromptServer.instance.routes.get("/danbooru_gallery/ui_settings")
+async def get_ui_settings(request):
+    try:
+        ui_settings = load_ui_settings()
+        return web.json_response({
+            "success": True,
+            "settings": ui_settings
+        })
+    except Exception as e:
+        logger.error(f"获取UI设置接口错误: {e}")
+        return web.json_response({"success": False, "error": str(e)})
+
+@PromptServer.instance.routes.post("/danbooru_gallery/ui_settings")
+async def save_ui_settings_route(request):
+    try:
+        data = await request.json()
+        ui_settings = {
+            "autocomplete_enabled": data.get("autocomplete_enabled", True),
+            "tooltip_enabled": data.get("tooltip_enabled", True),
+            "autocomplete_max_results": data.get("autocomplete_max_results", 20)
+        }
+        success = save_ui_settings(ui_settings)
+        return web.json_response({"success": success})
+    except Exception as e:
+        logger.error(f"保存UI设置接口错误: {e}")
         return web.json_response({"success": False, "error": str(e)})
 
 class DanbooruGalleryNode:
