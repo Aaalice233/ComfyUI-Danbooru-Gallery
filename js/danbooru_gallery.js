@@ -29,6 +29,18 @@ const i18n = {
         language: "语言",
         blacklist: "黑名单",
         download: "下载原图",
+        favorite: "收藏",
+        unfavorite: "取消收藏",
+        favorites: "收藏夹",
+        userAuth: "用户认证",
+        username: "用户名",
+        apiKey: "API Key",
+        authDescription: "请输入您的Danbooru用户名和API Key来使用收藏功能",
+        authPlaceholderUsername: "输入您的Danbooru用户名",
+        authPlaceholderApiKey: "输入您的API Key",
+        authRequired: "请先在设置中配置用户名和API Key",
+        apiKeyHelp: "如何获取API Key？",
+        apiKeyTooltip: "点击查看如何获取Danbooru API Key和用户名",
         languageSettings: "语言设置",
         blacklistSettings: "黑名单设置",
         promptFilterSettings: "提示词过滤设置",
@@ -93,6 +105,18 @@ const i18n = {
         language: "Language",
         blacklist: "Blacklist",
         download: "Download Original",
+        favorite: "Favorite",
+        unfavorite: "Unfavorite",
+        favorites: "Favorites",
+        userAuth: "User Authentication",
+        username: "Username",
+        apiKey: "API Key",
+        authDescription: "Please enter your Danbooru username and API Key to use favorite features",
+        authPlaceholderUsername: "Enter your Danbooru username",
+        authPlaceholderApiKey: "Enter your API Key",
+        authRequired: "Please configure username and API Key in settings first",
+        apiKeyHelp: "How to get API Key?",
+        apiKeyTooltip: "Click to see how to get Danbooru API Key and username",
         languageSettings: "Language Settings",
         blacklistSettings: "Blacklist Settings",
         promptFilterSettings: "Prompt Filter Settings",
@@ -136,6 +160,10 @@ const i18n = {
 // 当前语言
 let currentLanguage = 'zh';
 
+// 全局悬浮提示实例
+let globalTooltip = null;
+let globalTooltipTimeout = null;
+
 // 获取翻译文本
 const t = (key) => {
     return i18n[currentLanguage]?.[key] || i18n.zh[key] || key;
@@ -165,6 +193,60 @@ app.registerExtension({
 
                 const container = $el("div.danbooru-gallery");
 
+                // 添加错误显示区域
+                const errorDisplay = $el("div.danbooru-error-display", {
+                    style: {
+                        display: "none",
+                        color: "#dc3545",
+                        marginBottom: "10px",
+                        padding: "8px 12px",
+                        border: "1px solid #dc3545",
+                        borderRadius: "4px",
+                        backgroundColor: "rgba(220, 53, 69, 0.1)",
+                        fontSize: "14px",
+                        fontWeight: "500"
+                    }
+                });
+                container.appendChild(errorDisplay);
+
+                // 显示错误信息的函数
+                const showError = (message, persistent = false) => {
+                    errorDisplay.textContent = message;
+                    errorDisplay.style.display = "block";
+                    if (!persistent) {
+                        // 5秒后自动隐藏
+                        setTimeout(() => {
+                            errorDisplay.style.display = "none";
+                        }, 5000);
+                    }
+                };
+
+                // 清除错误信息的函数
+                const clearError = () => {
+                    errorDisplay.style.display = "none";
+                };
+
+                // 检查网络连接状态
+                const checkNetworkStatus = async () => {
+                    try {
+                        const response = await fetch('/danbooru_gallery/check_network');
+                        const data = await response.json();
+                        const isConnected = data.success && data.connected;
+                        const now = Date.now();
+
+                        // 更新网络状态
+                        networkStatus.connected = isConnected;
+                        networkStatus.lastChecked = now;
+
+                        return isConnected;
+                    } catch (e) {
+                        console.warn('网络检测失败:', e);
+                        networkStatus.connected = false;
+                        networkStatus.lastChecked = Date.now();
+                        return false;
+                    }
+                };
+
                 this.addDOMWidget("danbooru_gallery_widget", "div", container, {
                     onDraw: () => { }
                 });
@@ -176,6 +258,293 @@ app.registerExtension({
                 }, 10);
 
                 let posts = [], currentPage = 1, isLoading = false;
+                let userAuth = { username: "", api_key: "", has_auth: false }; // 用户认证信息
+                let userFavorites = []; // 用户收藏列表，确保字符串
+                let networkStatus = { connected: true, lastChecked: 0 }; // 网络状态跟踪
+
+                // 用户认证管理功能
+                const loadUserAuth = async () => {
+                    try {
+                        const response = await fetch('/danbooru_gallery/user_auth');
+                        const data = await response.json();
+                        userAuth = data;
+                        return data;
+                    } catch (e) {
+                        console.warn("加载用户认证信息失败:", e);
+                        userAuth = { username: "", api_key: "", has_auth: false };
+                        return userAuth;
+                    }
+                };
+
+                const saveUserAuth = async (username, api_key) => {
+                    try {
+                        const response = await fetch('/danbooru_gallery/user_auth', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ username: username, api_key: api_key })
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                            userAuth = { username, api_key, has_auth: true };
+                        }
+                        return data;
+                    } catch (e) {
+                        console.warn("保存用户认证信息失败:", e);
+                        return { success: false, error: "网络错误" };
+                    }
+                };
+
+                // 显示提示消息功能
+                const showToast = (message, type = 'info', anchorElement = null) => {
+                    console.log("Showing toast:", message, type);
+
+                    // 尝试使用 ComfyUI 的内置系统
+                    if (app.ui && app.ui.showToast) {
+                        console.log("Using app.ui.showToast");
+                        app.ui.showToast(message, type);
+                        return;
+                    }
+
+                    if (app.ui && app.ui.notification && app.ui.notification.show) {
+                        console.log("Using app.ui.notification.show");
+                        app.ui.notification.show(message, type);
+                        return;
+                    }
+
+                    if (app.ui && app.ui.dialog && app.ui.dialog.showMessage) {
+                        console.log("Using app.ui.dialog.showMessage");
+                        app.ui.dialog.showMessage(message);
+                        return;
+                    }
+
+                    console.log("Using custom toast");
+
+                    const toast = $el("div", {
+                        textContent: message,
+                        style: {
+                            position: "fixed",
+                            padding: "8px 16px",
+                            borderRadius: "4px",
+                            color: "white",
+                            fontSize: "12px",
+                            fontWeight: "500",
+                            zIndex: "999999",
+                            maxWidth: "200px",
+                            wordWrap: "break-word",
+                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+                            backgroundColor: type === 'success' ? "#28a745" : type === 'error' ? "#dc3545" : "#17a2b8",
+                            borderLeft: `3px solid ${type === 'success' ? "#1e7e34" : type === 'error' ? "#bd2130" : "#117a8b"}`,
+                            pointerEvents: "none",
+                            opacity: "0",
+                            transition: "opacity 0.3s ease-out"
+                        }
+                    });
+
+                    // 计算位置
+                    if (anchorElement) {
+                        const rect = anchorElement.getBoundingClientRect();
+                        toast.style.left = `${rect.left + rect.width / 2 - 100}px`; // 居中对齐
+                        toast.style.top = `${rect.top - 40}px`; // 在元素上方
+                    } else {
+                        toast.style.top = "20px";
+                        toast.style.right = "20px";
+                    }
+
+                    // 强制添加到 document.body
+                    document.body.appendChild(toast);
+                    console.log("Toast added to body, element:", toast);
+
+                    // 立即显示
+                    setTimeout(() => {
+                        toast.style.opacity = "1";
+                    }, 10);
+
+                    // 3秒后自动移除
+                    setTimeout(() => {
+                        toast.style.opacity = "0";
+                        setTimeout(() => {
+                            if (toast.parentNode) {
+                                toast.remove();
+                                console.log("Toast removed");
+                            }
+                        }, 300);
+                    }, 3000);
+                };
+
+                // 收藏管理功能
+                const addToFavorites = async (postId, button = null) => {
+                    if (!userAuth.has_auth) {
+                        alert(t('authRequired'));
+                        return { success: false, error: t('authRequired') };
+                    }
+
+                    // 显示加载状态
+                    if (button) {
+                        button.disabled = true;
+                        const originalHTML = button.innerHTML;
+                        button.innerHTML = '<div class="spinner"></div>';
+                        button.dataset.originalHTML = originalHTML;
+                    }
+
+                    try {
+                        const response = await fetch('/danbooru_gallery/favorites/add', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ post_id: postId })
+                        });
+                        const data = await response.json();
+
+                        // 恢复按钮状态
+                        if (button) {
+                            button.disabled = false;
+                            if (data.success || data.message === "已收藏，无需重复操作") {
+                                button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="#DC3545" stroke="#DC3545" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                </svg>`;
+                                button.title = t('unfavorite');
+                                button.classList.add('favorited');
+                                if (!userFavorites.includes(postId)) {
+                                    userFavorites.push(String(postId));
+                                }
+                                // 显示收藏成功提示
+                                showToast(t('favorite') + '成功', 'success', button);
+                            } else {
+                                button.innerHTML = button.dataset.originalHTML || originalHTML;
+                            }
+                            delete button.dataset.originalHTML;
+                        }
+
+                        if (!data.success) {
+                            let errorMsg = data.error || "未知错误";
+                            if (data.error.includes("网络错误")) {
+                                showError(`${errorMsg} - 请检查网络连接`);
+                            } else if (data.error.includes("认证") || data.error.includes("401")) {
+                                errorMsg = `${errorMsg}\n\n${t('authRequired')}`;
+                                if (confirm(errorMsg + "\n\n是否打开设置？")) {
+                                    showSettingsDialog();
+                                }
+                            } else if (data.error.includes("Rate Limited") || data.error.includes("429")) {
+                                showError(`${errorMsg} - 请稍后重试`);
+                            } else {
+                                showError(errorMsg);
+                            }
+                        }
+
+                        return data;
+                    } catch (e) {
+                        console.warn("添加收藏失败:", e);
+                        showError("网络错误 - 无法连接到Danbooru服务器");
+                        if (button) {
+                            button.disabled = false;
+                            button.innerHTML = button.dataset.originalHTML || '<svg>...</svg>';  // 恢复
+                            delete button.dataset.originalHTML;
+                        }
+                        return { success: false, error: "网络错误" };
+                    }
+                };
+
+                const removeFromFavorites = async (postId, button = null) => {
+                    console.log("开始取消收藏", postId);
+                    if (!userAuth.has_auth) {
+                        console.log("用户未认证，取消操作");
+                        alert(t('authRequired'));
+                        return { success: false, error: t('authRequired') };
+                    }
+
+                    // 显示加载状态
+                    if (button) {
+                        button.disabled = true;
+                        const originalHTML = button.innerHTML;
+                        button.innerHTML = '<div class="spinner"></div>';
+                        button.dataset.originalHTML = originalHTML;
+                    }
+
+                    try {
+                        console.log("发送POST请求到 /danbooru_gallery/favorites/remove", { post_id: postId });
+                        const response = await fetch('/danbooru_gallery/favorites/remove', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ post_id: postId })
+                        });
+                        console.log("fetch 响应状态", response.status);
+                        let data;
+                        if (response.status === 204) {
+                            // 204 No Content 表示成功，但没有响应体
+                            data = { success: true, message: "取消收藏成功" };
+                            console.log("204 响应，视为成功");
+                        } else {
+                            data = await response.json();
+                            console.log("解析响应数据", data);
+                        }
+
+                        // 恢复按钮状态
+                        if (button) {
+                            button.disabled = false;
+                            if (data.success) {
+                                button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                </svg>`;
+                                button.title = t('favorite');
+                                button.classList.remove('favorited');
+                                const index = userFavorites.indexOf(String(postId));
+                                if (index > -1) {
+                                    userFavorites.splice(index, 1);
+                                }
+                                // 显示取消收藏成功提示
+                                showToast(t('unfavorite') + '成功', 'success', button);
+                            } else {
+                                button.innerHTML = button.dataset.originalHTML || originalHTML;
+                            }
+                            delete button.dataset.originalHTML;
+                        }
+
+                        if (!data.success) {
+                            let errorMsg = data.error || "未知错误";
+                            if (data.error.includes("网络错误")) {
+                                showError(`${errorMsg} - 请检查网络连接`);
+                            } else if (data.error.includes("认证") || data.error.includes("401")) {
+                                errorMsg = `${errorMsg}\n\n${t('authRequired')}`;
+                                if (confirm(errorMsg + "\n\n是否打开设置？")) {
+                                    showSettingsDialog();
+                                }
+                            } else if (data.error.includes("Rate Limited") || data.error.includes("429")) {
+                                showError(`${errorMsg} - 请稍后重试`);
+                            } else {
+                                showError(errorMsg);
+                            }
+                        }
+
+                        return data;
+                    } catch (e) {
+                        console.warn("移除收藏失败:", e);
+                        showError("网络错误 - 无法连接到Danbooru服务器");
+                        if (button) {
+                            button.disabled = false;
+                            button.innerHTML = button.dataset.originalHTML || '<svg>...</svg>';
+                            delete button.dataset.originalHTML;
+                        }
+                        return { success: false, error: "网络错误" };
+                    }
+                };
+
+                const loadFavorites = async () => {
+                    try {
+                        const response = await fetch('/danbooru_gallery/favorites');
+                        const data = await response.json();
+                        userFavorites = data.favorites || [];
+                        return userFavorites;
+                    } catch (e) {
+                        console.warn("加载收藏列表失败:", e);
+                        userFavorites = [];
+                        return userFavorites;
+                    }
+                };
 
                 // 语言管理功能
                 const loadLanguage = async () => {
@@ -261,6 +630,7 @@ app.registerExtension({
 
                     // 更新按钮tooltip
                     rankingButton.title = t('rankingTooltip');
+                    favoritesButton.title = t('favorites');
                     refreshButton.title = t('refreshTooltip');
                     settingsButton.title = t('settings');
 
@@ -268,6 +638,12 @@ app.registerExtension({
                     const rankingIcon = rankingButton.querySelector('.icon');
                     if (rankingIcon) {
                         rankingButton.innerHTML = rankingIcon.outerHTML + t('ranking');
+                    }
+
+                    // 更新收藏夹按钮文本
+                    const favoritesIcon = favoritesButton.querySelector('.icon');
+                    if (favoritesIcon) {
+                        favoritesButton.innerHTML = favoritesIcon.outerHTML + t('favorites');
                     }
 
                     // 更新加载状态文本
@@ -397,6 +773,16 @@ app.registerExtension({
                        <path d="M3 9H21"></path>
                    </svg>
                    ${t('ranking')}`;
+
+                // 收藏夹按钮
+                const favoritesButton = $el("button.danbooru-favorites-button", {
+                    title: t('favorites')
+                });
+                favoritesButton.innerHTML = `
+                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon">
+                       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                   </svg>
+                   ${t('favorites')}`;
 
                 // 创建设置页面对话框
                 const showSettingsDialog = () => {
@@ -695,7 +1081,109 @@ app.registerExtension({
                     filterSection.appendChild(filterDescription);
                     filterSection.appendChild(filterTextarea);
 
+                    // 用户认证设置部分
+                    const authSection = $el("div.danbooru-settings-section", {
+                        style: {
+                            marginBottom: "20px",
+                            padding: "16px",
+                            border: "1px solid var(--input-border-color)",
+                            borderRadius: "8px",
+                            backgroundColor: "var(--comfy-input-bg)"
+                        }
+                    });
+
+                    const authTitle = $el("h3", {
+                        textContent: t('userAuth'),
+                        style: {
+                            margin: "0 0 8px 0",
+                            color: "var(--comfy-input-text)",
+                            fontSize: "1.1em",
+                            fontWeight: "500",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px"
+                        }
+                    });
+
+                    const authIcon = $el("span", {
+                        innerHTML: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 12l2 2 4-4"></path>
+                            <path d="M21 12c-1 0-3-1-3-3s2-3 3-3 3 1 3 3-2 3-3 3"></path>
+                            <path d="M3 12c1 0 3-1 3-3s-2-3-3-3-3 1-3 3 2 3 3 3"></path>
+                            <path d="M12 3v6m0 6v6"></path>
+                        </svg>`
+                    });
+
+                    authTitle.insertBefore(authIcon, authTitle.firstChild);
+
+                    const authDescription = $el("p", {
+                        textContent: t('authDescription'),
+                        style: {
+                            margin: "0 0 12px 0",
+                            color: "#888",
+                            fontSize: "0.9em"
+                        }
+                    });
+
+                    const usernameInput = $el("input", {
+                        type: "text",
+                        placeholder: t('authPlaceholderUsername'),
+                        value: userAuth.username || "",
+                        style: {
+                            width: "100%",
+                            padding: "8px 12px",
+                            border: "1px solid var(--input-border-color)",
+                            borderRadius: "6px",
+                            backgroundColor: "var(--comfy-menu-bg)",
+                            color: "var(--comfy-input-text)",
+                            fontSize: "14px",
+                            marginBottom: "8px"
+                        }
+                    });
+
+                    const apiKeyInput = $el("input", {
+                        type: "password",
+                        placeholder: t('authPlaceholderApiKey'),
+                        value: userAuth.api_key || "",
+                        style: {
+                            width: "100%",
+                            padding: "8px 12px",
+                            border: "1px solid var(--input-border-color)",
+                            borderRadius: "6px",
+                            backgroundColor: "var(--comfy-menu-bg)",
+                            color: "var(--comfy-input-text)",
+                            fontSize: "14px",
+                            marginBottom: "8px"
+                        }
+                    });
+
+                    const apiKeyHelpButton = $el("button", {
+                        textContent: t('apiKeyHelp'),
+                        title: t('apiKeyTooltip'),
+                        style: {
+                            padding: "6px 12px",
+                            border: "1px solid #5865F2",
+                            borderRadius: "4px",
+                            backgroundColor: "transparent",
+                            color: "#5865F2",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: "500",
+                            transition: "all 0.2s ease"
+                        },
+                        onclick: () => {
+                            window.open('https://danbooru.donmai.us/profile', '_blank');
+                        }
+                    });
+
+                    authSection.appendChild(authTitle);
+                    authSection.appendChild(authDescription);
+                    authSection.appendChild(usernameInput);
+                    authSection.appendChild(apiKeyInput);
+                    authSection.appendChild(apiKeyHelpButton);
+
                     // 将所有section添加到滚动容器
+                    scrollContainer.appendChild(authSection);
                     scrollContainer.appendChild(languageSection);
                     scrollContainer.appendChild(blacklistSection);
                     scrollContainer.appendChild(filterSection);
@@ -824,6 +1312,21 @@ app.registerExtension({
                             const newFilterTags = filterText ? filterText.split('\n').map(tag => tag.trim()).filter(tag => tag) : [];
                             const newFilterEnabled = filterEnableCheckbox.checked;
 
+                            // 保存用户认证信息
+                            const newUsername = usernameInput.value.trim();
+                            const newApiKey = apiKeyInput.value.trim();
+                            let authSuccess = true;
+                            if (newUsername !== userAuth.username || newApiKey !== userAuth.api_key) {
+                                const authResult = await saveUserAuth(newUsername, newApiKey);
+                                authSuccess = authResult.success;
+                                if (authSuccess) {
+                                    await loadFavorites(); // 登录成功后重新加载收藏夹
+                                } else {
+                                    alert(authResult.error || "保存认证信息失败");
+                                    return;
+                                }
+                            }
+
                             // 保存黑名单、提示词过滤和语言设置
                             const [blacklistSuccess, filterSuccess, languageSuccess] = await Promise.all([
                                 saveBlacklist(newBlacklist),
@@ -831,7 +1334,7 @@ app.registerExtension({
                                 selectedLanguage !== currentLanguage ? saveLanguage(selectedLanguage) : Promise.resolve(true)
                             ]);
 
-                            if (blacklistSuccess && filterSuccess && languageSuccess) {
+                            if (blacklistSuccess && filterSuccess && languageSuccess && authSuccess) {
                                 currentBlacklist = newBlacklist;
                                 currentFilterTags = newFilterTags;
                                 filterEnabled = newFilterEnabled;
@@ -1061,6 +1564,26 @@ app.registerExtension({
                         imageGrid.insertAdjacentHTML('beforeend', `<p class="danbooru-status danbooru-loading">${t('loading')}</p>`);
                     }
 
+                    // 检查网络连接状态
+                    const isNetworkConnected = await checkNetworkStatus();
+
+                    if (!isNetworkConnected) {
+                        // 网络连接失败，显示持久错误提示
+                        showError('网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接', true);
+                        imageGrid.innerHTML = `<p class="danbooru-status error">网络连接失败，请检查网络连接后重试</p>`;
+                        isLoading = false;
+                        refreshButton.classList.remove("loading");
+                        refreshButton.disabled = false;
+                        const indicator = imageGrid.querySelector('.danbooru-loading');
+                        if (indicator) {
+                            indicator.remove();
+                        }
+                        return;
+                    } else {
+                        // 网络连接恢复，清除之前的错误提示
+                        clearError();
+                    }
+
                     try {
                         const params = new URLSearchParams({
                             "search[tags]": searchInput.value.replace(/,/g, ' ').trim(),
@@ -1131,7 +1654,6 @@ app.registerExtension({
                             const isSelected = wrapper.classList.contains('selected');
                             imageGrid.querySelectorAll('.danbooru-image-wrapper').forEach(w => w.classList.remove('selected'));
 
-
                             if (!isSelected) {
                                 wrapper.classList.add('selected');
 
@@ -1196,7 +1718,7 @@ app.registerExtension({
 
                     // 创建下载按钮
                     const downloadButton = $el("button.danbooru-download-button", {
-                        innerHTML: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        innerHTML: `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="7 10 12 15 17 10"></polyline>
                             <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -1204,23 +1726,23 @@ app.registerExtension({
                         title: t('download'),
                         onclick: async (e) => {
                             e.stopPropagation(); // 阻止事件冒泡，避免触发图片选择
-                            
+
                             try {
                                 const imageUrl = post.file_url || post.large_file_url;
                                 if (!imageUrl) {
                                     console.error('[Danbooru Gallery] 无法获取图片URL');
                                     return;
                                 }
-                                
+
                                 // 获取图片文件扩展名
                                 const fileExt = post.file_ext || 'jpg';
                                 const fileName = `danbooru_${post.id}.${fileExt}`;
-                                
+
                                 // 创建下载链接
                                 const response = await fetch(imageUrl);
                                 const blob = await response.blob();
                                 const url = window.URL.createObjectURL(blob);
-                                
+
                                 const a = document.createElement('a');
                                 a.href = url;
                                 a.download = fileName;
@@ -1228,7 +1750,7 @@ app.registerExtension({
                                 a.click();
                                 document.body.removeChild(a);
                                 window.URL.revokeObjectURL(url);
-                                
+
                                 console.log(`[Danbooru Gallery] 下载完成: ${fileName}`);
                             } catch (error) {
                                 console.error('[Danbooru Gallery] 下载失败:', error);
@@ -1236,20 +1758,26 @@ app.registerExtension({
                         }
                     });
 
-                    const tooltip = $el("div.danbooru-tag-tooltip", { style: { display: "none", position: "absolute", zIndex: "1000" } });
-                    const tagsContainer = $el("div", { className: "danbooru-tooltip-tags" });
-                    let leaveTimeout;
-
-                    tooltip.appendChild(tagsContainer);
-                    document.body.appendChild(tooltip);
+                    // 使用全局tooltip实例
+                    if (!globalTooltip) {
+                        globalTooltip = $el("div.danbooru-tag-tooltip", { style: { display: "none", position: "absolute", zIndex: "1000" } });
+                        const tagsContainer = $el("div", { className: "danbooru-tooltip-tags" });
+                        globalTooltip.appendChild(tagsContainer);
+                        document.body.appendChild(globalTooltip);
+                    }
 
                     const createTagSpan = (tag, category) => $el("span", {
                         textContent: tag,
                         className: `danbooru-tooltip-tag tag-category-${category}`,
                     });
 
+                    let currentClickHandler = null;
+
                     wrapper.addEventListener("mouseenter", (e) => {
-                        clearTimeout(leaveTimeout);
+                        // 清除任何可能的延迟隐藏
+                        clearTimeout(globalTooltipTimeout);
+
+                        const tagsContainer = globalTooltip.querySelector('.danbooru-tooltip-tags');
                         tagsContainer.innerHTML = '';
 
                         // Details Section
@@ -1298,26 +1826,130 @@ app.registerExtension({
                             }
                         });
 
-                        tooltip.style.display = "block";
+                        globalTooltip.style.display = "block";
+
+                        // 添加点击其他地方隐藏tooltip的保护机制
+                        currentClickHandler = (e) => {
+                            if (!wrapper.contains(e.target) && globalTooltip.style.display !== 'none') {
+                                globalTooltip.style.display = "none";
+                                document.removeEventListener('click', currentClickHandler);
+                                currentClickHandler = null;
+                            }
+                        };
+
+                        // 延迟添加点击监听器，避免立即触发
+                        setTimeout(() => {
+                            if (currentClickHandler) {
+                                document.addEventListener('click', currentClickHandler);
+                            }
+                        }, 10);
                     });
 
                     wrapper.addEventListener("mouseleave", () => {
-                        tooltip.style.display = "none";
+                        // 鼠标离开图像时立即隐藏tooltip
+                        globalTooltip.style.display = "none";
+                        // 移除点击监听器
+                        if (currentClickHandler) {
+                            document.removeEventListener('click', currentClickHandler);
+                            currentClickHandler = null;
+                        }
                     });
 
                     wrapper.addEventListener("mousemove", (e) => {
-                        if (tooltip.style.display !== 'block') return;
-                        const rect = tooltip.getBoundingClientRect();
+                        if (globalTooltip.style.display !== 'block') return;
+                        const rect = globalTooltip.getBoundingClientRect();
                         const buffer = 15;
                         let newLeft = e.clientX + buffer, newTop = e.clientY + buffer;
                         if (newLeft + rect.width > window.innerWidth) newLeft = e.clientX - rect.width - buffer;
                         if (newTop + rect.height > window.innerHeight) newTop = e.clientY - rect.height - buffer;
-                        tooltip.style.left = `${newLeft + window.scrollX}px`;
-                        tooltip.style.top = `${newTop + window.scrollY}px`;
+                        globalTooltip.style.left = `${newLeft + window.scrollX}px`;
+                        globalTooltip.style.top = `${newTop + window.scrollY}px`;
                     });
 
+                    // 总是创建收藏按钮，无论用户是否登录
+                    const currentSearch = searchInput.value.trim();
+                    const inFavoritesMode = userAuth.has_auth && currentSearch.includes(`ordfav:${userAuth.username}`);
+                    const isFavorited = inFavoritesMode || userFavorites.includes(String(post.id));
+                    const favoriteButton = $el("button.danbooru-favorite-button", {
+                        "data-post-id": post.id,
+                        innerHTML: isFavorited ?
+                            `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="#DC3545" stroke="#DC3545" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                            </svg>` :
+                            `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                            </svg>`,
+                        title: isFavorited ? t('unfavorite') : t('favorite'),
+                        className: isFavorited ? 'favorited' : '',
+                        onclick: async (e) => {
+                            e.stopPropagation(); // 阻止事件冒泡，避免触发图片选择
+
+                            console.log("点击收藏按钮", post.id, "当前收藏状态:", userFavorites.includes(String(post.id)), "收藏夹模式:", inFavoritesMode);
+
+                            // 如果用户未登录，提示登录
+                            if (!userAuth.has_auth) {
+                                console.log("用户未认证");
+                                alert(t('authRequired'));
+                                return;
+                            }
+
+                            // 在操作收藏前验证用户名和API Key的有效性
+                            try {
+                                const verifyResponse = await fetch('/danbooru_gallery/verify_auth', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ username: userAuth.username, api_key: userAuth.api_key })
+                                });
+                                const verifyData = await verifyResponse.json();
+
+                                if (!verifyData.success || !verifyData.valid) {
+                                    userAuth.has_auth = false; // 更新认证状态
+                                    if (verifyData.network_error) {
+                                        alert('网络错误 - 无法连接到Danbooru服务器，请检查网络连接');
+                                    } else {
+                                        alert('认证无效 - 请检查用户名和API Key设置');
+                                    }
+                                    return;
+                                }
+                            } catch (e) {
+                                console.warn('认证验证失败:', e);
+                                userAuth.has_auth = false; // 更新认证状态
+                                alert('网络错误 - 无法验证认证信息，请检查网络连接');
+                                return;
+                            }
+
+                            const currentlyFavorited = userFavorites.includes(String(post.id)) || inFavoritesMode;
+                            console.log("计算的收藏状态:", currentlyFavorited);
+                            let result;
+
+                            if (currentlyFavorited) {
+                                // 取消收藏
+                                console.log("调用取消收藏函数");
+                                result = await removeFromFavorites(post.id, favoriteButton);
+                                if (result.success) {
+                                    // 如果在收藏夹视图中，直接移除元素
+                                    const currentSearch = searchInput.value.trim();
+                                    if (currentSearch.includes(`ordfav:${userAuth.username}`)) {
+                                        wrapper.remove();
+                                    }
+                                }
+                            } else {
+                                // 添加收藏
+                                result = await addToFavorites(post.id, favoriteButton);
+                            }
+
+                            // 错误已在函数内处理
+                        }
+                    });
+
+                    // 创建按钮容器
+                    const buttonsContainer = $el("div.danbooru-image-buttons");
+                    buttonsContainer.appendChild(downloadButton);
+                    buttonsContainer.appendChild(favoriteButton);
+
                     wrapper.appendChild(img);
-                    wrapper.appendChild(downloadButton);
+                    wrapper.appendChild(buttonsContainer);
+
                     return wrapper;
                 };
 
@@ -1341,8 +1973,9 @@ app.registerExtension({
                     if (e.key === "Enter") fetchAndRender(true);
                 });
                 ratingSelect.addEventListener("change", () => {
-                    const tooltips = document.querySelectorAll('.danbooru-tag-tooltip');
-                    tooltips.forEach(tooltip => tooltip.style.display = 'none');
+                    if (globalTooltip) {
+                        globalTooltip.style.display = 'none';
+                    }
                     fetchAndRender(true);
                 });
                 // 检查和更新排行榜按钮状态的函数
@@ -1381,9 +2014,85 @@ app.registerExtension({
                 // 监听搜索框变化，更新排行榜按钮状态
                 searchInput.addEventListener("input", updateRankingButtonState);
 
-                refreshButton.addEventListener("click", () => fetchAndRender(true));
+                // 更新收藏夹按钮状态
+                const updateFavoritesButtonState = () => {
+                    // 始终显示收藏夹按钮
+                    favoritesButton.style.display = 'flex';
 
-                container.appendChild($el("div.danbooru-controls", [searchInput, rankingButton, ratingSelect, categoryDropdown, formattingDropdown, settingsButton, refreshButton]));
+                    if (!userAuth.has_auth) {
+                        favoritesButton.classList.remove('active');
+                        return;
+                    }
+
+                    const currentValue = searchInput.value.trim();
+                    const hasFavs = currentValue.includes(`ordfav:${userAuth.username}`);
+                    if (hasFavs) {
+                        favoritesButton.classList.add('active');
+                    } else {
+                        favoritesButton.classList.remove('active');
+                    }
+                };
+
+                // 收藏夹按钮点击事件
+                favoritesButton.addEventListener("click", async () => {
+                    if (!userAuth.has_auth) {
+                        alert(t('authRequired'));
+                        return;
+                    }
+
+                    // 在进入收藏夹模式前验证用户名和API Key的有效性
+                    try {
+                        const verifyResponse = await fetch('/danbooru_gallery/verify_auth', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username: userAuth.username, api_key: userAuth.api_key })
+                        });
+                        const verifyData = await verifyResponse.json();
+
+                        if (!verifyData.success || !verifyData.valid) {
+                            userAuth.has_auth = false; // 更新认证状态
+                            if (verifyData.network_error) {
+                                alert('网络错误 - 无法连接到Danbooru服务器，请检查网络连接');
+                            } else {
+                                alert('认证无效 - 请检查用户名和API Key设置');
+                            }
+                            return;
+                        }
+                    } catch (e) {
+                        console.warn('认证验证失败:', e);
+                        userAuth.has_auth = false; // 更新认证状态
+                        alert('网络错误 - 无法验证认证信息，请检查网络连接');
+                        return;
+                    }
+
+                    const favTag = `ordfav:${userAuth.username}`;
+                    const currentValue = searchInput.value.trim();
+                    const hasFavs = currentValue.includes(favTag);
+
+                    if (hasFavs) {
+                        const newValue = currentValue.replace(new RegExp(`\\s*${favTag}\\s*`), ' ').replace(/\s+/g, ' ').trim();
+                        searchInput.value = newValue;
+                    } else {
+                        const newValue = currentValue ? `${currentValue} ${favTag}` : favTag;
+                        searchInput.value = newValue;
+                        // 进入收藏夹模式时，重新加载最新的收藏列表以同步本地缓存
+                        try {
+                            await loadFavorites();
+                        } catch (e) {
+                            console.warn("重新加载收藏列表失败:", e);
+                        }
+                    }
+                    updateFavoritesButtonState();
+                    fetchAndRender(true);
+                });
+
+                searchInput.addEventListener("input", updateFavoritesButtonState);
+
+                refreshButton.addEventListener("click", () => {
+                    fetchAndRender(true);
+                });
+
+                container.appendChild($el("div.danbooru-controls", [searchInput, rankingButton, favoritesButton, ratingSelect, categoryDropdown, formattingDropdown, settingsButton, refreshButton]));
                 container.appendChild(imageGrid);
 
                 const insertNewPost = (post) => {
@@ -1397,10 +2106,60 @@ app.registerExtension({
                 };
                 // 初始化功能
                 const initializeApp = async () => {
+                    let networkConnected = true;
+
+                    // 优先检测网络连接状态
+                    try {
+                        const networkResponse = await fetch('/danbooru_gallery/check_network');
+                        const networkData = await networkResponse.json();
+                        if (!networkData.success || !networkData.connected) {
+                            networkConnected = false;
+                            showError('网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接', true);
+                        }
+                    } catch (e) {
+                        console.warn('网络检测失败:', e);
+                        networkConnected = false;
+                        showError('网络检测失败 - 请检查网络连接', true);
+                    }
+
                     // 加载语言设置
                     await loadLanguage();
+                    // 加载用户认证信息
+                    await loadUserAuth();
+
+                    // 只有在网络连接正常且有认证信息时才验证认证
+                    if (networkConnected && userAuth.has_auth) {
+                        try {
+                            const verifyResponse = await fetch('/danbooru_gallery/verify_auth', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ username: userAuth.username, api_key: userAuth.api_key })
+                            });
+                            const verifyData = await verifyResponse.json();
+                            if (!verifyData.valid) {
+                                userAuth.has_auth = false;
+                                if (verifyData.network_error) {
+                                    showError('网络错误 - 无法连接到Danbooru服务器，请检查网络连接');
+                                } else {
+                                    showError('认证无效 - 请检查用户名和API Key设置');
+                                }
+                            } else {
+                                await loadFavorites();
+                            }
+                        } catch (e) {
+                            console.warn('认证验证失败:', e);
+                            userAuth.has_auth = false;
+                            showError('网络错误 - 无法验证认证信息，请检查网络连接');
+                        }
+                    } else if (!networkConnected) {
+                        // 网络连接失败时，不验证认证，直接标记为无认证状态
+                        userAuth.has_auth = false;
+                    }
+
                     // 更新界面文本
                     updateInterfaceTexts();
+                    // 更新收藏夹按钮状态
+                    updateFavoritesButtonState();
                     // 加载黑名单
                     loadBlacklist();
                     // 加载提示词过滤设置
@@ -1428,8 +2187,18 @@ app.registerExtension({
 
 $el("style", {
     textContent: `
-   /* Category Dropdown Styles */
-   .danbooru-category-dropdown { position: relative; display: inline-block; }
+    /* Category Dropdown Styles */
+    .danbooru-category-dropdown { position: relative; display: inline-block; }
+    
+    /* Spinner for buttons */
+    .spinner {
+        width: 10px;
+        height: 10px;
+        border: 1px solid currentColor;
+        border-top: 1px solid transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
    
    .danbooru-category-button {
        background-color: var(--comfy-input-bg);
@@ -1507,10 +2276,10 @@ $el("style", {
    }
 
     .danbooru-gallery { width: 100%; display: flex; flex-direction: column; min-height: 200px; }
-    .danbooru-controls { display: grid; grid-template-columns: 1fr auto auto auto auto auto auto; gap: 5px; margin-bottom: 5px; align-items: stretch; }
+    .danbooru-controls { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; align-items: stretch; }
     .danbooru-auth-controls { display: flex; gap: 5px; }
     .danbooru-controls > * { padding: 5px; border-radius: 4px; border: 1px solid var(--input-border-color); background-color: var(--comfy-input-bg); color: var(--comfy-input-text); }
-    .danbooru-controls .danbooru-search-input { flex-grow: 1; }
+    .danbooru-controls .danbooru-search-input { flex-grow: 1; min-width: 150px; }
     .danbooru-controls > select { min-width: 100px; }
     .danbooru-image-wrapper.new-item { animation: fadeInUp 0.5s ease-out; }
     @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
@@ -1556,14 +2325,37 @@ $el("style", {
         border-color: #7B68EE;
     }
     .danbooru-ranking-button .icon { width: 16px; height: 16px; }
+    
+    /* 收藏夹按钮样式 */
+    .danbooru-favorites-button {
+        flex-grow: 0;
+        width: auto;
+        padding: 5px 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        cursor: pointer;
+        transition: background-color 0.2s, transform 0.2s;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+    .danbooru-favorites-button:hover { background-color: var(--comfy-menu-bg); transform: scale(1.05); }
+    .danbooru-favorites-button.active {
+        background-color: #DC3545; /* Bootstrap's danger color */
+        color: white;
+        border-color: #DC3545;
+    }
+    .danbooru-favorites-button .icon { width: 16px; height: 16px; }
     .danbooru-image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-gap: 5px; grid-auto-rows: 1px; overflow-y: auto; background-color: var(--comfy-input-bg); padding: 5px; border-radius: 4px; flex-grow: 1; height: 0; }
     .danbooru-image-wrapper {
         grid-row-start: auto;
         border: 2px solid transparent;
         transition: border-color 0.2s, transform 0.2s ease-out, box-shadow 0.2s ease-out;
         border-radius: 6px;
-        overflow: hidden;
-        position: relative; /* Add relative positioning */
+        overflow: visible !important;
+        position: relative !important; /* Add relative positioning */
+        display: block !important;
     }
     .danbooru-image-wrapper:hover {
         transform: scale(1.05);
@@ -1604,45 +2396,76 @@ $el("style", {
         pointer-events: none;
     }
     
-    /* 下载按钮样式 */
-    .danbooru-download-button {
+    /* 按钮容器，位于右上角 */
+    .danbooru-image-buttons {
         position: absolute;
-        top: 8px;
-        right: 8px;
-        background-color: rgba(0, 0, 0, 0.8);
-        color: white;
-        border: none;
-        border-radius: 50%;
-        width: 32px;
-        height: 32px;
+        top: 3px;
+        right: 3px;
         display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
+        gap: 2px;
         opacity: 0;
-        transform: scale(0.8);
-        transition: all 0.2s ease;
+        transform: scale(0.9);
+        transition: all 0.2s ease !important;
         z-index: 15;
-        backdrop-filter: blur(5px);
-        -webkit-backdrop-filter: blur(5px);
     }
     
-    .danbooru-download-button:hover {
-        background-color: rgba(123, 104, 238, 0.9);
-        transform: scale(1.1);
-        box-shadow: 0 0 10px rgba(123, 104, 238, 0.6);
-    }
-    
-    .danbooru-download-button svg {
-        width: 16px;
-        height: 16px;
-        flex-shrink: 0;
-    }
-    
-    .danbooru-image-wrapper:hover .danbooru-download-button {
+    .danbooru-image-wrapper:hover .danbooru-image-buttons {
         opacity: 1;
         transform: scale(1);
     }
+
+    /* 通用按钮样式 */
+    .danbooru-image-buttons button {
+        background-color: rgba(0, 0, 0, 0.8) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 50% !important;
+        width: 20px !important;
+        height: 20px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
+        backdrop-filter: blur(5px) !important;
+        -webkit-backdrop-filter: blur(5px) !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    .danbooru-image-buttons button:hover {
+        transform: scale(1.1) !important;
+    }
+
+    /* 收藏按钮特定样式 */
+    .danbooru-favorite-button.favorited {
+        background-color: rgba(220, 53, 69, 0.9) !important; /* DC3545 in rgba */
+        color: white !important;
+    }
+
+    .danbooru-favorite-button.favorited:hover {
+        background-color: rgba(153, 27, 27, 0.9) !important;
+    }
+
+    /* 下载按钮特定样式 */
+    .danbooru-download-button:hover {
+        background-color: rgba(34, 139, 34, 0.9) !important;
+    }
+
+    /* 旧的、独立的按钮样式将被上面的新规则取代或覆盖，为了清晰起见，我将删除它们 */
+    /* 收藏按钮样式 - 位于右上角最右侧 (旧) */
+    .danbooru-gallery .danbooru-image-grid .danbooru-image-wrapper .danbooru-favorite-button-old {
+        position: absolute !important;
+        top: 3px !important;
+        right: 3px !important;
+        bottom: auto !important;
+        left: auto !important;
+        border: none !important;
+        /* Keep this empty or remove it. The styles are now in .danbooru-image-buttons button */
+    }
+    
+    /* All button styles are now handled by .danbooru-image-buttons and its children. */
+    /* The individual hover/visibility rules are replaced by the container's hover effect. */
     
     .danbooru-image-grid img {
         width: 100%;
@@ -1841,27 +2664,85 @@ $el("style", {
             border-color: #1c2128 !important;
             transform: translateY(-1px);
         }
-        
+
         .danbooru-settings-dialog button[title*="Discord"]:hover {
             background-color: #4752c4 !important;
             border-color: #4752c4 !important;
             transform: translateY(-1px);
         }
-        
+
         .danbooru-settings-dialog button[title*="GitHub"]:hover svg,
         .danbooru-settings-dialog button[title*="Discord"]:hover svg {
             transform: scale(1.1);
         }
-        
+
         /* 移除社交链接按钮的focus效果 */
         .danbooru-settings-dialog button[title*="GitHub"]:focus,
         .danbooru-settings-dialog button[title*="Discord"]:focus {
             outline: none !important;
         }
-        
+
         .danbooru-settings-dialog button svg {
             flex-shrink: 0;
             transition: transform 0.2s ease;
+        }
+
+        /* Toast提示样式 */
+        .danbooru-toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 6px;
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 999999;
+            max-width: 300px;
+            word-wrap: break-word;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            animation: toastSlideIn 0.3s ease-out;
+        }
+
+        .danbooru-toast-success {
+            background-color: #28a745;
+            border-left: 4px solid #1e7e34;
+        }
+
+        .danbooru-toast-error {
+            background-color: #dc3545;
+            border-left: 4px solid #bd2130;
+        }
+
+        .danbooru-toast-info {
+            background-color: #17a2b8;
+            border-left: 4px solid #117a8b;
+        }
+
+        @keyframes toastSlideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .danbooru-toast.fade-out {
+            animation: toastFadeOut 0.3s ease-out forwards;
+        }
+
+        @keyframes toastFadeOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
         }
         `,
     parent: document.head,
