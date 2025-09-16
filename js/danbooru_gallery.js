@@ -28,6 +28,7 @@ const i18n = {
         settings: "设置",
         language: "语言",
         blacklist: "黑名单",
+        download: "下载原图",
         languageSettings: "语言设置",
         blacklistSettings: "黑名单设置",
         promptFilterSettings: "提示词过滤设置",
@@ -91,6 +92,7 @@ const i18n = {
         settings: "Settings",
         language: "Language",
         blacklist: "Blacklist",
+        download: "Download Original",
         languageSettings: "Language Settings",
         blacklistSettings: "Blacklist Settings",
         promptFilterSettings: "Prompt Filter Settings",
@@ -1192,6 +1194,48 @@ app.registerExtension({
                         },
                     });
 
+                    // 创建下载按钮
+                    const downloadButton = $el("button.danbooru-download-button", {
+                        innerHTML: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>`,
+                        title: t('download'),
+                        onclick: async (e) => {
+                            e.stopPropagation(); // 阻止事件冒泡，避免触发图片选择
+                            
+                            try {
+                                const imageUrl = post.file_url || post.large_file_url;
+                                if (!imageUrl) {
+                                    console.error('[Danbooru Gallery] 无法获取图片URL');
+                                    return;
+                                }
+                                
+                                // 获取图片文件扩展名
+                                const fileExt = post.file_ext || 'jpg';
+                                const fileName = `danbooru_${post.id}.${fileExt}`;
+                                
+                                // 创建下载链接
+                                const response = await fetch(imageUrl);
+                                const blob = await response.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = fileName;
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                window.URL.revokeObjectURL(url);
+                                
+                                console.log(`[Danbooru Gallery] 下载完成: ${fileName}`);
+                            } catch (error) {
+                                console.error('[Danbooru Gallery] 下载失败:', error);
+                            }
+                        }
+                    });
+
                     const tooltip = $el("div.danbooru-tag-tooltip", { style: { display: "none", position: "absolute", zIndex: "1000" } });
                     const tagsContainer = $el("div", { className: "danbooru-tooltip-tags" });
                     let leaveTimeout;
@@ -1273,6 +1317,7 @@ app.registerExtension({
                     });
 
                     wrapper.appendChild(img);
+                    wrapper.appendChild(downloadButton);
                     return wrapper;
                 };
 
@@ -1558,6 +1603,47 @@ $el("style", {
         z-index: 11;
         pointer-events: none;
     }
+    
+    /* 下载按钮样式 */
+    .danbooru-download-button {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background-color: rgba(0, 0, 0, 0.8);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        opacity: 0;
+        transform: scale(0.8);
+        transition: all 0.2s ease;
+        z-index: 15;
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+    }
+    
+    .danbooru-download-button:hover {
+        background-color: rgba(123, 104, 238, 0.9);
+        transform: scale(1.1);
+        box-shadow: 0 0 10px rgba(123, 104, 238, 0.6);
+    }
+    
+    .danbooru-download-button svg {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+    }
+    
+    .danbooru-image-wrapper:hover .danbooru-download-button {
+        opacity: 1;
+        transform: scale(1);
+    }
+    
     .danbooru-image-grid img {
         width: 100%;
         height: auto;
