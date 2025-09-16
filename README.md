@@ -14,7 +14,6 @@
 
 - 🔍 **标签搜索**: 支持通过 Danbooru 标签进行精确搜索
 - 📄 **分页加载**: 高效的分页机制，提升浏览体验
-- 💾 **缓存机制**: 智能缓存，减少重复请求
 - 🎨 **图像预览**: 高质量图像预览和下载
 - 🔧 **设置管理**: 多语言、黑名单、提示词过滤设置
 - 🎯 **ComfyUI 集成**: 完美集成到 ComfyUI 工作流
@@ -25,6 +24,10 @@
 - 🎖️ **排行榜模式**: 支持按热度排序显示
 - 🚫 **黑名单过滤**: 自定义过滤不需要的内容
 - 📱 **响应式设计**: 自适应不同屏幕尺寸
+- 🔐 **用户认证**: 支持 Danbooru 用户名和 API 密钥认证
+- ⭐ **收藏功能**: 添加和移除图像收藏，支持云端同步
+- 🌐 **网络检测**: 自动检测与 Danbooru 的网络连接状态
+- ⚙️ **高级设置**: 调试模式、页面大小设置、缓存配置
 
 ### 快速安装
 
@@ -69,6 +72,29 @@ pip install -r requirements.txt
 4. 选择评分过滤器并搜索
 5. 点击图像选择并导入到节点
 
+### 详细功能说明
+
+#### 🔐 用户认证系统
+- 支持 Danbooru 用户名和 API 密钥认证
+- 认证后可使用收藏功能和高级功能
+- 自动验证认证状态和网络连接
+
+#### ⭐ 收藏功能
+- 添加/移除图像收藏
+- 支持云端同步收藏列表
+- 本地缓存收藏状态
+
+#### 🌐 网络连接检测
+- 自动检测与 Danbooru 服务器的连接状态
+- 显示网络错误信息和超时处理
+
+#### ⚙️ 高级设置
+- **多语言支持**: 中英文界面切换
+- **黑名单管理**: 自定义过滤不需要的标签
+- **提示词过滤**: 自动过滤水印、用户名等标签
+- **调试模式**: 启用详细日志输出
+- **页面大小**: 自定义每页显示的图像数量
+
 ### 标签语法
 
 ```
@@ -112,7 +138,6 @@ A ComfyUI plugin for browsing and importing images from Danbooru using its API, 
 
 - 🔍 **Tag Search**: Precise search using Danbooru tags
 - 📄 **Pagination**: Efficient pagination for better browsing
-- 💾 **Caching**: Smart caching to reduce repeated requests
 - 🎨 **Image Preview**: High-quality image preview and download
 - 🔧 **Settings**: Multi-language, blacklist, and prompt filtering
 - 🎯 **ComfyUI Integration**: Seamless integration with ComfyUI workflow
@@ -123,6 +148,10 @@ A ComfyUI plugin for browsing and importing images from Danbooru using its API, 
 - 🎖️ **Ranking Mode**: Display images sorted by popularity
 - 🚫 **Blacklist Filter**: Custom filtering of unwanted content
 - 📱 **Responsive Design**: Adaptive to different screen sizes
+- 🔐 **User Authentication**: Support for Danbooru username and API key authentication
+- ⭐ **Favorites**: Add and remove image favorites with cloud synchronization
+- 🌐 **Network Detection**: Automatic detection of network connection to Danbooru
+- ⚙️ **Advanced Settings**: Debug mode, page size settings, cache configuration
 
 ### Quick Installation
 
@@ -166,6 +195,29 @@ pip install -r requirements.txt
 3. Enter search tags (e.g., `1girl blue_eyes smile`)
 4. Select rating filter and search
 5. Click images to select and import to node
+
+### Detailed Features
+
+#### 🔐 User Authentication System
+- Support for Danbooru username and API key authentication
+- Access to favorites and advanced features after authentication
+- Automatic authentication status and network connection verification
+
+#### ⭐ Favorites Feature
+- Add/remove image favorites
+- Cloud synchronization of favorites list
+- Local caching of favorite status
+
+#### 🌐 Network Connection Detection
+- Automatic detection of connection status to Danbooru server
+- Display network error messages and timeout handling
+
+#### ⚙️ Advanced Settings
+- **Multi-language Support**: Chinese/English interface switching
+- **Blacklist Management**: Custom filtering of unwanted tags
+- **Prompt Filtering**: Automatic filtering of watermarks, usernames, etc.
+- **Debug Mode**: Enable detailed logging output
+- **Page Size**: Customize number of images displayed per page
 
 ### Tag Syntax
 
