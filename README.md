@@ -14,6 +14,7 @@
 
 - 🔍 **标签搜索**: 支持通过 Danbooru 标签进行精确搜索
 - 📄 **分页加载**: 高效的分页机制，提升浏览体验
+- 💡 **智能补全**: 输入时自动补全热门标签
 - 🎨 **图像预览**: 高质量图像预览和下载
 - 🔧 **设置管理**: 多语言、黑名单、提示词过滤设置
 - 🎯 **ComfyUI 集成**: 完美集成到 ComfyUI 工作流
@@ -138,6 +139,7 @@ A ComfyUI plugin for browsing and importing images from Danbooru using its API, 
 
 - 🔍 **Tag Search**: Precise search using Danbooru tags
 - 📄 **Pagination**: Efficient pagination for better browsing
+- 💡 **Intelligent Autocomplete**: Autocomplete popular tags while typing
 - 🎨 **Image Preview**: High-quality image preview and download
 - 🔧 **Settings**: Multi-language, blacklist, and prompt filtering
 - 🎯 **ComfyUI Integration**: Seamless integration with ComfyUI workflow
