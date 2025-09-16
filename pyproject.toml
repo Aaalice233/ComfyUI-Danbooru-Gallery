@@ -23,7 +23,7 @@ build-backend = "setuptools.build_meta"
 packages = ["."]
 
 [tool.setuptools.package-data]
-"." = ["js/*.js"]
+"." = ["js/*.js", "zh_cn/*.json", "zh_cn/*.csv"]
 
 [project.urls]
 Homepage = "https://github.com/comfyui-extensions/comfyui-danbooru-gallery"

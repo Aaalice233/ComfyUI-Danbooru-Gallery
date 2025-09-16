@@ -210,7 +210,7 @@ app.registerExtension({
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
-                this.setSize([750, 938]);
+                this.setSize([780, 938]);
 
                 // 创建隐藏的 selection_data widget
                 const selectionWidget = this.addWidget("text", "selection_data", JSON.stringify({}), () => { }, {
@@ -2008,14 +2008,17 @@ app.registerExtension({
                         document.body.appendChild(globalTooltip);
                     }
 
-                    const createTagSpan = (tag, category) => $el("span", {
-                        textContent: tag,
-                        className: `danbooru-tooltip-tag tag-category-${category}`,
-                    });
+                    const createTagSpan = (tag, category, translation = null) => {
+                        const displayText = translation ? `${tag} [${translation}]` : tag;
+                        return $el("span", {
+                            textContent: displayText,
+                            className: `danbooru-tooltip-tag tag-category-${category}`,
+                        });
+                    };
 
                     let currentClickHandler = null;
 
-                    wrapper.addEventListener("mouseenter", (e) => {
+                    wrapper.addEventListener("mouseenter", async (e) => {
                         if (!uiSettings.tooltip_enabled) return;
                         clearTimeout(globalTooltipTimeout);
 
@@ -2056,13 +2059,44 @@ app.registerExtension({
                             post.tag_string.split(' ').forEach(t => categorizedTags.general.add(t));
                         }
 
-                        // Render all tag categories
+                        // 收集所有tags用于批量翻译
+                        const allTags = [];
+                        categoryOrder.forEach(categoryName => {
+                            if (categorizedTags[categoryName].size > 0) {
+                                allTags.push(...Array.from(categorizedTags[categoryName]));
+                            }
+                        });
+
+                        // 批量获取翻译（仅在中文模式下）
+                        let translations = {};
+                        if (currentLanguage === 'zh') {
+                            try {
+                                if (allTags.length > 0) {
+                                    const response = await fetch('/danbooru_gallery/translate_tags_batch', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ tags: allTags })
+                                    });
+                                    const data = await response.json();
+                                    if (data.success) {
+                                        translations = data.translations;
+                                    }
+                                }
+                            } catch (error) {
+                                console.warn('[翻译] 获取翻译失败:', error);
+                            }
+                        }
+
+                        // Render all tag categories with translations
                         categoryOrder.forEach(categoryName => {
                             if (categorizedTags[categoryName].size > 0) {
                                 const section = $el("div.danbooru-tooltip-section");
                                 section.appendChild($el("div.danbooru-tooltip-category-header", { textContent: t(categoryName) }));
                                 const tagsWrapper = $el("div.danbooru-tooltip-tags-wrapper");
-                                categorizedTags[categoryName].forEach(t => tagsWrapper.appendChild(createTagSpan(t, categoryName)));
+                                categorizedTags[categoryName].forEach(tag => {
+                                    const translation = translations[tag];
+                                    tagsWrapper.appendChild(createTagSpan(tag, categoryName, translation));
+                                });
                                 section.appendChild(tagsWrapper);
                                 tagsContainer.appendChild(section);
                             }
@@ -2269,6 +2303,207 @@ app.registerExtension({
                     previousSearchValue = currentValue;
                     updateRankingButtonState();
                     updateFavoritesButtonState();
+
+                    // 处理自动补全逻辑
+                    handleAutocompletion();
+                };
+
+                // 自动补全处理函数
+                const handleAutocompletion = () => {
+                    console.log('[AUTOCOMPLETE] Input event triggered, autocomplete_enabled:', uiSettings.autocomplete_enabled);
+
+                    // 清除之前的定时器
+                    clearTimeout(debounceTimer);
+                    clearTimeout(chineseDebounceTimer);
+
+                    const query = searchInput.value;
+                    const lastWord = query.split(/[\s,]+/).pop(); // 按空格或逗号分割，取最后一个词
+
+                    console.log('[AUTOCOMPLETE] Processing query:', query, 'lastWord:', lastWord);
+
+                    // 检测是否为中文输入（仅在中文模式下启用）
+                    if (currentLanguage === 'zh' && containsChinese(lastWord)) {
+                        console.log('[中文搜索] 检测到中文输入:', lastWord);
+                        // 立即隐藏英文自动补全
+                        suggestionsPanel.style.display = 'none';
+
+                        // 启动中文搜索
+                        chineseDebounceTimer = setTimeout(async () => {
+                            if (lastWord.length < 1) {
+                                chineseSuggestionsPanel.style.display = 'none';
+                                return;
+                            }
+
+                            try {
+                                const response = await fetch(`/danbooru_gallery/search_chinese?query=${encodeURIComponent(lastWord)}&limit=10`);
+                                const data = await response.json();
+
+                                console.log('[中文搜索] 搜索结果:', data);
+
+                                // 确保英文面板仍然隐藏
+                                suggestionsPanel.style.display = 'none';
+
+                                chineseSuggestionsPanel.innerHTML = '';
+                                if (data.success && data.results.length > 0) {
+                                    data.results.forEach(result => {
+                                        const suggestionItem = $el('div.danbooru-chinese-suggestion-item', {
+                                            innerHTML: `
+                                                <span class="danbooru-suggestion-chinese">${result.chinese}</span>
+                                                <span class="danbooru-suggestion-english">${result.english}</span>
+                                            `
+                                        });
+
+                                        suggestionItem.onclick = () => {
+                                            const currentVal = searchInput.value;
+                                            const lastWordIndex = currentVal.lastIndexOf(lastWord);
+                                            const base = currentVal.substring(0, lastWordIndex).trim();
+
+                                            let newValue;
+                                            if (base && !/,\s*$/.test(base)) {
+                                                newValue = `${base}, ${result.english}, `;
+                                            } else if (base) {
+                                                newValue = `${base} ${result.english}, `;
+                                            } else {
+                                                newValue = `${result.english}, `;
+                                            }
+
+                                            searchInput.value = newValue;
+                                            chineseSuggestionsPanel.style.display = 'none';
+                                            suggestionsPanel.style.display = 'none';
+                                            searchInput.focus();
+
+                                            // 触发input事件以更新其他依赖状态
+                                            searchInput.dispatchEvent(new Event('input'));
+
+                                            // 自动刷新
+                                            fetchAndRender(true);
+                                        };
+                                        chineseSuggestionsPanel.appendChild(suggestionItem);
+                                    });
+                                    chineseSuggestionsPanel.style.display = 'block';
+                                } else {
+                                    chineseSuggestionsPanel.style.display = 'none';
+                                }
+                            } catch (error) {
+                                console.error('[中文搜索] 搜索失败:', error);
+                                chineseSuggestionsPanel.style.display = 'none';
+                            }
+                        }, 250);
+                        return;
+                    } else {
+                        // 隐藏中文搜索建议
+                        chineseSuggestionsPanel.style.display = 'none';
+                    }
+
+                    // 原有的英文自动补全逻辑
+                    if (!uiSettings.autocomplete_enabled) {
+                        console.log('[AUTOCOMPLETE] Autocomplete disabled, hiding panel');
+                        suggestionsPanel.style.display = 'none';
+                        return;
+                    }
+
+                    debounceTimer = setTimeout(async () => {
+                        if (lastWord.length < 2) {
+                            console.log('[AUTOCOMPLETE] Last word too short, hiding panel');
+                            suggestionsPanel.style.display = 'none';
+                            return;
+                        }
+
+                        try {
+                            const maxResults = uiSettings.autocomplete_max_results || 20;
+                            console.log('[AUTOCOMPLETE] Using maxResults:', maxResults, 'from uiSettings:', uiSettings);
+
+                            // 根据语言选择API接口
+                            const apiEndpoint = currentLanguage === 'zh' ?
+                                '/danbooru_gallery/autocomplete_with_translation' :
+                                '/danbooru_gallery/autocomplete';
+
+                            const response = await fetch(`${apiEndpoint}?query=${encodeURIComponent(lastWord)}&limit=${maxResults}`);
+                            console.log('[AUTOCOMPLETE] Fetch response status:', response.status);
+                            const suggestions = await response.json();
+
+                            console.log('[AUTOCOMPLETE] Received suggestions:', suggestions.length, 'items');
+
+                            // 添加详细日志验证前端接收到的数据
+                            if (suggestions.length > 0) {
+                                console.log('[AUTOCOMPLETE] 第一个建议的完整数据结构:', suggestions[0]);
+                                console.log('[AUTOCOMPLETE] 前5个建议的详细信息:');
+                                suggestions.slice(0, 5).forEach((tag, i) => {
+                                    console.log(`[AUTOCOMPLETE] 建议 ${i + 1}: name='${tag.name}', post_count=${tag.post_count}, antecedent_name=${tag.antecedent_name}`);
+                                });
+                                // 检查前端接收到的数据是否按热度降序排序
+                                const isSortedDesc = suggestions.every((tag, i, arr) =>
+                                    i === 0 || arr[i - 1].post_count >= tag.post_count
+                                );
+                                console.log('[AUTOCOMPLETE] 前端接收到的数据是否按post_count降序排序:', isSortedDesc);
+                                // 检查是否有1girl在建议中
+                                const has1girl = suggestions.some(tag => tag.name === '1girl');
+                                console.log('[AUTOCOMPLETE] 建议中是否包含1girl:', has1girl);
+                                if (has1girl) {
+                                    const girlIndex = suggestions.findIndex(tag => tag.name === '1girl');
+                                    console.log('[AUTOCOMPLETE] 1girl在建议中的位置:', girlIndex + 1);
+                                }
+                            }
+
+                            // 确保中文面板隐藏
+                            chineseSuggestionsPanel.style.display = 'none';
+
+                            suggestionsPanel.innerHTML = ''; // 清空旧建议
+                            if (suggestions.length > 0) {
+                                // 限制显示数量为设置的最大值
+                                const limitedSuggestions = suggestions.slice(0, maxResults);
+                                console.log('[AUTOCOMPLETE] Displaying', limitedSuggestions.length, 'suggestions');
+                                limitedSuggestions.forEach(tag => {
+                                    // 只在中文模式下显示翻译
+                                    const displayName = (currentLanguage === 'zh' && tag.translation) ?
+                                        `${tag.name} [${tag.translation}]` : tag.name;
+                                    const suggestionItem = $el('div.danbooru-suggestion-item', {
+                                        innerHTML: `
+                                            <span class="danbooru-suggestion-name">${displayName}</span>
+                                            <span class="danbooru-suggestion-count">${tag.post_count}</span>
+                                        `
+                                    });
+
+                                    suggestionItem.onclick = () => {
+                                        const currentVal = searchInput.value;
+                                        const lastWordIndex = currentVal.lastIndexOf(lastWord);
+                                        const base = currentVal.substring(0, lastWordIndex).trim();
+
+                                        let newValue;
+                                        if (base && !/,\s*$/.test(base)) {
+                                            // 如果前面有内容且不以逗号结尾，则添加逗号
+                                            newValue = `${base}, ${tag.name}, `;
+                                        } else if (base) {
+                                            // 如果前面有内容且以逗号结尾，直接添加
+                                            newValue = `${base} ${tag.name}, `;
+                                        } else {
+                                            // 如果输入框为空，直接添加
+                                            newValue = `${tag.name}, `;
+                                        }
+
+                                        searchInput.value = newValue;
+                                        suggestionsPanel.style.display = 'none';
+                                        chineseSuggestionsPanel.style.display = 'none';
+                                        searchInput.focus();
+
+                                        // 触发input事件以更新其他依赖状态
+                                        searchInput.dispatchEvent(new Event('input'));
+
+                                        // 自动刷新
+                                        fetchAndRender(true);
+                                    };
+                                    suggestionsPanel.appendChild(suggestionItem);
+                                });
+                                suggestionsPanel.style.display = 'block';
+                            } else {
+                                console.log('[AUTOCOMPLETE] No suggestions received, hiding panel');
+                                suggestionsPanel.style.display = 'none';
+                            }
+                        } catch (error) {
+                            console.error('[AUTOCOMPLETE] Error fetching suggestions:', error);
+                            suggestionsPanel.style.display = 'none';
+                        }
+                    }, 250); // 250ms 防抖
                 };
 
                 searchInput.addEventListener("input", handleSearchInput);
@@ -2319,122 +2554,38 @@ app.registerExtension({
                 const suggestionsPanel = $el("div.danbooru-suggestions-panel");
                 searchContainer.appendChild(suggestionsPanel);
 
+                // 创建中文搜索建议的容器
+                const chineseSuggestionsPanel = $el("div.danbooru-chinese-suggestions-panel");
+                searchContainer.appendChild(chineseSuggestionsPanel);
+
                 // 将包含搜索框和建议面板的容器添加到总控件中
                 container.appendChild($el("div.danbooru-controls", [searchContainer, rankingButton, favoritesButton, ratingSelect, categoryDropdown, formattingDropdown, settingsButton, refreshButton]));
                 container.appendChild(imageGrid);
 
-                // --- 自动补全逻辑 ---
+                // --- 自动补全和中文搜索逻辑 ---
                 let debounceTimer;
+                let chineseDebounceTimer;
 
-                searchInput.addEventListener('input', () => {
-                    console.log('[AUTOCOMPLETE] Input event triggered, autocomplete_enabled:', uiSettings.autocomplete_enabled);
-                    if (!uiSettings.autocomplete_enabled) {
-                        console.log('[AUTOCOMPLETE] Autocomplete disabled, hiding panel');
-                        suggestionsPanel.style.display = 'none';
-                        return;
-                    }
-                    clearTimeout(debounceTimer);
-                    debounceTimer = setTimeout(async () => {
-                        const query = searchInput.value;
-                        const lastWord = query.split(/[\s,]+/).pop(); // 按空格或逗号分割，取最后一个词
-
-                        console.log('[AUTOCOMPLETE] Processing query:', query, 'lastWord:', lastWord);
-
-                        if (lastWord.length < 2) {
-                            console.log('[AUTOCOMPLETE] Last word too short, hiding panel');
-                            suggestionsPanel.style.display = 'none';
-                            return;
-                        }
-
-                        try {
-                            const maxResults = uiSettings.autocomplete_max_results || 20;
-                            console.log('[AUTOCOMPLETE] Using maxResults:', maxResults, 'from uiSettings:', uiSettings);
-                            const response = await fetch(`/danbooru_gallery/autocomplete?query=${encodeURIComponent(lastWord)}&limit=${maxResults}`);
-                            console.log('[AUTOCOMPLETE] Fetch response status:', response.status);
-                            const suggestions = await response.json();
-
-                            console.log('[AUTOCOMPLETE] Received suggestions:', suggestions.length, 'items');
-
-                            // 添加详细日志验证前端接收到的数据
-                            if (suggestions.length > 0) {
-                                console.log('[AUTOCOMPLETE] 第一个建议的完整数据结构:', suggestions[0]);
-                                console.log('[AUTOCOMPLETE] 前5个建议的详细信息:');
-                                suggestions.slice(0, 5).forEach((tag, i) => {
-                                    console.log(`[AUTOCOMPLETE] 建议 ${i + 1}: name='${tag.name}', post_count=${tag.post_count}, antecedent_name=${tag.antecedent_name}`);
-                                });
-                                // 检查前端接收到的数据是否按热度降序排序
-                                const isSortedDesc = suggestions.every((tag, i, arr) =>
-                                    i === 0 || arr[i - 1].post_count >= tag.post_count
-                                );
-                                console.log('[AUTOCOMPLETE] 前端接收到的数据是否按post_count降序排序:', isSortedDesc);
-                                // 检查是否有1girl在建议中
-                                const has1girl = suggestions.some(tag => tag.name === '1girl');
-                                console.log('[AUTOCOMPLETE] 建议中是否包含1girl:', has1girl);
-                                if (has1girl) {
-                                    const girlIndex = suggestions.findIndex(tag => tag.name === '1girl');
-                                    console.log('[AUTOCOMPLETE] 1girl在建议中的位置:', girlIndex + 1);
-                                }
-                            }
-
-                            suggestionsPanel.innerHTML = ''; // 清空旧建议
-                            if (suggestions.length > 0) {
-                                // 限制显示数量为设置的最大值
-                                const limitedSuggestions = suggestions.slice(0, maxResults);
-                                console.log('[AUTOCOMPLETE] Displaying', limitedSuggestions.length, 'suggestions');
-                                limitedSuggestions.forEach(tag => {
-                                    const suggestionItem = $el('div.danbooru-suggestion-item', {
-                                        innerHTML: `
-                                            <span class="danbooru-suggestion-name">${tag.name}</span>
-                                            <span class="danbooru-suggestion-count">${tag.post_count}</span>
-                                        `
-                                    });
-
-                                    suggestionItem.onclick = () => {
-                                        const currentVal = searchInput.value;
-                                        const lastWordIndex = currentVal.lastIndexOf(lastWord);
-                                        const base = currentVal.substring(0, lastWordIndex).trim();
-
-                                        let newValue;
-                                        if (base && !/,\s*$/.test(base)) {
-                                            // 如果前面有内容且不以逗号结尾，则添加逗号
-                                            newValue = `${base}, ${tag.name}, `;
-                                        } else if (base) {
-                                            // 如果前面有内容且以逗号结尾，直接添加
-                                            newValue = `${base} ${tag.name}, `;
-                                        } else {
-                                            // 如果输入框为空，直接添加
-                                            newValue = `${tag.name}, `;
-                                        }
-
-                                        searchInput.value = newValue;
-                                        suggestionsPanel.style.display = 'none';
-                                        searchInput.focus();
-
-                                        // 触发input事件以更新其他依赖状态
-                                        searchInput.dispatchEvent(new Event('input'));
-
-                                        // 自动刷新
-                                        fetchAndRender(true);
-                                    };
-                                    suggestionsPanel.appendChild(suggestionItem);
-                                });
-                                suggestionsPanel.style.display = 'block';
-                            } else {
-                                console.log('[AUTOCOMPLETE] No suggestions received, hiding panel');
-                                suggestionsPanel.style.display = 'none';
-                            }
-                        } catch (error) {
-                            console.error('[AUTOCOMPLETE] Error fetching suggestions:', error);
-                            suggestionsPanel.style.display = 'none';
-                        }
-                    }, 250); // 250ms 防抖
-                });
+                // 检测是否包含中文字符
+                const containsChinese = (text) => {
+                    return /[\u4e00-\u9fff]/.test(text);
+                };
 
                 let selectedSuggestionIndex = -1;
 
                 searchInput.addEventListener('keydown', (e) => {
-                    const suggestions = suggestionsPanel.querySelectorAll('.danbooru-suggestion-item');
-                    if (suggestions.length === 0 || suggestionsPanel.style.display === 'none') {
+                    // 检查当前活跃的建议面板
+                    const isChinesePanelActive = chineseSuggestionsPanel.style.display === 'block';
+                    const isEnglishPanelActive = suggestionsPanel.style.display === 'block';
+
+                    let suggestions = [];
+                    if (isChinesePanelActive) {
+                        suggestions = chineseSuggestionsPanel.querySelectorAll('.danbooru-chinese-suggestion-item');
+                    } else if (isEnglishPanelActive) {
+                        suggestions = suggestionsPanel.querySelectorAll('.danbooru-suggestion-item');
+                    }
+
+                    if (suggestions.length === 0) {
                         selectedSuggestionIndex = -1;
                         return;
                     }
@@ -2454,6 +2605,8 @@ app.registerExtension({
                         }
                     } else if (e.key === 'Escape') {
                         suggestionsPanel.style.display = 'none';
+                        chineseSuggestionsPanel.style.display = 'none';
+                        selectedSuggestionIndex = -1;
                     }
                 });
 
@@ -2471,6 +2624,7 @@ app.registerExtension({
                 document.addEventListener('click', (e) => {
                     if (!searchContainer.contains(e.target)) {
                         suggestionsPanel.style.display = 'none';
+                        chineseSuggestionsPanel.style.display = 'none';
                     }
                 });
 
@@ -2559,7 +2713,9 @@ $el("style", {
         position: absolute;
         top: 100%;
         left: 0;
-        right: 0;
+        min-width: 100%;
+        max-width: 600px;
+        width: auto;
         background-color: var(--comfy-menu-bg);
         border: 1px solid var(--input-border-color);
         border-top: none;
@@ -2569,6 +2725,7 @@ $el("style", {
         overflow-y: auto;
         overflow-x: hidden;
         box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        white-space: nowrap;
     }
 
     .danbooru-suggestion-item {
@@ -2578,6 +2735,7 @@ $el("style", {
         justify-content: space-between;
         align-items: center;
         transition: background-color 0.2s;
+        min-width: fit-content;
     }
 
     .danbooru-suggestion-item:hover,
@@ -2588,13 +2746,73 @@ $el("style", {
     .danbooru-suggestion-name {
         color: var(--comfy-input-text);
         font-weight: 500;
+        flex: 1;
+        text-overflow: ellipsis;
+        overflow: hidden;
+        margin-right: 8px;
     }
 
     .danbooru-suggestion-count {
         color: #888;
         font-size: 0.9em;
+        flex-shrink: 0;
     }
 
+    /* 中文搜索建议面板 */
+    .danbooru-chinese-suggestions-panel {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        min-width: 100%;
+        max-width: 500px;
+        width: auto;
+        background-color: var(--comfy-menu-bg);
+        border: 1px solid var(--input-border-color);
+        border-top: none;
+        border-radius: 0 0 6px 6px;
+        z-index: 1003;
+        max-height: 300px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        white-space: nowrap;
+    }
+
+    .danbooru-chinese-suggestion-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: background-color 0.2s;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        min-width: fit-content;
+    }
+
+    .danbooru-chinese-suggestion-item:last-child {
+        border-bottom: none;
+    }
+
+    .danbooru-chinese-suggestion-item:hover,
+    .danbooru-chinese-suggestion-item.selected {
+        background-color: rgba(123, 104, 238, 0.3);
+    }
+
+    .danbooru-suggestion-chinese {
+        color: var(--comfy-input-text);
+        font-weight: 600;
+        font-size: 0.95em;
+        margin-right: 8px;
+        flex-shrink: 0;
+    }
+
+    .danbooru-suggestion-english {
+        color: #888;
+        font-size: 0.85em;
+        font-style: italic;
+        flex-shrink: 0;
+    }
 
     /* Category Dropdown Styles */
     .danbooru-category-dropdown { position: relative; display: inline-block; }
@@ -2695,9 +2913,10 @@ $el("style", {
     @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     .danbooru-settings-button {
         flex-grow: 0;
-        width: auto;
+        width: 40px;
+        height: 40px;
         aspect-ratio: 1;
-        padding: 5px;
+        padding: 8px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -2706,11 +2925,11 @@ $el("style", {
         background-color: var(--comfy-input-bg);
         color: var(--comfy-input-text);
         border: 1px solid var(--input-border-color);
-        border-radius: 4px;
+        border-radius: 6px;
     }
     .danbooru-settings-button:hover { background-color: var(--comfy-menu-bg); transform: scale(1.1); }
-    .danbooru-settings-button .icon { width: 20px; height: 20px; }
-    .danbooru-refresh-button { flex-grow: 0; width: auto; aspect-ratio: 1; padding: 5px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.2s, transform 0.2s; }
+    .danbooru-settings-button .icon { width: 24px; height: 24px; }
+    .danbooru-refresh-button { flex-grow: 0; width: 40px; height: 40px; aspect-ratio: 1; padding: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.2s, transform 0.2s; border-radius: 6px; }
     .danbooru-refresh-button:hover { background-color: var(--comfy-menu-bg); transform: scale(1.1); }
     .danbooru-refresh-button.loading { cursor: not-allowed; }
     .danbooru-refresh-button.loading .icon { animation: spin 1s linear infinite; }

@@ -28,6 +28,7 @@
 - 🔐 **用户认证**: 支持 Danbooru 用户名和 API 密钥认证
 - ⭐ **收藏功能**: 添加和移除图像收藏，支持云端同步
 - 🌐 **网络检测**: 自动检测与 Danbooru 的网络连接状态
+- 🈳 **中英对照**: 支持标签中英文互译和中文搜索匹配
 - ⚙️ **高级设置**: 调试模式、页面大小设置、缓存配置
 
 ### 快速安装
@@ -96,6 +97,33 @@ pip install -r requirements.txt
 - **调试模式**: 启用详细日志输出
 - **页面大小**: 自定义每页显示的图像数量
 
+#### 🈳 中英对照系统
+- **中英互译**: 自动翻译英文标签为中文描述
+- **中文搜索**: 支持输入中文直接搜索对应英文标签
+- **模糊匹配**: 支持中文拼音和部分字符匹配
+- **批量翻译**: 高效的批量标签翻译处理
+- **实时提示**: 自动补全时显示中文翻译
+- **多数据源**: 支持JSON和CSV格式的翻译数据
+
+### 翻译功能详解
+
+#### 支持的翻译数据格式
+- **JSON格式** (`zh_cn/all_tags_cn.json`): 英文标签到中文的键值对映射
+- **CSV格式** (`zh_cn/danbooru.csv`): 英文标签,中文翻译 的CSV文件
+- **角色CSV** (`zh_cn/wai_characters.csv`): 中文角色名,英文标签 的CSV文件
+
+#### 翻译功能特性
+- **智能搜索**: 支持精确匹配、前缀匹配、包含匹配和模糊匹配
+- **缓存优化**: 翻译结果缓存，提高响应速度
+- **下划线处理**: 自动处理有无下划线的标签变体
+- **中文索引**: 构建中文字符索引，支持快速搜索
+- **权重排序**: 根据匹配度为搜索结果排序
+
+#### 使用方法
+1. **中文搜索**: 在搜索框中直接输入中文（如"女孩"），系统会自动匹配对应的英文标签
+2. **翻译显示**: 在中文界面下，标签悬浮提示和自动补全会显示中文翻译
+3. **智能补全**: 输入英文标签时，自动显示对应的中文翻译
+
 ### 标签语法
 
 ```
@@ -116,6 +144,10 @@ ComfyUI-Danbooru-Gallery/
 ├── pyproject.toml             # 项目配置
 ├── js/
 │   └── danbooru_gallery.js     # 前端界面
+├── zh_cn/                      # 中文翻译数据
+│   ├── all_tags_cn.json        # JSON格式翻译数据
+│   ├── danbooru.csv            # CSV格式翻译数据
+│   └── wai_characters.csv      # 角色翻译数据
 ├── cache/                      # 缓存目录
 └── README.md                   # 说明文档
 ```
@@ -153,6 +185,7 @@ A ComfyUI plugin for browsing and importing images from Danbooru using its API, 
 - 🔐 **User Authentication**: Support for Danbooru username and API key authentication
 - ⭐ **Favorites**: Add and remove image favorites with cloud synchronization
 - 🌐 **Network Detection**: Automatic detection of network connection to Danbooru
+- 🈳 **Chinese-English Bilingual**: Support for tag translation and Chinese search matching
 - ⚙️ **Advanced Settings**: Debug mode, page size settings, cache configuration
 
 ### Quick Installation
@@ -221,6 +254,33 @@ pip install -r requirements.txt
 - **Debug Mode**: Enable detailed logging output
 - **Page Size**: Customize number of images displayed per page
 
+#### 🈳 Chinese-English Bilingual System
+- **Bidirectional Translation**: Automatic translation of English tags to Chinese descriptions
+- **Chinese Search**: Support for searching with Chinese input to find corresponding English tags
+- **Fuzzy Matching**: Support for Chinese pinyin and partial character matching
+- **Batch Translation**: Efficient batch tag translation processing
+- **Real-time Hints**: Display Chinese translations during autocomplete
+- **Multiple Data Sources**: Support for JSON and CSV format translation data
+
+### Translation Features
+
+#### Supported Translation Data Formats
+- **JSON Format** (`zh_cn/all_tags_cn.json`): English tag to Chinese key-value mapping
+- **CSV Format** (`zh_cn/danbooru.csv`): English tag, Chinese translation CSV file
+- **Character CSV** (`zh_cn/wai_characters.csv`): Chinese character name, English tag CSV file
+
+#### Translation System Features
+- **Intelligent Search**: Support for exact match, prefix match, contains match, and fuzzy match
+- **Cache Optimization**: Translation result caching for improved response speed
+- **Underscore Handling**: Automatic handling of tag variants with/without underscores
+- **Chinese Indexing**: Build Chinese character index for fast searching
+- **Weight Sorting**: Sort search results by matching degree
+
+#### Usage
+1. **Chinese Search**: Enter Chinese directly in search box (e.g., "女孩"), system will automatically match corresponding English tags
+2. **Translation Display**: In Chinese interface, tag tooltips and autocomplete show Chinese translations
+3. **Smart Completion**: When typing English tags, automatically display corresponding Chinese translations
+
 ### Tag Syntax
 
 ```
@@ -241,6 +301,10 @@ ComfyUI-Danbooru-Gallery/
 ├── pyproject.toml             # Project configuration
 ├── js/
 │   └── danbooru_gallery.js     # Frontend interface
+├── zh_cn/                      # Chinese translation data
+│   ├── all_tags_cn.json        # JSON format translation data
+│   ├── danbooru.csv            # CSV format translation data
+│   └── wai_characters.csv      # Character translation data
 ├── cache/                      # Cache directory
 └── README.md                   # Documentation
 ```
