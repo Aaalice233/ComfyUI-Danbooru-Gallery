@@ -5,7 +5,7 @@ import { $el } from "../../../scripts/ui.js";
 const i18n = {
     zh: {
         // 搜索和控制
-        searchPlaceholder: "Tags (最多2个, 例如: 1girl, blue_eyes)...",
+        searchPlaceholder: "Tags (最多2个, 例如: 1girl, blue_eyes) - 第三个及后续tag将被忽略...",
         categories: "类别",
         formatting: "格式",
         all: "全部",
@@ -81,7 +81,7 @@ const i18n = {
     },
     en: {
         // 搜索和控制
-        searchPlaceholder: "Tags (Max 2, e.g., 1girl, blue_eyes)...",
+        searchPlaceholder: "Tags (Max 2, e.g., 1girl, blue_eyes) - Third and subsequent tags will be ignored...",
         categories: "Categories",
         formatting: "Formatting",
         all: "ALL",
@@ -209,6 +209,22 @@ app.registerExtension({
                 });
                 container.appendChild(errorDisplay);
 
+                // 添加tag提示显示区域
+                const tagHintDisplay = $el("div.danbooru-tag-hint-display", {
+                    style: {
+                        display: "none",
+                        color: "#17a2b8",
+                        marginBottom: "5px",
+                        padding: "6px 10px",
+                        border: "1px solid #17a2b8",
+                        borderRadius: "4px",
+                        backgroundColor: "rgba(23, 162, 184, 0.1)",
+                        fontSize: "13px",
+                        fontWeight: "500"
+                    }
+                });
+                container.appendChild(tagHintDisplay);
+
                 // 显示错误信息的函数
                 const showError = (message, persistent = false) => {
                     errorDisplay.textContent = message;
@@ -224,6 +240,23 @@ app.registerExtension({
                 // 清除错误信息的函数
                 const clearError = () => {
                     errorDisplay.style.display = "none";
+                };
+
+                // 显示tag提示信息的函数
+                const showTagHint = (message, persistent = false) => {
+                    tagHintDisplay.textContent = message;
+                    tagHintDisplay.style.display = "block";
+                    if (!persistent) {
+                        // 3秒后自动隐藏
+                        setTimeout(() => {
+                            tagHintDisplay.style.display = "none";
+                        }, 3000);
+                    }
+                };
+
+                // 清除tag提示信息的函数
+                const clearTagHint = () => {
+                    tagHintDisplay.style.display = "none";
                 };
 
                 // 检查网络连接状态
@@ -261,6 +294,7 @@ app.registerExtension({
                 let userAuth = { username: "", api_key: "", has_auth: false }; // 用户认证信息
                 let userFavorites = []; // 用户收藏列表，确保字符串
                 let networkStatus = { connected: true, lastChecked: 0 }; // 网络状态跟踪
+                let previousSearchValue = ""; // 跟踪搜索框之前的值，用于检测清空操作
 
                 // 用户认证管理功能
                 const loadUserAuth = async () => {
@@ -653,7 +687,7 @@ app.registerExtension({
                     }
                 };
 
-                const searchInput = $el("input.danbooru-search-input", { type: "text", placeholder: t('searchPlaceholder') });
+                const searchInput = $el("input.danbooru-search-input", { type: "text", placeholder: t('searchPlaceholder'), title: t('searchPlaceholder') });
                 const createRatingDropdown = () => {
                     const options = [
                         { value: "", text: t('all') },
@@ -1183,8 +1217,8 @@ app.registerExtension({
                     authSection.appendChild(apiKeyHelpButton);
 
                     // 将所有section添加到滚动容器
-                    scrollContainer.appendChild(authSection);
                     scrollContainer.appendChild(languageSection);
+                    scrollContainer.appendChild(authSection);
                     scrollContainer.appendChild(blacklistSection);
                     scrollContainer.appendChild(filterSection);
 
@@ -1585,8 +1619,21 @@ app.registerExtension({
                     }
 
                     try {
+                        // 检测tag数量
+                        const searchValue = searchInput.value.trim();
+                        const tags = searchValue.split(/[, ]+/).filter(tag => tag.trim() !== '');
+                        const tagCount = tags.length;
+
+                        // 如果超过2个tag，给用户提示
+                        if (tagCount > 2) {
+                            showTagHint('搜索只考虑前两个tag，第三个及后续tag将被忽略', false);
+                        } else {
+                            // 清除之前的提示
+                            clearTagHint();
+                        }
+
                         const params = new URLSearchParams({
-                            "search[tags]": searchInput.value.replace(/,/g, ' ').trim(),
+                            "search[tags]": searchValue.replace(/,/g, ' ').trim(),
                             "search[rating]": ratingSelect.querySelector('.danbooru-category-button').dataset.value,
                             limit: "100",
                             page: currentPage,
@@ -1996,13 +2043,23 @@ app.registerExtension({
                     const hasRanking = currentValue.includes('order:rank');
 
                     if (hasRanking) {
-                        // 移除 order:rank
-                        const newValue = currentValue.replace(/\s*order:rank\s*/g, ' ').replace(/\s+/g, ' ').trim();
+                        // 移除 order:rank，并清理残留的逗号
+                        let newValue = currentValue.replace(/\s*order:rank\s*/g, '');
+                        // 清理多余的逗号和空格
+                        newValue = newValue.replace(/,\s*,/g, ',').replace(/,\s*$/g, '').replace(/^\s*,/g, '').replace(/\s+/g, ' ').trim();
                         searchInput.value = newValue;
                         rankingButton.classList.remove('active');
                     } else {
                         // 添加 order:rank
-                        const newValue = currentValue ? `${currentValue} order:rank` : 'order:rank';
+                        let newValue;
+                        if (currentValue) {
+                            // 如果前面已经有内容，用逗号分隔，但检查末尾是否已有逗号（后面可能有空格）
+                            const hasTrailingComma = /\s*,\s*$/.test(currentValue);
+                            const separator = hasTrailingComma ? ' ' : ', ';
+                            newValue = `${currentValue}${separator}order:rank`;
+                        } else {
+                            newValue = 'order:rank';
+                        }
                         searchInput.value = newValue;
                         rankingButton.classList.add('active');
                     }
@@ -2012,8 +2069,6 @@ app.registerExtension({
                 });
 
                 // 监听搜索框变化，更新排行榜按钮状态
-                searchInput.addEventListener("input", updateRankingButtonState);
-
                 // 更新收藏夹按钮状态
                 const updateFavoritesButtonState = () => {
                     // 始终显示收藏夹按钮
@@ -2032,6 +2087,19 @@ app.registerExtension({
                         favoritesButton.classList.remove('active');
                     }
                 };
+
+                // 统一的搜索框输入处理函数
+                const handleSearchInput = () => {
+                    const currentValue = searchInput.value.trim();
+                    if (previousSearchValue !== "" && currentValue === "") {
+                        fetchAndRender(true); // 清空搜索框时自动刷新
+                    }
+                    previousSearchValue = currentValue;
+                    updateRankingButtonState();
+                    updateFavoritesButtonState();
+                };
+
+                searchInput.addEventListener("input", handleSearchInput);
 
                 // 收藏夹按钮点击事件
                 favoritesButton.addEventListener("click", async () => {
@@ -2070,10 +2138,21 @@ app.registerExtension({
                     const hasFavs = currentValue.includes(favTag);
 
                     if (hasFavs) {
-                        const newValue = currentValue.replace(new RegExp(`\\s*${favTag}\\s*`), ' ').replace(/\s+/g, ' ').trim();
+                        // 移除收藏夹标签，并清理残留的逗号
+                        let newValue = currentValue.replace(new RegExp(`\\s*${favTag}\\s*`), '');
+                        // 清理多余的逗号和空格
+                        newValue = newValue.replace(/,\s*,/g, ',').replace(/,\s*$/g, '').replace(/^\s*,/g, '').replace(/\s+/g, ' ').trim();
                         searchInput.value = newValue;
                     } else {
-                        const newValue = currentValue ? `${currentValue} ${favTag}` : favTag;
+                        let newValue;
+                        if (currentValue) {
+                            // 如果前面已经有内容，用逗号分隔，但检查末尾是否已有逗号（后面可能有空格）
+                            const hasTrailingComma = /\s*,\s*$/.test(currentValue);
+                            const separator = hasTrailingComma ? ' ' : ', ';
+                            newValue = `${currentValue}${separator}${favTag}`;
+                        } else {
+                            newValue = favTag;
+                        }
                         searchInput.value = newValue;
                         // 进入收藏夹模式时，重新加载最新的收藏列表以同步本地缓存
                         try {
@@ -2085,8 +2164,6 @@ app.registerExtension({
                     updateFavoritesButtonState();
                     fetchAndRender(true);
                 });
-
-                searchInput.addEventListener("input", updateFavoritesButtonState);
 
                 refreshButton.addEventListener("click", () => {
                     fetchAndRender(true);
