@@ -34,7 +34,15 @@
 
 ### 快速安装
 
-#### 方法一：自动安装（推荐）
+#### 方法一：ComfyUI Manager 安装（最推荐）
+
+1. 在 ComfyUI 中打开 Manager 界面
+2. 点击 "Install Custom Nodes"
+3. 搜索 "Danbooru Gallery" 或 "ComfyUI-Danbooru-Gallery"
+4. 点击 "Install" 按钮
+5. 重启 ComfyUI
+
+#### 方法二：自动安装
 
 ```bash
 # 1. 将插件放到 ComfyUI/custom_nodes/ 目录
@@ -47,7 +55,7 @@ python install.py
 # 3. 重启 ComfyUI
 ```
 
-#### 方法二：手动安装
+#### 方法三：手动安装
 
 ```bash
 # 安装依赖
@@ -191,7 +199,15 @@ A ComfyUI plugin for browsing and importing images from Danbooru using its API, 
 
 ### Quick Installation
 
-#### Method 1: Automatic Installation (Recommended)
+#### Method 1: ComfyUI Manager Installation (Most Recommended)
+
+1. Open Manager interface in ComfyUI
+2. Click "Install Custom Nodes"
+3. Search for "Danbooru Gallery" or "ComfyUI-Danbooru-Gallery"
+4. Click "Install" button
+5. Restart ComfyUI
+
+#### Method 2: Automatic Installation
 
 ```bash
 # 1. Clone to ComfyUI/custom_nodes/ directory
@@ -204,7 +220,7 @@ python install.py
 # 3. Restart ComfyUI
 ```
 
-#### Method 2: Manual Installation
+#### Method 3: Manual Installation
 
 ```bash
 # Install dependencies
