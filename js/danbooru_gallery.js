@@ -852,11 +852,16 @@ app.registerExtension({
 
                 const ratingSelect = createRatingDropdown();
 
-                const createCategoryCheckbox = (name, checked = true) => {
+                const createCategoryCheckbox = (name, checked = false) => { // Default to false, will be set later
                     const id = `danbooru-category-${name}`;
-                    const isChecked = name === 'copyright' || name === 'character' || name === 'general';
+                    const checkbox = $el("input", { type: "checkbox", id, name, checked: checked, className: "danbooru-category-checkbox" });
+                    checkbox.addEventListener('change', async () => {
+                        const newSelectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
+                        uiSettings.selected_categories = newSelectedCategories;
+                        await saveUiSettings(uiSettings);
+                    });
                     return $el("div.danbooru-category-item", [
-                        $el("input", { type: "checkbox", id, name, checked: isChecked, className: "danbooru-category-checkbox" }),
+                        checkbox,
                         $el("label", { htmlFor: id, textContent: t(name) })
                     ]);
                 };
@@ -1584,6 +1589,7 @@ app.registerExtension({
                             const newAutocompleteEnabled = autocompleteEnableCheckbox.checked;
                             const newTooltipEnabled = tooltipEnableCheckbox.checked;
                             const newAutocompleteMaxResults = parseInt(autocompleteMaxResultsInput.value, 10);
+                            const newSelectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
 
                             // 保存所有设置
                             const [blacklistSuccess, filterSuccess, languageSuccess, uiSettingsSuccess] = await Promise.all([
@@ -1593,7 +1599,8 @@ app.registerExtension({
                                 saveUiSettings({
                                     autocomplete_enabled: newAutocompleteEnabled,
                                     tooltip_enabled: newTooltipEnabled,
-                                    autocomplete_max_results: newAutocompleteMaxResults
+                                    autocomplete_max_results: newAutocompleteMaxResults,
+                                    selected_categories: newSelectedCategories
                                 })
                             ]);
 
@@ -1605,6 +1612,7 @@ app.registerExtension({
                                 uiSettings.autocomplete_enabled = newAutocompleteEnabled;
                                 uiSettings.tooltip_enabled = newTooltipEnabled;
                                 uiSettings.autocomplete_max_results = newAutocompleteMaxResults;
+                                uiSettings.selected_categories = newSelectedCategories;
 
                                 if (selectedLanguage !== currentLanguage) {
                                     currentLanguage = selectedLanguage;
@@ -1690,7 +1698,7 @@ app.registerExtension({
                 // 提示词过滤功能
                 let currentFilterTags = [];
                 let filterEnabled = true; // 默认开启过滤功能
-                let uiSettings = { autocomplete_enabled: true, tooltip_enabled: true, autocomplete_max_results: 20 };
+                let uiSettings = { autocomplete_enabled: true, tooltip_enabled: true, autocomplete_max_results: 20, selected_categories: ["copyright", "character", "general"] };
 
                 const loadUiSettings = async () => {
                     try {
@@ -1700,7 +1708,8 @@ app.registerExtension({
                             uiSettings = {
                                 autocomplete_enabled: data.settings.autocomplete_enabled,
                                 tooltip_enabled: data.settings.tooltip_enabled,
-                                autocomplete_max_results: data.settings.autocomplete_max_results || 20
+                                autocomplete_max_results: data.settings.autocomplete_max_results || 20,
+                                selected_categories: data.settings.selected_categories || ["copyright", "character", "general"]
                             };
                         }
                     } catch (e) {
@@ -3466,6 +3475,13 @@ app.registerExtension({
                     loadFilterTags();
                     // 加载UI设置
                     await loadUiSettings();
+
+                    // 根据加载的设置更新类别复选框
+                    const categoryCheckboxes = categoryDropdown.querySelectorAll('.danbooru-category-checkbox');
+                    categoryCheckboxes.forEach(checkbox => {
+                        checkbox.checked = uiSettings.selected_categories.includes(checkbox.name);
+                    });
+
                     // 初始化排行榜按钮状态
                     updateRankingButtonState();
                     // 页面加载时直接获取第一页的帖子

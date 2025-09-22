@@ -48,7 +48,8 @@ def load_settings():
         "default_page_size": 20,
         "autocomplete_enabled": True,
         "tooltip_enabled": True,
-        "autocomplete_max_results": 20
+        "autocomplete_max_results": 20,
+        "selected_categories": ["copyright", "character", "general"]
     }
     
     try:
@@ -137,7 +138,8 @@ def load_ui_settings():
     return {
         "autocomplete_enabled": settings.get("autocomplete_enabled", True),
         "tooltip_enabled": settings.get("tooltip_enabled", True),
-        "autocomplete_max_results": settings.get("autocomplete_max_results", 20)
+        "autocomplete_max_results": settings.get("autocomplete_max_results", 20),
+        "selected_categories": settings.get("selected_categories", ["copyright", "character", "general"])
     }
 
 def save_ui_settings(ui_settings):
@@ -146,6 +148,7 @@ def save_ui_settings(ui_settings):
     settings["autocomplete_enabled"] = ui_settings.get("autocomplete_enabled", True)
     settings["tooltip_enabled"] = ui_settings.get("tooltip_enabled", True)
     settings["autocomplete_max_results"] = ui_settings.get("autocomplete_max_results", 20)
+    settings["selected_categories"] = ui_settings.get("selected_categories", ["copyright", "character", "general"])
     return save_settings(settings)
 
 # ================================
@@ -813,7 +816,8 @@ async def save_ui_settings_route(request):
         ui_settings = {
             "autocomplete_enabled": data.get("autocomplete_enabled", True),
             "tooltip_enabled": data.get("tooltip_enabled", True),
-            "autocomplete_max_results": data.get("autocomplete_max_results", 20)
+            "autocomplete_max_results": data.get("autocomplete_max_results", 20),
+            "selected_categories": data.get("selected_categories", ["copyright", "character", "general"])
         }
         success = save_ui_settings(ui_settings)
         return web.json_response({"success": success})
