@@ -31,6 +31,9 @@
 - 🌐 **网络检测**: 自动检测与 Danbooru 的网络连接状态
 - 🈳 **中英对照**: 支持标签中英文互译和中文搜索匹配
 - ⚙️ **高级设置**: 调试模式、页面大小设置、缓存配置
+- 🖼️ **查看大图**: 支持点击图片查看全尺寸大图
+- ✍️ **编辑提示词**: 支持对提示词进行增加、删减标签，并提供智能补全和一键还原功能
+- 📋 **一键复制**: 方便地一键复制所有标签
 
 ### 快速安装
 
@@ -196,6 +199,9 @@ A ComfyUI plugin for browsing and importing images from Danbooru using its API, 
 - 🌐 **Network Detection**: Automatic detection of network connection to Danbooru
 - 🈳 **Chinese-English Bilingual**: Support for tag translation and Chinese search matching
 - ⚙️ **Advanced Settings**: Debug mode, page size settings, cache configuration
+- 🖼️ **View Full Image**: Click on an image to view the full-size version
+- ✍️ **Edit Prompts**: Add or remove tags from prompts, with intelligent autocomplete and one-click restore
+- 📋 **One-Click Copy**: Easily copy all tags with a single click
 
 ### Quick Installation
 

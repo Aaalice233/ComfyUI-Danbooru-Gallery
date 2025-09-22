@@ -94,7 +94,21 @@ const i18n = {
         userSection: "用户",
         contentSection: "内容",
         promptSection: "提示词",
-        uiSection: "界面"
+        uiSection: "界面",
+        editMode: "编辑模式",
+        editPanelTitle: "编辑提示词",
+        close: "关闭",
+        clearSearch: "清空搜索",
+        search: "搜索",
+        delete: "删除",
+        addTag: "添加标签",
+        resetTags: "重置标签",
+        edited: "已编辑",
+        viewImage: "查看大图",
+        copyTags: "复制标签",
+        copyTagsSuccess: "标签已复制到剪贴板！",
+        copyTagsFail: "复制标签失败。",
+        noTagsToCopy: "没有可复制的标签。"
     },
     en: {
         // 搜索和控制
@@ -187,10 +201,23 @@ const i18n = {
         userSection: "User",
         contentSection: "Content",
         promptSection: "Prompt",
-        uiSection: "UI"
+        uiSection: "UI",
+        editMode: "Edit Mode",
+        editPanelTitle: "Edit Prompt",
+        close: "Close",
+        clearSearch: "Clear Search",
+        search: "Search",
+        delete: "Delete",
+        addTag: "Add Tag",
+        resetTags: "Reset Tags",
+        edited: "Edited",
+        viewImage: "View Image",
+        copyTags: "Copy Tags",
+        copyTagsSuccess: "Tags copied to clipboard!",
+        copyTagsFail: "Failed to copy tags.",
+        noTagsToCopy: "No tags to copy."
     }
 };
-
 // 当前语言
 let currentLanguage = 'zh';
 
@@ -203,6 +230,13 @@ const t = (key) => {
     return i18n[currentLanguage]?.[key] || i18n.zh[key] || key;
 };
 
+// 比较标签字符串的辅助函数，忽略顺序
+const compareTagStrings = (str1, str2) => {
+    const tags1 = (str1 || "").split(' ').filter(Boolean).sort().join(' ');
+    const tags2 = (str2 || "").split(' ').filter(Boolean).sort().join(' ');
+    return tags1 === tags2;
+};
+
 app.registerExtension({
     name: "Comfy.DanbooruGallery",
     async beforeRegisterNodeDef(nodeType, nodeData) {
@@ -211,6 +245,12 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
                 this.setSize([780, 938]);
+
+                // 保存节点实例引用
+                const nodeInstance = this;
+
+                // 存储每张图片的原始标签数据，用于重置和编辑状态判断
+                const originalPostCache = {};
 
                 // 创建隐藏的 selection_data widget
                 const selectionWidget = this.addWidget("text", "selection_data", JSON.stringify({}), () => { }, {
@@ -260,15 +300,68 @@ app.registerExtension({
                 container.appendChild(tagHintDisplay);
 
                 // 显示错误信息的函数
-                const showError = (message, persistent = false) => {
-                    errorDisplay.textContent = message;
-                    errorDisplay.style.display = "block";
-                    if (!persistent) {
-                        // 5秒后自动隐藏
-                        setTimeout(() => {
-                            errorDisplay.style.display = "none";
-                        }, 5000);
+                const showError = (message, persistent = false, anchorElement = null) => {
+                    // 尝试使用 ComfyUI 的内置系统
+                    if (app.ui && app.ui.showToast) {
+                        app.ui.showToast(message, 'error');
+                        return;
                     }
+
+                    if (app.ui && app.ui.notification && app.ui.notification.show) {
+                        app.ui.notification.show(message, 'error');
+                        return;
+                    }
+
+                    if (app.ui && app.ui.dialog && app.ui.dialog.showMessage) {
+                        app.ui.dialog.showMessage(message);
+                        return;
+                    }
+
+                    const toast = $el("div", {
+                        textContent: message,
+                        style: {
+                            position: "fixed",
+                            padding: "8px 16px",
+                            borderRadius: "4px",
+                            color: "white",
+                            fontSize: "12px",
+                            fontWeight: "500",
+                            zIndex: "999999",
+                            maxWidth: "200px",
+                            wordWrap: "break-word",
+                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+                            backgroundColor: "#dc3545", // Error color
+                            borderLeft: `3px solid #bd2130`,
+                            pointerEvents: "none",
+                            opacity: "0",
+                            transition: "opacity 0.3s ease-out"
+                        }
+                    });
+
+                    // 计算位置
+                    if (anchorElement) {
+                        const rect = anchorElement.getBoundingClientRect();
+                        toast.style.left = `${rect.left + rect.width / 2 - 100}px`; // 居中对齐
+                        toast.style.top = `${rect.top - 40}px`; // 在元素上方
+                    } else {
+                        toast.style.top = "20px";
+                        toast.style.right = "20px";
+                    }
+
+                    document.body.appendChild(toast);
+
+                    setTimeout(() => {
+                        toast.style.opacity = "1";
+                    }, 10);
+
+                    setTimeout(() => {
+                        toast.style.opacity = "0";
+                        setTimeout(() => {
+                            if (toast.parentNode) {
+                                toast.remove();
+                            }
+                        }, 300);
+                    }, 5000); // 5秒后自动移除
                 };
 
                 // 清除错误信息的函数
@@ -329,6 +422,7 @@ app.registerExtension({
                 let userFavorites = []; // 用户收藏列表，确保字符串
                 let networkStatus = { connected: true, lastChecked: 0 }; // 网络状态跟踪
                 let previousSearchValue = ""; // 跟踪搜索框之前的值，用于检测清空操作
+                let temporaryTagEdits = {}; // Keyed by post.id
 
                 // 用户认证管理功能
                 const loadUserAuth = async () => {
@@ -760,7 +854,7 @@ app.registerExtension({
 
                 const createCategoryCheckbox = (name, checked = true) => {
                     const id = `danbooru-category-${name}`;
-                    const isChecked = name !== 'artist' && name !== 'meta';
+                    const isChecked = name === 'copyright' || name === 'character' || name === 'general';
                     return $el("div.danbooru-category-item", [
                         $el("input", { type: "checkbox", id, name, checked: isChecked, className: "danbooru-category-checkbox" }),
                         $el("label", { htmlFor: id, textContent: t(name) })
@@ -1749,6 +1843,21 @@ app.registerExtension({
                     return isPostBlacklisted(post);
                 };
 
+                // 获取单个帖子的原始数据
+                const fetchOriginalPost = async (postId) => {
+                    try {
+                        const response = await fetch(`/danbooru_gallery/posts?search[id]=${postId}&limit=1`);
+                        const data = await response.json();
+                        if (data && data.length > 0) {
+                            return data[0];
+                        }
+                        return null;
+                    } catch (error) {
+                        console.error("Failed to fetch original post data:", error);
+                        return null;
+                    }
+                };
+
                 // 反向转换函数：将显示格式的标签转换回Danbooru API格式
                 const convertTagsToApiFormat = (tagsString) => {
                     if (!tagsString) return "";
@@ -1773,7 +1882,9 @@ app.registerExtension({
                 };
 
                 const fetchAndRender = async (reset = false) => {
-                    if (isLoading) return;
+                    if (isLoading) {
+                        return;
+                    }
                     isLoading = true;
                     refreshButton.classList.add("loading");
                     refreshButton.disabled = true;
@@ -1879,34 +1990,736 @@ app.registerExtension({
                     });
                 }
 
+                const showEditPanel = (post) => {
+                    // 在打开编辑面板时，检查当前图像是否被选中
+                    // 强制将当前编辑的图像设置为选中状态，并更新 selectionWidget
+                    const currentSelectedElement = imageGrid.querySelector('.danbooru-image-wrapper.selected');
+                    if (currentSelectedElement && currentSelectedElement.dataset.postId && currentSelectedElement.dataset.postId != post.id) { // 检查 dataset.postId 是否存在
+                        currentSelectedElement.classList.remove('selected');
+                        console.log(`[DanbooruGallery] showEditPanel: Deselected previously selected post ${currentSelectedElement.dataset.postId}`);
+                    }
+                    const targetWrapper = imageGrid.querySelector(`.danbooru-image-wrapper[data-post-id="${post.id}"]`);
+                    if (targetWrapper) {
+                        targetWrapper.classList.add('selected');
+                        console.log(`[DanbooruGallery] showEditPanel: Forcibly selected post ${post.id}`);
+                        // 触发一次点击事件来更新 selectionWidget
+                        // 注意：这里直接调用 onclick 可能会导致事件冒泡问题，
+                        // 更好的方式是直接更新 selectionWidget 的值
+                        // targetWrapper.querySelector('img').click();
+                        // 而是直接更新 selectionWidget
+                        const imageUrl = post.file_url || post.large_file_url;
+                        const selectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
+                        const postToUse = temporaryTagEdits[post.id] || post;
+                        let output_tags = [];
+                        selectedCategories.forEach(category => {
+                            const tags = postToUse[`tag_string_${category}`];
+                            if (tags) {
+                                output_tags.push(...tags.split(' '));
+                            }
+                        });
+                        let tagsToProcess = (output_tags.length > 0) ? output_tags : (postToUse.tag_string || '').split(' ');
+                        if (filterEnabled && currentFilterTags.length > 0) {
+                            const filterTagsLower = currentFilterTags.map(tag => tag.toLowerCase().trim());
+                            tagsToProcess = tagsToProcess.filter(tag => {
+                                const tagLower = tag.toLowerCase().trim();
+                                return !filterTagsLower.includes(tagLower);
+                            });
+                        }
+                        const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]').checked;
+                        const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]').checked;
+                        const processedTags = tagsToProcess.map(tag => {
+                            let processedTag = tag;
+                            if (replaceUnderscores) {
+                                processedTag = processedTag.replace(/_/g, ' ');
+                            }
+                            if (escapeBrackets) {
+                                processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
+                            }
+                            return processedTag;
+                        });
+                        const prompt = processedTags.join(', ');
+                        const selection = {
+                            prompt: prompt,
+                            image_url: imageUrl,
+                        };
+                        if (nodeInstance && nodeInstance.widgets) {
+                            const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
+                            if (selectionWidget) {
+                                selectionWidget.value = JSON.stringify(selection);
+                                selectionWidget.callback();
+                                console.log(`[DanbooruGallery] showEditPanel: selectionWidget.value updated for post ${post.id}`);
+                            }
+                        }
+                    }
+                    const isPostCurrentlySelected = true; // 因为我们已经强制选中了
+                    console.log(`[DanbooruGallery] showEditPanel for post ${post.id} opened. Post was selected: ${isPostCurrentlySelected} (forced)`);
+
+                    if (!temporaryTagEdits[post.id]) {
+                        // Create a deep copy for editing if it doesn't exist
+                        temporaryTagEdits[post.id] = JSON.parse(JSON.stringify(post));
+                    }
+                    const editablePost = temporaryTagEdits[post.id];
+
+                    // Panel container
+                    const panel = $el("div.danbooru-edit-panel", {
+                        style: {
+                            position: "fixed", top: "0", left: "0", width: "100%", height: "100%",
+                            backgroundColor: "rgba(0, 0, 0, 0.7)", zIndex: "10001",
+                            display: "flex", alignItems: "center", justifyContent: "center"
+                        }
+                    });
+
+                    // Panel content
+                    const content = $el("div.danbooru-edit-panel-content", {
+                        style: {
+                            backgroundColor: "var(--comfy-menu-bg)", border: "1px solid var(--input-border-color)",
+                            borderRadius: "12px", padding: "20px", width: "700px", maxWidth: "90vw",
+                            maxHeight: "80vh", display: "flex", flexDirection: "column",
+                            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)"
+                        }
+                    });
+
+                    // Title
+                    const titleBar = $el("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" } }, [
+                        $el("h2", { textContent: t('editPanelTitle'), style: { margin: "0", color: "var(--comfy-input-text)", fontSize: "1.3em" } }),
+                        $el("button.danbooru-edit-panel-close-button", {
+                            innerHTML: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
+                            title: t('close'),
+                            onclick: () => closePanel(isPostCurrentlySelected) // 将捕获到的选中状态传递给 closePanel
+                        })
+                    ]);
+
+                    const tagsContainer = $el("div.danbooru-edit-tags-container", { style: { overflowY: "auto", flex: "1", paddingRight: "10px" } });
+
+                    const closePanel = (wasSelectedOnOpen) => { // 接收打开面板时的选中状态
+                        panel.remove();
+                        const currentPostInArray = posts.find(p => p.id == post.id); // 获取posts数组中最新的post数据
+                        if (!currentPostInArray) {
+                            return;
+                        }
+
+                        // 准备数据，如果被编辑过则使用临时数据
+                        let postDataToRender = temporaryTagEdits[post.id];
+
+                        // 获取原始数据，用于比较
+                        const originalPost = originalPostCache[post.id];
+
+                        // 检查是否有实际编辑
+                        let hasActualEdits = false;
+                        if (postDataToRender && originalPost) {
+                            const categories = ["artist", "copyright", "character", "general", "meta"];
+                            for (const category of categories) {
+                                if (!compareTagStrings(originalPost[`tag_string_${category}`], postDataToRender[`tag_string_${category}`])) {
+                                    hasActualEdits = true;
+                                    break;
+                                }
+                            }
+                            if (!hasActualEdits && !compareTagStrings(originalPost.tag_string, postDataToRender.tag_string)) {
+                                hasActualEdits = true;
+                            }
+                        }
+
+                        if (hasActualEdits) {
+                            // 如果有实际编辑，用编辑后的数据更新posts数组
+                            const postIndex = posts.findIndex(p => p.id == post.id);
+                            if (postIndex !== -1) {
+                                posts[postIndex] = JSON.parse(JSON.stringify(postDataToRender)); // 确保深拷贝
+                            }
+                        } else {
+                            // 如果没有实际编辑，清理临时副本
+                            temporaryTagEdits[post.id] = undefined;
+                            postDataToRender = currentPostInArray; // 确保渲染时使用 posts 数组中的当前数据
+                        }
+
+                        // 重新渲染该post
+                        const oldPostElement = imageGrid.querySelector(`.danbooru-image-wrapper[data-post-id="${post.id}"]`);
+
+                        const postIndex = posts.findIndex(p => p.id == post.id);
+                        const newPostElement = createPostElement(posts[postIndex]); // 使用 posts 数组中的最新数据
+                        if (newPostElement) {
+                            if (oldPostElement && oldPostElement.parentNode) {
+                                oldPostElement.parentNode.replaceChild(newPostElement, oldPostElement);
+                            } else {
+                                imageGrid.prepend(newPostElement);
+                            }
+                            resizeGrid();
+                        } else {
+                            if (oldPostElement) {
+                                oldPostElement.remove();
+                            }
+                        }
+
+                        // 无论是否编辑，如果打开面板时是选中状态，都强制更新selectionWidget和选中样式
+                        if (wasSelectedOnOpen) {
+                            const postToUpdate = posts[postIndex] || currentPostInArray;
+                            const imageUrl = postToUpdate.file_url || postToUpdate.large_file_url;
+                            const selectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
+
+                            let output_tags = [];
+                            selectedCategories.forEach(category => {
+                                const tags = postToUpdate[`tag_string_${category}`];
+                                if (tags) {
+                                    output_tags.push(...tags.split(' '));
+                                }
+                            });
+
+                            let tagsToProcess = (output_tags.length > 0) ? output_tags : (postToUpdate.tag_string || '').split(' ');
+
+                            // 应用提示词过滤
+                            if (filterEnabled && currentFilterTags.length > 0) {
+                                const filterTagsLower = currentFilterTags.map(tag => tag.toLowerCase().trim());
+                                tagsToProcess = tagsToProcess.filter(tag => {
+                                    const tagLower = tag.toLowerCase().trim();
+                                    return !filterTagsLower.includes(tagLower);
+                                });
+                            }
+
+                            const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]').checked;
+                            const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]').checked;
+
+                            // 格式化处理
+                            const processedTags = tagsToProcess.map(tag => {
+                                let processedTag = tag;
+                                if (replaceUnderscores) {
+                                    processedTag = processedTag.replace(/_/g, ' ');
+                                }
+                                if (escapeBrackets) {
+                                    processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
+                                }
+                                return processedTag;
+                            });
+
+                            const prompt = processedTags.join(', ');
+
+                            const selection = {
+                                prompt: prompt,
+                                image_url: imageUrl,
+                            };
+
+                            if (nodeInstance && nodeInstance.widgets) {
+                                const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
+                                if (selectionWidget) {
+                                    selectionWidget.value = JSON.stringify(selection);
+                                    selectionWidget.callback(); // 触发回调，通知ComfyUI值已更新
+                                }
+                            }
+                            // 重新给新元素添加选中状态
+                            if (newPostElement) {
+                                newPostElement.classList.add('selected');
+                                console.log(`[DanbooruGallery] Re-added 'selected' class to new element for post ID: ${post.id}. Has 'selected' class: ${newPostElement.classList.contains('selected')}`);
+                            }
+                        } else { // 如果打开面板时未选中，则清除所有选中的图像和提示词
+                            console.log(`[DanbooruGallery] Post was not selected when panel opened, clearing selection.`);
+                            imageGrid.querySelectorAll('.danbooru-image-wrapper.selected').forEach(w => {
+                                console.log(`[DanbooruGallery] Clearing 'selected' class from post ID: ${w.dataset.postId}`);
+                                w.classList.remove('selected');
+                            });
+                            if (nodeInstance && nodeInstance.widgets) {
+                                const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
+                                if (selectionWidget) {
+                                    selectionWidget.value = JSON.stringify({});
+                                    selectionWidget.callback();
+                                    console.log(`[DanbooruGallery] selectionWidget.value cleared.`);
+                                }
+                            }
+                        }
+
+                        // 重新计算 isTrulyEdited 状态并更新指示器 (这里调用 updateEditedStatus 会基于新的逻辑进行判断)
+                        // 注意：这里不再需要手动删除 temporaryTagEdits，因为 updateEditedStatus 会在判断为未编辑时将其设置为 undefined
+                        let indicator = newPostElement ? newPostElement.querySelector('.danbooru-edited-indicator') : null;
+                        if (newPostElement) {
+                            // 确保 newPostElement 已经添加到 DOM 中，updateEditedStatus 才能找到 indicator
+                            // 或者直接传递 isTrulyEdited 状态
+                            updateEditedStatus(newPostElement, post.id); // 调用更新函数
+                        }
+                    };
+
+                    content.appendChild(titleBar);
+                    content.appendChild(tagsContainer);
+
+                    // Add a footer for action buttons
+                    const editPanelFooter = $el("div", {
+                        style: {
+                            display: "flex",
+                            justifyContent: "flex-end", // Changed to align items to the end (right)
+                            alignItems: "center",
+                            marginTop: "15px",
+                            paddingTop: "15px",
+                            borderTop: "1px solid var(--input-border-color)",
+                            gap: "10px", // Add some gap between buttons
+                        }
+                    });
+
+                    // "Copy Tags to Clipboard" button
+                    const copyTagsButton = $el("button", {
+                        innerHTML: `📋 ${t('copyTags')}`,
+                        style: {
+                            padding: "8px 15px",
+                            border: "1px solid #7B68EE",
+                            borderRadius: "6px",
+                            backgroundColor: "transparent",
+                            color: "#7B68EE",
+                            cursor: "pointer",
+                            fontSize: "14px",
+                            fontWeight: "500",
+                            transition: "all 0.2s ease"
+                        },
+                        onclick: async () => {
+                            const tagsToCopy = [];
+                            // Collect selected categories from checkboxes
+                            const selectedCategoriesCheckboxes = panel.querySelectorAll('.danbooru-edit-category-checkbox:checked');
+                            const selectedCategoriesToCopy = Array.from(selectedCategoriesCheckboxes).map(cb => cb.name);
+
+                            // Collect tags from the editable post, respecting selected categories
+                            const categories = ["artist", "copyright", "character", "general", "meta"];
+                            const postToCopy = temporaryTagEdits[post.id] || post;
+
+                            categories.forEach(category => {
+                                if (selectedCategoriesToCopy.includes(category)) { // Only include if category is selected
+                                    const tags = postToCopy[`tag_string_${category}`];
+                                    if (tags) {
+                                        tagsToCopy.push(...tags.split(' '));
+                                    }
+                                }
+                            });
+
+                            if (tagsToCopy.length > 0) {
+                                // 获取格式化选项
+                                const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]').checked;
+                                const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]').checked;
+
+                                // 格式化标签
+                                const processedTags = tagsToCopy.map(tag => {
+                                    let processedTag = tag;
+                                    if (replaceUnderscores) {
+                                        processedTag = processedTag.replace(/_/g, ' ');
+                                    }
+                                    if (escapeBrackets) {
+                                        processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
+                                    }
+                                    return processedTag;
+                                });
+
+                                const formattedTags = processedTags.join(', ');
+
+                                try {
+                                    await navigator.clipboard.writeText(formattedTags);
+                                    showToast(t('copyTagsSuccess'), 'success', copyTagsButton);
+                                } catch (err) {
+                                    showToast(t('copyTagsFail'), 'error', copyTagsButton);
+                                    console.error('Failed to copy: ', err);
+                                }
+                            } else {
+                                showToast(t('noTagsToCopy'), 'info', copyTagsButton);
+                            }
+                        }
+                    });
+                    editPanelFooter.appendChild(copyTagsButton);
+
+                    // "Reset Tags" button (moved and restyled)
+                    const resetTagsButton = $el("button.danbooru-reset-tags-button", {
+                        innerHTML: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> ${t('resetTags')}`,
+                        title: t('resetTags'),
+                        onclick: async () => {
+                            // 1. 从缓存中获取原始post数据
+                            const originalPostData = originalPostCache[post.id];
+
+                            if (originalPostData) {
+                                // 2. Update posts array with original data
+                                const postIndex = posts.findIndex(p => p.id === post.id);
+                                if (postIndex !== -1) {
+                                    posts[postIndex] = JSON.parse(JSON.stringify(originalPostData)); // 确保深拷贝
+                                }
+
+                                // 3. Clear temporaryTagEdits for this post
+                                temporaryTagEdits[post.id] = undefined;
+
+                                // 4. Re-render tags in the panel with the original data
+                                renderTagsInPanel(tagsContainer, originalPostData, panel);
+
+                                // 5. Update "edited" indicator on the main grid item
+                                const wrapperElement = imageGrid.querySelector(`.danbooru-image-wrapper[data-post-id="${post.id}"]`);
+                                if (wrapperElement) {
+                                    updateEditedStatus(wrapperElement, originalPostData.id);
+                                }
+
+                                // 6. Update selectionWidget if the post is currently selected
+                                if (isPostCurrentlySelected) {
+                                    const imageUrl = originalPostData.file_url || originalPostData.large_file_url;
+                                    const selectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
+                                    let output_tags = [];
+                                    selectedCategories.forEach(category => {
+                                        const tags = originalPostData[`tag_string_${category}`];
+                                        if (tags) {
+                                            output_tags.push(...tags.split(' '));
+                                        }
+                                    });
+                                    let tagsToProcess = (output_tags.length > 0) ? output_tags : (originalPostData.tag_string || '').split(' ');
+                                    if (filterEnabled && currentFilterTags.length > 0) {
+                                        const filterTagsLower = currentFilterTags.map(tag => tag.toLowerCase().trim());
+                                        tagsToProcess = tagsToProcess.filter(tag => {
+                                            const tagLower = tag.toLowerCase().trim();
+                                            return !filterTagsLower.includes(tagLower);
+                                        });
+                                    }
+                                    const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]').checked;
+                                    const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]').checked;
+                                    const processedTags = tagsToProcess.map(tag => {
+                                        let processedTag = tag;
+                                        if (replaceUnderscores) {
+                                            processedTag = processedTag.replace(/_/g, ' ');
+                                        }
+                                        if (escapeBrackets) {
+                                            processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
+                                        }
+                                        return processedTag;
+                                    });
+                                    const prompt = processedTags.join(', ');
+                                    const selection = {
+                                        prompt: prompt,
+                                        image_url: imageUrl,
+                                    };
+                                    if (nodeInstance && nodeInstance.widgets) {
+                                        const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
+                                        if (selectionWidget) {
+                                            selectionWidget.value = JSON.stringify(selection);
+                                            selectionWidget.callback();
+                                            console.log(`[DanbooruGallery] resetTagsButton: selectionWidget.value updated for post ${post.id}`);
+                                        }
+                                    }
+                                }
+                                showToast(t('resetTags') + '成功', 'success', resetTagsButton);
+                            } else {
+                                // 如果缓存中没有原始数据，尝试从服务器获取一次
+                                const fetchedOriginalPost = await fetchOriginalPost(post.id);
+                                if (fetchedOriginalPost) {
+                                    originalPostCache[post.id] = JSON.parse(JSON.stringify(fetchedOriginalPost)); // 缓存获取到的数据
+                                    // 再次调用自身，以使用缓存中的数据进行重置
+                                    showToast('已从服务器获取原始标签，请再次点击重置。', 'info', resetTagsButton);
+                                    // 重新渲染面板
+                                    renderTagsInPanel(tagsContainer, originalPostCache[post.id], panel);
+                                } else {
+                                    showError('未能获取原始标签，请检查网络或稍后重试。', false, resetTagsButton);
+                                }
+                            }
+                        }
+                    });
+                    editPanelFooter.appendChild(resetTagsButton);
+
+                    content.appendChild(editPanelFooter);
+                    panel.appendChild(content);
+
+                    // Close panel when clicking background
+                    panel.addEventListener('click', (e) => {
+                        if (e.target === panel) {
+                            closePanel();
+                        }
+                    });
+
+                    document.body.appendChild(panel);
+
+                    renderTagsInPanel(tagsContainer, editablePost, panel);
+                };
+
+                const renderTagsInPanel = async (tagsContainer, postData, panel) => {
+                    tagsContainer.innerHTML = ''; // Clear existing tags
+
+                    const createClickableTagSpan = (tag, category, translation = null) => {
+                        const displayText = translation ? `${tag} [${translation}]` : tag;
+                        const span = $el("span", {
+                            textContent: displayText,
+                            className: `danbooru-tooltip-tag danbooru-clickable-tag tag-category-${category}`,
+                        });
+
+                        const removeExistingMenus = () => {
+                            document.querySelectorAll('.danbooru-tag-context-menu').forEach(menu => menu.remove());
+                        };
+
+                        span.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            removeExistingMenus();
+
+                            const menu = $el("div.danbooru-tag-context-menu", {
+                                style: {
+                                    position: 'absolute',
+                                    zIndex: '10002',
+                                    backgroundColor: 'var(--comfy-menu-bg)',
+                                    border: '1px solid var(--input-border-color)',
+                                    borderRadius: '6px',
+                                    boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+                                    padding: '5px',
+                                }
+                            });
+
+                            const searchOption = $el("div.danbooru-context-menu-item", {
+                                textContent: '🔍 ' + t('search'),
+                                onclick: () => {
+                                    const currentVal = searchInput.value.trim();
+                                    const apiTag = tag.replace(/\s+/g, '_');
+                                    let newValue;
+                                    if (currentVal && !/,\s*$/.test(currentVal)) {
+                                        newValue = `${currentVal}, ${apiTag}, `;
+                                    } else if (currentVal) {
+                                        newValue = `${currentVal} ${apiTag}, `;
+                                    } else {
+                                        newValue = `${apiTag}, `;
+                                    }
+                                    searchInput.value = newValue;
+                                    searchInput.dispatchEvent(new Event('input'));
+                                    fetchAndRender(true);
+                                    menu.remove();
+                                }
+                            });
+
+                            const deleteOption = $el("div.danbooru-context-menu-item", {
+                                textContent: '🗑️ ' + t('delete'),
+                                onclick: () => {
+                                    if (postData[`tag_string_${category}`]) {
+                                        const tags = postData[`tag_string_${category}`].split(' ');
+                                        const index = tags.indexOf(tag);
+                                        if (index > -1) {
+                                            tags.splice(index, 1);
+                                            postData[`tag_string_${category}`] = tags.join(' ');
+                                        }
+                                    }
+                                    // 强制重新渲染以更新状态
+                                    renderTagsInPanel(tagsContainer, temporaryTagEdits[postData.id] || postData, panel);
+                                    menu.remove();
+                                }
+                            });
+
+                            menu.appendChild(searchOption);
+                            menu.appendChild(deleteOption);
+
+                            document.body.appendChild(menu);
+
+                            const rect = span.getBoundingClientRect();
+                            menu.style.left = `${rect.left}px`;
+                            menu.style.top = `${rect.bottom + 5}px`;
+
+                            const closeMenuHandler = (event) => {
+                                if (!menu.contains(event.target)) {
+                                    menu.remove();
+                                    document.removeEventListener('click', closeMenuHandler, true);
+                                }
+                            };
+                            document.addEventListener('click', closeMenuHandler, true);
+                        });
+
+                        return span;
+                    };
+
+                    const categoryOrder = ["artist", "copyright", "character", "general", "meta"];
+                    const categorizedTags = { artist: new Set(), copyright: new Set(), character: new Set(), general: new Set(), meta: new Set() };
+
+                    if (postData.tag_string_artist) postData.tag_string_artist.split(' ').forEach(t => categorizedTags.artist.add(t));
+                    if (postData.tag_string_copyright) postData.tag_string_copyright.split(' ').forEach(t => categorizedTags.copyright.add(t));
+                    if (postData.tag_string_character) postData.tag_string_character.split(' ').forEach(t => categorizedTags.character.add(t));
+                    if (postData.tag_string_general) postData.tag_string_general.split(' ').forEach(t => categorizedTags.general.add(t));
+                    if (postData.tag_string_meta) postData.tag_string_meta.split(' ').forEach(t => categorizedTags.meta.add(t));
+
+                    if (Object.values(categorizedTags).every(s => s.size === 0) && postData.tag_string) {
+                        postData.tag_string.split(' ').forEach(t => categorizedTags.general.add(t));
+                    }
+
+                    const allTags = Array.from(new Set(categoryOrder.flatMap(cat => Array.from(categorizedTags[cat])))).filter(Boolean);
+
+                    let translations = {};
+                    if (currentLanguage === 'zh' && allTags.length > 0) {
+                        try {
+                            const response = await fetch('/danbooru_gallery/translate_tags_batch', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ tags: allTags })
+                            });
+                            const data = await response.json();
+                            if (data.success) translations = data.translations;
+                        } catch (error) { console.warn("Tag translation failed for edit panel:", error); }
+                    }
+
+                    categoryOrder.forEach(categoryName => {
+                        const tags = categorizedTags[categoryName];
+                        if (tags.size > 0) {
+                            const section = $el("div.danbooru-edit-panel-section"); // Changed class name for clarity
+
+                            // Add a checkbox for each category in the edit panel
+                            const categoryCheckboxId = `edit-panel-category-${categoryName}`;
+                            const categoryCheckbox = $el("input", {
+                                type: "checkbox",
+                                id: categoryCheckboxId,
+                                name: categoryName,
+                                checked: categoryName === 'copyright' || categoryName === 'character' || categoryName === 'general', // Default to checked only for copyright, character, and general
+                                className: "danbooru-edit-category-checkbox"
+                            });
+                            const categoryLabel = $el("label", {
+                                htmlFor: categoryCheckboxId,
+                                textContent: t(categoryName),
+                                style: { marginLeft: "5px", fontWeight: "600", color: "#b0b3b8" } // Style to match header
+                            });
+
+                            const categoryHeader = $el("div", { style: { display: "flex", alignItems: "center", marginBottom: "4px" } }, [categoryCheckbox, categoryLabel]);
+                            section.appendChild(categoryHeader);
+                            const tagsWrapper = $el("div.danbooru-tooltip-tags-wrapper");
+                            tags.forEach(tag => {
+                                if (!tag) return;
+                                const translation = translations[tag];
+                                tagsWrapper.appendChild(createClickableTagSpan(tag, categoryName, translation));
+                            });
+
+                            // Add "+" button for adding new tags
+                            const addButton = $el("button.danbooru-add-tag-button", {
+                                textContent: "+",
+                                title: t('addTag'),
+                                onclick: (e) => {
+                                    e.stopPropagation();
+                                    addButton.style.display = 'none'; // Hide the add button
+
+                                    const inputContainer = $el("div.danbooru-add-tag-container");
+                                    const input = $el("input.danbooru-add-tag-input", { type: "text", placeholder: t('addTag') + "..." });
+                                    const engSuggestions = $el("div.danbooru-suggestions-panel");
+                                    const chnSuggestions = $el("div.danbooru-chinese-suggestions-panel");
+
+                                    inputContainer.appendChild(input);
+                                    document.body.appendChild(engSuggestions);
+                                    document.body.appendChild(chnSuggestions);
+                                    tagsWrapper.appendChild(inputContainer);
+
+                                    input.focus();
+
+                                    const onSelect = (selectedTag) => {
+                                        const newTag = selectedTag.trim().replace(/\s/g, '_');
+                                        if (newTag) {
+                                            const tagStringKey = `tag_string_${categoryName}`;
+                                            const currentTags = postData[tagStringKey] ? postData[tagStringKey].split(' ') : [];
+                                            if (!currentTags.includes(newTag)) {
+                                                currentTags.push(newTag);
+                                                postData[tagStringKey] = currentTags.join(' ');
+                                            }
+                                            // 强制重新渲染以更新状态
+                                            renderTagsInPanel(tagsContainer, temporaryTagEdits[postData.id] || postData, panel);
+                                        }
+                                        inputContainer.remove();
+                                        engSuggestions.remove();
+                                        chnSuggestions.remove();
+                                        addButton.style.display = 'inline-flex';
+                                    };
+
+                                    input.addEventListener('input', () => handleAutocompletion(input, engSuggestions, chnSuggestions, onSelect));
+
+                                    // Add positioning logic
+                                    const positionSuggestions = () => {
+                                        const inputRect = input.getBoundingClientRect();
+                                        const top = inputRect.bottom + window.scrollY;
+                                        const left = inputRect.left + window.scrollX;
+
+                                        [engSuggestions, chnSuggestions].forEach(panel => {
+                                            panel.style.top = `${top}px`;
+                                            panel.style.left = `${left}px`;
+                                            panel.style.minWidth = `${inputRect.width}px`;
+                                        });
+                                    };
+
+                                    input.addEventListener('focus', positionSuggestions);
+                                    input.addEventListener('input', positionSuggestions);
+                                    window.addEventListener('resize', positionSuggestions);
+
+                                    input.addEventListener('keydown', (e) => {
+                                        if (e.key === 'Enter') {
+                                            onSelect(input.value);
+                                        } else if (e.key === 'Escape') {
+                                            inputContainer.remove();
+                                            engSuggestions.remove();
+                                            chnSuggestions.remove();
+                                            addButton.style.display = 'inline-flex';
+                                        }
+                                    });
+
+                                    const blurHandler = (e) => {
+                                        // Delay to allow click on suggestion to register
+                                        setTimeout(() => {
+                                            // Check if focus is moving to the suggestion panels
+                                            if (!inputContainer.contains(document.activeElement) && !engSuggestions.contains(document.activeElement) && !chnSuggestions.contains(document.activeElement)) {
+                                                inputContainer.remove();
+                                                engSuggestions.remove();
+                                                chnSuggestions.remove();
+                                                addButton.style.display = 'inline-flex';
+                                            }
+                                        }, 100);
+                                    };
+                                    input.addEventListener('blur', blurHandler);
+                                }
+                            });
+                            tagsWrapper.appendChild(addButton);
+
+                            section.appendChild(tagsWrapper);
+                            tagsContainer.appendChild(section);
+                        }
+                    });
+
+                    // After rendering, check if the post is edited and update the main grid item
+                    const postElement = imageGrid.querySelector(`.danbooru-image-wrapper[data-post-id="${postData.id}"]`);
+                    if (postElement) {
+                        updateEditedStatus(postElement, postData.id);
+                    }
+                };
+
                 const createPostElement = (post) => {
                     if (!post.id || !post.preview_file_url) return null;
 
                     const wrapper = $el("div.danbooru-image-wrapper");
+                    wrapper.dataset.postId = post.id; // 显式设置 data-post-id
+
+                    // 首次创建post元素时，将原始post数据添加到 originalPostCache
+                    if (!originalPostCache[post.id]) {
+                        originalPostCache[post.id] = JSON.parse(JSON.stringify(post));
+                    }
+
+                    // Check and apply edited status on creation
+                    updateEditedStatus(wrapper, post.id);
+
                     const img = $el("img", {
                         src: `${post.preview_file_url}?v=${post.md5}`,
                         loading: "lazy",
                         onload: resizeGrid,
                         onerror: () => { wrapper.style.display = 'none'; },
-                        onclick: async () => {
+                        onclick: async (e) => {
+                            e.stopPropagation(); // Prevent event from bubbling up and potentially causing issues
+                            console.log(`[DanbooruGallery-Click] Image clicked: ${post.id}`);
                             const isSelected = wrapper.classList.contains('selected');
-                            imageGrid.querySelectorAll('.danbooru-image-wrapper').forEach(w => w.classList.remove('selected'));
+                            console.log(`[DanbooruGallery-Click] Wrapper had 'selected' class: ${isSelected}`);
 
+                            // fetchAndRender(true); // 移除不必要的调用
+
+                            // 首先，清除所有其他图像的选中状态
+                            imageGrid.querySelectorAll('.danbooru-image-wrapper').forEach(w => {
+                                if (w !== wrapper) {
+                                    w.classList.remove('selected');
+                                    console.log(`[DanbooruGallery-Click] Removed 'selected' from other wrapper: ${w.dataset.postId}`);
+                                }
+                            });
+
+                            // 然后，根据当前图像的选中状态进行切换
                             if (!isSelected) {
                                 wrapper.classList.add('selected');
+                                console.log(`[DanbooruGallery-Click] Added 'selected' to wrapper: ${post.id}. Current classes: ${wrapper.classList}`);
 
                                 const imageUrl = post.file_url || post.large_file_url;
 
                                 const selectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
+
+                                // 动态获取最新的编辑数据
+                                const currentPostId = post.id;
+                                const postToUse = temporaryTagEdits[currentPostId] || post;
+
                                 let output_tags = [];
                                 selectedCategories.forEach(category => {
-                                    const tags = post[`tag_string_${category}`];
+                                    const tags = postToUse[`tag_string_${category}`];
                                     if (tags) {
                                         output_tags.push(...tags.split(' '));
                                     }
                                 });
 
-                                let tagsToProcess = (output_tags.length > 0) ? output_tags : post.tag_string.split(' ');
+                                let tagsToProcess = (output_tags.length > 0) ? output_tags : (postToUse.tag_string || '').split(' ');
 
                                 // 先应用提示词过滤（在格式化之前）
                                 if (filterEnabled && currentFilterTags.length > 0) {
@@ -1939,16 +2752,25 @@ app.registerExtension({
                                     image_url: imageUrl,
                                 };
 
-                                // 查找隐藏的 selection_data widget 并更新其值
-                                const selectionWidget = this.widgets?.find(w => w.name === "selection_data");
-                                if (selectionWidget) {
-                                    selectionWidget.value = JSON.stringify(selection);
+                                // 查找隐藏的 selection_data widget 并更新其值 - 使用保存的节点实例引用
+                                if (nodeInstance && nodeInstance.widgets) {
+                                    const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
+                                    if (selectionWidget) {
+                                        selectionWidget.value = JSON.stringify(selection);
+                                        selectionWidget.callback(); // 触发回调，通知ComfyUI值已更新
+                                        console.log(`[DanbooruGallery-Click] selectionWidget.value set to: ${selectionWidget.value}`);
+                                    }
                                 }
                             } else {
                                 wrapper.classList.remove('selected');
-                                const selectionWidget = this.widgets?.find(w => w.name === "selection_data");
-                                if (selectionWidget) {
-                                    selectionWidget.value = JSON.stringify({});
+                                console.log(`[DanbooruGallery-Click] Removed 'selected' from wrapper: ${post.id}. Current classes: ${wrapper.classList}`);
+                                if (nodeInstance && nodeInstance.widgets) {
+                                    const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
+                                    if (selectionWidget) {
+                                        selectionWidget.value = JSON.stringify({});
+                                        selectionWidget.callback();
+                                        console.log(`[DanbooruGallery-Click] selectionWidget.value cleared.`);
+                                    }
                                 }
                             }
                         },
@@ -2185,6 +3007,34 @@ app.registerExtension({
 
                     // 创建按钮容器
                     const buttonsContainer = $el("div.danbooru-image-buttons");
+
+                    // 创建编辑模式按钮
+                    const editButton = $el("button.danbooru-edit-button", {
+                        innerHTML: `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>`,
+                        title: t('editMode'),
+                        onclick: (e) => {
+                            e.stopPropagation();
+                            showEditPanel(post);
+                        }
+                    });
+
+                    const viewImageButton = $el("button.danbooru-view-image-button", {
+                        innerHTML: `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`,
+                        title: t('viewImage'),
+                        onclick: (e) => {
+                            e.stopPropagation();
+                            const imageUrl = post.large_file_url || post.file_url;
+                            if (imageUrl) {
+                                window.open(imageUrl, '_blank');
+                            }
+                        }
+                    });
+
+                    buttonsContainer.appendChild(viewImageButton);
+                    buttonsContainer.appendChild(editButton);
                     buttonsContainer.appendChild(downloadButton);
                     buttonsContainer.appendChild(favoriteButton);
 
@@ -2211,13 +3061,15 @@ app.registerExtension({
                 });
 
                 searchInput.addEventListener("keydown", (e) => {
-                    if (e.key === "Enter") fetchAndRender(true);
+                    if (e.key === "Enter") {
+                        fetchAndRender(true);
+                    }
                 });
                 ratingSelect.addEventListener("change", () => {
                     if (globalTooltip) {
                         globalTooltip.style.display = 'none';
                     }
-                    fetchAndRender(true);
+                    fetchAndRender(true); // 保留，因为改变评分需要重新加载
                 });
                 // 检查和更新排行榜按钮状态的函数
                 const updateRankingButtonState = () => {
@@ -2292,168 +3144,103 @@ app.registerExtension({
                     updateRankingButtonState();
                     updateFavoritesButtonState();
 
-                    // 处理自动补全逻辑
-                    handleAutocompletion();
+                    const clearButton = searchContainer.querySelector('.danbooru-clear-search-button');
+                    if (clearButton) {
+                        clearButton.style.display = currentValue ? 'block' : 'none';
+                    }
+
+                    const onSelect = (selectedTag, lastWord) => {
+                        const currentVal = searchInput.value;
+                        const lastWordIndex = currentVal.lastIndexOf(lastWord);
+                        const base = currentVal.substring(0, lastWordIndex).trim();
+                        let newValue;
+                        if (base && !/,\s*$/.test(base)) {
+                            newValue = `${base}, ${selectedTag}, `;
+                        } else if (base) {
+                            newValue = `${base} ${selectedTag}, `;
+                        } else {
+                            newValue = `${selectedTag}, `;
+                        }
+                        searchInput.value = newValue;
+                        suggestionsPanel.style.display = 'none';
+                        chineseSuggestionsPanel.style.display = 'none';
+                        searchInput.focus();
+                        searchInput.dispatchEvent(new Event('input'));
+                        fetchAndRender(true);
+                    };
+
+                    handleAutocompletion(searchInput, suggestionsPanel, chineseSuggestionsPanel, onSelect);
                 };
 
-                // 自动补全处理函数
-                const handleAutocompletion = () => {
-                    // 清除之前的定时器
-                    clearTimeout(debounceTimer);
-                    clearTimeout(chineseDebounceTimer);
+                // 自动补全处理函数 (已重构以支持不同输入框)
+                const handleAutocompletion = (inputElement, engSuggestionsEl, chnSuggestionsEl, onSelect) => {
+                    clearTimeout(inputElement.debounceTimer);
+                    clearTimeout(inputElement.chineseDebounceTimer);
 
-                    const query = searchInput.value;
-                    const lastWord = query.split(/[\s,]+/).pop(); // 按空格或逗号分割，取最后一个词
+                    const query = inputElement.value;
+                    const lastWord = query.split(/[\s,]+/).pop();
 
-                    // 检测是否为中文输入（仅在中文模式下启用）
                     if (currentLanguage === 'zh' && containsChinese(lastWord)) {
-                        // 立即隐藏英文自动补全
-                        suggestionsPanel.style.display = 'none';
-
-                        // 启动中文搜索
-                        chineseDebounceTimer = setTimeout(async () => {
+                        engSuggestionsEl.style.display = 'none';
+                        inputElement.chineseDebounceTimer = setTimeout(async () => {
                             if (lastWord.length < 1) {
-                                chineseSuggestionsPanel.style.display = 'none';
+                                chnSuggestionsEl.style.display = 'none';
                                 return;
                             }
-
                             try {
                                 const response = await fetch(`/danbooru_gallery/search_chinese?query=${encodeURIComponent(lastWord)}&limit=10`);
                                 const data = await response.json();
-
-                                // 确保英文面板仍然隐藏
-                                suggestionsPanel.style.display = 'none';
-
-                                chineseSuggestionsPanel.innerHTML = '';
+                                chnSuggestionsEl.innerHTML = '';
                                 if (data.success && data.results.length > 0) {
                                     data.results.forEach(result => {
-                                        const suggestionItem = $el('div.danbooru-chinese-suggestion-item', {
-                                            innerHTML: `
-                                                <span class="danbooru-suggestion-chinese">${result.chinese}</span>
-                                                <span class="danbooru-suggestion-english">${result.english}</span>
-                                            `
+                                        const item = $el('div.danbooru-chinese-suggestion-item', {
+                                            innerHTML: `<span class="danbooru-suggestion-chinese">${result.chinese}</span><span class="danbooru-suggestion-english">${result.english}</span>`
                                         });
-
-                                        suggestionItem.onclick = () => {
-                                            const currentVal = searchInput.value;
-                                            const lastWordIndex = currentVal.lastIndexOf(lastWord);
-                                            const base = currentVal.substring(0, lastWordIndex).trim();
-
-                                            let newValue;
-                                            if (base && !/,\s*$/.test(base)) {
-                                                newValue = `${base}, ${result.english}, `;
-                                            } else if (base) {
-                                                newValue = `${base} ${result.english}, `;
-                                            } else {
-                                                newValue = `${result.english}, `;
-                                            }
-
-                                            searchInput.value = newValue;
-                                            chineseSuggestionsPanel.style.display = 'none';
-                                            suggestionsPanel.style.display = 'none';
-                                            searchInput.focus();
-
-                                            // 触发input事件以更新其他依赖状态
-                                            searchInput.dispatchEvent(new Event('input'));
-
-                                            // 自动刷新
-                                            fetchAndRender(true);
-                                        };
-                                        chineseSuggestionsPanel.appendChild(suggestionItem);
+                                        item.onclick = () => onSelect(result.english, lastWord);
+                                        chnSuggestionsEl.appendChild(item);
                                     });
-                                    chineseSuggestionsPanel.style.display = 'block';
+                                    chnSuggestionsEl.style.display = 'block';
                                 } else {
-                                    chineseSuggestionsPanel.style.display = 'none';
+                                    chnSuggestionsEl.style.display = 'none';
                                 }
-                            } catch (error) {
-                                chineseSuggestionsPanel.style.display = 'none';
-                            }
+                            } catch (error) { chnSuggestionsEl.style.display = 'none'; }
                         }, 250);
                         return;
                     } else {
-                        // 隐藏中文搜索建议
-                        chineseSuggestionsPanel.style.display = 'none';
+                        chnSuggestionsEl.style.display = 'none';
                     }
 
-                    // 原有的英文自动补全逻辑
                     if (!uiSettings.autocomplete_enabled) {
-                        suggestionsPanel.style.display = 'none';
+                        engSuggestionsEl.style.display = 'none';
                         return;
                     }
 
-                    debounceTimer = setTimeout(async () => {
+                    inputElement.debounceTimer = setTimeout(async () => {
                         if (lastWord.length < 2) {
-                            suggestionsPanel.style.display = 'none';
+                            engSuggestionsEl.style.display = 'none';
                             return;
                         }
-
                         try {
                             const maxResults = uiSettings.autocomplete_max_results || 20;
-
-                            // 根据语言选择API接口
-                            const apiEndpoint = currentLanguage === 'zh' ?
-                                '/danbooru_gallery/autocomplete_with_translation' :
-                                '/danbooru_gallery/autocomplete';
-
+                            const apiEndpoint = currentLanguage === 'zh' ? '/danbooru_gallery/autocomplete_with_translation' : '/danbooru_gallery/autocomplete';
                             const response = await fetch(`${apiEndpoint}?query=${encodeURIComponent(lastWord)}&limit=${maxResults}`);
                             const suggestions = await response.json();
-
-                            // 确保中文面板隐藏
-                            chineseSuggestionsPanel.style.display = 'none';
-
-                            suggestionsPanel.innerHTML = ''; // 清空旧建议
+                            engSuggestionsEl.innerHTML = '';
                             if (suggestions.length > 0) {
-                                // 限制显示数量为设置的最大值
-                                const limitedSuggestions = suggestions.slice(0, maxResults);
-                                limitedSuggestions.forEach(tag => {
-                                    // 只在中文模式下显示翻译
-                                    const displayName = (currentLanguage === 'zh' && tag.translation) ?
-                                        `${tag.name} [${tag.translation}]` : tag.name;
-                                    const suggestionItem = $el('div.danbooru-suggestion-item', {
-                                        innerHTML: `
-                                            <span class="danbooru-suggestion-name">${displayName}</span>
-                                            <span class="danbooru-suggestion-count">${tag.post_count}</span>
-                                        `
+                                suggestions.slice(0, maxResults).forEach(tag => {
+                                    const displayName = (currentLanguage === 'zh' && tag.translation) ? `${tag.name} [${tag.translation}]` : tag.name;
+                                    const item = $el('div.danbooru-suggestion-item', {
+                                        innerHTML: `<span class="danbooru-suggestion-name">${displayName}</span><span class="danbooru-suggestion-count">${tag.post_count}</span>`
                                     });
-
-                                    suggestionItem.onclick = () => {
-                                        const currentVal = searchInput.value;
-                                        const lastWordIndex = currentVal.lastIndexOf(lastWord);
-                                        const base = currentVal.substring(0, lastWordIndex).trim();
-
-                                        let newValue;
-                                        if (base && !/,\s*$/.test(base)) {
-                                            // 如果前面有内容且不以逗号结尾，则添加逗号
-                                            newValue = `${base}, ${tag.name}, `;
-                                        } else if (base) {
-                                            // 如果前面有内容且以逗号结尾，直接添加
-                                            newValue = `${base} ${tag.name}, `;
-                                        } else {
-                                            // 如果输入框为空，直接添加
-                                            newValue = `${tag.name}, `;
-                                        }
-
-                                        searchInput.value = newValue;
-                                        suggestionsPanel.style.display = 'none';
-                                        chineseSuggestionsPanel.style.display = 'none';
-                                        searchInput.focus();
-
-                                        // 触发input事件以更新其他依赖状态
-                                        searchInput.dispatchEvent(new Event('input'));
-
-                                        // 自动刷新
-                                        fetchAndRender(true);
-                                    };
-                                    suggestionsPanel.appendChild(suggestionItem);
+                                    item.onclick = () => onSelect(tag.name, lastWord);
+                                    engSuggestionsEl.appendChild(item);
                                 });
-                                suggestionsPanel.style.display = 'block';
+                                engSuggestionsEl.style.display = 'block';
                             } else {
-                                suggestionsPanel.style.display = 'none';
+                                engSuggestionsEl.style.display = 'none';
                             }
-                        } catch (error) {
-                            suggestionsPanel.style.display = 'none';
-                        }
-                    }, 250); // 250ms 防抖
+                        } catch (error) { engSuggestionsEl.style.display = 'none'; }
+                    }, 250);
                 };
 
                 searchInput.addEventListener("input", handleSearchInput);
@@ -2498,7 +3285,20 @@ app.registerExtension({
                 });
 
                 const searchContainer = $el("div.danbooru-search-container");
+                const clearButton = $el("button.danbooru-clear-search-button", {
+                    innerHTML: '×',
+                    title: t('clearSearch'),
+                    style: {
+                        display: 'none'
+                    },
+                    onclick: () => {
+                        searchInput.value = '';
+                        searchInput.dispatchEvent(new Event('input'));
+                        fetchAndRender(true);
+                    }
+                });
                 searchContainer.appendChild(searchInput);
+                searchContainer.appendChild(clearButton);
 
                 // 创建自动补全建议的容器
                 const suggestionsPanel = $el("div.danbooru-suggestions-panel");
@@ -2588,6 +3388,45 @@ app.registerExtension({
                         resizeGrid();
                     }
                 };
+
+                const updateEditedStatus = (wrapperElement, postId) => {
+                    const originalPost = originalPostCache[postId]; // 从缓存中获取原始数据
+                    const editedPost = temporaryTagEdits[postId];
+
+                    let isTrulyEdited = false;
+                    if (editedPost && originalPost) {
+                        const categories = ["artist", "copyright", "character", "general", "meta"];
+                        const hasCategoryTags = categories.some(cat => originalPost.hasOwnProperty(`tag_string_${cat}`) || editedPost.hasOwnProperty(`tag_string_${cat}`));
+
+                        if (hasCategoryTags) {
+                            for (const category of categories) {
+                                if (!compareTagStrings(originalPost[`tag_string_${category}`], editedPost[`tag_string_${category}`])) {
+                                    isTrulyEdited = true;
+                                    break;
+                                }
+                            }
+                        } else {
+                            // 如果没有分类标签，检查tag_string是否被编辑
+                            if (!compareTagStrings(originalPost.tag_string, editedPost.tag_string)) {
+                                isTrulyEdited = true;
+                            }
+                        }
+                    }
+
+                    const indicator = wrapperElement.querySelector('.danbooru-edited-indicator');
+
+                    if (isTrulyEdited) {
+                        if (!indicator) {
+                            const newIndicator = $el("div.danbooru-edited-indicator", { textContent: t('edited') });
+                            wrapperElement.appendChild(newIndicator);
+                        }
+                    } else {
+                        if (indicator) {
+                            indicator.remove();
+                        }
+                    }
+                    return isTrulyEdited;
+                };
                 // 初始化功能
                 const initializeApp = async () => {
                     let networkConnected = true;
@@ -2655,6 +3494,36 @@ $el("style", {
         position: relative;
         flex-grow: 1;
         display: flex;
+        align-items: center;
+    }
+
+    .danbooru-search-input {
+        /* padding-right: 28px !important; */ /* 为清空按钮留出空间, 已被新的flex布局取代 */
+    }
+
+    .danbooru-clear-search-button {
+        position: absolute;
+        right: 5px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: transparent;
+        border: none;
+        color: #999;
+        cursor: pointer;
+        font-size: 20px;
+        line-height: 1;
+        padding: 0 5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        transition: all 0.2s;
+    }
+    .danbooru-clear-search-button:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        color: white;
     }
 
     /* 自动补全建议面板 */
@@ -2856,7 +3725,7 @@ $el("style", {
     .danbooru-controls { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; align-items: stretch; }
     .danbooru-auth-controls { display: flex; gap: 5px; }
     .danbooru-controls > button, .danbooru-controls > div { padding: 5px; border-radius: 4px; border: 1px solid var(--input-border-color); background-color: var(--comfy-input-bg); color: var(--comfy-input-text); }
-    .danbooru-controls > .danbooru-search-container > .danbooru-search-input { background: none; border: none; padding-left: 10px; }
+    .danbooru-controls > .danbooru-search-container > .danbooru-search-input { background: var(--comfy-input-bg); border: 1px solid var(--input-border-color); padding: 5px 10px; border-radius: 4px; }
     .danbooru-controls .danbooru-search-input { flex-grow: 1; min-width: 150px; }
     .danbooru-controls > select { min-width: 100px; }
     .danbooru-image-wrapper.new-item { animation: fadeInUp 0.5s ease-out; }
@@ -3014,6 +3883,7 @@ $el("style", {
 
     .danbooru-image-buttons button:hover {
         transform: scale(1.1) !important;
+        background-color: rgba(123, 104, 238, 0.9) !important; /* 统一使用紫色悬浮效果 */
     }
 
     /* 收藏按钮特定样式 */
@@ -3023,12 +3893,24 @@ $el("style", {
     }
 
     .danbooru-favorite-button.favorited:hover {
-        background-color: rgba(153, 27, 27, 0.9) !important;
+        background-color: rgba(123, 104, 238, 0.9) !important; /* 统一使用紫色悬浮效果 */
     }
 
-    /* 下载按钮特定样式 */
-    .danbooru-download-button:hover {
-        background-color: rgba(34, 139, 34, 0.9) !important;
+    /* 统一所有按钮的悬浮样式 */
+    .danbooru-download-button:hover,
+    .danbooru-edit-button:hover,
+    .danbooru-view-image-button:hover {
+        background-color: rgba(123, 104, 238, 0.9) !important; /* 统一使用紫色悬浮效果 */
+    }
+
+    /* 可点击的tag样式 */
+    .danbooru-clickable-tag {
+        cursor: pointer !important;
+        transition: transform 0.1s, filter 0.1s !important;
+    }
+    .danbooru-clickable-tag:hover {
+        transform: scale(1.05) !important;
+        filter: brightness(1.2) !important;
     }
 
     /* 旧的、独立的按钮样式将被上面的新规则取代或覆盖，为了清晰起见，我将删除它们 */
@@ -3388,6 +4270,198 @@ $el("style", {
         }
         `,
     parent: document.head,
+});
+
+$el("style", {
+    textContent: `
+    /* 编辑面板样式 */
+    .danbooru-edit-panel-content {
+        position: relative;
+    }
+    .danbooru-edit-panel-close-button {
+        background: transparent;
+        border: none;
+        color: var(--comfy-input-text);
+        cursor: pointer;
+        padding: 5px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background-color 0.2s, transform 0.2s;
+    }
+    .danbooru-edit-panel-close-button:hover {
+        background-color: rgba(255, 255, 255, 0.15);
+        transform: rotate(90deg);
+    }
+    /* Styles for the new copy and reset buttons */
+    .danbooru-edit-panel-content button {
+        transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    }
+    .danbooru-edit-panel-content button:hover {
+        background-color: rgba(123, 104, 238, 0.2); /* 统一紫色悬浮效果，增强视觉强度 */
+        border-color: #7B68EE;
+        color: white; /* 悬浮时文字改为白色，提高对比度 */
+        transform: translateY(-2px);
+    }
+    .danbooru-edit-panel-content button:active {
+        background-color: rgba(123, 104, 238, 0.3); /* 点击时进一步加深 */
+        transform: translateY(0);
+    }
+    .danbooru-edit-tags-container {
+        scrollbar-width: thin;
+        scrollbar-color: #555 #333;
+    }
+    .danbooru-edit-tags-container::-webkit-scrollbar {
+        width: 6px;
+    }
+    .danbooru-edit-tags-container::-webkit-scrollbar-track {
+        background: #333;
+        border-radius: 3px;
+    }
+    .danbooru-edit-tags-container::-webkit-scrollbar-thumb {
+        background: #555;
+        border-radius: 3px;
+    }
+    .danbooru-edit-tags-container::-webkit-scrollbar-thumb:hover {
+        background: #777;
+    }
+    .danbooru-view-image-button:hover {
+        background-color: rgba(23, 162, 184, 0.9) !important;
+    }
+    `,
+    parent: document.head
+});
+
+$el("style", {
+    textContent: `
+    .danbooru-tag-context-menu {
+        /* Styles are set in JS, but we can add basics here */
+    }
+    .danbooru-context-menu-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 14px;
+        border-radius: 4px;
+        transition: background-color 0.2s;
+    }
+    .danbooru-context-menu-item:hover {
+        background-color: rgba(123, 104, 238, 0.3);
+    }
+    .danbooru-add-tag-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        border: 1px dashed #888;
+        color: #888;
+        background-color: transparent;
+        cursor: pointer;
+        font-size: 16px;
+        margin-left: 5px;
+        transition: all 0.2s;
+    }
+    .danbooru-add-tag-button:hover {
+        background-color: rgba(123, 104, 238, 0.3);
+        color: white;
+        border-style: solid;
+        border-color: #7B68EE;
+    }
+    .danbooru-add-tag-input {
+        background-color: var(--comfy-input-bg);
+        border: 1px solid #7B68EE;
+        color: var(--comfy-input-text);
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-size: 0.8em;
+        margin-left: 5px;
+        outline: none;
+    }
+    .danbooru-reset-tags-button {
+        padding: 8px 15px;
+        border: 1px solid #7B68EE;
+        border-radius: 6px;
+        background-color: transparent;
+        color: #7B68EE;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .danbooru-reset-tags-button:hover {
+        background-color: rgba(123, 104, 238, 0.2);
+        border-color: #7B68EE;
+        color: white;
+        transform: translateY(-2px);
+    }
+    .danbooru-add-tag-container {
+        position: relative;
+        display: inline-block;
+    }
+    .danbooru-add-tag-input {
+        background-color: var(--comfy-input-bg);
+        border: 1px solid #7B68EE;
+        color: var(--comfy-input-text);
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-size: 0.8em;
+        outline: none;
+        width: 120px;
+    }
+    /* These panels are now attached to body, so they need absolute positioning relative to viewport */
+    .danbooru-add-tag-container .danbooru-suggestions-panel,
+    .danbooru-add-tag-container .danbooru-chinese-suggestions-panel,
+    .danbooru-suggestions-panel, /* Add rule for when it's a direct child of body */
+    .danbooru-chinese-suggestions-panel {
+        position: absolute; /* Changed from relative to absolute */
+        z-index: 10003; /* Ensure it's on top of the edit panel */
+        width: auto;
+        min-width: 150px; /* Set a minimum width */
+        max-width: 450px; /* Allow it to be wider */
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    `,
+    parent: document.head
+});
+
+$el("style", {
+    textContent: `
+    /* "已编辑" 提示样式 */
+    .danbooru-edited-indicator {
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        background-color: rgba(123, 104, 238, 0.9); /* 紫色背景 */
+        color: white;
+        padding: 3px 8px;
+        font-size: 10px;
+        font-weight: bold;
+        border-radius: 8px;
+        z-index: 15;
+        pointer-events: none;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        animation: fadeInDown 0.3s ease-out;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    @keyframes fadeInDown {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    `,
+    parent: document.head
 });
 
 
