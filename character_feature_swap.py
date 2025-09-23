@@ -21,10 +21,13 @@ def load_llm_settings():
         "api_key": "",
         "model": "gryphe/mythomax-l2-13b",
         "custom_prompt": (
-            "You are an AI assistant for Stable Diffusion. Your task is to replace character features in a given prompt with new ones. "
-            "Respond with only the new prompt, without any explanations.\n\n"
+            "You are an AI assistant for Stable Diffusion. Your task is to replace features in a prompt.\n"
+            "Your goal is to take the features described in the 'New Character Prompt' and intelligently merge them into the 'Original Prompt'.\n"
+            "The 'Features to Replace' list tells you which categories of features (like hair style, eye color, clothing) should be taken from the 'New Character Prompt'.\n"
+            "Respond with only the new, modified prompt, without any explanations.\n\n"
             "**Original Prompt:**\n{original_prompt}\n\n"
-            "**Target Features:**\n{target_features}\n\n"
+            "**New Character Prompt:**\n{character_prompt}\n\n"
+            "**Features to Replace (guide):**\n{target_features}\n\n"
             "**New Prompt:**"
         )
     }
@@ -70,6 +73,21 @@ async def save_llm_settings_route(request):
         logger.error(f"保存LLM设置接口错误: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=500)
 
+# API to get all tags
+@PromptServer.instance.routes.get("/character_swap/get_all_tags")
+async def get_all_tags(request):
+    """提供所有可用的标签给前端"""
+    all_tags_file = os.path.join(PLUGIN_DIR, "zh_cn", "all_tags_cn.json")
+    if not os.path.exists(all_tags_file):
+        return web.json_response({"error": "Tag file not found."}, status=404)
+    try:
+        with open(all_tags_file, 'r', encoding='utf-8') as f:
+            tags_data = json.load(f)
+        return web.json_response(tags_data)
+    except Exception as e:
+        logger.error(f"加载 all_tags_cn.json 失败: {e}")
+        return web.json_response({"error": "Failed to load tags."}, status=500)
+
 class CharacterFeatureSwapNode:
     """
     一个使用LLM API替换提示词中人物特征的节点
@@ -78,12 +96,10 @@ class CharacterFeatureSwapNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "original_prompt": ("STRING", {"multiline": True, "default": "1girl, solo, long hair, blue eyes, school uniform, classroom"}),
-                "target_features": ("STRING", {"multiline": True, "default": "short hair, green eyes, witch hat, magical forest"}),
+                "original_prompt": ("STRING", {"forceInput": True}),
+                "character_prompt": ("STRING", {"forceInput": True}),
+                "target_features": ("STRING", {"default": "hair style, eye color, hair color, clothing, expression", "multiline": False}),
             },
-            "optional": {
-                "feature_categories_to_replace": ("STRING", {"multiline": False, "default": "hair style, eyes color, clothing, background"}),
-            }
         }
 
     RETURN_TYPES = ("STRING",)
@@ -91,7 +107,7 @@ class CharacterFeatureSwapNode:
     FUNCTION = "execute"
     CATEGORY = "Danbooru"
 
-    def execute(self, original_prompt, target_features, feature_categories_to_replace=None):
+    def execute(self, original_prompt, character_prompt, target_features):
         settings = load_llm_settings()
         api_url = settings.get("api_url")
         api_key = settings.get("api_key")
@@ -107,6 +123,7 @@ class CharacterFeatureSwapNode:
         # 构建发送给LLM的提示
         prompt_for_llm = custom_prompt_template.format(
             original_prompt=original_prompt,
+            character_prompt=character_prompt,
             target_features=target_features
         )
         
