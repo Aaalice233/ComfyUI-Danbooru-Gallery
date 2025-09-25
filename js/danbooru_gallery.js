@@ -1,246 +1,247 @@
 import { app } from "../../../scripts/app.js";
 import { $el } from "../../../scripts/ui.js";
 
-// 多语言字典
-const i18n = {
-    zh: {
-        // 搜索和控制
-        searchPlaceholder: "Tags (最多2个, 例如: 1girl, blue_eyes) - 第三个及后续tag将被忽略...",
-        categories: "类别",
-        formatting: "格式",
-        all: "全部",
-        general: "普通",
-        sensitive: "敏感",
-        questionable: "可疑",
-        explicit: "露骨",
-        artist: "画师",
-        copyright: "版权",
-        character: "角色",
-        meta: "元数据",
-
-        // 格式选项
-        escapeBrackets: "() -> \\(\\)",
-        replaceUnderscores: "_ -> 空格",
-
-        // 按钮
-        ranking: "排行榜",
-        refresh: "刷新",
-        settings: "设置",
-        language: "语言",
-        blacklist: "黑名单",
-        download: "下载原图",
-        favorite: "收藏",
-        unfavorite: "取消收藏",
-        favorites: "收藏夹",
-        userAuth: "用户认证",
-        username: "用户名",
-        apiKey: "API Key",
-        authDescription: "请输入您的Danbooru用户名和API Key来使用收藏功能",
-        authPlaceholderUsername: "输入您的Danbooru用户名",
-        authPlaceholderApiKey: "输入您的API Key",
-        authRequired: "请先在设置中配置用户名和API Key",
-        apiKeyHelp: "如何获取API Key？",
-        apiKeyTooltip: "点击查看如何获取Danbooru API Key和用户名",
-        languageSettings: "语言设置",
-        blacklistSettings: "黑名单设置",
-        promptFilterSettings: "提示词过滤设置",
-        promptFilterEnable: "启用提示词过滤",
-        promptFilterDescription: "从输出的提示词中移除指定的标签，每行一个标签",
-        promptFilterPlaceholder: "输入要过滤的标签，每行一个...\n例如：\nwatermark\nsample_watermark\nweibo_username",
-
-        // 界面设置
-        uiSettings: "界面设置",
-        autocompleteSettings: "自动补全设置",
-        autocompleteEnable: "启用自动补全",
-        autocompleteEnableDescription: "在输入标签时显示建议",
-        autocompleteMaxResults: "最大补全数量",
-        tooltipSettings: "悬浮提示设置",
-        tooltipEnable: "启用悬浮提示",
-        tooltipEnableDescription: "鼠标悬停在图片上时显示详细信息",
-
-        // 状态信息
-        loading: "加载中...",
-        noResults: "未找到结果",
-
-        // 黑名单对话框
-        blacklistTitle: "黑名单设置",
-        blacklistDescription: "每行一个标签，这些标签的图片将被过滤掉",
-        blacklistPlaceholder: "输入要屏蔽的标签，每行一个...\n例如：\nloli\nshota\nexplicit",
-        cancel: "取消",
-        save: "保存",
-        saveFailed: "保存失败，请重试",
-
-        // 悬浮提示
-        ratingTooltip: "按图片分级过滤 (General, Sensitive, Questionable, Explicit)",
-        categoriestooltip: "选择输出中包含的标签类别 (Artist, Copyright, Character, General, Meta)",
-        formattingTooltip: "输出标签的文本格式选项 (转义括号, 替换下划线)",
-        rankingTooltip: "切换排行榜 (order:rank)",
-        blacklistTooltip: "黑名单设置",
-        refreshTooltip: "刷新",
-        languageTooltip: "语言切换",
-
-        // 详细信息
-        details: "详细信息",
-        uploaded: "上传时间",
-        resolution: "分辨率",
-
-        // 社交链接
-        socialLinks: "社交链接",
-        githubTooltip: "访问GitHub项目页面",
-        discordTooltip: "加入Discord服务器",
-
-        // 设置侧边栏
-        generalSection: "通用",
-        userSection: "用户",
-        contentSection: "内容",
-        promptSection: "提示词",
-        uiSection: "界面",
-        editMode: "编辑模式",
-        editPanelTitle: "编辑提示词",
-        close: "关闭",
-        clearSearch: "清空搜索",
-        search: "搜索",
-        delete: "删除",
-        addTag: "添加标签",
-        resetTags: "重置标签",
-        edited: "已编辑",
-        viewImage: "查看大图",
-        copyTags: "复制标签",
-        copyTagsSuccess: "标签已复制到剪贴板！",
-        copyTagsFail: "复制标签失败。",
-        noTagsToCopy: "没有可复制的标签。"
-    },
-    en: {
-        // 搜索和控制
-        searchPlaceholder: "Tags (Max 2, e.g., 1girl, blue_eyes) - Third and subsequent tags will be ignored...",
-        categories: "Categories",
-        formatting: "Formatting",
-        all: "ALL",
-        general: "General",
-        sensitive: "Sensitive",
-        questionable: "Questionable",
-        explicit: "Explicit",
-        artist: "Artist",
-        copyright: "Copyright",
-        character: "Character",
-        meta: "Meta",
-
-        // 格式选项
-        escapeBrackets: "() -> \\(\\)",
-        replaceUnderscores: "_ -> space",
-
-        // 按钮
-        ranking: "Ranking",
-        refresh: "Refresh",
-        settings: "Settings",
-        language: "Language",
-        blacklist: "Blacklist",
-        download: "Download Original",
-        favorite: "Favorite",
-        unfavorite: "Unfavorite",
-        favorites: "Favorites",
-        userAuth: "User Authentication",
-        username: "Username",
-        apiKey: "API Key",
-        authDescription: "Please enter your Danbooru username and API Key to use favorite features",
-        authPlaceholderUsername: "Enter your Danbooru username",
-        authPlaceholderApiKey: "Enter your API Key",
-        authRequired: "Please configure username and API Key in settings first",
-        apiKeyHelp: "How to get API Key?",
-        apiKeyTooltip: "Click to see how to get Danbooru API Key and username",
-        languageSettings: "Language Settings",
-        blacklistSettings: "Blacklist Settings",
-        promptFilterSettings: "Prompt Filter Settings",
-        promptFilterEnable: "Enable Prompt Filter",
-        promptFilterDescription: "Remove specified tags from output prompts, one tag per line",
-        promptFilterPlaceholder: "Enter tags to filter, one per line...\nExample:\nwatermark\nsample_watermark\nweibo_username",
-
-        // UI Settings
-        uiSettings: "UI Settings",
-        autocompleteSettings: "Autocomplete Settings",
-        autocompleteEnable: "Enable Autocomplete",
-        autocompleteEnableDescription: "Show suggestions while typing tags",
-        autocompleteMaxResults: "Max Results",
-        tooltipSettings: "Tooltip Settings",
-        tooltipEnable: "Enable Tooltip",
-        tooltipEnableDescription: "Show details when hovering over an image",
-
-        // 状态信息
-        loading: "Loading...",
-        noResults: "No results found.",
-
-        // 黑名单对话框
-        blacklistTitle: "Blacklist Settings",
-        blacklistDescription: "Each line contains one tag, images with these tags will be filtered out",
-        blacklistPlaceholder: "Enter tags to blacklist, one per line...\nExample:\nloli\nshota\nexplicit",
-        cancel: "Cancel",
-        save: "Save",
-        saveFailed: "Save failed, please try again",
-
-        // 悬浮提示
-        ratingTooltip: "Filter by image rating (General, Sensitive, Questionable, Explicit)",
-        categoriestooltip: "Select which tag categories to include in output (Artist, Copyright, Character, General, Meta)",
-        formattingTooltip: "Text formatting options for output tags (escape brackets, replace underscores)",
-        rankingTooltip: "Toggle Ranking (order:rank)",
-        blacklistTooltip: "Blacklist Settings",
-        refreshTooltip: "Refresh",
-        languageTooltip: "Language Switch",
-
-        // 详细信息
-        details: "Details",
-        uploaded: "Uploaded",
-        resolution: "Resolution",
-
-        // 社交链接
-        socialLinks: "Social Links",
-        githubTooltip: "Visit GitHub repository",
-        discordTooltip: "Join Discord server",
-
-        // 设置侧边栏
-        generalSection: "General",
-        userSection: "User",
-        contentSection: "Content",
-        promptSection: "Prompt",
-        uiSection: "UI",
-        editMode: "Edit Mode",
-        editPanelTitle: "Edit Prompt",
-        close: "Close",
-        clearSearch: "Clear Search",
-        search: "Search",
-        delete: "Delete",
-        addTag: "Add Tag",
-        resetTags: "Reset Tags",
-        edited: "Edited",
-        viewImage: "View Image",
-        copyTags: "Copy Tags",
-        copyTagsSuccess: "Tags copied to clipboard!",
-        copyTagsFail: "Failed to copy tags.",
-        noTagsToCopy: "No tags to copy."
-    }
-};
-// 当前语言
-let currentLanguage = 'zh';
-
-// 全局悬浮提示实例
-let globalTooltip = null;
-let globalTooltipTimeout = null;
-
-// 获取翻译文本
-const t = (key) => {
-    return i18n[currentLanguage]?.[key] || i18n.zh[key] || key;
-};
-
-// 比较标签字符串的辅助函数，忽略顺序
-const compareTagStrings = (str1, str2) => {
-    const tags1 = (str1 || "").split(' ').filter(Boolean).sort().join(' ');
-    const tags2 = (str2 || "").split(' ').filter(Boolean).sort().join(' ');
-    return tags1 === tags2;
-};
-
 app.registerExtension({
     name: "Comfy.DanbooruGallery",
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name === "DanbooruGalleryNode") {
+            // 多语言字典
+            const i18n = {
+                zh: {
+                    // 搜索和控制
+                    searchPlaceholder: "Tags (最多2个, 例如: 1girl, blue_eyes) - 第三个及后续tag将被忽略...",
+                    categories: "类别",
+                    formatting: "格式",
+                    all: "全部",
+                    general: "普通",
+                    sensitive: "敏感",
+                    questionable: "可疑",
+                    explicit: "露骨",
+                    artist: "画师",
+                    copyright: "版权",
+                    character: "角色",
+                    meta: "元数据",
+
+                    // 格式选项
+                    escapeBrackets: "() -> \\(\\)",
+                    replaceUnderscores: "_ -> 空格",
+
+                    // 按钮
+                    ranking: "排行榜",
+                    refresh: "刷新",
+                    settings: "设置",
+                    language: "语言",
+                    blacklist: "黑名单",
+                    download: "下载原图",
+                    favorite: "收藏",
+                    unfavorite: "取消收藏",
+                    favorites: "收藏夹",
+                    userAuth: "用户认证",
+                    username: "用户名",
+                    apiKey: "API Key",
+                    authDescription: "请输入您的Danbooru用户名和API Key来使用收藏功能",
+                    authPlaceholderUsername: "输入您的Danbooru用户名",
+                    authPlaceholderApiKey: "输入您的API Key",
+                    authRequired: "请先在设置中配置用户名和API Key",
+                    apiKeyHelp: "如何获取API Key？",
+                    apiKeyTooltip: "点击查看如何获取Danbooru API Key和用户名",
+                    languageSettings: "语言设置",
+                    blacklistSettings: "黑名单设置",
+                    promptFilterSettings: "提示词过滤设置",
+                    promptFilterEnable: "启用提示词过滤",
+                    promptFilterDescription: "从输出的提示词中移除指定的标签，每行一个标签",
+                    promptFilterPlaceholder: "输入要过滤的标签，每行一个...\n例如：\nwatermark\nsample_watermark\nweibo_username",
+
+                    // 界面设置
+                    uiSettings: "界面设置",
+                    autocompleteSettings: "自动补全设置",
+                    autocompleteEnable: "启用自动补全",
+                    autocompleteEnableDescription: "在输入标签时显示建议",
+                    autocompleteMaxResults: "最大补全数量",
+                    tooltipSettings: "悬浮提示设置",
+                    tooltipEnable: "启用悬浮提示",
+                    tooltipEnableDescription: "鼠标悬停在图片上时显示详细信息",
+
+                    // 状态信息
+                    loading: "加载中...",
+                    noResults: "未找到结果",
+
+                    // 黑名单对话框
+                    blacklistTitle: "黑名单设置",
+                    blacklistDescription: "每行一个标签，这些标签的图片将被过滤掉",
+                    blacklistPlaceholder: "输入要屏蔽的标签，每行一个...\n例如：\nloli\nshota\nexplicit",
+                    cancel: "取消",
+                    save: "保存",
+                    saveFailed: "保存失败，请重试",
+
+                    // 悬浮提示
+                    ratingTooltip: "按图片分级过滤 (General, Sensitive, Questionable, Explicit)",
+                    categoriestooltip: "选择输出中包含的标签类别 (Artist, Copyright, Character, General, Meta)",
+                    formattingTooltip: "输出标签的文本格式选项 (转义括号, 替换下划线)",
+                    rankingTooltip: "切换排行榜 (order:rank)",
+                    blacklistTooltip: "黑名单设置",
+                    refreshTooltip: "刷新",
+                    languageTooltip: "语言切换",
+
+                    // 详细信息
+                    details: "详细信息",
+                    uploaded: "上传时间",
+                    resolution: "分辨率",
+
+                    // 社交链接
+                    socialLinks: "社交链接",
+                    githubTooltip: "访问GitHub项目页面",
+                    discordTooltip: "加入Discord服务器",
+
+                    // 设置侧边栏
+                    generalSection: "通用",
+                    userSection: "用户",
+                    contentSection: "内容",
+                    promptSection: "提示词",
+                    uiSection: "界面",
+                    editMode: "编辑模式",
+                    editPanelTitle: "编辑提示词",
+                    close: "关闭",
+                    clearSearch: "清空搜索",
+                    search: "搜索",
+                    delete: "删除",
+                    addTag: "添加标签",
+                    resetTags: "重置标签",
+                    edited: "已编辑",
+                    viewImage: "查看大图",
+                    copyTags: "复制标签",
+                    copyTagsSuccess: "标签已复制到剪贴板！",
+                    copyTagsFail: "复制标签失败。",
+                    noTagsToCopy: "没有可复制的标签。",
+                    importSettings: "导入设置",
+                    exportSettings: "导出设置",
+                    importSuccess: "设置已成功导入！",
+                    exportSuccess: "设置已成功导出！",
+                    importError: "导入设置失败，文件格式错误。",
+                    saveSuccess: "设置已保存！"
+                },
+                en: {
+                    // 搜索和控制
+                    searchPlaceholder: "Tags (Max 2, e.g., 1girl, blue_eyes) - Third and subsequent tags will be ignored...",
+                    categories: "Categories",
+                    formatting: "Formatting",
+                    all: "ALL",
+                    general: "General",
+                    sensitive: "Sensitive",
+                    questionable: "Questionable",
+                    explicit: "Explicit",
+                    artist: "Artist",
+                    copyright: "Copyright",
+                    character: "Character",
+                    meta: "Meta",
+
+                    // 格式选项
+                    escapeBrackets: "() -> \\(\\)",
+                    replaceUnderscores: "_ -> space",
+
+                    // 按钮
+                    ranking: "Ranking",
+                    refresh: "Refresh",
+                    settings: "Settings",
+                    language: "Language",
+                    blacklist: "Blacklist",
+                    download: "Download Original",
+                    favorite: "Favorite",
+                    unfavorite: "Unfavorite",
+                    favorites: "Favorites",
+                    userAuth: "User Authentication",
+                    username: "Username",
+                    apiKey: "API Key",
+                    authDescription: "Please enter your Danbooru username and API Key to use favorite features",
+                    authPlaceholderUsername: "Enter your Danbooru username",
+                    authPlaceholderApiKey: "Enter your API Key",
+                    authRequired: "Please configure username and API Key in settings first",
+                    apiKeyHelp: "How to get API Key?",
+                    apiKeyTooltip: "Click to see how to get Danbooru API Key and username",
+                    languageSettings: "Language Settings",
+                    blacklistSettings: "Blacklist Settings",
+                    promptFilterSettings: "Prompt Filter Settings",
+                    promptFilterEnable: "Enable Prompt Filter",
+                    promptFilterDescription: "Remove specified tags from output prompts, one tag per line",
+                    promptFilterPlaceholder: "Enter tags to filter, one per line...\nExample:\nwatermark\nsample_watermark\nweibo_username",
+
+                    // UI Settings
+                    uiSettings: "UI Settings",
+                    autocompleteSettings: "Autocomplete Settings",
+                    autocompleteEnable: "Enable Autocomplete",
+                    autocompleteEnableDescription: "Show suggestions while typing tags",
+                    autocompleteMaxResults: "Max Results",
+                    tooltipSettings: "Tooltip Settings",
+                    tooltipEnable: "Enable Tooltip",
+                    tooltipEnableDescription: "Show details when hovering over an image",
+
+                    // 状态信息
+                    loading: "Loading...",
+                    noResults: "No results found.",
+
+                    // 黑名单对话框
+                    blacklistTitle: "Blacklist Settings",
+                    blacklistDescription: "Each line contains one tag, images with these tags will be filtered out",
+                    blacklistPlaceholder: "Enter tags to blacklist, one per line...\nExample:\nloli\nshota\nexplicit",
+                    cancel: "Cancel",
+                    save: "Save",
+                    saveFailed: "Save failed, please try again",
+
+                    // 悬浮提示
+                    ratingTooltip: "Filter by image rating (General, Sensitive, Questionable, Explicit)",
+                    categoriestooltip: "Select which tag categories to include in output (Artist, Copyright, Character, General, Meta)",
+                    formattingTooltip: "Text formatting options for output tags (escape brackets, replace underscores)",
+                    rankingTooltip: "Toggle Ranking (order:rank)",
+                    blacklistTooltip: "Blacklist Settings",
+                    refreshTooltip: "Refresh",
+                    languageTooltip: "Language Switch",
+
+                    // 详细信息
+                    details: "Details",
+                    uploaded: "Uploaded",
+                    resolution: "Resolution",
+
+                    // 社交链接
+                    socialLinks: "Social Links",
+                    githubTooltip: "Visit GitHub repository",
+                    discordTooltip: "Join Discord server",
+
+                    // 设置侧边栏
+                    generalSection: "General",
+                    userSection: "User",
+                    contentSection: "Content",
+                    promptSection: "Prompt",
+                    uiSection: "UI",
+                    editMode: "Edit Mode",
+                    editPanelTitle: "Edit Prompt",
+                    close: "Close",
+                    clearSearch: "Clear Search",
+                    search: "Search",
+                    delete: "Delete",
+                    addTag: "Add Tag",
+                    resetTags: "Reset Tags",
+                    edited: "Edited",
+                    viewImage: "View Image",
+                    copyTags: "Copy Tags",
+                    copyTagsSuccess: "Tags copied to clipboard!",
+                    copyTagsFail: "Failed to copy tags.",
+                    noTagsToCopy: "No tags to copy.",
+                    importSettings: "Import Settings",
+                    exportSettings: "Export Settings",
+                    importSuccess: "Settings imported successfully!",
+                    exportSuccess: "Settings exported successfully!",
+                    importError: "Failed to import settings, invalid file format.",
+                    saveSuccess: "Settings saved!"
+                }
+            };
+            // 当前语言
+            let currentLanguage = 'zh';
+
+            // 获取翻译文本
+            const t = (key) => {
+                return i18n[currentLanguage]?.[key] || i18n.zh[key] || key;
+            };
+
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
@@ -417,6 +418,7 @@ app.registerExtension({
                     this.onResize(this.size);
                 }, 10);
 
+                let globalTooltip, globalTooltipTimeout;
                 let posts = [], currentPage = 1, isLoading = false;
                 let userAuth = { username: "", api_key: "", has_auth: false }; // 用户认证信息
                 let userFavorites = []; // 用户收藏列表，确保字符串
@@ -882,8 +884,17 @@ app.registerExtension({
 
                 const createFormattingCheckbox = (name, label, checked = true) => {
                     const id = `danbooru-format-${name}`;
+                    const checkbox = $el("input", { type: "checkbox", id, name, checked, className: "danbooru-format-checkbox" });
+                    checkbox.addEventListener('change', async () => {
+                        const newFormattingOptions = {
+                            escapeBrackets: formattingDropdown.querySelector('[name="escapeBrackets"]').checked,
+                            replaceUnderscores: formattingDropdown.querySelector('[name="replaceUnderscores"]').checked,
+                        };
+                        uiSettings.formatting = newFormattingOptions;
+                        await saveUiSettings(uiSettings);
+                    });
                     return $el("div.danbooru-category-item", [
-                        $el("input", { type: "checkbox", id, name, checked, className: "danbooru-format-checkbox" }),
+                        checkbox,
                         $el("label", { htmlFor: id, textContent: label })
                     ]);
                 };
@@ -948,8 +959,95 @@ app.registerExtension({
                    </svg>
                    ${t('favorites')}`;
 
+                // 导出设置
+                const exportSettings = () => {
+                    const settingsToExport = {
+                        language: currentLanguage,
+                        blacklist: currentBlacklist,
+                        prompt_filter: {
+                            enabled: filterEnabled,
+                            tags: currentFilterTags,
+                        },
+                        ui: {
+                            ...uiSettings,
+                            // Ensure formatting is included from the checkboxes directly
+                            formatting: {
+                                escapeBrackets: formattingDropdown.querySelector('[name="escapeBrackets"]').checked,
+                                replaceUnderscores: formattingDropdown.querySelector('[name="replaceUnderscores"]').checked,
+                            }
+                        },
+                    };
+
+                    const blob = new Blob([JSON.stringify(settingsToExport, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'danbooru_gallery_settings.json';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    showToast(t('exportSuccess'), 'success');
+                };
+
+                // 导入设置
+                const importSettings = (dialog) => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.json';
+                    input.onchange = (e) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = async (event) => {
+                            try {
+                                const s = JSON.parse(event.target.result);
+
+                                const promises = [];
+                                if (s.language && i18n[s.language]) {
+                                    promises.push(saveLanguage(s.language));
+                                }
+                                if (Array.isArray(s.blacklist)) {
+                                    promises.push(saveBlacklist(s.blacklist));
+                                }
+                                if (s.prompt_filter && typeof s.prompt_filter.enabled === 'boolean' && Array.isArray(s.prompt_filter.tags)) {
+                                    promises.push(saveFilterTags(s.prompt_filter.tags, s.prompt_filter.enabled));
+                                }
+                                if (s.ui) {
+                                    // Merge formatting settings correctly
+                                    const newUiSettings = { ...uiSettings, ...s.ui };
+                                    if (s.ui.formatting) {
+                                        newUiSettings.formatting = { ...uiSettings.formatting, ...s.ui.formatting };
+                                    }
+                                    promises.push(saveUiSettings(newUiSettings));
+                                }
+
+                                const results = await Promise.all(promises);
+
+                                if (results.some(res => res === false)) {
+                                    showToast(t('saveFailed'), 'error');
+                                    return;
+                                }
+
+                                showToast(t('importSuccess'), 'success');
+                                dialog.remove();
+
+                                await initializeApp();
+                                showSettingsDialog();
+
+                            } catch (error) {
+                                console.error("Failed to import settings:", error);
+                                showToast(t('importError'), 'error');
+                            }
+                        };
+                        reader.readAsText(file);
+                    };
+                    input.click();
+                };
+
                 // 创建设置页面对话框
-                const showSettingsDialog = () => {
+                const showSettingsDialog = (initialState = {}) => {
                     const dialog = $el("div.danbooru-settings-dialog", {
                         style: {
                             position: "fixed",
@@ -1061,45 +1159,28 @@ app.registerExtension({
                         }
                     });
 
-                    let selectedLanguage = currentLanguage; // 新增：临时语言选择状态
-
                     const createLanguageButton = (lang, text) => {
-                        const isActive = selectedLanguage === lang;
+                        const isActive = currentLanguage === lang;
                         const button = $el("button", {
                             textContent: text,
-                            style: {
-                                padding: "8px 16px",
-                                border: `2px solid ${isActive ? '#7B68EE' : 'var(--input-border-color)'}`,
-                                borderRadius: "6px",
-                                backgroundColor: isActive ? '#7B68EE' : 'var(--comfy-input-bg)',
-                                color: isActive ? 'white' : 'var(--comfy-input-text)',
-                                cursor: "pointer",
-                                fontSize: "14px",
-                                fontWeight: isActive ? "600" : "normal",
-                                transition: "all 0.2s ease"
-                            },
-                            onclick: () => {
-                                // 只更新临时选择状态，不立即保存
-                                selectedLanguage = lang;
-
-                                // 更新所有按钮的样式
-                                languageOptions.querySelectorAll('button').forEach(btn => {
-                                    const isCurrentActive = btn.textContent === text;
-                                    btn.style.border = `2px solid ${isCurrentActive ? '#7B68EE' : 'var(--input-border-color)'}`;
-                                    btn.style.backgroundColor = isCurrentActive ? '#7B68EE' : 'var(--comfy-input-bg)';
-                                    btn.style.color = isCurrentActive ? 'white' : 'var(--comfy-input-text)';
-                                    btn.style.fontWeight = isCurrentActive ? "600" : "normal";
-                                });
-                            }
+                            className: `danbooru-language-select-button ${isActive ? 'active' : ''}`,
+                            dataset: { lang: lang } // Store lang in dataset
                         });
                         return button;
                     };
 
-                    languageOptions.appendChild(createLanguageButton('zh', '中文'));
-                    languageOptions.appendChild(createLanguageButton('en', 'English'));
+                    const zhButton = createLanguageButton('zh', '中文');
+                    const enButton = createLanguageButton('en', 'English');
+
+                    languageOptions.appendChild(zhButton);
+                    languageOptions.appendChild(enButton);
+
+                    console.log("Language buttons created:", zhButton, enButton);
 
                     languageSection.appendChild(languageTitle);
                     languageSection.appendChild(languageOptions);
+
+                    console.log("Language section appended:", languageSection.innerHTML);
 
                     // 黑名单设置部分
                     const blacklistSection = $el("div.danbooru-settings-section", {
@@ -1147,7 +1228,7 @@ app.registerExtension({
 
                     const blacklistTextarea = $el("textarea", {
                         placeholder: t('blacklistPlaceholder'),
-                        value: currentBlacklist.join('\n'),
+                        value: initialState.blacklist ?? currentBlacklist.join('\n'),
                         style: {
                             width: "100%",
                             height: "120px",
@@ -1211,7 +1292,7 @@ app.registerExtension({
                     const filterEnableCheckbox = $el("input", {
                         type: "checkbox",
                         id: "filterEnableCheckbox",
-                        checked: filterEnabled,
+                        checked: initialState.filterEnabled ?? filterEnabled,
                         style: {
                             width: "16px",
                             height: "16px"
@@ -1243,7 +1324,7 @@ app.registerExtension({
 
                     const filterTextarea = $el("textarea", {
                         placeholder: t('promptFilterPlaceholder'),
-                        value: currentFilterTags.join('\n'),
+                        value: initialState.filterTags ?? currentFilterTags.join('\n'),
                         style: {
                             width: "100%",
                             height: "120px",
@@ -1311,7 +1392,7 @@ app.registerExtension({
                     const usernameInput = $el("input", {
                         type: "text",
                         placeholder: t('authPlaceholderUsername'),
-                        value: userAuth.username || "",
+                        value: (initialState.username ?? userAuth.username) || "",
                         style: {
                             width: "100%",
                             padding: "8px 12px",
@@ -1327,7 +1408,7 @@ app.registerExtension({
                     const apiKeyInput = $el("input", {
                         type: "password",
                         placeholder: t('authPlaceholderApiKey'),
-                        value: userAuth.api_key || "",
+                        value: (initialState.apiKey ?? userAuth.api_key) || "",
                         style: {
                             width: "100%",
                             padding: "8px 12px",
@@ -1369,7 +1450,7 @@ app.registerExtension({
                     const autocompleteSection = $el("div.danbooru-settings-section", { style: { marginBottom: "20px", padding: "16px", border: "1px solid var(--input-border-color)", borderRadius: "8px", backgroundColor: "var(--comfy-input-bg)" } });
                     const autocompleteTitle = $el("h3", { textContent: t('autocompleteSettings'), style: { margin: "0 0 8px 0", color: "var(--comfy-input-text)", fontSize: "1.1em", fontWeight: "500" } });
                     const autocompleteDesc = $el("p", { textContent: t('autocompleteEnableDescription'), style: { margin: "0 0 12px 0", color: "#888", fontSize: "0.9em" } });
-                    const autocompleteEnableCheckbox = $el("input", { type: "checkbox", id: "autocompleteEnableCheckbox", checked: uiSettings.autocomplete_enabled, style: { width: "16px", height: "16px" } });
+                    const autocompleteEnableCheckbox = $el("input", { type: "checkbox", id: "autocompleteEnableCheckbox", checked: initialState.autocompleteEnabled ?? uiSettings.autocomplete_enabled, style: { width: "16px", height: "16px" } });
                     autocompleteEnableCheckbox.onchange = (e) => { /* 用户界面中的临时状态，无需处理 */ };
                     const autocompleteEnableLabel = $el("label", { htmlFor: "autocompleteEnableCheckbox", textContent: t('autocompleteEnable'), style: { cursor: "pointer", color: "var(--comfy-input-text)", fontSize: "1em", fontWeight: "500" } });
                     const autocompleteEnableDiv = $el("div", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" } }, [autocompleteEnableCheckbox, autocompleteEnableLabel]);
@@ -1380,7 +1461,7 @@ app.registerExtension({
                         type: "number",
                         id: "autocompleteMaxResultsInput",
                         title: t('autocompleteEnableDescription'),
-                        value: uiSettings.autocomplete_max_results || 20,
+                        value: (initialState.autocompleteMaxResults ?? uiSettings.autocomplete_max_results) || 20,
                         min: "1",
                         max: "50",
                         style: { width: "60px", padding: '4px', marginLeft: '8px', backgroundColor: 'var(--comfy-menu-bg)', color: 'var(--comfy-input-text)', border: '1px solid var(--input-border-color)', borderRadius: '4px' }
@@ -1396,7 +1477,7 @@ app.registerExtension({
                     const tooltipSection = $el("div.danbooru-settings-section", { style: { marginBottom: "20px", padding: "16px", border: "1px solid var(--input-border-color)", borderRadius: "8px", backgroundColor: "var(--comfy-input-bg)" } });
                     const tooltipTitle = $el("h3", { textContent: t('tooltipSettings'), style: { margin: "0 0 8px 0", color: "var(--comfy-input-text)", fontSize: "1.1em", fontWeight: "500" } });
                     const tooltipDesc = $el("p", { textContent: t('tooltipEnableDescription'), style: { margin: "0 0 12px 0", color: "#888", fontSize: "0.9em" } });
-                    const tooltipEnableCheckbox = $el("input", { type: "checkbox", id: "tooltipEnableCheckbox", checked: uiSettings.tooltip_enabled, style: { width: "16px", height: "16px" } });
+                    const tooltipEnableCheckbox = $el("input", { type: "checkbox", id: "tooltipEnableCheckbox", checked: initialState.tooltipEnabled ?? uiSettings.tooltip_enabled, style: { width: "16px", height: "16px" } });
                     tooltipEnableCheckbox.onchange = (e) => { /* 用户界面中的临时状态，无需处理 */ };
                     const tooltipEnableLabel = $el("label", { htmlFor: "tooltipEnableCheckbox", textContent: t('tooltipEnable'), style: { cursor: "pointer", color: "var(--comfy-input-text)", fontSize: "1em", fontWeight: "500" } });
                     const tooltipEnableDiv = $el("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [tooltipEnableCheckbox, tooltipEnableLabel]);
@@ -1534,6 +1615,30 @@ app.registerExtension({
                         }
                     });
 
+                    const importExportButtonStyle = {
+                        padding: "10px 20px",
+                        border: "1px solid var(--input-border-color)",
+                        borderRadius: "6px",
+                        backgroundColor: "var(--comfy-input-bg)",
+                        color: "var(--comfy-input-text)",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        transition: "all 0.2s ease"
+                    };
+
+                    const importButton = $el("button", {
+                        textContent: t('importSettings'),
+                        style: importExportButtonStyle,
+                        onclick: () => importSettings(dialog)
+                    });
+
+                    const exportButton = $el("button", {
+                        textContent: t('exportSettings'),
+                        style: importExportButtonStyle,
+                        onclick: exportSettings
+                    });
+
                     const cancelButton = $el("button", {
                         textContent: t('cancel'),
                         style: {
@@ -1592,10 +1697,9 @@ app.registerExtension({
                             const newSelectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
 
                             // 保存所有设置
-                            const [blacklistSuccess, filterSuccess, languageSuccess, uiSettingsSuccess] = await Promise.all([
+                            const [blacklistSuccess, filterSuccess, uiSettingsSuccess] = await Promise.all([
                                 saveBlacklist(newBlacklist),
                                 saveFilterTags(newFilterTags, newFilterEnabled),
-                                selectedLanguage !== currentLanguage ? saveLanguage(selectedLanguage) : Promise.resolve(true),
                                 saveUiSettings({
                                     autocomplete_enabled: newAutocompleteEnabled,
                                     tooltip_enabled: newTooltipEnabled,
@@ -1604,7 +1708,7 @@ app.registerExtension({
                                 })
                             ]);
 
-                            if (blacklistSuccess && filterSuccess && languageSuccess && authSuccess && uiSettingsSuccess) {
+                            if (blacklistSuccess && filterSuccess && authSuccess && uiSettingsSuccess) {
                                 // 同步本地状态
                                 currentBlacklist = newBlacklist;
                                 currentFilterTags = newFilterTags;
@@ -1614,12 +1718,8 @@ app.registerExtension({
                                 uiSettings.autocomplete_max_results = newAutocompleteMaxResults;
                                 uiSettings.selected_categories = newSelectedCategories;
 
-                                if (selectedLanguage !== currentLanguage) {
-                                    currentLanguage = selectedLanguage;
-                                    updateInterfaceTexts();
-                                }
-
                                 dialog.remove();
+                                showToast(t('saveSuccess'), 'success');
 
                                 // 重新过滤当前已加载的帖子
                                 const filteredPosts = posts.filter(post => !isPostFiltered(post));
@@ -1636,6 +1736,8 @@ app.registerExtension({
                         }
                     });
 
+                    mainButtonsContainer.appendChild(importButton);
+                    mainButtonsContainer.appendChild(exportButton);
                     mainButtonsContainer.appendChild(cancelButton);
                     mainButtonsContainer.appendChild(saveButton);
 
@@ -1668,6 +1770,36 @@ app.registerExtension({
 
                     document.body.appendChild(dialog);
                     blacklistTextarea.focus();
+
+                    // Add event listeners after all elements are defined
+                    dialog.querySelectorAll('.danbooru-language-select-button').forEach(button => {
+                        button.onclick = async () => {
+                            const lang = button.dataset.lang;
+                            if (currentLanguage === lang) return;
+
+                            // Preserve state
+                            const currentState = {
+                                blacklist: blacklistTextarea.value,
+                                filterTags: filterTextarea.value,
+                                filterEnabled: filterEnableCheckbox.checked,
+                                username: usernameInput.value,
+                                apiKey: apiKeyInput.value,
+                                autocompleteEnabled: autocompleteEnableCheckbox.checked,
+                                tooltipEnabled: tooltipEnableCheckbox.checked,
+                                autocompleteMaxResults: autocompleteMaxResultsInput.value,
+                            };
+
+                            const success = await saveLanguage(lang);
+                            if (success) {
+                                currentLanguage = lang;
+                                updateInterfaceTexts(); // Update main UI
+                                dialog.remove(); // Close current dialog
+                                showSettingsDialog(currentState); // Re-open with new language and preserved state
+                            } else {
+                                alert('Failed to save language setting.');
+                            }
+                        };
+                    });
                 };
 
                 // 创建设置按钮
@@ -1677,7 +1809,10 @@ app.registerExtension({
                         <circle cx="12" cy="12" r="3"></circle>
                     </svg>`,
                     title: t('settings'),
-                    onclick: () => showSettingsDialog()
+                    onclick: () => {
+                        console.log("Settings button clicked");
+                        showSettingsDialog();
+                    }
                 });
 
                 const refreshButton = $el("button.danbooru-refresh-button", {
@@ -1698,7 +1833,16 @@ app.registerExtension({
                 // 提示词过滤功能
                 let currentFilterTags = [];
                 let filterEnabled = true; // 默认开启过滤功能
-                let uiSettings = { autocomplete_enabled: true, tooltip_enabled: true, autocomplete_max_results: 20, selected_categories: ["copyright", "character", "general"] };
+                let uiSettings = {
+                    autocomplete_enabled: true,
+                    tooltip_enabled: true,
+                    autocomplete_max_results: 20,
+                    selected_categories: ["copyright", "character", "general"],
+                    formatting: {
+                        escapeBrackets: true,
+                        replaceUnderscores: true,
+                    }
+                };
 
                 const loadUiSettings = async () => {
                     try {
@@ -1709,7 +1853,8 @@ app.registerExtension({
                                 autocomplete_enabled: data.settings.autocomplete_enabled,
                                 tooltip_enabled: data.settings.tooltip_enabled,
                                 autocomplete_max_results: data.settings.autocomplete_max_results || 20,
-                                selected_categories: data.settings.selected_categories || ["copyright", "character", "general"]
+                                selected_categories: data.settings.selected_categories || ["copyright", "character", "general"],
+                                formatting: data.settings.formatting || { escapeBrackets: true, replaceUnderscores: true }
                             };
                         }
                     } catch (e) {
@@ -3438,54 +3583,80 @@ app.registerExtension({
                 };
                 // 初始化功能
                 const initializeApp = async () => {
-                    let networkConnected = true;
-
-                    // 优先检测网络连接状态
                     try {
-                        const networkResponse = await fetch('/danbooru_gallery/check_network');
-                        const networkData = await networkResponse.json();
-                        if (!networkData.success || !networkData.connected) {
+                        console.log("Initializing Danbooru Gallery...");
+                        let networkConnected = true;
+
+                        // 优先检测网络连接状态
+                        try {
+                            const networkResponse = await fetch('/danbooru_gallery/check_network');
+                            const networkData = await networkResponse.json();
+                            if (!networkData.success || !networkData.connected) {
+                                networkConnected = false;
+                                showError('网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接', true);
+                            }
+                        } catch (e) {
+                            console.error('网络检测失败:', e);
                             networkConnected = false;
-                            showError('网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接', true);
+                            showError('网络检测失败 - 请检查网络连接', true);
                         }
-                    } catch (e) {
-                        console.warn('网络检测失败:', e);
-                        networkConnected = false;
-                        showError('网络检测失败 - 请检查网络连接', true);
+
+                        // 加载语言设置
+                        await loadLanguage();
+                        console.log("Language loaded:", currentLanguage);
+                        // 加载用户认证信息
+                        await loadUserAuth();
+                        console.log("User auth loaded:", userAuth);
+
+                        if (networkConnected && userAuth.has_auth) {
+                            await loadFavorites();
+                            console.log("Favorites loaded.");
+                        }
+
+                        // 更新界面文本
+                        updateInterfaceTexts();
+                        console.log("Interface texts updated.");
+                        // 更新收藏夹按钮状态
+                        updateFavoritesButtonState();
+                        console.log("Favorites button state updated.");
+                        // 加载黑名单
+                        await loadBlacklist();
+                        console.log("Blacklist loaded.");
+                        // 加载提示词过滤设置
+                        await loadFilterTags();
+                        console.log("Filter tags loaded.");
+                        // 加载UI设置
+                        await loadUiSettings();
+                        console.log("UI settings loaded.");
+
+                        // 根据加载的设置更新类别复选框
+                        const categoryCheckboxes = categoryDropdown.querySelectorAll('.danbooru-category-checkbox');
+                        categoryCheckboxes.forEach(checkbox => {
+                            checkbox.checked = uiSettings.selected_categories.includes(checkbox.name);
+                        });
+                        console.log("Category checkboxes updated.");
+
+                        // 根据加载的设置更新格式化复选框
+                        const escapeBracketsCheckbox = formattingDropdown.querySelector('[name="escapeBrackets"]');
+                        const replaceUnderscoresCheckbox = formattingDropdown.querySelector('[name="replaceUnderscores"]');
+                        if (escapeBracketsCheckbox && uiSettings.formatting) {
+                            escapeBracketsCheckbox.checked = uiSettings.formatting.escapeBrackets;
+                        }
+                        if (replaceUnderscoresCheckbox && uiSettings.formatting) {
+                            replaceUnderscoresCheckbox.checked = uiSettings.formatting.replaceUnderscores;
+                        }
+                        console.log("Formatting checkboxes updated.");
+
+                        // 初始化排行榜按钮状态
+                        updateRankingButtonState();
+                        console.log("Ranking button state updated.");
+                        // 页面加载时直接获取第一页的帖子
+                        fetchAndRender(true);
+                        console.log("Initial fetch triggered.");
+                    } catch (error) {
+                        console.error("Danbooru Gallery initialization failed:", error);
+                        showError("图库初始化失败，请检查控制台日志。", true);
                     }
-
-                    // 加载语言设置
-                    await loadLanguage();
-                    // 加载用户认证信息
-                    await loadUserAuth();
-
-                    if (networkConnected && userAuth.has_auth) {
-                        // 如果认证信息存在，则尝试加载收藏夹
-                        // 后续的操作（如添加/删除收藏）会隐式地验证 auth，无需在此处阻塞
-                        await loadFavorites();
-                    }
-
-                    // 更新界面文本
-                    updateInterfaceTexts();
-                    // 更新收藏夹按钮状态
-                    updateFavoritesButtonState();
-                    // 加载黑名单
-                    loadBlacklist();
-                    // 加载提示词过滤设置
-                    loadFilterTags();
-                    // 加载UI设置
-                    await loadUiSettings();
-
-                    // 根据加载的设置更新类别复选框
-                    const categoryCheckboxes = categoryDropdown.querySelectorAll('.danbooru-category-checkbox');
-                    categoryCheckboxes.forEach(checkbox => {
-                        checkbox.checked = uiSettings.selected_categories.includes(checkbox.name);
-                    });
-
-                    // 初始化排行榜按钮状态
-                    updateRankingButtonState();
-                    // 页面加载时直接获取第一页的帖子
-                    fetchAndRender(true);
                 };
 
                 // 启动应用
@@ -4061,6 +4232,27 @@ $el("style", {
             width: 16px;
             height: 16px;
         }
+        .danbooru-language-select-button {
+            padding: 8px 16px;
+            border: 2px solid var(--input-border-color);
+            border-radius: 6px;
+            background-color: var(--comfy-input-bg);
+            color: var(--comfy-input-text);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: normal;
+            transition: all 0.2s ease;
+        }
+        .danbooru-language-select-button.active {
+            border-color: #7B68EE;
+            background-color: #7B68EE;
+            color: white;
+            font-weight: 600;
+        }
+        .danbooru-language-select-button:hover:not(.active) {
+            border-color: #9a8ee8;
+            background-color: rgba(123, 104, 238, 0.1);
+        }
         /* 设置对话框样式 */
         .danbooru-settings-dialog * {
             box-sizing: border-box;
@@ -4445,6 +4637,7 @@ $el("style", {
     `,
     parent: document.head
 });
+
 
 $el("style", {
     textContent: `
