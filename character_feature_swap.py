@@ -42,7 +42,7 @@ PROMPT_CACHE_FILE = os.path.join(PLUGIN_DIR, "prompt_cache.json")
 
 # 默认LLM设置
 def load_llm_settings():
-    """加载LLM设置"""
+    """加载LLM设置，并处理从旧格式到新预设格式的迁移"""
     default_settings = {
         "api_url": "https://openrouter.ai/api/v1/chat/completions",
         "api_key": "",
@@ -57,18 +57,48 @@ def load_llm_settings():
             "**Features to Replace (guide):**\n{target_features}\n\n"
             "**New Prompt:**"
         ),
-        "target_features": []
+        "language": "zh",
+        "active_preset_name": "default",
+        "presets": [
+            {
+                "name": "default",
+                "features": [
+                    "hair style", "hair color", "hair ornament",
+                    "eye color", "unique body parts", "body shape", "ear shape"
+                ]
+            }
+        ]
     }
+
     if not os.path.exists(LLM_SETTINGS_FILE):
         return default_settings
+
     try:
         with open(LLM_SETTINGS_FILE, 'r', encoding='utf-8') as f:
             settings = json.load(f)
-            # 确保所有默认键都存在
-            for key, value in default_settings.items():
-                if key not in settings:
-                    settings[key] = value
-            return settings
+
+        # --- 迁移逻辑 ---
+        migrated = False
+        if "presets" not in settings:
+            migrated = True
+            # 从旧的 target_features 或默认值创建 'default' 预设
+            old_features = settings.get("target_features", default_settings["presets"][0]["features"])
+            settings["presets"] = [{"name": "default", "features": old_features}]
+            settings["active_preset_name"] = "default"
+            if "target_features" in settings:
+                del settings["target_features"]
+
+        # 确保所有默认键都存在
+        for key, value in default_settings.items():
+            if key not in settings:
+                migrated = True
+                settings[key] = value
+        
+        # 如果迁移过，保存更新后的文件
+        if migrated:
+            save_llm_settings(settings)
+
+        return settings
     except Exception as e:
         logger.error(f"加载LLM设置失败: {e}")
         return default_settings
@@ -166,6 +196,98 @@ async def get_cached_prompts(request):
         logger.error(f"读取提示词缓存失败: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
+@PromptServer.instance.routes.post("/character_swap/test_llm_connection")
+async def test_llm_connection(request):
+    """测试与LLM API的连接和认证"""
+    try:
+        data = await request.json()
+        api_url = data.get("api_url", "").strip()
+        api_key = data.get("api_key", "").strip()
+
+        if not api_url or not api_key:
+            return web.json_response({"success": False, "error": "API URL或API Key为空"}, status=400)
+
+        # 使用OpenRouter的models端点作为通用的连接测试
+        # 这通常只需要有效的API密钥
+        test_url = "https://openrouter.ai/api/v1/models"
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+        }
+        
+        response = requests.get(test_url, headers=headers, timeout=15)
+        response.raise_for_status() # 如果状态码不是2xx，则会引发异常
+
+        return web.json_response({"success": True, "message": "成功连接到OpenRouter并验证凭据。"})
+
+    except requests.exceptions.HTTPError as e:
+        error_message = f"HTTP错误: {e.response.status_code}"
+        try:
+            error_details = e.response.json()
+            error_message += f" - {error_details.get('error', {}).get('message', '无详细信息')}"
+        except:
+            pass
+        logger.error(f"LLM连接测试失败: {error_message}")
+        return web.json_response({"success": False, "error": error_message}, status=400)
+    except requests.exceptions.RequestException as e:
+        logger.error(f"LLM连接测试失败: {e}")
+        return web.json_response({"success": False, "error": f"请求错误: {e}"}, status=500)
+    except Exception as e:
+        logger.error(f"LLM连接测试时发生未知错误: {e}")
+        return web.json_response({"success": False, "error": f"未知错误: {e}"}, status=500)
+
+@PromptServer.instance.routes.post("/character_swap/test_llm_response")
+async def test_llm_response(request):
+    """测试向指定模型发送消息并获得回复"""
+    try:
+        data = await request.json()
+        api_url = data.get("api_url", "").strip()
+        api_key = data.get("api_key", "").strip()
+        model = data.get("model", "").strip()
+
+        if not api_url or not api_key or not model:
+            return web.json_response({"success": False, "error": "API URL, API Key, 或模型为空"}, status=400)
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "user", "content": "Hello!"}
+            ],
+            "max_tokens": 10 # 限制回复长度
+        }
+        
+        response = requests.post(api_url, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+        
+        result = response.json()
+        reply = result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+
+        if not reply:
+             raise Exception("模型返回了空回复。")
+
+        return web.json_response({"success": True, "message": f"模型回复: '{reply}'"})
+
+    except requests.exceptions.HTTPError as e:
+        error_message = f"HTTP错误: {e.response.status_code}"
+        try:
+            error_details = e.response.json()
+            error_message += f" - {error_details.get('error', {}).get('message', '无详细信息')}"
+        except:
+            pass
+        logger.error(f"LLM响应测试失败: {error_message}")
+        return web.json_response({"success": False, "error": error_message}, status=400)
+    except requests.exceptions.RequestException as e:
+        logger.error(f"LLM响应测试失败: {e}")
+        return web.json_response({"success": False, "error": f"请求错误: {e}"}, status=500)
+    except Exception as e:
+        logger.error(f"LLM响应测试时发生未知错误: {e}")
+        return web.json_response({"success": False, "error": f"未知错误: {e}"}, status=500)
+
 # API to get all tags
 @PromptServer.instance.routes.get("/character_swap/get_all_tags")
 async def get_all_tags(request):
@@ -218,7 +340,7 @@ class CharacterFeatureSwapNode:
             "required": {
                 "original_prompt": ("STRING", {"forceInput": True}),
                 "character_prompt": ("STRING", {"forceInput": True}),
-                "target_features": ("STRING", {"default": "hair style, eye color, hair color, clothing, expression", "multiline": False}),
+                "target_features": ("STRING", {"default": "hair style, hair color, hair ornament, eye color, unique body parts, body shape, ear shape", "multiline": False}),
             },
         }
 
@@ -229,7 +351,6 @@ class CharacterFeatureSwapNode:
 
     def execute(self, original_prompt, character_prompt, target_features):
         logger.info(f"[CharacterFeatureSwapNode] Received original_prompt (raw): {original_prompt}")
-        # 解析输入，以防它们是JSON字符串
         original_prompt = _parse_prompt_input(original_prompt)
         logger.info(f"[CharacterFeatureSwapNode] Received original_prompt (parsed): {original_prompt}")
         character_prompt = _parse_prompt_input(character_prompt)
@@ -240,17 +361,26 @@ class CharacterFeatureSwapNode:
         model = settings.get("model")
         custom_prompt_template = settings.get("custom_prompt")
 
+        # 从活动的预设中获取特征，如果找不到则使用节点输入作为后备
+        active_preset_name = settings.get("active_preset_name", "default")
+        active_preset = next((p for p in settings.get("presets", []) if p["name"] == active_preset_name), None)
+        
+        if active_preset:
+            features_list = active_preset.get("features", [])
+            final_target_features = ", ".join(features_list)
+        else:
+            # 如果找不到活动预设，则回退到节点自身的输入值
+            final_target_features = target_features
+
         if not api_key:
-            # 返回错误或原始提示词，并记录日志
             logger.error("LLM API Key未设置。请在设置中配置。")
-            # 为了让工作流继续，这里只返回原始提示词
-            return (original_prompt,)
+            return ("ERROR: LLM API Key is not set. Please configure it in the node's settings.",)
 
         # 构建发送给LLM的提示
         prompt_for_llm = custom_prompt_template.format(
             original_prompt=original_prompt,
             character_prompt=character_prompt,
-            target_features=target_features
+            target_features=final_target_features
         )
 
         # 缓存本次成功执行的提示词

@@ -11,256 +11,607 @@ function debounce(func, delay) {
     };
 }
 
-// --- 新的设置对话框 ---
-function createNewSettingsDialog(node) {
-    // Prevent multiple dialogs
-    if (document.querySelector(".cfs-new-settings-dialog")) {
-        return;
-    }
+// --- 扩展 ComfyUI ---
+app.registerExtension({
+    name: "Comfy.CharacterFeatureSwap",
+    async beforeRegisterNodeDef(nodeType, nodeData, app) {
+        if (nodeData.name === "CharacterFeatureSwapNode") {
 
-    const dialog = document.createElement("div");
-    dialog.className = "cfs-new-settings-dialog";
+            // --- 全局国际化和UI管理 ---
+            const i18n = {
+                zh: {
+                    language: "语言",
+                    prompt: "提示词",
+                    llm: "LLM",
+                    languageSettings: "语言设置",
+                    promptSettings: "提示词设置",
+                    customPrompt: "自定义AI提示词 (Custom Prompt):",
+                    promptPlaceholder: "使用 <code>{original_prompt}</code>、<code>{character_prompt}</code> 和 <code>{target_features}</code> 作为占位符。",
+                    llmSettings: "LLM 设置",
+                    llmDescription: `配置用于特征替换的LLM API。推荐使用 <a href="https://openrouter.ai" target="_blank">OpenRouter</a> (部分模型免费)。`,
+                    apiUrl: "API URL:",
+                    apiKey: "API Key:",
+                    model: "模型 (Model):",
+                    search: "搜索...",
+                    save: "保存",
+                    close: "关闭",
+                    settingsSaved: "设置已保存！",
+                    saveFailed: "保存失败: ",
+                    testConnection: "测试连接",
+                    testResponse: "测试回复",
+                    testing: "测试中...",
+                    connectionSuccess: "连接成功！",
+                    connectionFailed: "连接失败: ",
+                    responseSuccess: "回复成功: ",
+                    responseFailed: "回复失败: ",
+                    import: "导入",
+                    export: "导出",
+                    debug: "调试",
+                    settings: "设置",
+                    addTagPlaceholder: "输入后按回车...",
+                    apiKeyMissingWarning: "警告: 未设置API Key。请在“设置”中配置。",
+                    connectionFailedWarning: "连接失败。请检查设置和网络。",
+                    checkingConnection: "正在检查连接...",
+                    exportSuccess: "设置已成功导出！",
+                    exportFailed: "导出失败。",
+                    importSuccess: "设置已成功导入！",
+                    importError: "导入设置失败，文件格式无效或已损坏。",
+                    presets: "预设",
+                    managePresets: "管理预设",
+                    addPreset: "添加预设",
+                    presetName: "预设名称...",
+                    savePreset: "保存当前标签为预设",
+                    deletePresetConfirmation: "确定要删除预设 '{presetName}' 吗？此操作无法撤销。",
+                    presetNameExists: "预设名称已存在。",
+                    presetDeleted: "预设已删除。",
+                    presetSaved: "预设已保存。",
+                    saveCurrentPreset: "保存到当前预设",
+                    saveAsPreset: "另存为新预设",
+                },
+                en: {
+                    language: "Language",
+                    prompt: "Prompt",
+                    llm: "LLM",
+                    languageSettings: "Language Settings",
+                    promptSettings: "Prompt Settings",
+                    customPrompt: "Custom AI Prompt:",
+                    promptPlaceholder: "Use <code>{original_prompt}</code>, <code>{character_prompt}</code>, and <code>{target_features}</code> as placeholders.",
+                    llmSettings: "LLM Settings",
+                    llmDescription: `Configure the LLM API for feature swapping. <a href="https://openrouter.ai" target="_blank">OpenRouter</a> is recommended (Some models are free).`,
+                    apiUrl: "API URL:",
+                    apiKey: "API Key:",
+                    model: "Model:",
+                    search: "Search...",
+                    save: "Save",
+                    close: "Close",
+                    settingsSaved: "Settings saved!",
+                    saveFailed: "Save failed: ",
+                    testConnection: "Test Connection",
+                    testResponse: "Test Response",
+                    testing: "Testing...",
+                    connectionSuccess: "Connection successful!",
+                    connectionFailed: "Connection failed: ",
+                    responseSuccess: "Response successful: ",
+                    responseFailed: "Response failed: ",
+                    import: "Import",
+                    export: "Export",
+                    debug: "Debug",
+                    settings: "Settings",
+                    addTagPlaceholder: "Enter to add...",
+                    apiKeyMissingWarning: "Warning: API Key is not set. Please configure in Settings.",
+                    connectionFailedWarning: "Connection failed. Check settings and network.",
+                    checkingConnection: "Checking connection...",
+                    exportSuccess: "Settings exported successfully!",
+                    exportFailed: "Export failed.",
+                    importSuccess: "Settings imported successfully!",
+                    importError: "Failed to import settings. Invalid or corrupt file format.",
+                    presets: "Presets",
+                    managePresets: "Manage Presets",
+                    addPreset: "Add Preset",
+                    presetName: "Preset name...",
+                    savePreset: "Save current tags as preset",
+                    deletePresetConfirmation: "Are you sure you want to delete the preset '{presetName}'? This cannot be undone.",
+                    presetNameExists: "Preset name already exists.",
+                    presetDeleted: "Preset deleted.",
+                    presetSaved: "Preset saved.",
+                    saveCurrentPreset: "Save to Current Preset",
+                    saveAsPreset: "Save as New Preset",
+                }
+            };
+            let currentLanguage = 'zh';
+            const t = (key) => i18n[currentLanguage]?.[key] || i18n.zh[key];
+            const nodeUIs = new Map();
 
-    dialog.innerHTML = `
+            function updateAllNodeUIs() {
+                for (const [node, ui] of nodeUIs.entries()) {
+                    ui.importButton.innerHTML = `<i class="fas fa-upload"></i> ${t('import')}`;
+                    ui.exportButton.innerHTML = `<i class="fas fa-download"></i> ${t('export')}`;
+                    ui.debugButton.innerHTML = `<i class="fas fa-bug"></i> ${t('debug')}`;
+                    ui.settingsButton.innerHTML = `<i class="fas fa-cog"></i> ${t('settings')}`;
+                }
+            }
+
+            function showMessage(ui, text, color = "#FF9800") {
+                if (!ui || !ui.messageArea) return;
+                ui.messageArea.textContent = text;
+                ui.messageArea.style.color = color;
+                ui.messageArea.style.display = text ? "block" : "none";
+            }
+
+            async function checkConnectionStatus(ui, settingsOverride = null) {
+                if (!ui) return;
+                showMessage(ui, t('checkingConnection'), '#ccc');
+                try {
+                    const settings = settingsOverride || await api.fetchApi("/character_swap/llm_settings").then(r => r.json());
+                    if (!settings.api_key) {
+                        showMessage(ui, t('apiKeyMissingWarning'));
+                        return;
+                    }
+                    const response = await api.fetchApi("/character_swap/test_llm_connection", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ api_url: settings.api_url, api_key: settings.api_key }),
+                    });
+                    if (!response.ok) {
+                        showMessage(ui, t('connectionFailedWarning'));
+                    } else {
+                        showMessage(ui, ""); // Success
+                    }
+                } catch (error) {
+                    showMessage(ui, t('connectionFailedWarning'));
+                    console.error("CFS: Connection check failed.", error);
+                }
+            }
+
+            // --- 新的设置对话框 ---
+            function createNewSettingsDialog(node) {
+                // Prevent multiple dialogs
+                if (document.querySelector(".cfs-new-settings-dialog")) {
+                    return;
+                }
+
+                const dialog = document.createElement("div");
+                dialog.className = "cfs-new-settings-dialog";
+
+                // Initial structure, texts will be populated by updateUITexts
+                dialog.innerHTML = `
         <div class="cfs-new-settings-content">
             <div class="cfs-new-settings-sidebar">
-                <button class="cfs-new-settings-tab active" data-tab="language">语言</button>
-                <button class="cfs-new-settings-tab" data-tab="prompt">提示词</button>
-                <button class="cfs-new-settings-tab" data-tab="llm">LLM</button>
+                <button class="cfs-new-settings-tab active" data-tab="language" data-i18n="language"></button>
+                <button class="cfs-new-settings-tab" data-tab="prompt" data-i18n="prompt"></button>
+                <button class="cfs-new-settings-tab" data-tab="llm" data-i18n="llm"></button>
             </div>
             <div class="cfs-new-settings-main">
                 <div class="cfs-new-settings-pane active" data-pane="language">
-                    <h3>语言设置</h3>
-                    <p>这里是语言相关的设置...</p>
+                    <h3 data-i18n="languageSettings"></h3>
+                    <div id="cfs-language-options"></div>
                 </div>
                 <div class="cfs-new-settings-pane" data-pane="prompt">
-                    <h3>提示词设置</h3>
-                    <label for="cfs-custom-prompt-new">自定义AI提示词 (Custom Prompt):</label>
-                    <textarea id="cfs-custom-prompt-new" name="custom_prompt" rows="4"></textarea>
-                    <p class="description">使用 <code>{original_prompt}</code> 和 <code>{target_features}</code> 作为占位符。</p>
+                    <h3 data-i18n="promptSettings"></h3>
+                    <label for="cfs-custom-prompt-new" data-i18n="customPrompt"></label>
+                    <textarea id="cfs-custom-prompt-new" name="custom_prompt" rows="10"></textarea>
+                    <p class="description" data-i18n="promptPlaceholder" data-i18n-html></p>
                 </div>
                 <div class="cfs-new-settings-pane" data-pane="llm">
-                     <h3>LLM 设置</h3>
-                     <p>配置用于特征替换的LLM API。推荐使用 <a href="https://openrouter.ai" target="_blank">OpenRouter</a>。</p>
-                     <label for="cfs-api-url-new">API URL:</label>
+                     <h3 data-i18n="llmSettings"></h3>
+                     <p data-i18n="llmDescription" data-i18n-html></p>
+                     <label for="cfs-api-url-new" data-i18n="apiUrl"></label>
                      <input type="text" id="cfs-api-url-new" name="api_url">
-                     <label for="cfs-api-key-new">API Key:</label>
+                     <label for="cfs-api-key-new" data-i18n="apiKey"></label>
                      <input type="password" id="cfs-api-key-new" name="api_key">
-                     <label for="cfs-model-new">模型 (Model):</label>
+                     <label for="cfs-model-new" data-i18n="model"></label>
                      <div class="cfs-custom-select-wrapper">
                          <div id="cfs-model-selected" class="cfs-custom-select-selected" tabindex="0"></div>
                          <div id="cfs-model-items" class="cfs-custom-select-items cfs-select-hide">
-                             <input type="text" id="cfs-model-search-input" placeholder="搜索...">
+                             <input type="text" id="cfs-model-search-input" data-i18n-placeholder="search">
                              <div id="cfs-model-options"></div>
                          </div>
                      </div>
                      <select id="cfs-model-new" name="model" style="display: none;"></select>
+                     <div class="cfs-llm-test-buttons">
+                        <button id="cfs-test-connection-btn" data-i18n="testConnection"></button>
+                        <button id="cfs-test-response-btn" data-i18n="testResponse"></button>
+                    </div>
+                    <div id="cfs-llm-test-result" class="cfs-llm-test-result"></div>
                 </div>
             </div>
         </div>
         <div class="cfs-new-settings-buttons">
-            <button id="cfs-save-new-settings">保存</button>
-            <button id="cfs-close-new-dialog">关闭</button>
+            <div class="cfs-social-buttons">
+                <button id="cfs-github-button"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg><span style="margin-left: 8px;">GitHub</span></button>
+                <button id="cfs-discord-button"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.196.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.30z"></path></svg><span style="margin-left: 8px;">Discord</span></button>
+            </div>
+            <div>
+                <button id="cfs-save-new-settings" data-i18n="save"></button>
+                <button id="cfs-close-new-dialog" data-i18n="close"></button>
+            </div>
         </div>
     `;
 
-    document.body.appendChild(dialog);
+                document.body.appendChild(dialog);
 
-    // Tab switching logic
-    const tabs = dialog.querySelectorAll(".cfs-new-settings-tab");
-    const panes = dialog.querySelectorAll(".cfs-new-settings-pane");
+                function updateUITexts() {
+                    dialog.querySelectorAll("[data-i18n]").forEach(el => {
+                        const key = el.dataset.i18n;
+                        if (el.hasAttribute("data-i18n-html")) {
+                            el.innerHTML = t(key);
+                        } else {
+                            el.textContent = t(key);
+                        }
+                    });
+                    dialog.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+                        const key = el.dataset.i18nPlaceholder;
+                        el.placeholder = t(key);
+                    });
 
-    tabs.forEach(tab => {
-        tab.addEventListener("click", () => {
-            const targetPane = tab.dataset.tab;
-
-            tabs.forEach(t => t.classList.remove("active"));
-            tab.classList.add("active");
-
-            panes.forEach(p => {
-                p.classList.remove("active");
-                if (p.dataset.pane === targetPane) {
-                    p.classList.add("active");
+                    const githubButton = dialog.querySelector("#cfs-github-button");
+                    if (githubButton) githubButton.title = t('githubTooltip');
+                    const discordButton = dialog.querySelector("#cfs-discord-button");
+                    if (discordButton) discordButton.title = t('discordTooltip');
                 }
-            });
-        });
-    });
 
-    // Close button
-    dialog.querySelector("#cfs-close-new-dialog").addEventListener("click", () => dialog.remove());
+                // Tab switching logic
+                const tabs = dialog.querySelectorAll(".cfs-new-settings-tab");
+                const panes = dialog.querySelectorAll(".cfs-new-settings-pane");
 
-    // --- Load and Save Logic ---
-    const apiUrlInput = dialog.querySelector("#cfs-api-url-new");
-    const apiKeyInput = dialog.querySelector("#cfs-api-key-new");
-    const modelInput = dialog.querySelector("#cfs-model-new");
-    const customPromptInput = dialog.querySelector("#cfs-custom-prompt-new");
+                tabs.forEach(tab => {
+                    tab.addEventListener("click", () => {
+                        const targetPane = tab.dataset.tab;
 
-    // --- Custom Searchable Select Logic ---
-    const wrapper = dialog.querySelector(".cfs-custom-select-wrapper");
-    const selectedDisplay = dialog.querySelector("#cfs-model-selected");
-    const itemsContainer = dialog.querySelector("#cfs-model-items");
-    const searchInput = dialog.querySelector("#cfs-model-search-input");
-    const optionsContainer = dialog.querySelector("#cfs-model-options");
-    const hiddenSelect = modelInput; // modelInput is the original, now hidden, select
-    const originalParent = itemsContainer.parentNode;
+                        tabs.forEach(t => t.classList.remove("active"));
+                        tab.classList.add("active");
 
-    let allModels = [];
+                        panes.forEach(p => {
+                            p.classList.remove("active");
+                            if (p.dataset.pane === targetPane) {
+                                p.classList.add("active");
+                            }
+                        });
+                    });
+                });
 
-    function fuzzySearch(needle, haystack) {
-        const h = haystack.toLowerCase();
-        const n = needle.toLowerCase().replace(/\s/g, '');
-        if (n === "") return true;
-        let n_idx = 0;
-        let h_idx = 0;
-        while (n_idx < n.length && h_idx < h.length) {
-            if (h[h_idx] === n[n_idx]) {
-                n_idx++;
-            }
-            h_idx++;
-        }
-        return n_idx === n.length;
-    }
+                // Close button
+                dialog.querySelector("#cfs-close-new-dialog").addEventListener("click", () => {
+                    const ui = nodeUIs.get(node);
+                    if (ui) {
+                        const tempSettings = {
+                            api_url: apiUrlInput.value,
+                            api_key: apiKeyInput.value,
+                        };
+                        checkConnectionStatus(ui, tempSettings);
+                    }
+                    dialog.remove();
+                });
 
-    function updateOptions(filter = "") {
-        optionsContainer.innerHTML = "";
-        const filtered = allModels.filter(m => fuzzySearch(filter, m));
-
-        filtered.forEach(modelId => {
-            const opt = document.createElement("div");
-            opt.dataset.value = modelId;
-            opt.textContent = modelId;
-            if (modelId === hiddenSelect.value) {
-                opt.classList.add("selected");
-            }
-            optionsContainer.appendChild(opt);
-        });
-    }
-
-    function closeDropdown() {
-        if (!itemsContainer.classList.contains("cfs-select-hide")) {
-            itemsContainer.classList.add("cfs-select-hide");
-            // Crucially, move it back to the dialog so it's not orphaned
-            originalParent.appendChild(itemsContainer);
-        }
-    }
-
-    selectedDisplay.addEventListener("click", (e) => {
-        e.stopPropagation();
-
-        if (itemsContainer.classList.contains("cfs-select-hide")) {
-            // Move to body to break out of stacking context
-            document.body.appendChild(itemsContainer);
-
-            // Position it
-            const rect = selectedDisplay.getBoundingClientRect();
-            itemsContainer.style.top = `${rect.bottom + 2}px`;
-            itemsContainer.style.left = `${rect.left}px`;
-            itemsContainer.style.width = `${rect.width}px`;
-
-            itemsContainer.classList.remove("cfs-select-hide");
-
-            updateOptions();
-            searchInput.value = "";
-            searchInput.focus();
-        } else {
-            closeDropdown();
-        }
-    });
-
-    searchInput.addEventListener("input", () => updateOptions(searchInput.value));
-    searchInput.addEventListener("click", e => e.stopPropagation());
-
-    optionsContainer.addEventListener("click", (e) => {
-        if (e.target.dataset.value) {
-            e.stopPropagation();
-            hiddenSelect.value = e.target.dataset.value;
-            selectedDisplay.textContent = e.target.dataset.value;
-            closeDropdown();
-        }
-    });
-
-    // Close dropdown when clicking outside
-    document.addEventListener("click", (e) => {
-        if (!itemsContainer.contains(e.target) && !selectedDisplay.contains(e.target)) {
-            closeDropdown();
-        }
-    });
-
-    // --- Load Models and Settings ---
-    function loadModels() {
-        api.fetchApi("/character_swap/llm_models")
-            .then(response => response.json())
-            .then(models => {
-                allModels = models;
-                loadSettings(); // Load settings after models are available
-            })
-            .catch(error => {
-                console.error("Failed to load LLM models:", error);
-                loadSettings(); // Still try to load other settings
-            });
-    }
-
-    function loadSettings() {
-        api.fetchApi("/character_swap/llm_settings")
-            .then(response => response.json())
-            .then(settings => {
-                apiUrlInput.value = settings.api_url || "";
-                apiKeyInput.value = settings.api_key || "";
-                customPromptInput.value = settings.custom_prompt || "";
-
-                let currentModel = settings.model;
-                if (!currentModel || !allModels.includes(currentModel)) {
-                    currentModel = allModels.length > 0 ? allModels[0] : "gryphe/mythomax-l2-13b";
+                // Social buttons
+                const githubButton = dialog.querySelector("#cfs-github-button");
+                if (githubButton) {
+                    githubButton.onclick = () => window.open('https://github.com/Aaalice233/ComfyUI-Danbooru-Gallery', '_blank');
                 }
-                hiddenSelect.value = currentModel;
-                selectedDisplay.textContent = currentModel;
-            });
-    }
+                const discordButton = dialog.querySelector("#cfs-discord-button");
+                if (discordButton) {
+                    discordButton.onclick = () => window.open('https://discord.gg/aaalice', '_blank');
+                }
 
-    loadModels(); // Initial call
+                // --- Load and Save Logic ---
+                const apiUrlInput = dialog.querySelector("#cfs-api-url-new");
+                const apiKeyInput = dialog.querySelector("#cfs-api-key-new");
+                const modelInput = dialog.querySelector("#cfs-model-new");
+                const customPromptInput = dialog.querySelector("#cfs-custom-prompt-new");
 
-    // Save settings
-    dialog.querySelector("#cfs-save-new-settings").addEventListener("click", () => {
-        // 从节点小部件获取当前的特征
-        const featureWidget = node.widgets.find(w => w.name === "target_features");
-        const currentFeatures = featureWidget ? featureWidget.value.split(",").map(t => t.trim()).filter(t => t) : [];
+                // --- Custom Searchable Select Logic ---
+                const wrapper = dialog.querySelector(".cfs-custom-select-wrapper");
+                const selectedDisplay = dialog.querySelector("#cfs-model-selected");
+                const itemsContainer = dialog.querySelector("#cfs-model-items");
+                const searchInput = dialog.querySelector("#cfs-model-search-input");
+                const optionsContainer = dialog.querySelector("#cfs-model-options");
+                const hiddenSelect = modelInput; // modelInput is the original, now hidden, select
+                const originalParent = itemsContainer.parentNode;
 
-        const newSettings = {
-            api_url: apiUrlInput.value,
-            api_key: apiKeyInput.value,
-            model: selectedDisplay.textContent,
-            custom_prompt: customPromptInput.value,
-            target_features: currentFeatures, // 将特征词列表添加到要保存的设置中
-        };
+                let allModels = [];
 
-        api.fetchApi("/character_swap/llm_settings", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(newSettings),
-        }).then(response => {
-            if (response.ok) {
-                alert("设置已保存！");
-                dialog.remove();
-            } else {
-                alert("保存失败: " + response.statusText);
+                function fuzzySearch(needle, haystack) {
+                    const h = haystack.toLowerCase();
+                    const n = needle.toLowerCase().replace(/\s/g, '');
+                    if (n === "") return true;
+                    let n_idx = 0;
+                    let h_idx = 0;
+                    while (n_idx < n.length && h_idx < h.length) {
+                        if (h[h_idx] === n[n_idx]) {
+                            n_idx++;
+                        }
+                        h_idx++;
+                    }
+                    return n_idx === n.length;
+                }
+
+                function updateOptions(filter = "") {
+                    optionsContainer.innerHTML = "";
+                    const filtered = allModels.filter(m => fuzzySearch(filter, m));
+
+                    filtered.forEach(modelId => {
+                        const opt = document.createElement("div");
+                        opt.dataset.value = modelId;
+                        opt.textContent = modelId;
+                        if (modelId === hiddenSelect.value) {
+                            opt.classList.add("selected");
+                        }
+                        optionsContainer.appendChild(opt);
+                    });
+                }
+
+                function closeDropdown() {
+                    if (!itemsContainer.classList.contains("cfs-select-hide")) {
+                        itemsContainer.classList.add("cfs-select-hide");
+                        // Crucially, move it back to the dialog so it's not orphaned
+                        originalParent.appendChild(itemsContainer);
+                    }
+                }
+
+                selectedDisplay.addEventListener("click", (e) => {
+                    e.stopPropagation();
+
+                    if (itemsContainer.classList.contains("cfs-select-hide")) {
+                        const openDropdown = () => {
+                            // Move to body to break out of stacking context
+                            document.body.appendChild(itemsContainer);
+
+                            // Position it
+                            const rect = selectedDisplay.getBoundingClientRect();
+                            itemsContainer.style.top = `${rect.bottom + 2}px`;
+                            itemsContainer.style.left = `${rect.left}px`;
+                            itemsContainer.style.width = `${rect.width}px`;
+
+                            itemsContainer.classList.remove("cfs-select-hide");
+
+                            updateOptions();
+                            searchInput.value = "";
+                            searchInput.focus();
+                        };
+
+                        if (allModels.length === 0) {
+                            selectedDisplay.textContent = "Loading models...";
+                            api.fetchApi("/character_swap/llm_models")
+                                .then(response => response.json())
+                                .then(models => {
+                                    allModels = models;
+                                    // Restore original selected text before opening
+                                    selectedDisplay.textContent = hiddenSelect.value || "Select a model";
+                                    openDropdown();
+                                })
+                                .catch(error => {
+                                    console.error("Failed to load LLM models:", error);
+                                    selectedDisplay.textContent = "Error loading models";
+                                });
+                        } else {
+                            openDropdown();
+                        }
+                    } else {
+                        closeDropdown();
+                    }
+                });
+
+                searchInput.addEventListener("input", () => updateOptions(searchInput.value));
+                searchInput.addEventListener("click", e => e.stopPropagation());
+
+                optionsContainer.addEventListener("click", (e) => {
+                    if (e.target.dataset.value) {
+                        e.stopPropagation();
+                        hiddenSelect.value = e.target.dataset.value;
+                        selectedDisplay.textContent = e.target.dataset.value;
+                        closeDropdown();
+                    }
+                });
+
+                // Close dropdown when clicking outside
+                document.addEventListener("click", (e) => {
+                    if (!itemsContainer.contains(e.target) && !selectedDisplay.contains(e.target)) {
+                        closeDropdown();
+                    }
+                });
+
+                // --- Load Models and Settings ---
+                function loadModels() {
+                    // This function is now only called on demand.
+                    // The logic is moved to the selectedDisplay click handler.
+                }
+
+                function loadSettings() {
+                    api.fetchApi("/character_swap/llm_settings")
+                        .then(response => response.json())
+                        .then(settings => {
+                            currentLanguage = settings.language || 'zh';
+                            updateUITexts(); // Update UI text first
+
+                            apiUrlInput.value = settings.api_url || "";
+                            apiKeyInput.value = settings.api_key || "";
+                            const defaultCustomPrompt = `You are an AI assistant for Stable Diffusion. Your task is to replace features in a prompt.
+Your goal is to take the features described in the 'New Character Prompt' and intelligently merge them into the 'Original Prompt'.
+The 'Features to Replace' list tells you which categories of features (like hair style, eye color, clothing) should be taken from the 'New Character Prompt'.
+Respond with only the new, modified prompt, without any explanations.
+
+**Original Prompt:**
+{original_prompt}
+
+**New Character Prompt:**
+{character_prompt}
+
+**Features to Replace (guide):**
+{target_features}
+
+**New Prompt:**`;
+                            let prompt = settings.custom_prompt;
+                            if (!prompt || !prompt.includes("**Original Prompt:**")) {
+                                prompt = defaultCustomPrompt;
+                            }
+                            customPromptInput.value = prompt;
+
+                            // Don't assume allModels is loaded. Just set the value.
+                            const currentModel = settings.model || "gryphe/mythomax-l2-13b";
+                            hiddenSelect.value = currentModel;
+                            selectedDisplay.textContent = currentModel;
+
+                            // Create language buttons
+                            const langOptionsContainer = dialog.querySelector("#cfs-language-options");
+                            langOptionsContainer.innerHTML = '';
+                            const zhButton = document.createElement("button");
+                            zhButton.textContent = "中文";
+                            zhButton.className = `cfs-language-button ${currentLanguage === 'zh' ? 'active' : ''}`;
+                            zhButton.onclick = () => handleLanguageChange('zh', settings);
+
+                            const enButton = document.createElement("button");
+                            enButton.textContent = "English";
+                            enButton.className = `cfs-language-button ${currentLanguage === 'en' ? 'active' : ''}`;
+                            enButton.onclick = () => handleLanguageChange('en', settings);
+
+                            langOptionsContainer.appendChild(zhButton);
+                            langOptionsContainer.appendChild(enButton);
+                        });
+                }
+
+                function handleLanguageChange(lang, currentSettings) {
+                    if (lang === currentLanguage) return;
+
+                    const newSettings = { ...currentSettings, language: lang };
+
+                    api.fetchApi("/character_swap/llm_settings", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(newSettings),
+                    }).then(response => {
+                        if (response.ok) {
+                            currentLanguage = lang; // 更新当前语言
+                            updateAllNodeUIs(); // 更新所有节点的UI
+                            dialog.remove();
+                            createNewSettingsDialog(node); // 使用新语言重新创建对话框
+                        } else {
+                            alert("Failed to save language setting.");
+                        }
+                    });
+                }
+
+                // --- LLM Testing Logic ---
+                const testConnectionBtn = dialog.querySelector("#cfs-test-connection-btn");
+                const testResponseBtn = dialog.querySelector("#cfs-test-response-btn");
+                const testResultDiv = dialog.querySelector("#cfs-llm-test-result");
+
+                testConnectionBtn.addEventListener("click", async () => {
+                    testResultDiv.style.display = "block";
+                    testResultDiv.textContent = t('testing');
+                    testResultDiv.style.color = '#ccc';
+                    testConnectionBtn.disabled = true;
+                    testResponseBtn.disabled = true;
+
+                    try {
+                        const response = await api.fetchApi("/character_swap/test_llm_connection", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                api_url: apiUrlInput.value,
+                                api_key: apiKeyInput.value,
+                            }),
+                        });
+                        const result = await response.json();
+                        if (response.ok && result.success) {
+                            testResultDiv.textContent = t('connectionSuccess') + (result.message ? `\n${result.message}` : '');
+                            testResultDiv.style.color = '#8BC34A';
+                        } else {
+                            throw new Error(result.error || 'Unknown error');
+                        }
+                    } catch (error) {
+                        testResultDiv.textContent = t('connectionFailed') + error.message;
+                        testResultDiv.style.color = '#c53939';
+                    } finally {
+                        testConnectionBtn.disabled = false;
+                        testResponseBtn.disabled = false;
+                    }
+                });
+
+                testResponseBtn.addEventListener("click", async () => {
+                    testResultDiv.style.display = "block";
+                    testResultDiv.textContent = t('testing');
+                    testResultDiv.style.color = '#ccc';
+                    testConnectionBtn.disabled = true;
+                    testResponseBtn.disabled = true;
+
+                    try {
+                        const response = await api.fetchApi("/character_swap/test_llm_response", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                api_url: apiUrlInput.value,
+                                api_key: apiKeyInput.value,
+                                model: selectedDisplay.textContent,
+                            }),
+                        });
+                        const result = await response.json();
+                        if (response.ok && result.success) {
+                            testResultDiv.textContent = t('responseSuccess') + `\n${result.message}`;
+                            testResultDiv.style.color = '#8BC34A';
+                        } else {
+                            throw new Error(result.error || 'Unknown error');
+                        }
+                    } catch (error) {
+                        testResultDiv.textContent = t('responseFailed') + error.message;
+                        testResultDiv.style.color = '#c53939';
+                    } finally {
+                        testConnectionBtn.disabled = false;
+                        testResponseBtn.disabled = false;
+                    }
+                });
+
+                loadSettings(); // Initial call, but without loading models
+
+                // Save settings
+                dialog.querySelector("#cfs-save-new-settings").addEventListener("click", () => {
+                    // 从节点小部件获取当前的特征
+                    const featureWidget = node.widgets.find(w => w.name === "target_features");
+                    const currentFeatures = featureWidget ? featureWidget.value.split(",").map(t => t.trim()).filter(t => t) : [];
+
+                    const newSettings = {
+                        api_url: apiUrlInput.value,
+                        api_key: apiKeyInput.value,
+                        model: selectedDisplay.textContent,
+                        custom_prompt: customPromptInput.value,
+                        language: currentLanguage,
+                        // 保留预设的完整结构
+                        active_preset_name: node.cfs_settings.active_preset_name,
+                        presets: node.cfs_settings.presets,
+                    };
+
+                    api.fetchApi("/character_swap/llm_settings", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(newSettings),
+                    }).then(response => {
+                        if (response.ok) {
+                            alert(t('settingsSaved'));
+                            const ui = nodeUIs.get(node);
+                            if (ui) {
+                                // Use the just-saved settings for the check
+                                checkConnectionStatus(ui, newSettings);
+                            }
+                            dialog.remove();
+                        } else {
+                            alert(t('saveFailed') + response.statusText);
+                        }
+                    });
+                });
             }
-        });
-    });
-}
 
-// --- 标签选择模态框 (已移除) ---
+            // --- 标签选择模态框 (已移除) ---
 
-// --- 帮助面板 ---
-function createHelpPanel() {
-    // Prevent multiple panels
-    if (document.querySelector(".cfs-help-panel")) {
-        return;
-    }
+            // --- 帮助面板 ---
+            function createHelpPanel() {
+                // Prevent multiple panels
+                if (document.querySelector(".cfs-help-panel")) {
+                    return;
+                }
 
-    const panel = document.createElement("div");
-    panel.className = "cfs-help-panel";
+                const panel = document.createElement("div");
+                panel.className = "cfs-help-panel";
 
-    const content = `
+                const content = `
         <div class="cfs-help-panel-content">
             <h2>功能说明</h2>
             <pre>
@@ -282,26 +633,21 @@ function createHelpPanel() {
         </div>
     `;
 
-    panel.innerHTML = content;
-    document.body.appendChild(panel);
+                panel.innerHTML = content;
+                document.body.appendChild(panel);
 
-    panel.querySelector(".cfs-help-panel-close-button").addEventListener("click", () => {
-        panel.remove();
-    });
+                panel.querySelector(".cfs-help-panel-close-button").addEventListener("click", () => {
+                    panel.remove();
+                });
 
-    // Also close when clicking the overlay
-    panel.addEventListener("click", (e) => {
-        if (e.target === panel) {
-            panel.remove();
-        }
-    });
-}
+                // Also close when clicking the overlay
+                panel.addEventListener("click", (e) => {
+                    if (e.target === panel) {
+                        panel.remove();
+                    }
+                });
+            }
 
-// --- 扩展 ComfyUI ---
-app.registerExtension({
-    name: "Comfy.CharacterFeatureSwap",
-    async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        if (nodeData.name === "CharacterFeatureSwapNode") {
             const onNodeCreated_orig = nodeType.prototype.onNodeCreated; // Store original before overriding
             nodeType.prototype.onNodeCreated = function () {
                 if (onNodeCreated_orig && onNodeCreated_orig !== nodeType.prototype.onNodeCreated) { // Prevent infinite recursion
@@ -309,7 +655,7 @@ app.registerExtension({
                 }
 
                 // 设置节点的最小尺寸
-                this.min_size = [360, 230]; /* Adjusted height for smaller padding */
+                this.min_size = [360, 260]; /* Adjusted height for message area */
 
                 // --- 尺寸修复 ---
                 // 存储原始的 computeSize 方法
@@ -429,7 +775,7 @@ app.registerExtension({
                     const tempInput = document.createElement("input");
                     tempInput.type = "text";
                     tempInput.className = "cfs-temp-input";
-                    tempInput.placeholder = "输入后按回车...";
+                    tempInput.placeholder = t('addTagPlaceholder');
                     wrapper.appendChild(tempInput);
                     tempInput.focus();
 
@@ -463,7 +809,7 @@ app.registerExtension({
                 bottomBar.className = "cfs-bottom-bar";
 
                 const importButton = document.createElement("button");
-                importButton.innerHTML = `<i class="fas fa-upload"></i> 导入`;
+                importButton.innerHTML = `<i class="fas fa-upload"></i> ${t('import')}`;
                 importButton.className = "cfs-bottom-button";
                 importButton.onclick = () => {
                     const input = document.createElement('input');
@@ -474,20 +820,75 @@ app.registerExtension({
                         if (!file) return;
 
                         const reader = new FileReader();
-                        reader.onload = (event) => {
+                        reader.onload = async (event) => {
                             try {
-                                const data = JSON.parse(event.target.result);
-                                if (data && Array.isArray(data.target_features)) {
-                                    // Clear existing tags
-                                    wrapper.querySelectorAll(".cfs-tag").forEach(tag => tag.remove());
-                                    // Add imported tags
-                                    data.target_features.forEach(tag => addSelectedTag(tag));
-                                    updateWidgetValue();
-                                } else {
-                                    alert("无效的配置文件格式。");
+                                const importedData = JSON.parse(event.target.result);
+
+                                // --- 全面导入逻辑 ---
+                                // 1. 验证导入的数据结构
+                                if (!importedData || (!importedData.presets && !importedData.target_features)) {
+                                    alert(t('importError'));
+                                    return;
                                 }
+
+                                // 2. 获取当前设置
+                                const response = await api.fetchApi("/character_swap/llm_settings");
+                                const currentSettings = await response.json();
+
+                                // 3. 合并设置
+                                const newSettings = { ...currentSettings };
+
+                                // 优先导入新的预设结构
+                                if (importedData.presets && Array.isArray(importedData.presets)) {
+                                    newSettings.presets = importedData.presets;
+                                    newSettings.active_preset_name = importedData.active_preset_name || "default";
+                                }
+                                // 向后兼容旧的 target_features 格式
+                                else if (importedData.target_features) {
+                                    const defaultPreset = newSettings.presets.find(p => p.name === "default") || { name: "default", features: [] };
+                                    defaultPreset.features = importedData.target_features;
+                                    if (!newSettings.presets.some(p => p.name === "default")) {
+                                        newSettings.presets.push(defaultPreset);
+                                    }
+                                    newSettings.active_preset_name = "default";
+                                }
+
+                                // 更新其他非敏感设置
+                                if (importedData.language) newSettings.language = importedData.language;
+                                if (importedData.custom_prompt) newSettings.custom_prompt = importedData.custom_prompt;
+
+
+                                // 4. 保存合并后的设置
+                                const saveResponse = await api.fetchApi("/character_swap/llm_settings", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(newSettings),
+                                });
+
+                                if (!saveResponse.ok) {
+                                    throw new Error('Failed to save imported settings.');
+                                }
+
+                                // 5. 刷新整个节点UI以反映所有变化
+                                this.cfs_settings = newSettings; // 更新缓存
+                                currentLanguage = newSettings.language;
+                                updateAllNodeUIs();
+
+                                const activePreset = newSettings.presets.find(p => p.name === newSettings.active_preset_name) || newSettings.presets.find(p => p.name === "default");
+                                wrapper.querySelectorAll(".cfs-tag").forEach(tag => tag.remove());
+                                if (activePreset) {
+                                    activePreset.features.forEach(addSelectedTag);
+                                }
+                                updateWidgetValue();
+                                const ui = nodeUIs.get(this);
+                                ui.presetButton.querySelector(".cfs-preset-text").textContent = newSettings.active_preset_name;
+
+
+                                alert(t('importSuccess'));
+
                             } catch (err) {
-                                alert("读取文件失败: " + err.message);
+                                alert(t('importError') + ": " + err.message);
+                                console.error("CFS: Import failed", err);
                             }
                         };
                         reader.readAsText(file);
@@ -496,33 +897,51 @@ app.registerExtension({
                 };
 
                 const exportButton = document.createElement("button");
-                exportButton.innerHTML = `<i class="fas fa-download"></i> 导出`;
+                exportButton.innerHTML = `<i class="fas fa-download"></i> ${t('export')}`;
                 exportButton.className = "cfs-bottom-button";
-                exportButton.onclick = () => {
-                    const tags = Array.from(wrapper.querySelectorAll(".cfs-tag-label")).map(el => el.textContent);
-                    const settings = {
-                        "target_features": tags
-                    };
-                    const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'cfs_features.json';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
+                exportButton.onclick = async () => {
+                    try {
+                        const response = await api.fetchApi("/character_swap/llm_settings");
+                        const currentSettings = await response.json();
+
+                        // 创建一个不包含敏感信息的新对象用于导出
+                        const settingsToExport = {
+                            language: currentSettings.language,
+                            custom_prompt: currentSettings.custom_prompt,
+                            presets: currentSettings.presets,
+                            active_preset_name: currentSettings.active_preset_name,
+                        };
+                        // 清理API Key
+                        delete settingsToExport.api_key;
+                        delete settingsToExport.api_url;
+                        delete settingsToExport.model;
+
+
+                        const blob = new Blob([JSON.stringify(settingsToExport, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'cfs_settings.json';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        alert(t('exportSuccess'));
+                    } catch (error) {
+                        console.error("CFS: Export failed", error);
+                        alert(t('exportFailed'));
+                    }
                 };
 
                 const debugButton = document.createElement("button");
-                debugButton.innerHTML = `<i class="fas fa-bug"></i> Debug`;
+                debugButton.innerHTML = `<i class="fas fa-bug"></i> ${t('debug')}`;
                 debugButton.className = "cfs-bottom-button";
                 debugButton.onclick = async () => {
                     const getPromptFromInput = (slot) => {
                         // A much simpler and potentially more robust way to get input data.
                         // This relies on the litegraph's built-in data flow.
                         const data = this.getInputData(slot);
-                        
+
                         if (data === undefined || data === null) {
                             return null;
                         }
@@ -657,12 +1076,14 @@ app.registerExtension({
                 };
 
                 const settingsButton = document.createElement("button");
-                settingsButton.innerHTML = `<i class="fas fa-cog"></i> 设置`;
+                settingsButton.innerHTML = `<i class="fas fa-cog"></i> ${t('settings')}`;
                 settingsButton.className = "cfs-bottom-button cfs-settings-button";
                 settingsButton.onclick = () => {
                     createNewSettingsDialog(this);
                 };
 
+                // This block is now incorrect, it will be moved and corrected.
+                // We will add the preset button inside the wrapper directly.
                 bottomBar.appendChild(importButton);
                 bottomBar.appendChild(exportButton);
                 bottomBar.appendChild(debugButton);
@@ -670,10 +1091,221 @@ app.registerExtension({
 
                 const mainContainer = document.createElement("div");
                 mainContainer.className = "cfs-main-container";
+
+                const presetButtonContainer = document.createElement("div");
+                presetButtonContainer.className = "cfs-preset-button-container";
+                const presetButton = document.createElement("button");
+                presetButton.className = "cfs-preset-button-widget";
+                presetButton.innerHTML = `<span class="cfs-preset-text">${t('presets')}</span><span class="cfs-preset-arrow">▼</span>`;
+                presetButtonContainer.appendChild(presetButton);
+                wrapper.appendChild(presetButtonContainer);
+
                 mainContainer.appendChild(wrapper);
+
+                // --- 预设下拉菜单逻辑 ---
+                const createPresetDropdown = () => {
+                    if (document.querySelector(".cfs-preset-dropdown")) {
+                        document.querySelector(".cfs-preset-dropdown").remove();
+                        return;
+                    }
+
+                    const dropdown = document.createElement("div");
+                    dropdown.className = "cfs-preset-dropdown";
+                    document.body.appendChild(dropdown);
+
+                    const rect = presetButton.getBoundingClientRect();
+                    // Position dropdown above the button
+                    dropdown.style.left = `${rect.left}px`;
+                    // dropdown.style.width = `${rect.width}px`; // Let CSS handle width
+
+                    // Must be visible to calculate height
+                    dropdown.style.visibility = "hidden";
+                    dropdown.style.display = "flex";
+
+                    const dropdownHeight = dropdown.offsetHeight;
+                    dropdown.style.top = `${rect.top - dropdownHeight - 5}px`;
+
+                    // Make it visible again
+                    dropdown.style.visibility = "visible";
+
+
+                    const searchInput = document.createElement("input");
+                    searchInput.type = "text";
+                    searchInput.placeholder = t('search');
+                    searchInput.className = "cfs-preset-search";
+
+                    const saveBtn = document.createElement("button");
+                    saveBtn.className = "cfs-preset-action-btn";
+                    saveBtn.innerHTML = `<i class="fas fa-save"></i>`;
+                    saveBtn.title = t('saveCurrentPreset');
+
+                    const saveAsBtn = document.createElement("button");
+                    saveAsBtn.className = "cfs-preset-action-btn";
+                    saveAsBtn.innerHTML = `<i class="fas fa-plus-square"></i>`;
+                    saveAsBtn.title = t('saveAsPreset');
+
+                    const searchContainer = document.createElement("div");
+                    searchContainer.className = "cfs-search-container";
+                    searchContainer.appendChild(searchInput);
+                    searchContainer.appendChild(saveBtn);
+                    searchContainer.appendChild(saveAsBtn);
+
+                    const presetList = document.createElement("div");
+                    presetList.className = "cfs-preset-list";
+
+                    dropdown.appendChild(searchContainer);
+                    dropdown.appendChild(presetList);
+
+                    const node = this;
+
+                    const renderPresets = (filter = "") => {
+                        presetList.innerHTML = "";
+                        const presets = (node.cfs_settings?.presets || []).filter(p =>
+                            p.name.toLowerCase().includes(filter.toLowerCase())
+                        );
+
+                        presets.forEach(p => {
+                            const item = document.createElement("div");
+                            item.className = "cfs-preset-item";
+                            if (p.name === node.cfs_settings.active_preset_name) {
+                                item.classList.add("active");
+                            }
+
+                            const nameSpan = document.createElement("span");
+                            nameSpan.textContent = p.name;
+                            nameSpan.onclick = async () => {
+                                node.cfs_settings.active_preset_name = p.name;
+                                await api.fetchApi("/character_swap/llm_settings", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(node.cfs_settings),
+                                });
+
+                                // Reload UI
+                                wrapper.querySelectorAll(".cfs-tag").forEach(tag => tag.remove());
+                                p.features.forEach(addSelectedTag);
+                                updateWidgetValue();
+                                presetButton.querySelector(".cfs-preset-text").textContent = p.name;
+                                dropdown.remove();
+                            };
+
+                            const deleteBtn = document.createElement("div");
+                            deleteBtn.className = "cfs-preset-delete-btn";
+                            deleteBtn.innerHTML = "✖";
+                            deleteBtn.onclick = async (e) => {
+                                e.stopPropagation();
+                                if (p.name === "default") return; // Cannot delete default
+                                if (confirm(t('deletePresetConfirmation').replace('{presetName}', p.name))) {
+                                    node.cfs_settings.presets = node.cfs_settings.presets.filter(preset => preset.name !== p.name);
+                                    if (node.cfs_settings.active_preset_name === p.name) {
+                                        node.cfs_settings.active_preset_name = "default";
+                                        // Switch to default preset's tags
+                                        const defaultPreset = node.cfs_settings.presets.find(pr => pr.name === "default");
+                                        if (defaultPreset) {
+                                            wrapper.querySelectorAll(".cfs-tag").forEach(tag => tag.remove());
+                                            defaultPreset.features.forEach(addSelectedTag);
+                                            updateWidgetValue();
+                                            presetButton.querySelector(".cfs-preset-text").textContent = "default";
+                                        }
+                                    }
+                                    await api.fetchApi("/character_swap/llm_settings", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify(node.cfs_settings),
+                                    });
+                                    renderPresets(searchInput.value);
+                                    // alert(t('presetDeleted')); // No need for alert, UI updates
+                                }
+                            };
+
+                            item.appendChild(nameSpan);
+                            if (p.name !== "default") {
+                                item.appendChild(deleteBtn);
+                            }
+                            presetList.appendChild(item);
+                        });
+                    };
+
+                    searchInput.oninput = () => renderPresets(searchInput.value);
+
+                    // "另存为" 按钮功能
+                    saveAsBtn.onclick = async () => {
+                        const newName = prompt(t('presetName'));
+                        if (!newName || !newName.trim()) return;
+
+                        const exists = node.cfs_settings.presets.some(p => p.name === newName.trim());
+                        if (exists) {
+                            alert(t('presetNameExists'));
+                            return;
+                        }
+
+                        const currentTags = Array.from(wrapper.querySelectorAll(".cfs-tag-label")).map(el => el.textContent);
+                        const newPreset = { name: newName.trim(), features: currentTags };
+                        node.cfs_settings.presets.push(newPreset);
+                        node.cfs_settings.active_preset_name = newName.trim();
+
+                        await api.fetchApi("/character_swap/llm_settings", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(node.cfs_settings),
+                        });
+
+                        presetButton.querySelector(".cfs-preset-text").textContent = newName.trim();
+                        dropdown.remove();
+                    };
+
+                    // "保存" 按钮功能
+                    saveBtn.onclick = async () => {
+                        const activePresetName = node.cfs_settings.active_preset_name;
+                        const activePreset = node.cfs_settings.presets.find(p => p.name === activePresetName);
+                        if (activePreset) {
+                            const currentTags = Array.from(wrapper.querySelectorAll(".cfs-tag-label")).map(el => el.textContent);
+                            activePreset.features = currentTags;
+
+                            await api.fetchApi("/character_swap/llm_settings", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(node.cfs_settings),
+                            });
+
+                            saveBtn.style.background = '#8BC34A';
+                            setTimeout(() => {
+                                dropdown.remove();
+                            }, 300);
+                        }
+                    };
+
+                    renderPresets();
+                    searchInput.focus();
+
+                    // Close dropdown when clicking outside
+                    const closeHandler = (e) => {
+                        if (!dropdown.contains(e.target) && e.target !== presetButton && !presetButton.contains(e.target)) {
+                            dropdown.remove();
+                            document.removeEventListener("click", closeHandler, true);
+                        }
+                    };
+                    document.addEventListener("click", closeHandler, true);
+                };
+
+                presetButton.addEventListener("click", createPresetDropdown);
+                // --- 创建消息区域 ---
+                const messageArea = document.createElement("div");
+                messageArea.className = "cfs-message-area";
+                mainContainer.appendChild(messageArea);
+
                 mainContainer.appendChild(bottomBar);
 
-                // --- 将自定义UI作为新的DOM小部件添加 ---
+                // --- 存储UI元素并添加DOM小部件 ---
+                const uiElements = {
+                    importButton,
+                    exportButton,
+                    debugButton,
+                    settingsButton,
+                    presetButton,
+                    messageArea,
+                };
+                nodeUIs.set(this, uiElements);
                 this.addDOMWidget(widgetName + "_custom", "div", mainContainer);
 
                 // --- 自动保存逻辑 ---
@@ -690,10 +1322,22 @@ app.registerExtension({
                         const currentFeatures = featureWidget ? featureWidget.value.split(",").map(t => t.trim()).filter(t => t) : [];
 
                         // 3. 创建新的设置对象
-                        const newSettings = {
-                            ...currentSettings,
-                            target_features: currentFeatures,
-                        };
+                        const newSettings = { ...currentSettings };
+                        const activePresetName = newSettings.active_preset_name || "default";
+                        let presetFound = false;
+                        if (newSettings.presets) {
+                            for (let preset of newSettings.presets) {
+                                if (preset.name === activePresetName) {
+                                    preset.features = currentFeatures;
+                                    presetFound = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!presetFound) {
+                            if (!newSettings.presets) newSettings.presets = [];
+                            newSettings.presets.push({ name: activePresetName, features: currentFeatures });
+                        }
 
                         // 4. 将更新后的设置发送回服务器
                         const saveResponse = await api.fetchApi("/character_swap/llm_settings", {
@@ -713,23 +1357,46 @@ app.registerExtension({
                 }, 500); // 500毫秒延迟
 
 
+
                 // 从服务器加载设置并应用 target_features
                 api.fetchApi("/character_swap/llm_settings")
                     .then(response => response.json())
                     .then(settings => {
-                        // 清除现有的（默认的）标签
+                        this.cfs_settings = settings; // 在节点上缓存设置
+                        currentLanguage = settings.language || 'zh';
+                        const ui = nodeUIs.get(this);
+                        if (ui) {
+                            checkConnectionStatus(ui, settings);
+                        }
+                        updateAllNodeUIs();
+
                         wrapper.querySelectorAll(".cfs-tag").forEach(tag => tag.remove());
 
+                        const activePresetName = settings.active_preset_name || "default";
+                        const activePreset = settings.presets?.find(p => p.name === activePresetName);
+
                         let tagsToRender = [];
-                        if (settings && Array.isArray(settings.target_features) && settings.target_features.length > 0) {
-                            // 如果服务器上有设置，则使用它们
-                            tagsToRender = settings.target_features;
+                        if (activePreset && Array.isArray(activePreset.features)) {
+                            tagsToRender = activePreset.features;
                         } else {
-                            // 否则，回退到小部件的默认值
-                            tagsToRender = (originalWidget.value || "").split(",").map(t => t.trim()).filter(t => t);
+                            // Fallback if preset not found or features are missing
+                            const defaultPreset = settings.presets?.find(p => p.name === "default");
+                            if (defaultPreset && Array.isArray(defaultPreset.features)) {
+                                tagsToRender = defaultPreset.features;
+                                this.cfs_settings.active_preset_name = "default"; // Correct active preset name
+                            } else {
+                                tagsToRender = (originalWidget.value || "").split(",").map(t => t.trim()).filter(t => t);
+                            }
                         }
+
                         tagsToRender.forEach(addSelectedTag);
-                        updateWidgetValue(); // 确保在加载后更新一次小部件的值
+                        updateWidgetValue();
+
+                        // 更新预设按钮的文本
+                        const presetButtonText = ui.presetButton.querySelector(".cfs-preset-text");
+                        if (presetButtonText) {
+                            presetButtonText.textContent = activePresetName;
+                        }
                     })
                     .catch(error => {
                         // 如果加载失败，则使用小部件的默认值
@@ -778,6 +1445,21 @@ app.registerExtension({
                             flex-direction: column;
                             min-height: 150px;  /* Set a default height for the whole widget area */
                             height: 100%; /* Make the container fill the available vertical space */
+                            justify-content: space-between; /* Push content and bottom bar apart */
+                        }
+
+                        /* Message Area Styles */
+                        .cfs-message-area {
+                            padding: 4px 8px;
+                            margin: 0 4px 4px 4px; /* Top, H, Bottom, H */
+                            color: #FF9800; /* Warning color */
+                            background-color: rgba(255, 152, 0, 0.1);
+                            border: 1px solid rgba(255, 152, 0, 0.3);
+                            border-radius: 4px;
+                            font-size: 12px;
+                            text-align: center;
+                            display: none; /* Hidden by default */
+                            flex-shrink: 0;
                         }
 
                         /* Bottom Bar Styles */
@@ -817,6 +1499,157 @@ app.registerExtension({
                            margin-left: auto;
                         }
 
+                        .cfs-preset-button-container {
+                            position: absolute;
+                            bottom: 8px;
+                            right: 8px;
+                        }
+
+                        /* New style for the button inside the widget */
+                        .cfs-preset-button-widget {
+                            background-color: #222;
+                            border: 1px solid #555;
+                            color: #E0E0E0;
+                            border-radius: 4px;
+                            padding: 4px 12px;
+                            cursor: pointer;
+                            font-size: 13px;
+                            height: 26px;
+                            box-sizing: border-box;
+                            width: auto; /* Let width be dynamic */
+                            display: inline-flex; /* Use inline-flex for dynamic width */
+                            align-items: center;
+                            justify-content: center;
+                            gap: 6px; /* Space between text and arrow */
+                        }
+                        .cfs-preset-button-widget .cfs-preset-text {
+                            white-space: nowrap;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            max-width: 120px; /* Prevent extremely long names from breaking layout */
+                        }
+                        .cfs-preset-button-widget .cfs-preset-arrow {
+                            font-size: 10px;
+                        }
+                        .cfs-preset-button-widget:hover {
+                            border-color: #888;
+                        }
+
+                        /* Preset Dropdown Styles */
+                        .cfs-preset-dropdown {
+                            position: fixed;
+                            z-index: 2100;
+                            background: #2a2a2a;
+                            border: 1px solid #555;
+                            border-radius: 6px;
+                            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+                            display: flex;
+                            flex-direction: column;
+                            padding: 5px;
+                            gap: 5px;
+                            min-width: 180px; /* Ensure minimum width */
+                        }
+                        .cfs-search-container {
+                            display: flex;
+                            align-items: center;
+                            gap: 5px;
+                        }
+                        .cfs-preset-search {
+                            flex-grow: 1;
+                            padding: 8px;
+                            margin: 0;
+                            border: 1px solid #444;
+                            background: #222;
+                            color: #eee;
+                            outline: none;
+                            font-size: 13px;
+                            border-radius: 4px;
+                        }
+                        .cfs-preset-action-btn {
+                            flex-shrink: 0;
+                            cursor: pointer;
+                            width: 32px;
+                            height: 32px;
+                            font-size: 14px;
+                            color: #ccc;
+                            background: #3a3a3a;
+                            border: 1px solid #444;
+                            border-radius: 4px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            transition: all 0.2s;
+                            padding: 0;
+                        }
+                        .cfs-preset-action-btn:hover {
+                            background: #4a4a4a;
+                            color: white;
+                        }
+                        .cfs-preset-action-btn:disabled {
+                            opacity: 0.5;
+                            cursor: not-allowed;
+                            background: #3a3a3a;
+                            color: #666;
+                        }
+                        .cfs-preset-list {
+                            max-height: 200px;
+                            overflow-y: auto;
+                            display: flex;
+                            flex-direction: column;
+                            scrollbar-width: thin;
+                            scrollbar-color: #555 #2a2a2a;
+                        }
+                        .cfs-preset-item {
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            padding: 8px 10px;
+                            color: #ccc;
+                            cursor: pointer;
+                            border-radius: 4px;
+                        }
+                        .cfs-preset-item:hover {
+                            background: #3a3a3a;
+                        }
+                        .cfs-preset-item.active {
+                            background: #03A9F4;
+                            color: white;
+                        }
+                        .cfs-preset-item.active:hover {
+                            background: #0288D1;
+                        }
+                        .cfs-preset-item span {
+                            flex-grow: 1;
+                        }
+                        .cfs-preset-delete-btn {
+                            padding: 2px 6px;
+                            border-radius: 4px;
+                            font-size: 12px;
+                            opacity: 0.7;
+                            font-weight: bold;
+                        }
+                        .cfs-preset-delete-btn:hover {
+                            background: rgba(255, 82, 82, 0.3);
+                            color: #ff5252;
+                            opacity: 1;
+                        }
+                        .cfs-search-container {
+                            display: flex;
+                            align-items: center;
+                            gap: 5px;
+                        }
+                        .cfs-preset-search {
+                            flex-grow: 1;
+                            padding: 8px;
+                            margin: 0;
+                            border: 1px solid #444;
+                            background: #222;
+                            color: #eee;
+                            outline: none;
+                            font-size: 13px;
+                            border-radius: 4px;
+                        }
+                        /* This style block is now handled by .cfs-preset-action-btn */
 
                         /* New Settings Dialog Styles */
                         .cfs-new-settings-dialog {
@@ -874,6 +1707,29 @@ app.registerExtension({
                             color: #fff;
                             box-shadow: inset 3px 0 0 0 #03A9F4; /* Use box-shadow for indicator */
                         }
+                        #cfs-language-options {
+                            display: flex;
+                            gap: 10px;
+                            margin-top: 10px;
+                        }
+                        .cfs-language-button {
+                            padding: 8px 16px;
+                            border: 1px solid #555;
+                            border-radius: 5px;
+                            background-color: #333;
+                            color: #ccc;
+                            cursor: pointer;
+                            transition: all 0.2s;
+                        }
+                        .cfs-language-button:hover {
+                            background-color: #444;
+                            border-color: #777;
+                        }
+                        .cfs-language-button.active {
+                            background-color: #03A9F4;
+                            color: white;
+                            border-color: #03A9F4;
+                        }
                         .cfs-new-settings-main {
                             flex-grow: 1;
                             padding: 20px;
@@ -912,7 +1768,8 @@ app.registerExtension({
                         }
                         .cfs-new-settings-buttons {
                             display: flex;
-                            justify-content: flex-end;
+                            justify-content: space-between;
+                            align-items: center;
                             padding: 15px 20px;
                             border-top: 1px solid #444;
                             gap: 10px;
@@ -1320,6 +2177,73 @@ app.registerExtension({
                             cursor: not-allowed;
                             border-color: var(--cfs-text-color);
                         }
+                        .cfs-llm-test-buttons {
+                            display: flex;
+                            gap: 10px;
+                            margin-top: 15px;
+                        }
+                        .cfs-social-buttons {
+                            display: flex;
+                            gap: 8px;
+                        }
+                        .cfs-social-buttons button {
+                            padding: 10px 16px;
+                            border-radius: 6px;
+                            color: white;
+                            cursor: pointer;
+                            font-size: 14px;
+                            font-weight: 500;
+                            transition: all 0.2s ease;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            min-width: 80px;
+                            border: 1px solid;
+                        }
+                        #cfs-github-button {
+                            background-color: #24292e;
+                            border-color: #24292e;
+                        }
+                        #cfs-discord-button {
+                            background-color: #5865F2;
+                            border-color: #5865F2;
+                        }
+                        .cfs-social-buttons button:hover {
+                            opacity: 0.9;
+                            transform: translateY(-1px);
+                        }
+                        .cfs-llm-test-buttons button {
+                            padding: 6px 12px;
+                            border: 1px solid #555;
+                            border-radius: 5px;
+                            background-color: #3a3a3a;
+                            color: #ccc;
+                            cursor: pointer;
+                            font-size: 12px;
+                            transition: background-color 0.2s;
+                        }
+                        .cfs-llm-test-buttons button:hover {
+                            background-color: #4a4a4a;
+                        }
+                        .cfs-llm-test-buttons button:disabled {
+                            background-color: #2a2a2a;
+                            color: #666;
+                            cursor: not-allowed;
+                        }
+                        .cfs-llm-test-result {
+                            margin-top: 10px;
+                            padding: 8px;
+                            background-color: #222;
+                            border: 1px solid #444;
+                            border-radius: 4px;
+                            font-size: 12px;
+                            color: #ccc;
+                            white-space: pre-wrap;
+                            word-wrap: break-word;
+                            display: none; /* Hidden by default */
+                            max-height: 150px;
+                            overflow-y: auto;
+                        }
                     `;
                     document.head.appendChild(style);
                 }
@@ -1329,6 +2253,14 @@ app.registerExtension({
                 this.size = this.computeSize();
                 this.setDirtyCanvas(true, true);
             };
+
+            const onNodeRemoved_orig = nodeType.prototype.onNodeRemoved;
+            nodeType.prototype.onNodeRemoved = function () {
+                nodeUIs.delete(this);
+                if (onNodeRemoved_orig) {
+                    onNodeRemoved_orig.apply(this, arguments);
+                }
+            };
         }
-    },
+    }
 });
