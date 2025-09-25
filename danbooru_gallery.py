@@ -953,7 +953,11 @@ class DanbooruGalleryNode:
         if not selection_data or selection_data == "{}":
             return (torch.zeros(1, 1, 1, 3), "")
 
+        tensor = torch.zeros(1, 1, 1, 3)
+        prompt = ""
+
         try:
+            # Always try to parse the prompt first
             data = json.loads(selection_data)
             prompt = data.get("prompt", "")
             image_url = data.get("image_url")
@@ -965,12 +969,12 @@ class DanbooruGalleryNode:
                 img = Image.open(io.BytesIO(img_data)).convert("RGB")
                 img_array = np.array(img).astype(np.float32) / 255.0
                 tensor = torch.from_numpy(img_array)[None,]
-                return (tensor, prompt)
 
         except Exception as e:
-            logger.error(f"Error processing selection: {e}")
+            # Log the error, but proceed to return the prompt if it was parsed
+            logger.error(f"Error processing selection in DanbooruGalleryNode: {e}")
 
-        return (torch.zeros(1, 1, 1, 3), "")
+        return (tensor, prompt)
     
     @staticmethod
     def get_posts_internal(tags: str, limit: int = 100, page: int = 1, rating: str = None):
