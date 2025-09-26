@@ -39,9 +39,10 @@ def _parse_prompt_input(prompt_input):
     # 对于所有其他情况（包括非字符串、非列表/元组），直接返回
     return prompt_input
 # 插件目录和设置文件路径
+# 插件目录和设置文件路径
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 LLM_SETTINGS_FILE = os.path.join(PLUGIN_DIR, "llm_settings.json")
-PROMPT_CACHE_FILE = os.path.join(PLUGIN_DIR, "prompt_cache.json")
+PROMPT_CACHE_FILE = os.path.join(PLUGIN_DIR, "cache", "prompt_cache.json")
 
 # 默认LLM设置
 def load_llm_settings():
@@ -302,7 +303,7 @@ async def test_llm_response(request):
 @PromptServer.instance.routes.get("/character_swap/get_all_tags")
 async def get_all_tags(request):
     """提供所有可用的标签给前端，优先使用JSON，失败则回退到CSV"""
-    zh_cn_dir = os.path.join(PLUGIN_DIR, "zh_cn")
+    zh_cn_dir = os.path.join(PLUGIN_ROOT_DIR, "danbooru_gallery", "zh_cn")
     json_file = os.path.join(zh_cn_dir, "all_tags_cn.json")
     csv_file = os.path.join(zh_cn_dir, "danbooru.csv")
     
