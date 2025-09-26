@@ -3,7 +3,10 @@ import json
 import os
 import folder_paths
 from server import PromptServer
+from comfy import model_management
 from aiohttp import web
+import threading
+import time
 
 # 日志记录
 import logging
@@ -47,6 +50,7 @@ def load_llm_settings():
         "api_url": "https://openrouter.ai/api/v1/chat/completions",
         "api_key": "",
         "model": "gryphe/mythomax-l2-13b",
+        "timeout": 30,
         "custom_prompt": (
             "You are an AI assistant for Stable Diffusion. Your task is to replace features in a prompt.\n"
             "Your goal is to take the features described in the 'New Character Prompt' and intelligently merge them into the 'Original Prompt'.\n"
@@ -135,7 +139,9 @@ async def save_llm_settings_route(request):
 async def get_llm_models(request):
     """从OpenRouter获取可用的LLM模型列表"""
     try:
-        response = requests.get("https://openrouter.ai/api/v1/models", timeout=15)
+        settings = load_llm_settings()
+        timeout = settings.get("timeout", 15)
+        response = requests.get("https://openrouter.ai/api/v1/models", timeout=timeout)
         response.raise_for_status()
         models_data = response.json().get("data", [])
         # 我们可以只返回模型的ID和名称，或者整个对象
@@ -215,7 +221,9 @@ async def test_llm_connection(request):
             "Authorization": f"Bearer {api_key}",
         }
         
-        response = requests.get(test_url, headers=headers, timeout=15)
+        settings = load_llm_settings()
+        timeout = settings.get("timeout", 15)
+        response = requests.get(test_url, headers=headers, timeout=timeout)
         response.raise_for_status() # 如果状态码不是2xx，则会引发异常
 
         return web.json_response({"success": True, "message": "成功连接到OpenRouter并验证凭据。"})
@@ -261,7 +269,9 @@ async def test_llm_response(request):
             "max_tokens": 10 # 限制回复长度
         }
         
-        response = requests.post(api_url, headers=headers, json=payload, timeout=30)
+        settings = load_llm_settings()
+        timeout = settings.get("timeout", 30)
+        response = requests.post(api_url, headers=headers, json=payload, timeout=timeout)
         response.raise_for_status()
         
         result = response.json()
@@ -349,6 +359,29 @@ class CharacterFeatureSwapNode:
     FUNCTION = "execute"
     CATEGORY = "Danbooru"
 
+    def _execute_llm_request(self, api_url, headers, data, result_container):
+        """在单独的线程中执行LLM API请求"""
+        try:
+            response = requests.post(api_url, headers=headers, json=data)
+            response.raise_for_status()
+            result = response.json()
+            new_prompt = result['choices'][0]['message']['content'].strip()
+            
+            # 简单的后处理
+            if new_prompt.startswith('"') and new_prompt.endswith('"'):
+                new_prompt = new_prompt[1:-1]
+            
+            result_container['result'] = (new_prompt,)
+        except requests.exceptions.Timeout as e:
+            logger.error(f"调用LLM API超时: {e}")
+            result_container['error'] = (f"API Error: Request timed out after {data.get('timeout')} seconds.",)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"调用LLM API失败: {e}")
+            result_container['error'] = (f"API Error: {e}",)
+        except Exception as e:
+            logger.error(f"处理LLM响应失败: {e}")
+            result_container['error'] = (f"Processing Error: {e}",)
+
     def execute(self, original_prompt, character_prompt, target_features):
         logger.info(f"[CharacterFeatureSwapNode] Received original_prompt (raw): {original_prompt}")
         original_prompt = _parse_prompt_input(original_prompt)
@@ -360,70 +393,64 @@ class CharacterFeatureSwapNode:
         api_key = settings.get("api_key")
         model = settings.get("model")
         custom_prompt_template = settings.get("custom_prompt")
+        timeout = settings.get("timeout", 30)
 
-        # 从活动的预设中获取特征，如果找不到则使用节点输入作为后备
         active_preset_name = settings.get("active_preset_name", "default")
         active_preset = next((p for p in settings.get("presets", []) if p["name"] == active_preset_name), None)
         
         if active_preset:
-            features_list = active_preset.get("features", [])
-            final_target_features = ", ".join(features_list)
+            final_target_features = ", ".join(active_preset.get("features", []))
         else:
-            # 如果找不到活动预设，则回退到节点自身的输入值
             final_target_features = target_features
 
         if not api_key:
             logger.error("LLM API Key未设置。请在设置中配置。")
             return ("ERROR: LLM API Key is not set. Please configure it in the node's settings.",)
 
-        # 构建发送给LLM的提示
         prompt_for_llm = custom_prompt_template.format(
             original_prompt=original_prompt,
             character_prompt=character_prompt,
             target_features=final_target_features
         )
 
-        # 缓存本次成功执行的提示词
         try:
             with open(PROMPT_CACHE_FILE, 'w', encoding='utf-8') as f:
-                json.dump({
-                    "original_prompt": original_prompt,
-                    "character_prompt": character_prompt
-                }, f, ensure_ascii=False, indent=2)
+                json.dump({"original_prompt": original_prompt, "character_prompt": character_prompt}, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"写入提示词缓存失败: {e}")
         
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        data = {"model": model, "messages": [{"role": "user", "content": prompt_for_llm}]}
         
-        data = {
-            "model": model,
-            "messages": [
-                {"role": "user", "content": prompt_for_llm}
-            ]
-        }
+        result_container = {}
+        thread = threading.Thread(target=self._execute_llm_request, args=(api_url, headers, data, result_container))
+        thread.start()
+
+        start_time = time.time()
         
-        try:
-            response = requests.post(api_url, headers=headers, json=data, timeout=30)
-            response.raise_for_status()
+        while thread.is_alive():
+            if time.time() - start_time > timeout:
+                logger.error(f"LLM请求超时（超过 {timeout} 秒）。")
+                # 虽然线程无法被强制停止，但我们可以从主流程中返回一个错误。
+                return (f"Error: Request timed out after {timeout} seconds. The API call might still be running in the background.",)
+
+            # 正确的ComfyUI中断检查方式
+            if model_management.processing_interrupted():
+                logger.warning("检测到工作流中断。")
+                # 同样，线程可能仍在后台运行，但我们中断了节点的执行。
+                return ("Error: Execution was interrupted by the user.",)
             
-            result = response.json()
-            new_prompt = result['choices'][0]['message']['content'].strip()
-            
-            # 简单的后处理，移除多余的引号
-            if new_prompt.startswith('"') and new_prompt.endswith('"'):
-                new_prompt = new_prompt[1:-1]
-            
-            return (new_prompt,)
+            time.sleep(0.1) # 短暂休眠以降低CPU使用率
+
+        thread.join() # 确保线程已结束
+
+        if 'error' in result_container:
+            return result_container['error']
         
-        except requests.exceptions.RequestException as e:
-            logger.error(f"调用LLM API失败: {e}")
-            return (f"API Error: {e}",)
-        except Exception as e:
-            logger.error(f"处理LLM响应失败: {e}")
-            return (f"Processing Error: {e}",)
+        if 'result' in result_container:
+            return result_container['result']
+            
+        return ("Error: Unknown error occurred in the LLM request thread.",)
 
 # 节点映射
 NODE_CLASS_MAPPINGS = {
