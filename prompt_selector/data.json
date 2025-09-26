@@ -1,0 +1,33 @@
+{
+    "version": "1.0",
+    "categories": [
+        {
+            "name": "default",
+            "prompts": []
+        },
+        {
+            "name": "test",
+            "prompts": [
+                {
+                    "alias": "测试提示词",
+                    "prompt": "test prompt",
+                    "image": ""
+                }
+            ]
+        },
+        {
+            "name": "parent/child",
+            "prompts": [
+                {
+                    "alias": "子分类提示词",
+                    "prompt": "child prompt",
+                    "image": ""
+                }
+            ]
+        }
+    ],
+    "settings": {
+        "language": "zh-CN",
+        "separator": ", "
+    }
+}
