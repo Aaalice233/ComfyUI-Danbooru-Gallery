@@ -7,9 +7,9 @@
             "created_at": "2025-09-26T06:44:00.000Z",
             "prompts": [
                 {
-                    "id": "default-prompt-001",
-                    "alias": "杰作",
-                    "prompt": "masterpiece, best quality",
+                    "id": "default-prompt-002",
+                    "alias": "超详细",
+                    "prompt": "extremely detailed, intricate details",
                     "image": "",
                     "tags": [],
                     "favorite": false,
@@ -20,9 +20,9 @@
                     "template": false
                 },
                 {
-                    "id": "default-prompt-002",
-                    "alias": "超详细",
-                    "prompt": "extremely detailed, intricate details",
+                    "id": "default-prompt-010",
+                    "alias": "景深",
+                    "prompt": "depth of field, bokeh",
                     "image": "",
                     "tags": [],
                     "favorite": false,
@@ -46,6 +46,19 @@
                     "template": false
                 },
                 {
+                    "id": "default-prompt-005",
+                    "alias": "体积光",
+                    "prompt": "volumetric lighting, god rays, god rays, god rays, god rays, god rays, god rays, god rays, god rays, god rays, god rays, god rays",
+                    "description": "",
+                    "image": "",
+                    "tags": [],
+                    "favorite": false,
+                    "template": false,
+                    "created_at": "2025-09-26T07:54:42.000Z",
+                    "usage_count": 0,
+                    "last_used": null
+                },
+                {
                     "id": "default-prompt-004",
                     "alias": "完美光照",
                     "prompt": "perfect lighting, cinematic lighting",
@@ -59,30 +72,17 @@
                     "template": false
                 },
                 {
-                    "id": "default-prompt-005",
-                    "alias": "体积光",
-                    "prompt": "volumetric lighting, god rays",
+                    "id": "default-prompt-013",
+                    "alias": "赛博",
+                    "prompt": "cyberpunk, futuristic",
+                    "description": "",
                     "image": "",
                     "tags": [],
                     "favorite": false,
-                    "usage_count": 0,
+                    "template": false,
                     "created_at": "2025-09-26T07:54:42.000Z",
-                    "last_used": null,
-                    "description": "",
-                    "template": false
-                },
-                {
-                    "id": "default-prompt-006",
-                    "alias": "电影感",
-                    "prompt": "cinematic, film still",
-                    "image": "",
-                    "tags": [],
-                    "favorite": false,
                     "usage_count": 0,
-                    "created_at": "2025-09-26T07:54:42.000Z",
-                    "last_used": null,
-                    "description": "",
-                    "template": false
+                    "last_used": null
                 },
                 {
                     "id": "default-prompt-007",
@@ -111,9 +111,9 @@
                     "template": false
                 },
                 {
-                    "id": "default-prompt-009",
-                    "alias": "动态模糊",
-                    "prompt": "motion blur, dynamic motion",
+                    "id": "default-prompt-001",
+                    "alias": "杰作",
+                    "prompt": "masterpiece, best quality",
                     "image": "",
                     "tags": [],
                     "favorite": false,
@@ -124,9 +124,22 @@
                     "template": false
                 },
                 {
-                    "id": "default-prompt-010",
-                    "alias": "景深",
-                    "prompt": "depth of field, bokeh",
+                    "id": "default-prompt-006",
+                    "alias": "电影感",
+                    "prompt": "cinematic, film still",
+                    "image": "",
+                    "tags": [],
+                    "favorite": false,
+                    "usage_count": 0,
+                    "created_at": "2025-09-26T07:54:42.000Z",
+                    "last_used": null,
+                    "description": "",
+                    "template": false
+                },
+                {
+                    "id": "default-prompt-009",
+                    "alias": "动态模糊",
+                    "prompt": "motion blur, dynamic motion",
                     "image": "",
                     "tags": [],
                     "favorite": false,
@@ -161,35 +174,13 @@
                     "last_used": null,
                     "description": "",
                     "template": false
-                },
-                {
-                    "id": "default-prompt-013",
-                    "alias": "赛博朋克",
-                    "prompt": "cyberpunk, futuristic",
-                    "image": "",
-                    "tags": [],
-                    "favorite": false,
-                    "usage_count": 0,
-                    "created_at": "2025-09-26T07:54:42.000Z",
-                    "last_used": null,
-                    "description": "",
-                    "template": false
-                },
-                {
-                    "id": "default-prompt-014",
-                    "alias": "蒸汽朋克",
-                    "prompt": "steampunk, victorian",
-                    "image": "",
-                    "tags": [],
-                    "favorite": false,
-                    "usage_count": 0,
-                    "created_at": "2025-09-26T07:54:42.000Z",
-                    "last_used": null,
-                    "description": "",
-                    "template": false
                 }
             ],
-            "last_selected": []
+            "last_selected": [
+                "extremely detailed, intricate details",
+                "depth of field, bokeh",
+                "8k, uhd, high resolution"
+            ]
         },
         {
             "name": "test",
@@ -431,6 +422,11 @@
                     "description": "",
                     "template": false
                 }
+            ],
+            "last_selected": [
+                "robot, futuristic",
+                "witch, witch hat",
+                "vampire, gothic"
             ]
         },
         {
@@ -678,6 +674,11 @@
                     "description": "",
                     "template": false
                 }
+            ],
+            "last_selected": [
+                "snowy mountain, winter",
+                "forest, sunlight",
+                "beach, sunset"
             ]
         }
     ],
@@ -691,7 +692,8 @@
         "sort_by": "created_at",
         "sort_order": "desc",
         "show_favorites_first": true,
-        "save_selection": true
+        "save_selection": true,
+        "theme_color": "#58ca60"
     },
     "templates": [
         {

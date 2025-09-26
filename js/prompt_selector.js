@@ -14,7 +14,7 @@ app.registerExtension({
                     "category": "类别", "single_select": "单选", "multi_select": "多选", "loading": "加载中...",
                     "no_prompts": "此分类下没有提示词。", "load_error": "加载数据失败!", "save_error": "保存数据失败!",
                     "edit_prompt": "编辑提示词", "alias": "备注名", "full_prompt": "完整提示词", "preview_image": "预览图",
-                    "image_path_placeholder": "图片路径或URL", "save": "保存", "cancel": "取消", "add": "添加",
+                    "image_path_placeholder": "图片路径或URL", "save": "保存", "save_success": "保存成功", "cancel": "取消", "add": "添加",
                     "open_category_menu": "将在这里打开层级分类菜单！", "new_category_prompt": "输入新的分类名称 (可用'/'创建层级):",
                     "category_exists": "该分类名称已存在！", "delete_default_category_alert": "不能删除默认分类！",
                     "delete_category_confirm": "确定要删除分类 \"{category}\" 吗？此操作不可撤销。",
@@ -25,28 +25,25 @@ app.registerExtension({
                     "batch_operations": "批量操作", "select_all": "全选", "deselect_all": "取消全选", "batch_delete": "批量删除",
                     "batch_move": "批量移动", "move_to": "移动到", "sort_by": "排序方式", "created_time": "创建时间",
                     "usage_count": "使用次数", "alphabetical": "字母顺序", "favorites": "收藏", "tags": "标签",
-                    "add_tag": "添加标签", "remove_tag": "移除标签", "filter_by_tag": "按标签筛选", "show_favorites": "显示收藏",
+                    "add_tag": "添加标签", "remove_tag": "移除标签", "filter_by_tag": "按标签筛选",
                     "mark_favorite": "标记收藏", "unmark_favorite": "取消收藏", "usage_stats": "使用统计", "templates": "模板",
                     "create_template": "创建模板", "apply_template": "应用模板", "template_name": "模板名称",
                     "template_variables": "模板变量", "variable_name": "变量名", "variable_description": "变量描述",
-                    "variable_type": "变量类型", "text": "文本", "number": "数字", "backup": "备份", "restore": "恢复",
-                    "auto_backup": "自动备份", "manual_backup": "手动备份", "backup_created": "备份已创建",
-                    "restore_confirm": "确定要恢复此备份吗？当前数据将被覆盖。", "statistics": "统计信息",
-                    "backup_now": "立即备份", "restore_from_backup": "从备份恢复", "no_backups": "没有可用的备份。",
-                    "max_backups": "最大备份数",
+                    "variable_type": "变量类型", "text": "文本", "number": "数字", "statistics": "统计信息",
                     "open_library_hint": "点击左上角书本图标打开提示词库",
                     "import_success": "导入成功！正在刷新...",
                     "import_fail": "导入失败",
                     "delete_prompt_confirm": "确定要删除提示词 \"{prompt}\" 吗？",
                     "alias_placeholder": "提示词的显示名称",
                     "full_prompt_placeholder": "完整的提示词内容",
+                    "delete_success": "删除成功！",
                     "prompt_empty_error": "请填写提示词名称和内容！",
                     "add_prompt_success": "提示词添加成功！",
                     "update_prompt_success": "提示词更新成功！",
                     "save_fail_retry": "保存失败，请重试！",
                     "exit_batch": "退出批量",
                     "prompt_list": "提示词列表",
-                    "add_new": "+ 新增",
+                    "add_new": "新增",
                     "ready": "就绪",
                     "no_matching_prompts": "没有匹配的提示词。",
                     "batch_delete_confirm": "确定要删除选中的 {count} 个提示词吗？",
@@ -54,23 +51,20 @@ app.registerExtension({
                     "batch_delete_fail": "批量删除失败！",
                     "move_to_category_prompt": "请输入目标分类名称:",
                     "batch_move_wip": "批量移动功能开发中...",
-                    "load_backup_fail": "加载备份列表失败",
-                    "backup_fail": "备份失败",
-                    "select_backup_file": "请选择一个备份文件",
-                    "restore_success_refreshing": "恢复成功！正在刷新...",
-                    "restore_fail": "恢复失败",
                     "total_categories": "总分类数", "total_prompts": "总提示词数", "favorite_prompts": "收藏提示词",
-                    "most_used": "最常用", "rename_category": "重命名分类", "delete_category": "删除分类",
+                    "most_used": "最常用", "rename_category": "重命名分类", "delete_category": "删除分类", "favorites_category": "⭐ 收藏夹",
                     "category_description": "分类描述", "prompt_description": "提示词描述", "drag_to_reorder": "拖拽重新排序",
                     "search_placeholder": "搜索提示词、标签或描述...", "advanced_search": "高级搜索",
-                    "search_in_prompts": "在提示词中搜索", "search_in_tags": "在标签中搜索", "search_in_descriptions": "在描述中搜索"
+                    "search_in_prompts": "在提示词中搜索", "search_in_tags": "在标签中搜索", "search_in_descriptions": "在描述中搜索",
+                    "interface": "界面", "theme_color": "主题色", "function": "功能",
+                    "clear_all_confirm": "确定要取消所有已选中的提示词吗？"
                 },
                 "en-US": {
                     "add_prompt": "Add Prompt", "delete_selected": "Delete Selected", "import": "Import", "export": "Export", "settings": "Settings",
                     "category": "Category", "single_select": "Single", "multi_select": "Multi", "loading": "Loading...",
                     "no_prompts": "No prompts in this category.", "load_error": "Failed to load data!", "save_error": "Failed to save data!",
                     "edit_prompt": "Edit Prompt", "alias": "Alias", "full_prompt": "Full Prompt", "preview_image": "Preview Image",
-                    "image_path_placeholder": "Image path or URL", "save": "Save", "cancel": "Cancel", "add": "Add",
+                    "image_path_placeholder": "Image path or URL", "save": "Save", "save_success": "Save Successful", "cancel": "Cancel", "add": "Add",
                     "open_category_menu": "Hierarchical category menu will open here!", "new_category_prompt": "Enter new category name (use '/' for hierarchy):",
                     "category_exists": "Category name already exists!", "delete_default_category_alert": "Cannot delete the default category!",
                     "delete_category_confirm": "Are you sure you want to delete category \"{category}\"?",
@@ -81,28 +75,25 @@ app.registerExtension({
                     "batch_operations": "Batch Operations", "select_all": "Select All", "deselect_all": "Deselect All", "batch_delete": "Batch Delete",
                     "batch_move": "Batch Move", "move_to": "Move To", "sort_by": "Sort By", "created_time": "Created Time",
                     "usage_count": "Usage Count", "alphabetical": "Alphabetical", "favorites": "Favorites", "tags": "Tags",
-                    "add_tag": "Add Tag", "remove_tag": "Remove Tag", "filter_by_tag": "Filter by Tag", "show_favorites": "Show Favorites",
+                    "add_tag": "Add Tag", "remove_tag": "Remove Tag", "filter_by_tag": "Filter by Tag",
                     "mark_favorite": "Mark Favorite", "unmark_favorite": "Unmark Favorite", "usage_stats": "Usage Stats", "templates": "Templates",
                     "create_template": "Create Template", "apply_template": "Apply Template", "template_name": "Template Name",
                     "template_variables": "Template Variables", "variable_name": "Variable Name", "variable_description": "Variable Description",
-                    "variable_type": "Variable Type", "text": "Text", "number": "Number", "backup": "Backup", "restore": "Restore",
-                    "auto_backup": "Auto Backup", "manual_backup": "Manual Backup", "backup_created": "Backup Created",
-                    "restore_confirm": "Are you sure you want to restore this backup? Current data will be overwritten.", "statistics": "Statistics",
-                    "backup_now": "Backup Now", "restore_from_backup": "Restore from Backup", "no_backups": "No backups available.",
-                    "max_backups": "Max Backups",
+                    "variable_type": "Variable Type", "text": "Text", "number": "Number", "statistics": "Statistics",
                     "open_library_hint": "Click the book icon in the upper left corner to open the prompt library",
                     "import_success": "Import successful! Refreshing...",
                     "import_fail": "Import failed",
                     "delete_prompt_confirm": "Are you sure you want to delete prompt \"{prompt}\"?",
                     "alias_placeholder": "Display name for the prompt",
                     "full_prompt_placeholder": "The full prompt content",
+                    "delete_success": "Delete successful!",
                     "prompt_empty_error": "Please fill in the prompt name and content!",
                     "add_prompt_success": "Prompt added successfully!",
                     "update_prompt_success": "Prompt updated successfully!",
                     "save_fail_retry": "Save failed, please try again!",
                     "exit_batch": "Exit Batch",
                     "prompt_list": "Prompt List",
-                    "add_new": "+ Add New",
+                    "add_new": "Add New",
                     "ready": "Ready",
                     "no_matching_prompts": "No matching prompts.",
                     "batch_delete_confirm": "Are you sure you want to delete the selected {count} prompts?",
@@ -110,16 +101,13 @@ app.registerExtension({
                     "batch_delete_fail": "Batch delete failed!",
                     "move_to_category_prompt": "Please enter the target category name:",
                     "batch_move_wip": "Batch move feature is under development...",
-                    "load_backup_fail": "Failed to load backup list",
-                    "backup_fail": "Backup failed",
-                    "select_backup_file": "Please select a backup file",
-                    "restore_success_refreshing": "Restore successful! Refreshing...",
-                    "restore_fail": "Restore failed",
                     "total_categories": "Total Categories", "total_prompts": "Total Prompts", "favorite_prompts": "Favorite Prompts",
-                    "most_used": "Most Used", "rename_category": "Rename Category", "delete_category": "Delete Category",
+                    "most_used": "Most Used", "rename_category": "Rename Category", "delete_category": "Delete Category", "favorites_category": "⭐ Favorites",
                     "category_description": "Category Description", "prompt_description": "Prompt Description", "drag_to_reorder": "Drag to Reorder",
                     "search_placeholder": "Search prompts, tags or descriptions...", "advanced_search": "Advanced Search",
-                    "search_in_prompts": "Search in Prompts", "search_in_tags": "Search in Tags", "search_in_descriptions": "Search in Descriptions"
+                    "search_in_prompts": "Search in Prompts", "search_in_tags": "Search in Tags", "search_in_descriptions": "Search in Descriptions",
+                    "interface": "Interface", "theme_color": "Theme Color", "function": "Function",
+                    "clear_all_confirm": "Are you sure you want to deselect all selected prompts?"
                 }
             };
             let currentLanguage = "zh-CN";
@@ -182,7 +170,7 @@ app.registerExtension({
                 this.promptData = null; // 用于存储从后端获取的数据
                 this.selectedCategory = "default";
                 this.selectionMode = "multi"; // 'single' or 'multi'
-                this.selectedPrompts = new Set(); // 用于存储多选模式下的选中项
+                this.selectedPrompts = {}; // 用于按分类存储多选模式下的选中项
                 this.batchMode = false; // 批量操作模式
                 this.selectedForBatch = new Set(); // 批量操作选中的提示词ID
                 this.currentSortBy = "created_at"; // 当前排序方式
@@ -270,10 +258,19 @@ app.registerExtension({
                     .then(data => {
                         this.promptData = data;
                         currentLanguage = this.promptData.settings?.language || "zh-CN";
+                        this.applyTheme(); // 应用主题
                         console.log("提示词数据已加载:", this.promptData);
                         this.updateCategoryDropdown();
-                        this.restoreSelection(); // 恢复选择
+                        // 初始加载时，恢复所有分类的选择
+                        if (this.promptData.settings?.save_selection) {
+                            this.promptData.categories.forEach(cat => {
+                                if (cat.last_selected && cat.last_selected.length > 0) {
+                                    this.selectedPrompts[cat.name] = new Set(cat.last_selected);
+                                }
+                            });
+                        }
                         this.renderContent();
+                        this.updateOutput(); // 更新一次初始输出
                         updateUIText(this);
                     })
                     .catch(error => {
@@ -291,7 +288,7 @@ app.registerExtension({
                 // Delete button is now per-item, so the global one is removed.
 
                 const iconSelectAll = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><path d="M3.5 5.5l1.5 1.5l2.5 -2.5"></path><path d="M3.5 11.5l1.5 1.5l2.5 -2.5"></path><path d="M3.5 17.5l1.5 1.5l2.5 -2.5"></path><path d="M11 6l9 0"></path><path d="M11 12l9 0"></path><path d="M11 18l9 0"></path></svg>`;
-                const iconDeselectAll = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><path d="M3 3m0 2a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z"></path><path d="M10 10l4 4m0 -4l-4 4"></path></svg>`;
+                const iconDeselectAll = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>`;
 
                 this.updateSelectAllButtonState = () => {
                     const toggleBtn = header.querySelector("#ps-toggle-select-all-btn");
@@ -305,7 +302,8 @@ app.registerExtension({
                     }
                     toggleBtn.style.display = 'flex';
 
-                    const allSelected = promptsInCategory.every(p => this.selectedPrompts.has(p.prompt));
+                    const categorySelections = this.selectedPrompts[this.selectedCategory] || new Set();
+                    const allSelected = promptsInCategory.length > 0 && promptsInCategory.every(p => categorySelections.has(p.prompt));
 
                     if (allSelected) {
                         toggleBtn.innerHTML = iconDeselectAll;
@@ -322,13 +320,17 @@ app.registerExtension({
                     if (!category || !category.prompts) return;
 
                     const promptsInCategory = category.prompts;
-                    const allSelected = promptsInCategory.length > 0 && promptsInCategory.every(p => this.selectedPrompts.has(p.prompt));
+                    const categorySelections = this.selectedPrompts[this.selectedCategory] || new Set();
+                    const allSelected = promptsInCategory.length > 0 && promptsInCategory.every(p => categorySelections.has(p.prompt));
 
                     if (allSelected) {
-                        promptsInCategory.forEach(p => this.selectedPrompts.delete(p.prompt));
+                        // Deselect all in current category
+                        promptsInCategory.forEach(p => categorySelections.delete(p.prompt));
                     } else {
-                        promptsInCategory.forEach(p => this.selectedPrompts.add(p.prompt));
+                        // Select all in current category
+                        promptsInCategory.forEach(p => categorySelections.add(p.prompt));
                     }
+                    this.selectedPrompts[this.selectedCategory] = categorySelections;
                     this.renderContent();
                     this.updateOutput();
                 });
@@ -361,6 +363,7 @@ app.registerExtension({
                 categoryBtn.addEventListener("click", (e) => {
                     this.showCategoryMenu(e.currentTarget);
                 });
+                // The hover preview is now on the badge itself, so these are removed.
 
 
                 const importBtn = footer.querySelector("#ps-import-btn");
@@ -410,8 +413,49 @@ app.registerExtension({
                 this.updateCategoryDropdown = () => {
                     const categoryBtn = header.querySelector("#ps-category-btn");
                     if (categoryBtn) {
-                        const text = categoryBtn.querySelector('span');
+                        const text = categoryBtn.querySelector('span:not(.ps-total-count-badge)');
                         if (text) text.textContent = this.selectedCategory;
+
+                        // Remove old count badge if it exists
+                        const existingBadge = categoryBtn.querySelector('.ps-total-count-badge');
+                        if (existingBadge) {
+                            existingBadge.remove();
+                        }
+
+                        // Calculate total active prompts
+                        let totalActiveCount = 0;
+                        if (this.selectedPrompts) {
+                            for (const categoryName in this.selectedPrompts) {
+                                totalActiveCount += this.selectedPrompts[categoryName].size;
+                            }
+                        }
+
+                        // Add new count badge if needed
+                        if (totalActiveCount > 0) {
+                            const countBadge = document.createElement("span");
+                            countBadge.className = "ps-total-count-badge";
+                            countBadge.innerHTML = `<span class="ps-count-number">${totalActiveCount}</span><span class="ps-delete-icon">×</span>`;
+                            categoryBtn.appendChild(countBadge);
+
+                            // Add hover events to the badge itself
+                            countBadge.addEventListener("mouseenter", (e) => {
+                                if (this.hidePreviewTimeout) {
+                                    clearTimeout(this.hidePreviewTimeout);
+                                    this.hidePreviewTimeout = null;
+                                }
+                                this.showAllActivePromptsPreview(e.currentTarget);
+                            });
+                            countBadge.addEventListener("mouseleave", () => {
+                                this.hidePreviewTimeout = setTimeout(() => {
+                                    this.hideActivePromptsPreview();
+                                }, 100);
+                            });
+                            // Add click event to clear all selections
+                            countBadge.addEventListener("click", (e) => {
+                                e.stopPropagation();
+                                this.clearSelection(); // Clear all selections
+                            });
+                        }
                     }
                 };
 
@@ -434,43 +478,127 @@ app.registerExtension({
                     const list = document.createElement("ul");
                     list.className = "prompt-list";
 
-                    category.prompts.forEach(p => {
+                    category.prompts.forEach((p, index) => {
                         const item = document.createElement("li");
                         item.className = "prompt-item";
-                        // item.title = p.prompt; // 移除title属性，避免冗余提示
+                        item.draggable = true; // 允许拖动
 
-                        const textSpan = document.createElement("span");
-                        textSpan.textContent = p.alias || p.prompt;
+                        const textContainer = document.createElement("div");
+                        textContainer.className = "prompt-text-container";
+
+                        const aliasSpan = document.createElement("span");
+                        aliasSpan.className = "prompt-item-alias";
+                        aliasSpan.textContent = p.alias || p.prompt;
+                        textContainer.appendChild(aliasSpan);
+
+                        if (p.alias && p.alias !== p.prompt) {
+                            const promptSpan = document.createElement("span");
+                            promptSpan.className = "prompt-item-full-prompt";
+                            promptSpan.textContent = p.prompt;
+                            textContainer.appendChild(promptSpan);
+                        }
+
+                        const controlsContainer = document.createElement("div");
+                        controlsContainer.className = "prompt-item-controls-wrapper";
 
                         const editBtn = document.createElement("button");
                         editBtn.className = "ps-item-edit-btn";
-                        // editBtn.title = t('edit_prompt'); // 移除title属性，避免冗余提示
                         editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
 
                         const deleteBtn = document.createElement("button");
                         deleteBtn.className = "ps-item-delete-btn";
-                        // deleteBtn.title = t('delete_selected'); // 移除title属性，避免冗余提示
                         deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v6"></path></svg>`;
 
-                        item.appendChild(textSpan);
-                        item.appendChild(editBtn);
-                        item.appendChild(deleteBtn);
+                        controlsContainer.appendChild(editBtn);
+                        controlsContainer.appendChild(deleteBtn);
 
-                        item.addEventListener('click', () => {
+                        item.appendChild(textContainer);
+                        item.appendChild(controlsContainer);
+
+                        // --- Drag and Drop Logic ---
+                        item.addEventListener('dragstart', (e) => {
+                            this.draggedItem = { id: p.id, index: index };
+                            e.dataTransfer.effectAllowed = 'move';
+                            item.classList.add('dragging');
+                        });
+
+                        item.addEventListener('dragend', (e) => {
+                            item.classList.remove('dragging');
+                        });
+
+                        item.addEventListener('dragover', (e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            const rect = item.getBoundingClientRect();
+                            const midY = rect.top + rect.height / 2;
+                            if (e.clientY < midY) {
+                                item.classList.remove('drag-over-bottom');
+                                item.classList.add('drag-over-top');
+                            } else {
+                                item.classList.remove('drag-over-top');
+                                item.classList.add('drag-over-bottom');
+                            }
+                        });
+
+                        item.addEventListener('dragleave', () => {
+                            item.classList.remove('drag-over-top', 'drag-over-bottom');
+                        });
+
+                        item.addEventListener('drop', (e) => {
+                            e.preventDefault();
+                            item.classList.remove('drag-over-top', 'drag-over-bottom');
+                            if (this.draggedItem && this.draggedItem.id !== p.id) {
+                                const fromIndex = this.draggedItem.index;
+                                let toIndex = index;
+
+                                const rect = item.getBoundingClientRect();
+                                const midY = rect.top + rect.height / 2;
+                                if (e.clientY > midY) {
+                                    toIndex++;
+                                }
+
+                                if (fromIndex < toIndex) {
+                                    toIndex--;
+                                }
+
+                                this.reorderPrompts(this.selectedCategory, fromIndex, toIndex);
+                                this.renderContent(); // Re-render to show new order
+                            }
+                            this.draggedItem = null;
+                        });
+
+
+                        item.addEventListener('click', (e) => {
+                            // 忽略拖拽带起的点击事件
+                            if (e.target.closest('.ps-item-edit-btn, .ps-item-delete-btn')) {
+                                return;
+                            }
+                            if (item.classList.contains('dragging')) {
+                                return;
+                            }
+
                             const promptValue = p.prompt;
                             if (this.selectionMode === 'single') {
-                                if (this.selectedPrompts.has(promptValue)) {
-                                    this.selectedPrompts.clear();
-                                } else {
-                                    this.selectedPrompts.clear();
-                                    this.selectedPrompts.add(promptValue);
+                                const categorySelections = this.selectedPrompts[this.selectedCategory] || new Set();
+                                const isCurrentlySelected = categorySelections.has(promptValue);
+
+                                // In single select mode, only one item can be selected across ALL categories.
+                                // So, first, we clear everything.
+                                this.selectedPrompts = {};
+
+                                // If the clicked item was not the one selected before, we select it.
+                                // If it was already selected, the clear operation above has already deselected it.
+                                if (!isCurrentlySelected) {
+                                    this.selectedPrompts[this.selectedCategory] = new Set([promptValue]);
                                 }
                             } else { // multi
-                                if (this.selectedPrompts.has(promptValue)) {
-                                    this.selectedPrompts.delete(promptValue);
+                                const categorySelections = this.selectedPrompts[this.selectedCategory] || new Set();
+                                if (categorySelections.has(promptValue)) {
+                                    categorySelections.delete(promptValue);
                                 } else {
-                                    this.selectedPrompts.add(promptValue);
+                                    categorySelections.add(promptValue);
                                 }
+                                this.selectedPrompts[this.selectedCategory] = categorySelections;
                             }
                             this.renderContent(); // Re-render to update selection state
                             this.updateOutput();
@@ -489,8 +617,12 @@ app.registerExtension({
                                     const promptIndex = category.prompts.findIndex(item => item.id === p.id);
                                     if (promptIndex > -1) {
                                         category.prompts.splice(promptIndex, 1);
-                                        this.selectedPrompts.delete(p.prompt);
+                                        // 当一个提示词被删除时，需要从所有分类的选中项中移除它
+                                        Object.values(this.selectedPrompts).forEach(selectionSet => {
+                                            selectionSet.delete(p.prompt);
+                                        });
                                         this.saveData();
+                                        this.showToast(t('delete_success'));
                                         this.renderContent();
                                         this.updateOutput();
                                     }
@@ -498,7 +630,7 @@ app.registerExtension({
                             });
                         });
 
-                        if (this.selectedPrompts.has(p.prompt)) {
+                        if (this.selectedPrompts[this.selectedCategory]?.has(p.prompt)) {
                             item.classList.add('selected');
                         }
 
@@ -511,10 +643,64 @@ app.registerExtension({
 
                 this.updateOutput = () => {
                     const separator = this.promptData.settings?.separator || ", ";
-                    const outputString = Array.from(this.selectedPrompts).join(separator);
+                    const allSelected = [];
+                    // 按照分类在promptData中的顺序合并，以保持输出的稳定性
+                    this.promptData.categories.forEach(cat => {
+                        const selectionSet = this.selectedPrompts[cat.name];
+                        if (selectionSet && selectionSet.size > 0) {
+                            // 按照提示词在分类中的顺序排序
+                            const sortedPrompts = cat.prompts
+                                .filter(p => selectionSet.has(p.prompt))
+                                .map(p => p.prompt);
+                            allSelected.push(...sortedPrompts);
+                        }
+                    });
+
+                    const outputString = allSelected.join(separator);
                     outputWidget.value = outputString;
                     console.log("Output updated:", outputString);
-                    this.saveSelection(); // 保存选择
+                    if (this.promptData.settings?.save_selection) {
+                        this.saveSelection(); // 保存当前分类的选择
+                    }
+                    this.updateCategoryDropdown();
+                };
+
+                this.clearSelection = (categoryName = null) => {
+                    this.hideActivePromptsPreview(); // Hide tooltip immediately
+                    if (categoryName) {
+                        // Clear selection for a specific category (no confirmation)
+                        if (this.selectedPrompts[categoryName]) {
+                            this.selectedPrompts[categoryName].clear();
+                        }
+
+                        // Instead of re-rendering the whole menu, just find and remove the badge
+                        const menu = document.querySelector(".ps-category-menu");
+                        if (menu) {
+                            const li = menu.querySelector(`li[data-full-name="${categoryName}"]`);
+                            if (li) {
+                                const badge = li.querySelector('.ps-category-count');
+                                if (badge) {
+                                    badge.remove();
+                                }
+                            }
+                        }
+                        this.renderContent();
+                        this.updateOutput();
+                    } else {
+                        // Clear all selections (with confirmation)
+                        this.showConfirmModal(t('clear_all_confirm'), () => {
+                            this.selectedPrompts = {};
+                            // Manually close the category menu if it's open
+                            const existingMenu = document.querySelector(".ps-category-menu");
+                            if (existingMenu) {
+                                existingMenu.remove();
+                                const categoryBtn = header.querySelector("#ps-category-btn");
+                                if (categoryBtn) categoryBtn.classList.remove("open");
+                            }
+                            this.renderContent();
+                            this.updateOutput();
+                        });
+                    }
                 };
 
                 this.saveData = () => {
@@ -532,8 +718,24 @@ app.registerExtension({
                     });
                 };
 
-                this.showCategoryMenu = (button) => {
+                this.showCategoryMenu = (button, isRefresh = false, searchTerm = '') => {
                     const existingMenu = document.querySelector(".ps-category-menu");
+
+                    // If it's not a refresh, toggle the menu
+                    if (!isRefresh && existingMenu) {
+                        existingMenu.remove();
+                        button.classList.remove("open");
+                        if (button.clickOutsideHandler) {
+                            document.removeEventListener("click", button.clickOutsideHandler, true);
+                            button.clickOutsideHandler = null;
+                        }
+                        return;
+                    }
+
+                    if (existingMenu) {
+                        existingMenu.remove();
+                    }
+
 
                     const closeMenu = () => {
                         const menu = document.querySelector(".ps-category-menu");
@@ -547,10 +749,6 @@ app.registerExtension({
                         }
                     };
 
-                    if (existingMenu) {
-                        closeMenu();
-                        return;
-                    }
 
                     button.classList.add("open");
                     const menu = document.createElement("div");
@@ -559,22 +757,54 @@ app.registerExtension({
                     const searchInput = document.createElement("input");
                     searchInput.type = "text";
                     searchInput.placeholder = "搜索类别...";
+                    searchInput.value = searchTerm; // Restore search term on refresh
                     searchInput.addEventListener("input", (e) => {
-                        const searchTerm = e.target.value.toLowerCase();
+                        const currentSearchTerm = e.target.value.toLowerCase();
                         ul.querySelectorAll("li").forEach(li => {
-                            const categoryName = li.textContent.toLowerCase();
-                            li.style.display = categoryName.includes(searchTerm) ? "" : "none";
+                            const categoryName = li.dataset.fullName.toLowerCase();
+                            li.style.display = categoryName.includes(currentSearchTerm) ? "" : "none";
                         });
                     });
+                    // Trigger filtering on refresh
+                    if (searchTerm) {
+                        setTimeout(() => searchInput.dispatchEvent(new Event('input')), 0);
+                    }
 
                     const ul = document.createElement("ul");
                     this.promptData.categories.forEach(cat => {
                         const li = document.createElement("li");
-                        li.textContent = cat.name;
-                        li.addEventListener("click", () => {
+
+                        li.dataset.fullName = cat.name;
+                        const nameSpan = document.createElement("span");
+                        nameSpan.textContent = cat.name;
+                        li.appendChild(nameSpan);
+
+                        const activeCount = this.selectedPrompts[cat.name]?.size || 0;
+                        if (activeCount > 0) {
+                            const countBadge = document.createElement("span");
+                            countBadge.className = "ps-category-count";
+                            countBadge.innerHTML = `<span class="ps-count-number">${activeCount}</span><span class="ps-delete-icon">×</span>`;
+
+                            countBadge.addEventListener("mouseenter", () => {
+                                this.showActivePromptsPreview(cat.name);
+                            });
+
+                            countBadge.addEventListener("click", (e) => {
+                                e.stopPropagation();
+                                this.clearSelection(cat.name);
+                            });
+
+                            li.appendChild(countBadge);
+                        }
+
+                        li.addEventListener("click", (e) => {
+                            // Prevent closing menu when clicking on the count badge
+                            if (e.target.classList.contains('ps-category-count')) {
+                                e.stopPropagation();
+                                return;
+                            }
                             this.selectedCategory = cat.name;
                             this.updateCategoryDropdown();
-                            this.restoreSelection(); // 恢复新分类的选择
                             this.renderContent();
                             closeMenu();
                         });
@@ -589,14 +819,115 @@ app.registerExtension({
                     menu.style.left = `${rect.left}px`;
                     menu.style.top = `${rect.bottom + 5}px`;
 
+                    menu.addEventListener("mouseleave", () => {
+                        this.hideActivePromptsPreview();
+                    });
+
                     const clickOutsideHandler = (event) => {
                         if (!menu.contains(event.target) && !button.contains(event.target)) {
                             closeMenu();
                         }
                     };
 
-                    button.clickOutsideHandler = clickOutsideHandler;
-                    document.addEventListener("click", clickOutsideHandler, true);
+                    // Only add the outside click handler if it's not a refresh
+                    if (!isRefresh) {
+                        button.clickOutsideHandler = clickOutsideHandler;
+                        document.addEventListener("click", clickOutsideHandler, true);
+                    }
+                };
+
+                this.hideActivePromptsPreview = () => {
+                    const previewBox = document.querySelector(".ps-active-prompts-preview");
+                    if (previewBox) {
+                        previewBox.remove();
+                    }
+                };
+
+                this.showActivePromptsPreview = (categoryName) => {
+                    this.hideActivePromptsPreview(); // Ensure no multiple tooltips
+
+                    const activePrompts = this.selectedPrompts[categoryName];
+                    if (!activePrompts || activePrompts.size === 0) return;
+
+                    const previewBox = document.createElement("div");
+                    previewBox.className = "ps-active-prompts-preview";
+
+                    const ul = document.createElement("ul");
+                    // Get full prompt objects to display alias or prompt
+                    const category = this.promptData.categories.find(c => c.name === categoryName);
+                    if (!category) return;
+
+                    const activePromptDetails = category.prompts.filter(p => activePrompts.has(p.prompt));
+
+                    activePromptDetails.forEach(p => {
+                        const li = document.createElement("li");
+                        li.textContent = p.alias || p.prompt;
+                        ul.appendChild(li);
+                    });
+                    previewBox.appendChild(ul);
+
+                    document.body.appendChild(previewBox);
+
+                    const menu = document.querySelector(".ps-category-menu");
+                    if (menu) {
+                        const menuRect = menu.getBoundingClientRect();
+                        previewBox.style.left = `${menuRect.right + 5}px`;
+                        previewBox.style.top = `${menuRect.top}px`;
+                        previewBox.style.maxHeight = `${menuRect.height}px`;
+                    }
+                };
+
+                this.showAllActivePromptsPreview = (targetElement) => {
+                    this.hideActivePromptsPreview(); // Hide any existing one first
+
+                    const allActivePrompts = [];
+                    if (this.promptData && this.selectedPrompts) {
+                        this.promptData.categories.forEach(cat => {
+                            const selectionSet = this.selectedPrompts[cat.name];
+                            if (selectionSet && selectionSet.size > 0) {
+                                const activeDetails = cat.prompts
+                                    .filter(p => selectionSet.has(p.prompt))
+                                    .map(p => ({ category: cat.name, text: p.alias || p.prompt }));
+                                allActivePrompts.push(...activeDetails);
+                            }
+                        });
+                    }
+
+                    if (allActivePrompts.length === 0) return;
+
+                    const previewBox = document.createElement("div");
+                    previewBox.className = "ps-active-prompts-preview";
+
+                    const ul = document.createElement("ul");
+                    allActivePrompts.forEach(promptInfo => {
+                        const li = document.createElement("li");
+                        li.innerHTML = `<span class="ps-preview-category">[${promptInfo.category}]</span> ${promptInfo.text}`;
+                        ul.appendChild(li);
+                    });
+                    previewBox.appendChild(ul);
+
+                    previewBox.addEventListener("mouseenter", () => {
+                        if (this.hidePreviewTimeout) {
+                            clearTimeout(this.hidePreviewTimeout);
+                            this.hidePreviewTimeout = null;
+                        }
+                    });
+                    previewBox.addEventListener("mouseleave", () => {
+                        this.hideActivePromptsPreview();
+                    });
+
+                    document.body.appendChild(previewBox);
+
+                    const mainButton = header.querySelector("#ps-category-btn");
+                    const anchorElement = targetElement || mainButton;
+
+                    if (anchorElement && mainButton) {
+                        const anchorRect = anchorElement.getBoundingClientRect();
+                        const mainButtonRect = mainButton.getBoundingClientRect();
+                        previewBox.style.left = `${mainButtonRect.left}px`;
+                        previewBox.style.top = `${anchorRect.bottom + 5}px`;
+                        previewBox.style.minWidth = `${mainButtonRect.width}px`;
+                    }
                 };
 
                 this.showEditModal = (prompt, categoryName, isNew = false) => {
@@ -744,9 +1075,6 @@ app.registerExtension({
                                 </div>
                                 <div class="ps-filter-bar">
                                     <div class="ps-filter-group">
-                                        <label class="ps-filter-toggle">
-                                            <input type="checkbox" id="ps-show-favorites"> ${t('show_favorites')}
-                                        </label>
                                         <select id="ps-sort-select" class="ps-select">
                                             <option value="created_at">${t('created_time')}</option>
                                             <option value="alphabetical">${t('alphabetical')}</option>
@@ -777,8 +1105,14 @@ app.registerExtension({
                                     <div class="ps-prompt-header">
                                         <h4>${t('prompt_list')}</h4>
                                         <div class="ps-prompt-controls">
-                                            <button class="ps-btn ps-btn-sm" id="ps-batch-mode-btn">${t('batch_operations')}</button>
-                                            <button class="ps-btn ps-btn-sm" id="ps-add-prompt-btn">${t('add_new')}</button>
+                                            <button class="ps-btn ps-btn-sm" id="ps-batch-mode-btn">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.5l1.5 1.5l2.5 -2.5"></path><path d="M3.5 11.5l1.5 1.5l2.5 -2.5"></path><path d="M3.5 17.5l1.5 1.5l2.5 -2.5"></path><path d="M11 6l9 0"></path><path d="M11 12l9 0"></path><path d="M11 18l9 0"></path></svg>
+                                                <span>${t('batch_operations')}</span>
+                                            </button>
+                                            <button class="ps-btn ps-btn-sm ps-btn-primary" id="ps-add-prompt-btn">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                                <span>${t('add_new')}</span>
+                                            </button>
                                         </div>
                                     </div>
                                     <div class="ps-prompt-list-container">
@@ -882,6 +1216,21 @@ app.registerExtension({
 
                     const renderCategoryTree = (nodes, container) => {
                         const ul = document.createElement("ul");
+
+                        // Add Favorites at the top
+                        // const favoritesLi = document.createElement("li");
+                        // favoritesLi.dataset.fullName = "__favorites__"; // Special name
+                        // favoritesLi.innerHTML = `<div class="ps-tree-item"><span>${t('favorites_category')}</span></div>`;
+                        // const favoritesItemDiv = favoritesLi.querySelector('.ps-tree-item');
+                        // favoritesItemDiv.addEventListener('click', (e) => {
+                        //     e.stopPropagation();
+                        //     this.selectedCategory = "__favorites__";
+                        //     renderPromptList("__favorites__");
+                        //     modal.querySelectorAll('.ps-tree-item.selected').forEach(el => el.classList.remove('selected'));
+                        //     favoritesItemDiv.classList.add('selected');
+                        // });
+                        // ul.appendChild(favoritesLi);
+
                         nodes.forEach(node => {
                             const li = document.createElement("li");
                             li.dataset.fullName = node.fullName;
@@ -904,7 +1253,15 @@ app.registerExtension({
                                     renderPromptList(this.selectedCategory); // 更新右侧视图
                                     // 高亮显示
                                     modal.querySelectorAll('.ps-tree-item.selected').forEach(el => el.classList.remove('selected'));
+                                    modal.querySelector('.ps-favorites-btn')?.classList.remove('selected');
                                     itemDiv.classList.add('selected');
+                                });
+
+                                // Add context menu for non-favorite categories
+                                itemDiv.addEventListener('contextmenu', (e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    this.showCategoryContextMenu(e, node.fullName);
                                 });
                             }
                             ul.appendChild(li);
@@ -918,11 +1275,15 @@ app.registerExtension({
 
                     const renderPromptList = (categoryName, searchTerm = '') => {
                         promptListContainer.innerHTML = ''; // 清空
-                        const category = this.promptData.categories.find(c => c.name === categoryName);
-
                         let promptsToShow = [];
-                        if (category) {
-                            promptsToShow = [...category.prompts];
+
+                        if (categoryName === "__favorites__") {
+                            promptsToShow = this.promptData.categories.flatMap(c => c.prompts).filter(p => p.favorite);
+                        } else {
+                            const category = this.promptData.categories.find(c => c.name === categoryName);
+                            if (category) {
+                                promptsToShow = [...category.prompts];
+                            }
                         }
 
                         // 应用搜索过滤
@@ -973,32 +1334,30 @@ app.registerExtension({
                             const item = document.createElement("li");
                             item.className = "ps-prompt-list-item";
                             item.setAttribute('data-prompt-id', p.id);
-                            item.draggable = true;
+                            item.draggable = categoryName !== '__favorites__';
 
                             const favoriteClass = p.favorite ? 'favorite' : '';
                             const usageCount = p.usage_count || 0;
                             const tags = p.tags || [];
 
                             item.innerHTML = `
-                                <div class="ps-prompt-item-header">
-                                    <div class="ps-prompt-controls">
-                                        ${this.batchMode ? `<input type="checkbox" class="ps-batch-checkbox" data-prompt-id="${p.id}">` : ''}
-                                        <button class="ps-btn ps-btn-icon ps-favorite-btn ${favoriteClass}" data-prompt-id="${p.id}">
-                                            <svg viewBox="0 0 24 24"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"></polygon></svg>
-                                        </button>
-                                        <button class="ps-btn ps-btn-icon ps-edit-btn" data-prompt-id="${p.id}">
-                                            <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                                        </button>
-                                        <button class="ps-btn ps-btn-icon ps-delete-btn" data-prompt-id="${p.id}">
-                                            <svg viewBox="0 0 24 24"><polyline points="3,6 5,6 21,6"></polyline><path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path></svg>
-                                        </button>
-                                    </div>
-                                </div>
+                                ${this.batchMode ? `<input type="checkbox" class="ps-batch-checkbox" data-prompt-id="${p.id}">` : ''}
                                 <div class="ps-prompt-content">
                                     <div class="ps-prompt-list-item-name">${p.alias}</div>
                                     <div class="ps-prompt-list-item-preview">${p.prompt}</div>
                                     ${p.description ? `<div class="ps-prompt-description">${p.description}</div>` : ''}
                                     ${tags.length > 0 ? `<div class="ps-prompt-tags">${tags.map(tag => `<span class="ps-tag">${tag}</span>`).join('')}</div>` : ''}
+                                </div>
+                                <div class="ps-prompt-item-controls">
+                                    <button class="ps-btn ps-btn-icon ps-favorite-btn ${favoriteClass}" title="${t('mark_favorite')}" data-prompt-id="${p.id}">
+                                        <svg viewBox="0 0 24 24"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"></polygon></svg>
+                                    </button>
+                                    <button class="ps-btn ps-btn-icon ps-edit-btn" title="${t('edit_prompt')}" data-prompt-id="${p.id}">
+                                        <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                    </button>
+                                    <button class="ps-btn ps-btn-icon ps-delete-btn" title="${t('delete_prompt_confirm', { prompt: p.alias })}" data-prompt-id="${p.id}">
+                                        <svg viewBox="0 0 24 24"><polyline points="3,6 5,6 21,6"></polyline><path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path></svg>
+                                    </button>
                                 </div>
                             `;
 
@@ -1021,32 +1380,47 @@ app.registerExtension({
                             });
 
                             // 单击加载提示词
-                            item.querySelector('.ps-prompt-content').addEventListener('click', () => {
-                                if (!this.batchMode) {
-                                    this.loadPrompt(p);
-                                    closeModal();
-                                }
-                            });
-
-                            // 收藏按钮事件
-                            item.querySelector('.ps-favorite-btn').addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                this.toggleFavorite(categoryName, p.id);
-                            });
-
-                            // 编辑按钮事件
-                            item.querySelector('.ps-edit-btn').addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                this.showEditModal(p, categoryName);
-                            });
-
-                            // 删除按钮事件
-                            item.querySelector('.ps-delete-btn').addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                this.showConfirmModal(t('delete_prompt_confirm', { prompt: p.alias }), () => {
-                                    this.deletePrompt(categoryName, p.id);
+                            const contentEl = item.querySelector('.ps-prompt-content');
+                            if (contentEl) {
+                                contentEl.addEventListener('click', () => {
+                                    if (!this.batchMode) {
+                                        this.loadPrompt(p);
+                                        closeModal();
+                                    }
                                 });
-                            });
+                            }
+
+                            // 按钮事件
+                            const controlsEl = item.querySelector('.ps-prompt-item-controls');
+                            if (controlsEl) {
+                                const getRealCategory = (promptId) => {
+                                    if (categoryName !== '__favorites__') {
+                                        return categoryName;
+                                    }
+                                    const { category } = this.findPromptAndCategory(promptId);
+                                    return category ? category.name : null;
+                                };
+
+                                controlsEl.querySelector('.ps-favorite-btn').addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    const realCategoryName = getRealCategory(p.id);
+                                    if (realCategoryName) this.toggleFavorite(realCategoryName, p.id);
+                                });
+                                controlsEl.querySelector('.ps-edit-btn').addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    const realCategoryName = getRealCategory(p.id);
+                                    if (realCategoryName) this.showEditModal(p, realCategoryName);
+                                });
+                                controlsEl.querySelector('.ps-delete-btn').addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    const realCategoryName = getRealCategory(p.id);
+                                    if (realCategoryName) {
+                                        this.showConfirmModal(t('delete_prompt_confirm', { prompt: p.alias }), () => {
+                                            this.deletePrompt(realCategoryName, p.id);
+                                        });
+                                    }
+                                });
+                            }
 
                             // 批量选择事件
                             const batchCheckbox = item.querySelector('.ps-batch-checkbox');
@@ -1072,10 +1446,37 @@ app.registerExtension({
                     categoryTreeContainer.innerHTML = ''; // 清空占位符
                     categoryTreeContainer.appendChild(treeElement);
 
+                    // Create and insert the favorites button area
+                    const favoritesContainer = document.createElement('div');
+                    favoritesContainer.className = 'ps-favorites-container';
+
+                    const favoritesButton = document.createElement('button');
+                    favoritesButton.className = 'ps-btn ps-favorites-btn';
+                    favoritesButton.innerHTML = `<span>${t('favorites_category')}</span>`;
+                    favoritesButton.addEventListener('click', (e) => {
+                        this.selectedCategory = "__favorites__";
+                        renderPromptList("__favorites__");
+                        // Handle selection state
+                        modal.querySelectorAll('.ps-tree-item.selected').forEach(el => el.classList.remove('selected'));
+                        favoritesButton.classList.add('selected');
+                    });
+
+                    favoritesContainer.appendChild(favoritesButton);
+
+                    const categoryHeader = leftPanel.querySelector('.ps-category-header');
+                    leftPanel.insertBefore(favoritesContainer, categoryHeader);
+
+
                     // 默认渲染第一个分类的提示词
-                    if (this.promptData.categories.length > 0) {
+                    // Select first non-favorite category by default
+                    const favoritesCount = this.promptData.categories.flatMap(c => c.prompts).filter(p => p.favorite).length;
+                    if (favoritesCount > 0) {
+                        this.selectedCategory = "__favorites__";
+                        favoritesButton.classList.add('selected');
+                        renderPromptList(this.selectedCategory);
+                    } else if (this.promptData.categories.length > 0) {
                         this.selectedCategory = this.promptData.categories[0].name;
-                        const firstItem = categoryTreeContainer.querySelector('.ps-tree-item');
+                        const firstItem = categoryTreeContainer.querySelector('li:not([data-full-name="__favorites__"]) .ps-tree-item');
                         if (firstItem) {
                             firstItem.classList.add('selected');
                             renderPromptList(this.selectedCategory);
@@ -1120,6 +1521,10 @@ app.registerExtension({
                         const newName = prompt(t('new_category_prompt'));
                         if (!newName || !newName.trim()) return;
                         const finalName = newName.trim();
+                        if (finalName === "__favorites__" || finalName === t('favorites_category').replace('⭐ ', '')) {
+                            this.showToast("不能创建此名称的分类。", 'error');
+                            return;
+                        }
                         if (this.promptData.categories.some(c => c.name === finalName)) {
                             this.showToast(t('category_exists'), 'error');
                             return;
@@ -1138,13 +1543,6 @@ app.registerExtension({
 
                     // --- 新增的事件监听器 ---
 
-
-                    // 收藏过滤
-                    const showFavoritesCheckbox = modal.querySelector('#ps-show-favorites');
-                    showFavoritesCheckbox.addEventListener('change', (e) => {
-                        this.currentFilter.favorites = e.target.checked;
-                        renderPromptList(this.selectedCategory);
-                    });
 
                     // 排序选择
                     const sortSelect = modal.querySelector('#ps-sort-select');
@@ -1233,7 +1631,7 @@ app.registerExtension({
                                     }
                                     this.selectedForBatch.clear();
                                     renderPromptList(this.selectedCategory);
-                                    this.showToast(t('batch_delete_success'));
+                                    this.showToast(t('delete_success'));
                                 }
                             } catch (error) {
                                 console.error("批量删除失败:", error);
@@ -1286,28 +1684,25 @@ app.registerExtension({
                 };
 
                 this.saveSelection = () => {
-                    if (!this.promptData.settings?.save_selection) return;
-
                     api.fetchApi("/prompt_selector/selection", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                             category: this.selectedCategory,
-                            selected_prompts: Array.from(this.selectedPrompts)
+                            selected_prompts: Array.from(this.selectedPrompts[this.selectedCategory] || [])
                         }),
+                    }).then(response => {
+                        if (response.ok) {
+                            // this.showToast(t('save_selection') + ' ' + t('saveSuccess'));
+                        }
                     }).catch(error => {
                         console.error("保存选择失败:", error);
                     });
                 };
 
                 this.restoreSelection = () => {
-                    if (!this.promptData.settings?.save_selection) return;
-
-                    const category = this.promptData.categories.find(c => c.name === this.selectedCategory);
-                    if (category && category.last_selected) {
-                        this.selectedPrompts = new Set(category.last_selected);
-                        this.updateOutput();
-                    }
+                    // This function is now handled at initial load to support multi-category selections.
+                    // It is kept to prevent errors if called elsewhere, but its body is cleared.
                 };
 
                 this.showSettingsModal = () => {
@@ -1316,36 +1711,37 @@ app.registerExtension({
                     const modal = document.createElement("div");
                     modal.className = "ps-edit-modal ps-settings-modal"; // Re-use styles
                     modal.innerHTML = `
-                        <div class="ps-modal-content" style="width: 400px; max-width: 90vw;">
-                             <h3>${t('settings')}</h3>
-                             <div class="ps-settings-tabs">
-                                <button class="ps-tab-btn active" data-pane="general">${t('language')}</button>
-                                <button class="ps-tab-btn" data-pane="backup">${t('backup')}</button>
-                             </div>
-                             <div class="ps-settings-pane active" data-pane="general">
-                                 <label for="ps-lang-select">${t('language')}:</label>
-                                 <select id="ps-lang-select">
-                                     <option value="zh-CN">简体中文</option>
-                                     <option value="en-US">English</option>
-                                 </select>
-                                 
-                                 <label class="ps-checkbox-label" style="margin-top: 15px;">
-                                    <input type="checkbox" id="ps-save-selection-checkbox">
-                                    ${t('save_selection')}
-                                </label>
-                             </div>
-                             <div class="ps-settings-pane" data-pane="backup">
-                                <label class="ps-checkbox-label">
-                                    <input type="checkbox" id="ps-auto-backup-checkbox">
-                                    ${t('auto_backup')}
-                                </label>
-                                <label>${t('max_backups')}:</label>
-                                <input type="number" id="ps-max-backups-input" min="1" max="100" style="width: 100px;">
-                                <div style="margin-top: 15px;">
-                                    <button class="ps-btn ps-btn-sm" id="ps-backup-now-btn">${t('backup_now')}</button>
-                                    <button class="ps-btn ps-btn-sm" id="ps-restore-backup-btn">${t('restore_from_backup')}</button>
-                                </div>
-                                <div id="ps-backup-list-container" style="margin-top: 15px;"></div>
+                        <div class="ps-modal-content" style="width: 600px; height: 400px; max-width: 90vw; display: flex; flex-direction: column;">
+                             <h3 style="margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #444;">${t('settings')}</h3>
+                             <div style="display: flex; flex-grow: 1; overflow: hidden;">
+                                  <div class="ps-settings-sidebar">
+                                      <button class="ps-sidebar-btn active" data-pane="general">${t('language')}</button>
+                                      <button class="ps-sidebar-btn" data-pane="interface">${t('interface')}</button>
+                                      <button class="ps-sidebar-btn" data-pane="function">${t('function')}</button>
+                                  </div>
+                                  <div class="ps-settings-content">
+                                      <div class="ps-settings-pane active" data-pane="general">
+                                           <div style="display: flex; align-items: center; gap: 8px;">
+                                              <label for="ps-lang-select" style="margin: 0; white-space: nowrap;">${t('language')}:</label>
+                                              <select id="ps-lang-select" style="width: 200px;">
+                                                  <option value="zh-CN">简体中文</option>
+                                                  <option value="en-US">English</option>
+                                              </select>
+                                           </div>
+                                      </div>
+                                      <div class="ps-settings-pane" data-pane="interface">
+                                           <div style="display: flex; align-items: center; gap: 8px;">
+                                              <label for="ps-theme-color-picker" style="display: inline; margin: 0;">${t('theme_color')}:</label>
+                                              <input type="color" id="ps-theme-color-picker" style="width: 40px; height: 25px; padding: 2px; border: 1px solid #555; cursor: pointer;">
+                                           </div>
+                                      </div>
+                                      <div class="ps-settings-pane" data-pane="function">
+                                           <div style="display: flex; align-items: center; gap: 8px;">
+                                              <label for="ps-separator-input" style="display: inline; margin: 0;">${t('separator')}:</label>
+                                              <input type="text" id="ps-separator-input" placeholder="${t('separator_placeholder')}" style="width: 100px; background-color: #1b1b1b; border: 1px solid #555; color: #eee; padding: 8px; border-radius: 4px;">
+                                           </div>
+                                      </div>
+                                  </div>
                              </div>
                              <div class="ps-modal-buttons">
                                 <button id="ps-settings-save">${t('save')}</button>
@@ -1359,93 +1755,21 @@ app.registerExtension({
                     const langSelect = modal.querySelector("#ps-lang-select");
                     langSelect.value = currentLanguage;
 
-                    const saveSelectionCheckbox = modal.querySelector("#ps-save-selection-checkbox");
-                    saveSelectionCheckbox.checked = this.promptData.settings?.save_selection || false;
+                    const colorPicker = modal.querySelector("#ps-theme-color-picker");
+                    colorPicker.value = this.promptData.settings?.theme_color || '#8a2be2';
 
-                    const autoBackupCheckbox = modal.querySelector("#ps-auto-backup-checkbox");
-                    autoBackupCheckbox.checked = this.promptData.settings?.auto_backup ?? true;
+                    const separatorInput = modal.querySelector("#ps-separator-input");
+                    separatorInput.value = this.promptData.settings?.separator || ', ';
 
-                    const maxBackupsInput = modal.querySelector("#ps-max-backups-input");
-                    maxBackupsInput.value = this.promptData.settings?.max_backups || 10;
-
-                    // Tab switching
-                    modal.querySelectorAll('.ps-tab-btn').forEach(btn => {
+                    // Sidebar logic
+                    modal.querySelectorAll('.ps-sidebar-btn').forEach(btn => {
                         btn.addEventListener('click', () => {
                             const paneName = btn.dataset.pane;
-                            modal.querySelectorAll('.ps-tab-btn').forEach(b => b.classList.remove('active'));
+                            modal.querySelectorAll('.ps-sidebar-btn').forEach(b => b.classList.remove('active'));
                             btn.classList.add('active');
                             modal.querySelectorAll('.ps-settings-pane').forEach(p => {
-                                p.style.display = p.dataset.pane === paneName ? 'block' : 'none';
+                                p.classList.toggle('active', p.dataset.pane === paneName);
                             });
-                            if (paneName === 'backup') {
-                                loadBackupList();
-                            }
-                        });
-                    });
-                    // Hide backup pane initially
-                    modal.querySelector('.ps-settings-pane[data-pane="backup"]').style.display = 'none';
-
-
-                    // Backup logic
-                    const backupListContainer = modal.querySelector("#ps-backup-list-container");
-
-                    const loadBackupList = async () => {
-                        try {
-                            const backups = await api.fetchApi("/prompt_selector/backups").then(r => r.json());
-                            if (backups.length === 0) {
-                                backupListContainer.innerHTML = `<p>${t('no_backups')}</p>`;
-                                return;
-                            }
-                            backupListContainer.innerHTML = `
-                                <select id="ps-backup-select" size="5" style="width: 100%;">
-                                    ${backups.map(b => `<option value="${b}">${b}</option>`).join('')}
-                                </select>
-                            `;
-                        } catch (error) {
-                            backupListContainer.innerHTML = `<p style="color: #c53939;">${t('load_backup_fail')}</p>`;
-                        }
-                    };
-
-                    modal.querySelector("#ps-backup-now-btn").addEventListener("click", async () => {
-                        try {
-                            const response = await api.fetchApi("/prompt_selector/backup/create", { method: "POST" });
-                            if (response.ok) {
-                                this.showToast(t('backup_created'));
-                                loadBackupList();
-                            }
-                        } catch (error) {
-                            this.showToast(t('backup_fail'), 'error');
-                        }
-                    });
-
-                    modal.querySelector("#ps-restore-backup-btn").addEventListener("click", () => {
-                        const backupSelect = modal.querySelector("#ps-backup-select");
-                        if (!backupSelect || !backupSelect.value) {
-                            this.showToast(t('select_backup_file'), 'warning');
-                            return;
-                        }
-                        const filename = backupSelect.value;
-                        this.showConfirmModal(t('restore_confirm'), async () => {
-                            try {
-                                const response = await api.fetchApi("/prompt_selector/backup/restore", {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ filename: filename })
-                                });
-                                if (response.ok) {
-                                    this.showToast(t('restore_success_refreshing'));
-                                    // Reload data
-                                    const data = await api.fetchApi("/prompt_selector/data").then(r => r.json());
-                                    this.promptData = data;
-                                    currentLanguage = this.promptData.settings?.language || "zh-CN";
-                                    this.updateCategoryDropdown();
-                                    this.renderContent();
-                                    updateUIText(this);
-                                    closeModal();
-                                }
-                            } catch (error) {
-                                this.showToast(t('restore_fail'), 'error');
-                            }
                         });
                     });
 
@@ -1453,6 +1777,11 @@ app.registerExtension({
                     const closeModal = () => modal.remove();
                     modal.querySelector("#ps-settings-cancel").addEventListener("click", closeModal);
                     modal.querySelector("#ps-settings-save").addEventListener("click", () => {
+                        // Ensure settings object exists
+                        if (!this.promptData.settings) {
+                            this.promptData.settings = {};
+                        }
+
                         const newLang = langSelect.value;
                         if (currentLanguage !== newLang) {
                             this.promptData.settings.language = newLang;
@@ -1460,17 +1789,30 @@ app.registerExtension({
                             updateUIText(this);
                         }
 
-                        this.promptData.settings.save_selection = saveSelectionCheckbox.checked;
-                        this.promptData.settings.auto_backup = autoBackupCheckbox.checked;
-                        this.promptData.settings.max_backups = parseInt(maxBackupsInput.value, 10) || 10;
+                        this.promptData.settings.theme_color = colorPicker.value;
+                        this.promptData.settings.separator = modal.querySelector("#ps-separator-input").value;
+                        this.applyTheme();
+
+                        // This setting is now always true implicitly
+                        this.promptData.settings.save_selection = true;
 
                         this.saveData();
-                        this.showToast(t('save'));
+                        this.showToast(t('save_success'));
                         closeModal();
                     });
                 };
 
                 // --- 新增的管理功能方法 ---
+
+                this.findPromptAndCategory = (promptId) => {
+                    for (const category of this.promptData.categories) {
+                        const prompt = category.prompts.find(p => p.id === promptId);
+                        if (prompt) {
+                            return { prompt, category };
+                        }
+                    }
+                    return { prompt: null, category: null };
+                };
 
                 this.sortPrompts = (prompts) => {
                     switch (this.currentSortBy) {
@@ -1560,6 +1902,7 @@ app.registerExtension({
                                 const renderPromptList = modal.renderPromptList;
                                 if (renderPromptList) renderPromptList(categoryName);
                             }
+                            this.showToast(t('delete_success'));
                         }
                     } catch (error) {
                         console.error("删除提示词失败:", error);
@@ -1588,6 +1931,132 @@ app.registerExtension({
                     }
                 };
 
+
+                this.showCategoryContextMenu = (event, categoryName) => {
+                    // Close any existing menu
+                    const existingMenu = document.querySelector('.ps-context-menu');
+                    if (existingMenu) {
+                        existingMenu.remove();
+                    }
+
+                    const menu = document.createElement('div');
+                    menu.className = 'ps-context-menu';
+                    menu.style.left = `${event.clientX}px`;
+                    menu.style.top = `${event.clientY}px`;
+
+                    menu.innerHTML = `
+                        <ul>
+                            <li id="ps-context-rename">✏️ ${t('rename_category')}</li>
+                            <li id="ps-context-delete">🗑️ ${t('delete_category')}</li>
+                        </ul>
+                    `;
+
+                    document.body.appendChild(menu);
+
+                    menu.querySelector('#ps-context-rename').addEventListener('click', () => {
+                        this.renameCategory(categoryName);
+                    });
+
+                    menu.querySelector('#ps-context-delete').addEventListener('click', () => {
+                        this.deleteCategory(categoryName);
+                    });
+
+                    const closeMenu = () => {
+                        menu.remove();
+                        document.removeEventListener('click', closeMenu);
+                    };
+
+                    // Close menu on next click
+                    setTimeout(() => document.addEventListener('click', closeMenu), 0);
+                };
+
+                this.showCategoryContextMenu = (event, categoryName) => {
+                    // Close any existing menu
+                    const existingMenu = document.querySelector('.ps-context-menu');
+                    if (existingMenu) {
+                        existingMenu.remove();
+                    }
+
+                    const menu = document.createElement('div');
+                    menu.className = 'ps-context-menu';
+                    menu.style.left = `${event.clientX}px`;
+                    menu.style.top = `${event.clientY}px`;
+
+                    // Menu items will be added in the next step
+                    menu.innerHTML = `
+                        <ul>
+                            <li>To be implemented</li>
+                        </ul>
+                    `;
+
+                    document.body.appendChild(menu);
+
+                    const closeMenu = () => {
+                        menu.remove();
+                        document.removeEventListener('click', closeMenu);
+                    };
+
+                    // Close menu on next click
+                    setTimeout(() => document.addEventListener('click', closeMenu), 0);
+                };
+
+                this.renameCategory = (oldName) => {
+                    const newName = prompt(t('new_category_prompt'), oldName);
+                    if (!newName || !newName.trim() || newName === oldName) {
+                        return;
+                    }
+                    const finalName = newName.trim();
+                    if (this.promptData.categories.some(c => c.name === finalName)) {
+                        this.showToast(t('category_exists'), 'error');
+                        return;
+                    }
+
+                    const category = this.promptData.categories.find(c => c.name === oldName);
+                    if (category) {
+                        category.name = finalName;
+                        this.saveData().then(() => {
+                            this.showToast(t('update_prompt_success'));
+                            // Refresh the category tree
+                            const modal = document.querySelector('.ps-library-modal');
+                            if (modal) {
+                                const categoryTreeContainer = modal.querySelector('.ps-category-tree');
+                                const categoryTree = buildCategoryTree(this.promptData.categories);
+                                const treeElement = renderCategoryTree(categoryTree, categoryTreeContainer);
+                                categoryTreeContainer.innerHTML = '';
+                                categoryTreeContainer.appendChild(treeElement);
+                            }
+                            // Update selected category if it was the one renamed
+                            if (this.selectedCategory === oldName) {
+                                this.selectedCategory = finalName;
+                            }
+                        });
+                    }
+                };
+
+                this.deleteCategory = (categoryName) => {
+                    if (categoryName === 'default') {
+                        this.showToast(t('delete_default_category_alert'), 'error');
+                        return;
+                    }
+                    this.showConfirmModal(t('delete_category_confirm', { category: categoryName }), () => {
+                        const index = this.promptData.categories.findIndex(c => c.name === categoryName);
+                        if (index > -1) {
+                            this.promptData.categories.splice(index, 1);
+                            this.saveData().then(() => {
+                                this.showToast(t('delete_success'));
+                                // Refresh the category tree in the library modal if it's open
+                                const modal = document.querySelector('.ps-library-modal');
+                                if (modal) {
+                                    const categoryTreeContainer = modal.querySelector('.ps-category-tree');
+                                    const categoryTree = buildCategoryTree(this.promptData.categories);
+                                    const treeElement = renderCategoryTree(categoryTree, categoryTreeContainer);
+                                    categoryTreeContainer.innerHTML = '';
+                                    categoryTreeContainer.appendChild(treeElement);
+                                }
+                            });
+                        }
+                    });
+                };
 
                 this.updateBatchControls = () => {
                     const modal = document.querySelector('.ps-library-modal');
@@ -1686,10 +2155,34 @@ app.registerExtension({
                 };
 
                 this.showToast = (message, type = 'success') => {
+                    // Remove any existing toast
+                    const existingToast = document.querySelector(".ps-toast");
+                    if (existingToast) {
+                        existingToast.remove();
+                    }
+
                     const toast = document.createElement("div");
                     toast.className = `ps-toast ps-toast-${type}`;
                     toast.textContent = message;
                     document.body.appendChild(toast);
+
+                    // New positioning logic
+                    const nodeWidget = this.widgets.find(w => w.name === "prompt_selector");
+                    if (nodeWidget && nodeWidget.element) {
+                        const nodeRect = nodeWidget.element.getBoundingClientRect();
+                        const toastRect = toast.getBoundingClientRect();
+
+                        // Center it horizontally above the node
+                        let left = nodeRect.left + (nodeRect.width / 2) - (toastRect.width / 2);
+                        let top = nodeRect.top - toastRect.height - 10; // 10px margin
+
+                        // Adjust if it goes off-screen
+                        if (left < 0) left = 10;
+                        if (top < 0) top = 10;
+
+                        toast.style.left = `${left}px`;
+                        toast.style.top = `${top}px`;
+                    }
 
                     setTimeout(() => {
                         toast.classList.add('show');
@@ -1730,6 +2223,32 @@ app.registerExtension({
                     });
                 };
 
+                this.applyTheme = () => {
+                    const themeColor = this.promptData.settings?.theme_color || '#8a2be2';
+                    document.documentElement.style.setProperty('--ps-theme-color', themeColor);
+                    const secondaryColor = this.adjustColor(themeColor, 20);
+                    document.documentElement.style.setProperty('--ps-theme-color-secondary', secondaryColor);
+                    const contrastColor = this.getContrastColor(themeColor);
+                    document.documentElement.style.setProperty('--ps-theme-contrast-color', contrastColor);
+                    const secondaryContrastColor = this.getContrastColor(secondaryColor);
+                    document.documentElement.style.setProperty('--ps-theme-contrast-color-secondary', secondaryContrastColor);
+                };
+
+                this.getContrastColor = (hexcolor) => {
+                    if (hexcolor.startsWith('#')) {
+                        hexcolor = hexcolor.slice(1);
+                    }
+                    const r = parseInt(hexcolor.substr(0, 2), 16);
+                    const g = parseInt(hexcolor.substr(2, 2), 16);
+                    const b = parseInt(hexcolor.substr(4, 2), 16);
+                    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+                    return (yiq >= 128) ? '#000000' : '#FFFFFF';
+                };
+
+                this.adjustColor = (color, amount) => {
+                    return '#' + color.replace(/^#/, '').replace(/../g, color => ('0' + Math.min(255, Math.max(0, parseInt(color, 16) + amount)).toString(16)).substr(-2));
+                };
+
                 // 设置节点尺寸
                 this.size = [450, 600];
                 this.setDirtyCanvas(true, true);
@@ -1758,8 +2277,10 @@ app.registerExtension({
                         flex-direction: column;
                         height: 100%;
                         background-color: #1B1B1B; /* Deep dark background */
+                        border-radius: 12px; /* 设置圆角 */
+                        overflow: hidden; /* 隐藏溢出的子元素 */
                     }
-                    .prompt-selector-header, .prompt-selector-footer {
+                    .prompt-selector-header {
                         display: flex;
                         justify-content: space-between;
                         align-items: center;
@@ -1769,6 +2290,12 @@ app.registerExtension({
                         border-bottom: 1px solid #000;
                     }
                     .prompt-selector-footer {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        padding: 6px 8px;
+                        flex-shrink: 0;
+                        background-color: #222222; /* Header/footer background */
                         border-top: 1px solid #000;
                         border-bottom: none;
                     }
@@ -1808,13 +2335,13 @@ app.registerExtension({
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        gap: 6px;
+                        gap: 2px;
                         background-color: #3c3c3c;
                         color: #e0e0e0;
                         border: 1px solid #555;
                         border-radius: 8px;
                         cursor: pointer;
-                        padding: 8px 14px;
+                        padding: 8px 10px;
                         font-size: 14px;
                         font-weight: 600;
                         transition: all 0.2s ease-in-out;
@@ -1822,8 +2349,8 @@ app.registerExtension({
                     }
                     .ps-btn:hover {
                         background-color: #4a4a4a;
-                        border-color: #DA70D6;
-                        box-shadow: 0 0 8px rgba(218, 112, 214, 0.5);
+                        border-color: var(--ps-theme-color-secondary);
+                        box-shadow: 0 0 8px color-mix(in srgb, var(--ps-theme-color-secondary) 50%, transparent);
                         transform: translateY(-1px);
                     }
                     .ps-btn:active {
@@ -1857,14 +2384,14 @@ app.registerExtension({
                     }
 
                     #ps-library-btn {
-                       background: linear-gradient(145deg, #8a2be2, #9932cc);
+                       background: linear-gradient(145deg, var(--ps-theme-color), var(--ps-theme-color-secondary));
                        border: none;
-                       color: white;
+                       color: var(--ps-theme-contrast-color);
                     }
  
                     #ps-library-btn:hover {
-                       background: linear-gradient(145deg, #9b30ff, #a940dd);
-                       box-shadow: 0 0 12px rgba(153, 50, 204, 0.8);
+                       background: linear-gradient(145deg, color-mix(in srgb, var(--ps-theme-color) 90%, white), color-mix(in srgb, var(--ps-theme-color-secondary) 90%, white));
+                       box-shadow: 0 0 12px color-mix(in srgb, var(--ps-theme-color) 80%, transparent);
                     }
 
                     .ps-category-select {
@@ -1878,9 +2405,9 @@ app.registerExtension({
                     }
  
                    #ps-library-btn.highlight {
-                       border-color: #9932CC;
-                       box-shadow: 0 0 8px rgba(153, 50, 204, 0.7);
-                       color: #DA70D6;
+                       border-color: var(--ps-theme-color-secondary);
+                       box-shadow: 0 0 8px color-mix(in srgb, var(--ps-theme-color-secondary) 70%, transparent);
+                       color: var(--ps-theme-color-secondary);
                    }
 
                     /* Prompt List */
@@ -1895,6 +2422,8 @@ app.registerExtension({
                     .prompt-item {
                         display: flex;
                         align-items: center;
+                        justify-content: space-between;
+                        gap: 8px;
                         padding: 8px 10px;
                         cursor: pointer;
                         border-radius: 8px;
@@ -1918,15 +2447,36 @@ app.registerExtension({
                         background-color: #303030;
                     }
                     .prompt-item.selected {
-                        background-color: #3a2d4a; /* Darker purple background */
-                        border-color: #9932CC;
+                        background-color: color-mix(in srgb, var(--ps-theme-color) 30%, #282828); /* Mix theme color with item background */
+                        border-color: var(--ps-theme-color-secondary);
                         color: white;
+                        box-shadow: 0 0 5px color-mix(in srgb, var(--ps-theme-color) 50%, transparent);
                     }
                     .prompt-item.selected::before {
-                        background-color: #9932CC;
+                        background-color: var(--ps-theme-color);
                     }
-                    .prompt-item span {
+                    .prompt-text-container {
+                        display: flex;
+                        align-items: baseline;
                         flex-grow: 1;
+                        min-width: 0; /* Important for flexbox truncation */
+                    }
+                    .prompt-item-alias {
+                        white-space: nowrap;
+                        flex-shrink: 0; /* Do not shrink the alias */
+                    }
+                    .prompt-item-full-prompt {
+                        margin-left: 8px;
+                        font-size: 0.85em;
+                        color: #888;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        flex-shrink: 1; /* Allow shrinking */
+                    }
+                    .prompt-item-controls-wrapper {
+                        display: flex;
+                        flex-shrink: 0;
                     }
                     .ps-item-edit-btn, .ps-item-delete-btn {
                         background: none;
@@ -1937,12 +2487,12 @@ app.registerExtension({
                         margin-left: 8px;
                         display: none; /* Hidden by default */
                     }
-                    .prompt-item:hover .ps-item-edit-btn,
-                    .prompt-item:hover .ps-item-delete-btn {
+                    .prompt-item:hover .prompt-item-controls-wrapper .ps-item-edit-btn,
+                    .prompt-item:hover .prompt-item-controls-wrapper .ps-item-delete-btn {
                         display: block; /* Show on hover */
                     }
                     .ps-item-edit-btn:hover {
-                        color: #DA70D6;
+                        color: var(--ps-theme-color-secondary);
                     }
                     .ps-item-delete-btn:hover {
                         color: #e53935; /* A reddish color for delete */
@@ -1959,7 +2509,7 @@ app.registerExtension({
                     }
 
                     /* Tooltip Styles */
-                    .ps-tooltip strong { color: #9932CC; }
+                    .ps-tooltip strong { color: var(--ps-theme-color-secondary); }
 
                     /* Custom Category Menu */
                     .ps-category-menu {
@@ -1995,8 +2545,77 @@ app.registerExtension({
                         border-radius: 4px;
                     }
                     .ps-category-menu li:hover {
-                        background-color: #9932CC;
+                        background-color: var(--ps-theme-color-secondary);
+                        color: var(--ps-theme-contrast-color-secondary);
+                    }
+                    .ps-category-menu li {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    }
+                    .ps-category-count {
+                        background-color: var(--ps-theme-color);
+                        color: var(--ps-theme-contrast-color);
+                        padding: 1px 6px;
+                        border-radius: 10px;
+                        font-size: 11px;
+                        margin-left: 10px;
+                        font-weight: bold;
+                    }
+                    .ps-total-count-badge {
+                        background-color: var(--ps-theme-color);
+                        color: var(--ps-theme-contrast-color);
+                        padding: 1px 6px;
+                        border-radius: 10px;
+                        font-size: 11px;
+                        margin-left: 8px;
+                        font-weight: bold;
+                        cursor: pointer;
+                        transition: all 0.2s ease;
+                    }
+                    .ps-category-count:hover, .ps-total-count-badge:hover {
+                        background-color: #e53935; /* Red for delete */
                         color: white;
+                    }
+                    .ps-category-count .ps-count-number, .ps-total-count-badge .ps-count-number {
+                        display: inline;
+                    }
+                    .ps-category-count .ps-delete-icon, .ps-total-count-badge .ps-delete-icon {
+                        display: none;
+                    }
+                    .ps-preview-category {
+                        color: #888;
+                        margin-right: 5px;
+                        font-size: 0.9em;
+                    }
+                    .ps-category-count:hover .ps-count-number, .ps-total-count-badge:hover .ps-count-number {
+                        display: none;
+                    }
+                    .ps-category-count:hover .ps-delete-icon, .ps-total-count-badge:hover .ps-delete-icon {
+                        display: inline;
+                        font-weight: bold;
+                    }
+                    .ps-active-prompts-preview {
+                        position: absolute;
+                        background-color: #2a2a2a;
+                        border: 1px solid #444;
+                        border-radius: 8px;
+                        box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+                        z-index: 1001; /* Above category menu */
+                        padding: 8px;
+                        overflow-y: auto;
+                        animation: ps-modal-fade-in 0.2s ease-out;
+                    }
+                    .ps-active-prompts-preview ul {
+                        list-style: none;
+                        padding: 0;
+                        margin: 0;
+                    }
+                    .ps-active-prompts-preview li {
+                        padding: 4px 8px;
+                        color: #ccc;
+                        font-size: 12px;
+                        white-space: nowrap;
                     }
  
                     /* Category Menu Styles */
@@ -2029,14 +2648,18 @@ app.registerExtension({
                     .ps-category-tree {
                         flex-grow: 1;
                         overflow-y: auto;
-                        margin-top: 8px;
+                        margin-top: 0;
+                        padding: 0;
                     }
-                    .ps-category-tree ul {
+                    .ps-category-tree > ul {
                         list-style: none;
+                        padding-left: 10px;
+                    }
+                    .ps-category-tree ul ul {
                         padding-left: 15px;
                     }
                     .ps-category-tree li {
-                        padding: 4px 0;
+                        padding: 2px 0;
                         cursor: pointer;
                         color: #ccc;
                     }
@@ -2044,20 +2667,21 @@ app.registerExtension({
                         transition: color 0.2s;
                     }
                     .ps-category-tree li span:hover {
-                        color: #DA70D6; /* Lighter Orchid */
+                        color: var(--ps-theme-color-secondary); /* Lighter Orchid */
                     }
-                    .ps-category-tree li.parent > span {
+                    .ps-category-tree li.parent > .ps-tree-item > span {
                         font-weight: bold;
                     }
-                    .ps-category-tree li.parent > span::before {
+                    .ps-category-tree li.parent > .ps-tree-item > span::before {
                         content: '▶';
                         font-size: 10px;
                         transition: transform 0.2s;
                         display: inline-block;
                         width: 1.5em;
                         text-align: center;
+                        transform-origin: center;
                     }
-                    .ps-category-tree li.parent.open > span::before {
+                    .ps-category-tree li.parent.open > .ps-tree-item > span::before {
                         transform: rotate(90deg);
                     }
                     .ps-category-tree li ul {
@@ -2084,7 +2708,7 @@ app.registerExtension({
                     }
                     .ps-menu-footer button:hover {
                         background-color: #444;
-                        border-color: #9932CC;
+                        border-color: var(--ps-theme-color-secondary);
                     }
                     .ps-menu-footer button:disabled {
                         opacity: 0.5;
@@ -2177,11 +2801,17 @@ app.registerExtension({
                        flex-grow: 1;
                        display: flex;
                        overflow: hidden;
-                       padding: 0 15px 10px;
+                       padding: 0 15px 10px 0;
                        gap: 10px;
                    }
 
-                   .ps-library-left-panel, .ps-library-right-panel {
+                   .ps-library-left-panel {
+                       background-color: #1B1B1B;
+                       border-radius: 8px;
+                       padding: 10px;
+                       overflow-y: auto;
+                   }
+                   .ps-library-right-panel {
                        background-color: #1B1B1B;
                        border-radius: 8px;
                        padding: 10px;
@@ -2270,7 +2900,7 @@ app.registerExtension({
                        align-items: center;
                        margin-bottom: 10px;
                        padding-bottom: 8px;
-                       border-bottom: 1px solid #333;
+                       /* border-bottom: 1px solid #333; */
                    }
 
                    .ps-category-header h4, .ps-prompt-header h4 {
@@ -2282,6 +2912,23 @@ app.registerExtension({
                    .ps-prompt-controls {
                        display: flex;
                        gap: 8px;
+                       align-items: center;
+                   }
+                   .ps-btn-sm {
+                       padding: 6px 12px;
+                       font-size: 13px;
+                       display: flex;
+                       align-items: center;
+                       gap: 6px;
+                   }
+                   .ps-btn-primary {
+                       background-color: var(--ps-theme-color);
+                       border-color: var(--ps-theme-color);
+                       color: var(--ps-theme-contrast-color);
+                   }
+                   .ps-btn-primary:hover {
+                       background-color: var(--ps-theme-color-secondary);
+                       border-color: var(--ps-theme-color-secondary);
                    }
 
                    .ps-prompt-list-container {
@@ -2302,9 +2949,12 @@ app.registerExtension({
                        background-color: #282828;
                        border: 1px solid #333;
                        border-radius: 8px;
-                       padding: 10px;
-                       cursor: pointer;
+                       padding: 12px 15px;
                        transition: all 0.2s;
+                       display: flex;
+                       align-items: center;
+                       justify-content: space-between;
+                       position: relative;
                    }
 
                    .ps-prompt-list-item:hover {
@@ -2312,11 +2962,30 @@ app.registerExtension({
                        border-color: #444;
                    }
 
-                   .ps-prompt-item-header {
+                   .ps-prompt-item-controls {
                        display: flex;
-                       justify-content: space-between;
-                       align-items: center;
-                       margin-bottom: 8px;
+                       gap: 4px;
+                       flex-shrink: 0;
+                   }
+                   .ps-prompt-item-controls .ps-btn-icon {
+                       background-color: transparent;
+                       border: 1px solid transparent;
+                       color: #777;
+                       padding: 5px;
+                       border-radius: 6px;
+                       transition: all 0.2s;
+                       display: none; /* 默认隐藏 */
+                   }
+                   .ps-prompt-list-item:hover .ps-prompt-item-controls .ps-btn-icon {
+                       display: inline-flex; /* 悬停时显示 */
+                   }
+                   .ps-prompt-item-controls .ps-btn-icon:hover {
+                       background-color: #3a3a3a;
+                       color: white;
+                   }
+                   .ps-prompt-item-controls .ps-btn-icon svg {
+                       width: 16px;
+                       height: 16px;
                    }
 
                    .ps-prompt-stats {
@@ -2334,20 +3003,30 @@ app.registerExtension({
                    }
 
                    .ps-prompt-content {
+                       flex-grow: 1;
                        cursor: pointer;
+                       overflow: hidden;
+                       padding-right: 10px;
                    }
 
                    .ps-prompt-list-item-name {
                        font-weight: bold;
                        color: #eee;
                        margin-bottom: 4px;
+                       font-size: 14px;
+                       white-space: nowrap;
+                       overflow: hidden;
+                       text-overflow: ellipsis;
                    }
 
                    .ps-prompt-list-item-preview {
-                       color: #ccc;
-                       font-size: 13px;
+                       color: #999;
+                       font-size: 12px;
                        line-height: 1.4;
                        margin-bottom: 6px;
+                       white-space: nowrap;
+                       overflow: hidden;
+                       text-overflow: ellipsis;
                    }
 
                    .ps-prompt-description {
@@ -2402,122 +3081,48 @@ app.registerExtension({
                         padding: 8px;
                         border-radius: 4px;
                         box-sizing: border-box;
-                        margin-top: 10px;
                    }
-                   .ps-settings-tabs {
-                        display: flex;
-                        border-bottom: 1px solid #444;
-                        margin-bottom: 15px;
+                   .ps-settings-sidebar {
+                        width: 140px;
+                        flex-shrink: 0;
+                        border-right: 1px solid #444;
+                        padding-right: 15px;
                    }
-                   .ps-tab-btn {
+                   .ps-settings-content {
+                        flex-grow: 1;
+                        overflow-y: auto;
+                        padding-left: 20px;
+                   }
+                   .ps-sidebar-btn {
+                        display: block;
+                        width: 100%;
                         background: none;
                         border: none;
-                        color: #888;
+                        border-left: 3px solid transparent;
+                        color: #ccc;
                         padding: 10px 15px;
                         cursor: pointer;
                         font-size: 14px;
+                        text-align: left;
+                        margin-bottom: 5px;
+                        transition: all 0.2s ease;
                    }
-                   .ps-tab-btn.active {
-                        color: #DA70D6;
-                        border-bottom: 2px solid #DA70D6;
+                   .ps-sidebar-btn.active {
+                        color: var(--ps-theme-color-secondary);
+                        font-weight: bold;
+                        background-color: color-mix(in srgb, var(--ps-theme-color-secondary) 10%, transparent);
+                        border-left-color: var(--ps-theme-color-secondary);
+                   }
+                   .ps-sidebar-btn:hover:not(.active) {
+                        background-color: #3a3a3a;
+                        color: white;
                    }
                    .ps-settings-pane {
                         display: none;
                    }
                    .ps-settings-pane.active {
                         display: block;
-                   }
-                   .ps-settings-tabs {
-                        display: flex;
-                        border-bottom: 1px solid #444;
-                        margin-bottom: 15px;
-                   }
-                   .ps-tab-btn {
-                        background: none;
-                        border: none;
-                        color: #888;
-                        padding: 10px 15px;
-                        cursor: pointer;
-                        font-size: 14px;
-                   }
-                   .ps-tab-btn.active {
-                        color: #DA70D6;
-                        border-bottom: 2px solid #DA70D6;
-                   }
-                   .ps-settings-pane {
-                        display: none;
-                   }
-                   .ps-settings-pane.active {
-                        display: block;
-                   }
-                   .ps-settings-tabs {
-                        display: flex;
-                        border-bottom: 1px solid #444;
-                        margin-bottom: 15px;
-                   }
-                   .ps-tab-btn {
-                        background: none;
-                        border: none;
-                        color: #888;
-                        padding: 10px 15px;
-                        cursor: pointer;
-                        font-size: 14px;
-                   }
-                   .ps-tab-btn.active {
-                        color: #DA70D6;
-                        border-bottom: 2px solid #DA70D6;
-                   }
-                   .ps-settings-pane {
-                        display: none;
-                   }
-                   .ps-settings-pane.active {
-                        display: block;
-                   }
-                   .ps-settings-tabs {
-                        display: flex;
-                        border-bottom: 1px solid #444;
-                        margin-bottom: 15px;
-                   }
-                   .ps-tab-btn {
-                        background: none;
-                        border: none;
-                        color: #888;
-                        padding: 10px 15px;
-                        cursor: pointer;
-                        font-size: 14px;
-                   }
-                   .ps-tab-btn.active {
-                        color: #DA70D6;
-                        border-bottom: 2px solid #DA70D6;
-                   }
-                   .ps-settings-pane {
-                        display: none;
-                   }
-                   .ps-settings-pane.active {
-                        display: block;
-                   }
-                   .ps-settings-tabs {
-                        display: flex;
-                        border-bottom: 1px solid #444;
-                        margin-bottom: 15px;
-                   }
-                   .ps-tab-btn {
-                        background: none;
-                        border: none;
-                        color: #888;
-                        padding: 10px 15px;
-                        cursor: pointer;
-                        font-size: 14px;
-                   }
-                   .ps-tab-btn.active {
-                        color: #DA70D6;
-                        border-bottom: 2px solid #DA70D6;
-                   }
-                   .ps-settings-pane {
-                        display: none;
-                   }
-                   .ps-settings-pane.active {
-                        display: block;
+                        animation: ps-modal-fade-in 0.3s;
                    }
                    .ps-edit-modal .ps-modal-content {
                        background-color: #2a2a2a;
@@ -2574,9 +3179,9 @@ app.registerExtension({
                    }
 
                    .ps-modal-buttons button:first-child {
-                       background-color: #9932CC;
-                       color: white;
-                   }
+                       background-color: var(--ps-theme-color-secondary);
+                       color: var(--ps-theme-contrast-color-secondary);
+                    }
 
                    .ps-modal-buttons button:last-child {
                        background-color: #555;
@@ -2622,25 +3227,35 @@ app.registerExtension({
                    }
 
                    .ps-checkbox-label input[type="checkbox"] {
-                       accent-color: #9932CC;
+                       accent-color: var(--ps-theme-color-secondary);
                    }
 
                    /* 批量操作激活状态 */
                    .ps-btn.active {
-                       background-color: #9932CC;
-                       color: white;
-                       border-color: #9932CC;
+                       background-color: var(--ps-theme-color-secondary);
+                       color: var(--ps-theme-contrast-color-secondary);
+                       border-color: var(--ps-theme-color-secondary);
                    }
 
                    /* 拖拽样式 */
+                   .prompt-item.dragging {
+                       opacity: 0.4;
+                       background: #444;
+                   }
+                   .prompt-item.drag-over-top {
+                       border-top: 2px solid var(--ps-theme-color);
+                   }
+                   .prompt-item.drag-over-bottom {
+                       border-bottom: 2px solid var(--ps-theme-color);
+                   }
                    .ps-prompt-list-item.dragging {
                        opacity: 0.5;
                        transform: rotate(2deg);
                    }
 
                    .ps-prompt-list-item.drag-over {
-                       border-color: #9932CC;
-                       background-color: #3a2d4a;
+                       border-color: var(--ps-theme-color-secondary);
+                       background-color: color-mix(in srgb, var(--ps-theme-color-secondary) 20%, #1b1b1b);
                    }
 
                    /* 加载状态样式 */
@@ -2657,7 +3272,7 @@ app.registerExtension({
                        width: 40px;
                        height: 40px;
                        border: 3px solid #444;
-                       border-top: 3px solid #9932CC;
+                       border-top: 3px solid var(--ps-theme-color-secondary);
                        border-radius: 50%;
                        animation: ps-spin 1s linear infinite;
                        margin-bottom: 15px;
@@ -2728,7 +3343,7 @@ app.registerExtension({
                    }
 
                    .ps-tree-item {
-                       padding: 6px 8px;
+                       padding: 6px 0;
                        border-radius: 4px;
                        transition: all 0.2s ease;
                        cursor: pointer;
@@ -2739,8 +3354,8 @@ app.registerExtension({
                    }
 
                    .ps-tree-item.selected {
-                       background-color: #9932CC;
-                       color: white;
+                       background-color: var(--ps-theme-color-secondary);
+                       color: var(--ps-theme-contrast-color-secondary);
                    }
 
                    .ps-prompt-list-item {
@@ -2754,6 +3369,72 @@ app.registerExtension({
 
                    .ps-btn {
                        transition: all 0.2s ease;
+                   }
+
+                   /* Context Menu */
+                   .ps-context-menu {
+                       position: fixed;
+                       background-color: #3a3a3a;
+                       border: 1px solid #555;
+                       border-radius: 8px;
+                       box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+                       z-index: 1002;
+                       padding: 5px;
+                       min-width: 150px;
+                   }
+                   .ps-context-menu ul {
+                       list-style: none;
+                       padding: 0;
+                       margin: 0;
+                   }
+                   .ps-context-menu li {
+                       padding: 8px 12px;
+                       cursor: pointer;
+                       border-radius: 4px;
+                       display: flex;
+                       align-items: center;
+                       gap: 8px;
+                   }
+                   .ps-context-menu li:hover {
+                       background-color: var(--ps-theme-color-secondary);
+                       color: var(--ps-theme-contrast-color-secondary);
+                   }
+                   .ps-context-menu li svg {
+                       width: 16px;
+                       height: 16px;
+                   }
+
+                   /* Context Menu */
+                   .ps-context-menu {
+                       position: fixed;
+                       background-color: #3a3a3a;
+                       border: 1px solid #555;
+                       border-radius: 8px;
+                       box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+                       z-index: 1002;
+                       padding: 5px;
+                       min-width: 150px;
+                   }
+                   .ps-context-menu ul {
+                       list-style: none;
+                       padding: 0;
+                       margin: 0;
+                   }
+                   .ps-context-menu li {
+                       padding: 8px 12px;
+                       cursor: pointer;
+                       border-radius: 4px;
+                       display: flex;
+                       align-items: center;
+                       gap: 8px;
+                   }
+                   .ps-context-menu li:hover {
+                       background-color: var(--ps-theme-color-secondary);
+                       color: var(--ps-theme-contrast-color-secondary);
+                   }
+                   .ps-context-menu li svg {
+                       width: 16px;
+                       height: 16px;
                    }
 
                    /* .ps-btn:hover is already defined above, removing this duplicate */
@@ -2842,6 +3523,28 @@ app.registerExtension({
                        }
                    }
 
+                   .ps-favorites-container {
+                       padding-bottom: 10px;
+                       margin-bottom: 10px;
+                       border-bottom: 1px solid #333;
+                   }
+
+                   .ps-favorites-btn {
+                       width: 100%;
+                       text-align: left;
+                       padding: 10px 15px;
+                       font-size: 14px;
+                       background-color: #282828;
+                       border: 1px solid #333;
+                       justify-content: flex-start;
+                   }
+
+                   .ps-favorites-btn.selected {
+                       background-color: var(--ps-theme-color-secondary);
+                       color: var(--ps-theme-contrast-color-secondary);
+                       border-color: var(--ps-theme-color-secondary);
+                   }
+
                    /* 工具提示增强 */
                    .ps-tooltip {
                        position: absolute;
@@ -2875,7 +3578,7 @@ app.registerExtension({
                    .ps-tooltip strong {
                        display: block;
                        margin-bottom: 4px;
-                       color: #9932CC;
+                       color: var(--ps-theme-color-secondary);
                    }
 
                    .ps-tooltip p {
@@ -2925,7 +3628,7 @@ app.registerExtension({
                    input:focus,
                    textarea:focus,
                    select:focus {
-                       outline: 2px solid #9932CC;
+                       outline: 2px solid var(--ps-theme-color-secondary);
                        outline-offset: 2px;
                    }
 
@@ -2957,8 +3660,7 @@ app.registerExtension({
                     /* Toast Notification */
                     .ps-toast {
                         position: fixed;
-                        top: 20px;
-                        right: 20px;
+                        /* top and right are now set by JS */
                         background-color: #333;
                         color: white;
                         padding: 12px 20px;
@@ -2988,9 +3690,9 @@ app.registerExtension({
                         animation: ps-highlight-new-item 2s ease-out;
                     }
                     @keyframes ps-highlight-new-item {
-                        0% { background-color: #9932CC; }
-                        100% { background-color: #282828; }
-                    }
+                       0% { background-color: var(--ps-theme-color-secondary); }
+                       100% { background-color: #282828; }
+                   }
                 `;
                 document.head.appendChild(style);
             }
