@@ -26,6 +26,7 @@ logger = logging.getLogger("DanbooruGallery")
 BASE_URL = "https://danbooru.donmai.us"
 
 # 获取插件目录路径
+# 获取当前文件所在目录
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_FILE = os.path.join(PLUGIN_DIR, "settings.json")
 
@@ -1022,4 +1023,3 @@ def get_node_display_name_mappings():
 NODE_CLASS_MAPPINGS = get_node_class_mappings()
 NODE_DISPLAY_NAME_MAPPINGS = get_node_display_name_mappings()
 
-WEB_DIRECTORY = "./js"
