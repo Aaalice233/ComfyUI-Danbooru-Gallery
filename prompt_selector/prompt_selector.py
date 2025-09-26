@@ -16,7 +16,6 @@ from datetime import datetime
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(PLUGIN_DIR, "data.json")
 IMAGE_DIR = os.path.join(PLUGIN_DIR, "images")
-BACKUP_DIR = os.path.join(PLUGIN_DIR, "backups")
 
 class PromptSelector:
     """
@@ -43,8 +42,6 @@ class PromptSelector:
         # 确保图片目录存在
         if not os.path.exists(IMAGE_DIR):
             os.makedirs(IMAGE_DIR)
-        if not os.path.exists(BACKUP_DIR):
-            os.makedirs(BACKUP_DIR)
 
     def execute(self, **kwargs):
         prefix = kwargs.get("prefix_prompt", "")
@@ -84,25 +81,14 @@ async def get_data(request):
 async def save_data(request):
     try:
         data = await request.json()
+        print(f"[PromptSelector] Attempting to save data: {json.dumps(data, indent=2)}") # 添加日志
         with open(DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
         
-        # 自动备份
-        settings = data.get("settings", {})
-        if settings.get("auto_backup", True):
-            backup_filename = f"data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            backup_path = os.path.join(BACKUP_DIR, backup_filename)
-            shutil.copy2(DATA_FILE, backup_path)
-            
-            # 保留最近的备份
-            max_backups = settings.get("max_backups", 10)
-            backups = sorted(os.listdir(BACKUP_DIR), key=lambda f: os.path.getmtime(os.path.join(BACKUP_DIR, f)))
-            if len(backups) > max_backups:
-                for old_backup in backups[:-max_backups]:
-                    os.remove(os.path.join(BACKUP_DIR, old_backup))
-
+        print("[PromptSelector] Data saved successfully.") # 添加日志
         return web.json_response({"success": True})
     except Exception as e:
+        print(f"[PromptSelector] Error saving data: {e}") # 添加日志
         return web.json_response({"error": str(e)}, status=500)
 
 @PromptServer.instance.routes.get("/prompt_selector/images/{filename}")
@@ -417,54 +403,3 @@ if not os.path.exists(DATA_FILE):
                 "save_selection": True
             }
         }, f, ensure_ascii=False, indent=4)
-
-@PromptServer.instance.routes.get("/prompt_selector/backups")
-async def list_backups(request):
-    """获取备份列表"""
-    try:
-        backups = sorted(
-            [f for f in os.listdir(BACKUP_DIR) if f.endswith('.json')],
-            key=lambda f: os.path.getmtime(os.path.join(BACKUP_DIR, f)),
-            reverse=True
-        )
-        return web.json_response(backups)
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
-
-@PromptServer.instance.routes.post("/prompt_selector/backup/create")
-async def create_backup(request):
-    """手动创建备份"""
-    try:
-        backup_filename = f"data_manual_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        backup_path = os.path.join(BACKUP_DIR, backup_filename)
-        shutil.copy2(DATA_FILE, backup_path)
-        return web.json_response({"success": True, "filename": backup_filename})
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
-
-@PromptServer.instance.routes.post("/prompt_selector/backup/restore")
-async def restore_backup(request):
-    """从备份恢复"""
-    try:
-        data = await request.json()
-        filename = data.get("filename")
-        if not filename:
-            return web.json_response({"error": "Missing filename"}, status=400)
-
-        backup_path = os.path.join(BACKUP_DIR, filename)
-        
-        # 安全检查
-        if not os.path.abspath(backup_path).startswith(os.path.abspath(BACKUP_DIR)):
-            return web.json_response({"error": "Invalid backup path"}, status=403)
-
-        if not os.path.exists(backup_path):
-            return web.json_response({"error": "Backup not found"}, status=404)
-
-        shutil.copy2(backup_path, DATA_FILE)
-        return web.json_response({"success": True})
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
-
-# 确保备份目录存在
-if not os.path.exists(BACKUP_DIR):
-    os.makedirs(BACKUP_DIR)

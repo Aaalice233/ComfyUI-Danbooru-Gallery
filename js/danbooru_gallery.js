@@ -62,6 +62,11 @@ app.registerExtension({
                     tooltipEnable: "启用悬浮提示",
                     tooltipEnableDescription: "鼠标悬停在图片上时显示详细信息",
 
+                    // 间隔符设置
+                    separatorSettings: "间隔符设置",
+                    separatorDescription: "设置输出提示词中标签之间的间隔符",
+                    tagSeparator: "标签间隔符",
+
                     // 状态信息
                     loading: "加载中...",
                     noResults: "未找到结果",
@@ -174,6 +179,11 @@ app.registerExtension({
                     tooltipSettings: "Tooltip Settings",
                     tooltipEnable: "Enable Tooltip",
                     tooltipEnableDescription: "Show details when hovering over an image",
+
+                    // Separator Settings
+                    separatorSettings: "Separator Settings",
+                    separatorDescription: "Set the separator between tags in the output prompt",
+                    tagSeparator: "Tag Separator",
 
                     // 状态信息
                     loading: "Loading...",
@@ -959,92 +969,7 @@ app.registerExtension({
                    </svg>
                    ${t('favorites')}`;
 
-                // 导出设置
-                const exportSettings = () => {
-                    const settingsToExport = {
-                        language: currentLanguage,
-                        blacklist: currentBlacklist,
-                        prompt_filter: {
-                            enabled: filterEnabled,
-                            tags: currentFilterTags,
-                        },
-                        ui: {
-                            ...uiSettings,
-                            // Ensure formatting is included from the checkboxes directly
-                            formatting: {
-                                escapeBrackets: formattingDropdown.querySelector('[name="escapeBrackets"]').checked,
-                                replaceUnderscores: formattingDropdown.querySelector('[name="replaceUnderscores"]').checked,
-                            }
-                        },
-                    };
-
-                    const blob = new Blob([JSON.stringify(settingsToExport, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'danbooru_gallery_settings.json';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-
-                    showToast(t('exportSuccess'), 'success');
-                };
-
-                // 导入设置
-                const importSettings = (dialog) => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = '.json';
-                    input.onchange = (e) => {
-                        const file = e.target.files[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = async (event) => {
-                            try {
-                                const s = JSON.parse(event.target.result);
-
-                                const promises = [];
-                                if (s.language && i18n[s.language]) {
-                                    promises.push(saveLanguage(s.language));
-                                }
-                                if (Array.isArray(s.blacklist)) {
-                                    promises.push(saveBlacklist(s.blacklist));
-                                }
-                                if (s.prompt_filter && typeof s.prompt_filter.enabled === 'boolean' && Array.isArray(s.prompt_filter.tags)) {
-                                    promises.push(saveFilterTags(s.prompt_filter.tags, s.prompt_filter.enabled));
-                                }
-                                if (s.ui) {
-                                    // Merge formatting settings correctly
-                                    const newUiSettings = { ...uiSettings, ...s.ui };
-                                    if (s.ui.formatting) {
-                                        newUiSettings.formatting = { ...uiSettings.formatting, ...s.ui.formatting };
-                                    }
-                                    promises.push(saveUiSettings(newUiSettings));
-                                }
-
-                                const results = await Promise.all(promises);
-
-                                if (results.some(res => res === false)) {
-                                    showToast(t('saveFailed'), 'error');
-                                    return;
-                                }
-
-                                showToast(t('importSuccess'), 'success');
-                                dialog.remove();
-
-                                await initializeApp();
-                                showSettingsDialog();
-
-                            } catch (error) {
-                                console.error("Failed to import settings:", error);
-                                showToast(t('importError'), 'error');
-                            }
-                        };
-                        reader.readAsText(file);
-                    };
-                    input.click();
-                };
+                // Import/Export settings functionality removed as per user request.
 
                 // 创建设置页面对话框
                 const showSettingsDialog = (initialState = {}) => {
@@ -1248,6 +1173,25 @@ app.registerExtension({
                     blacklistSection.appendChild(blacklistDescription);
                     blacklistSection.appendChild(blacklistTextarea);
 
+                    blacklistTextarea.onblur = async () => {
+                        const blacklistText = blacklistTextarea.value.trim();
+                        const newBlacklist = blacklistText ? blacklistText.split('\n').map(tag => tag.trim()).filter(tag => tag) : [];
+                        const success = await saveBlacklist(newBlacklist);
+                        if (success) {
+                            currentBlacklist = newBlacklist;
+                            showToast(t('saveSuccess'), 'success', blacklistTextarea);
+                            // Re-filter posts
+                            const filteredPosts = posts.filter(post => !isPostFiltered(post));
+                            imageGrid.innerHTML = "";
+                            filteredPosts.forEach(renderPost);
+                            if (filteredPosts.length < 20 && posts.length > 0) {
+                                fetchAndRender(false);
+                            }
+                        } else {
+                            showToast(t('saveFailed'), 'error', blacklistTextarea);
+                        }
+                    };
+
                     // 提示词过滤设置部分
                     const filterSection = $el("div.danbooru-settings-section", {
                         style: {
@@ -1344,6 +1288,22 @@ app.registerExtension({
                     filterSection.appendChild(filterEnableDiv);
                     filterSection.appendChild(filterDescription);
                     filterSection.appendChild(filterTextarea);
+
+                    const saveFilterSettings = async () => {
+                        const filterText = filterTextarea.value.trim();
+                        const newFilterTags = filterText ? filterText.split('\n').map(tag => tag.trim()).filter(tag => tag) : [];
+                        const newFilterEnabled = filterEnableCheckbox.checked;
+                        const success = await saveFilterTags(newFilterTags, newFilterEnabled);
+                        if (success) {
+                            currentFilterTags = newFilterTags;
+                            filterEnabled = newFilterEnabled;
+                            showToast(t('saveSuccess'), 'success', filterSection);
+                        } else {
+                            showToast(t('saveFailed'), 'error', filterSection);
+                        }
+                    };
+                    filterTextarea.onblur = saveFilterSettings;
+                    filterEnableCheckbox.onchange = saveFilterSettings;
 
                     // 用户认证设置部分
                     const authSection = $el("div.danbooru-settings-section", {
@@ -1446,6 +1406,22 @@ app.registerExtension({
                     authSection.appendChild(apiKeyInput);
                     authSection.appendChild(apiKeyHelpButton);
 
+                    const saveAuthSettings = async () => {
+                        const newUsername = usernameInput.value.trim();
+                        const newApiKey = apiKeyInput.value.trim();
+                        if (newUsername !== userAuth.username || newApiKey !== userAuth.api_key) {
+                            const authResult = await saveUserAuth(newUsername, newApiKey);
+                            if (authResult.success) {
+                                await loadFavorites();
+                                showToast(t('saveSuccess'), 'success', authSection);
+                            } else {
+                                alert(authResult.error || "保存认证信息失败");
+                            }
+                        }
+                    };
+                    usernameInput.onblur = saveAuthSettings;
+                    apiKeyInput.onblur = saveAuthSettings;
+
                     // 自动补全设置
                     const autocompleteSection = $el("div.danbooru-settings-section", { style: { marginBottom: "20px", padding: "16px", border: "1px solid var(--input-border-color)", borderRadius: "8px", backgroundColor: "var(--comfy-input-bg)" } });
                     const autocompleteTitle = $el("h3", { textContent: t('autocompleteSettings'), style: { margin: "0 0 8px 0", color: "var(--comfy-input-text)", fontSize: "1.1em", fontWeight: "500" } });
@@ -1485,6 +1461,45 @@ app.registerExtension({
                     tooltipSection.appendChild(tooltipDesc);
                     tooltipSection.appendChild(tooltipEnableDiv);
 
+                    const saveCurrentUiSettings = async (anchor) => {
+                        const newUiSettings = {
+                            ...uiSettings,
+                            autocomplete_enabled: autocompleteEnableCheckbox.checked,
+                            tooltip_enabled: tooltipEnableCheckbox.checked,
+                            autocomplete_max_results: parseInt(autocompleteMaxResultsInput.value, 10) || 20,
+                            tag_separator: separatorInput.value,
+                        };
+                        const success = await saveUiSettings(newUiSettings);
+                        if (success) {
+                            uiSettings = newUiSettings;
+                            showToast(t('saveSuccess'), 'success', anchor);
+                        } else {
+                            showToast(t('saveFailed'), 'error', anchor);
+                        }
+                    };
+                    autocompleteEnableCheckbox.onchange = () => saveCurrentUiSettings(autocompleteSection);
+                    tooltipEnableCheckbox.onchange = () => saveCurrentUiSettings(tooltipSection);
+                    autocompleteMaxResultsInput.onblur = () => saveCurrentUiSettings(autocompleteSection);
+
+                    // 间隔符设置
+                    const separatorSection = $el("div.danbooru-settings-section", { style: { marginBottom: "20px", padding: "16px", border: "1px solid var(--input-border-color)", borderRadius: "8px", backgroundColor: "var(--comfy-input-bg)" } });
+                    const separatorTitle = $el("h3", { textContent: t('separatorSettings'), style: { margin: "0 0 8px 0", color: "var(--comfy-input-text)", fontSize: "1.1em", fontWeight: "500" } });
+                    const separatorDesc = $el("p", { textContent: t('separatorDescription'), style: { margin: "0 0 12px 0", color: "#888", fontSize: "0.9em" } });
+                    const separatorInputLabel = $el("label", { htmlFor: "separatorInput", textContent: t('tagSeparator'), style: { color: "var(--comfy-input-text)", fontSize: "0.9em", fontWeight: "500" } });
+                    const separatorInput = $el("input", {
+                        type: "text",
+                        id: "separatorInput",
+                        value: (initialState.tag_separator ?? uiSettings.tag_separator) || ", ",
+                        style: { width: "80px", padding: '4px', marginLeft: '8px', backgroundColor: 'var(--comfy-menu-bg)', color: 'var(--comfy-input-text)', border: '1px solid var(--input-border-color)', borderRadius: '4px' }
+                    });
+                    const separatorDiv = $el("div", { style: { display: "flex", alignItems: "center" } }, [separatorInputLabel, separatorInput]);
+
+                    separatorSection.appendChild(separatorTitle);
+                    separatorSection.appendChild(separatorDesc);
+                    separatorSection.appendChild(separatorDiv);
+
+                    separatorInput.onblur = () => saveCurrentUiSettings(separatorSection);
+
 
                     // 创建侧边栏按钮和内容区域的映射
                     const sections = {
@@ -1492,7 +1507,7 @@ app.registerExtension({
                         'user': { title: t('userSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>', elements: [authSection] },
                         'content': { title: t('contentSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18l-1.5 14H4.5L3 6z"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>', elements: [blacklistSection] },
                         'prompt': { title: t('promptSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>', elements: [filterSection] },
-                        'ui': { title: t('uiSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>', elements: [autocompleteSection, tooltipSection] },
+                        'ui': { title: t('uiSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>', elements: [autocompleteSection, tooltipSection, separatorSection] },
                     };
 
                     const setActiveSection = (key) => {
@@ -1608,141 +1623,8 @@ app.registerExtension({
                     socialButtonsContainer.appendChild(discordButton);
 
                     // 右侧主要按钮容器
-                    const mainButtonsContainer = $el("div", {
-                        style: {
-                            display: "flex",
-                            gap: "12px"
-                        }
-                    });
-
-                    const importExportButtonStyle = {
-                        padding: "10px 20px",
-                        border: "1px solid var(--input-border-color)",
-                        borderRadius: "6px",
-                        backgroundColor: "var(--comfy-input-bg)",
-                        color: "var(--comfy-input-text)",
-                        cursor: "pointer",
-                        fontSize: "14px",
-                        fontWeight: "500",
-                        transition: "all 0.2s ease"
-                    };
-
-                    const importButton = $el("button", {
-                        textContent: t('importSettings'),
-                        style: importExportButtonStyle,
-                        onclick: () => importSettings(dialog)
-                    });
-
-                    const exportButton = $el("button", {
-                        textContent: t('exportSettings'),
-                        style: importExportButtonStyle,
-                        onclick: exportSettings
-                    });
-
-                    const cancelButton = $el("button", {
-                        textContent: t('cancel'),
-                        style: {
-                            padding: "10px 20px",
-                            border: "1px solid var(--input-border-color)",
-                            borderRadius: "6px",
-                            backgroundColor: "var(--comfy-input-bg)",
-                            color: "var(--comfy-input-text)",
-                            cursor: "pointer",
-                            fontSize: "14px",
-                            fontWeight: "500",
-                            transition: "all 0.2s ease"
-                        },
-                        onclick: () => dialog.remove()
-                    });
-
-                    const saveButton = $el("button", {
-                        textContent: t('save'),
-                        style: {
-                            padding: "10px 20px",
-                            border: "2px solid #7B68EE",
-                            borderRadius: "6px",
-                            backgroundColor: "#7B68EE",
-                            color: "white",
-                            cursor: "pointer",
-                            fontSize: "14px",
-                            fontWeight: "600",
-                            transition: "all 0.2s ease"
-                        },
-                        onclick: async () => {
-                            const blacklistText = blacklistTextarea.value.trim();
-                            const newBlacklist = blacklistText ? blacklistText.split('\n').map(tag => tag.trim()).filter(tag => tag) : [];
-
-                            const filterText = filterTextarea.value.trim();
-                            const newFilterTags = filterText ? filterText.split('\n').map(tag => tag.trim()).filter(tag => tag) : [];
-                            const newFilterEnabled = filterEnableCheckbox.checked;
-
-                            // 保存用户认证信息
-                            const newUsername = usernameInput.value.trim();
-                            const newApiKey = apiKeyInput.value.trim();
-                            let authSuccess = true;
-                            if (newUsername !== userAuth.username || newApiKey !== userAuth.api_key) {
-                                const authResult = await saveUserAuth(newUsername, newApiKey);
-                                authSuccess = authResult.success;
-                                if (authSuccess) {
-                                    await loadFavorites(); // 登录成功后重新加载收藏夹
-                                } else {
-                                    alert(authResult.error || "保存认证信息失败");
-                                    return;
-                                }
-                            }
-
-                            const newAutocompleteEnabled = autocompleteEnableCheckbox.checked;
-                            const newTooltipEnabled = tooltipEnableCheckbox.checked;
-                            const newAutocompleteMaxResults = parseInt(autocompleteMaxResultsInput.value, 10);
-                            const newSelectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
-
-                            // 保存所有设置
-                            const [blacklistSuccess, filterSuccess, uiSettingsSuccess] = await Promise.all([
-                                saveBlacklist(newBlacklist),
-                                saveFilterTags(newFilterTags, newFilterEnabled),
-                                saveUiSettings({
-                                    autocomplete_enabled: newAutocompleteEnabled,
-                                    tooltip_enabled: newTooltipEnabled,
-                                    autocomplete_max_results: newAutocompleteMaxResults,
-                                    selected_categories: newSelectedCategories
-                                })
-                            ]);
-
-                            if (blacklistSuccess && filterSuccess && authSuccess && uiSettingsSuccess) {
-                                // 同步本地状态
-                                currentBlacklist = newBlacklist;
-                                currentFilterTags = newFilterTags;
-                                filterEnabled = newFilterEnabled;
-                                uiSettings.autocomplete_enabled = newAutocompleteEnabled;
-                                uiSettings.tooltip_enabled = newTooltipEnabled;
-                                uiSettings.autocomplete_max_results = newAutocompleteMaxResults;
-                                uiSettings.selected_categories = newSelectedCategories;
-
-                                dialog.remove();
-                                showToast(t('saveSuccess'), 'success');
-
-                                // 重新过滤当前已加载的帖子
-                                const filteredPosts = posts.filter(post => !isPostFiltered(post));
-                                imageGrid.innerHTML = "";
-                                filteredPosts.forEach(renderPost);
-
-                                // 如果过滤后帖子太少，自动加载更多
-                                if (filteredPosts.length < 20) {
-                                    fetchAndRender(false);
-                                }
-                            } else {
-                                alert(t('saveFailed'));
-                            }
-                        }
-                    });
-
-                    mainButtonsContainer.appendChild(importButton);
-                    mainButtonsContainer.appendChild(exportButton);
-                    mainButtonsContainer.appendChild(cancelButton);
-                    mainButtonsContainer.appendChild(saveButton);
-
+                    // The main buttons container is removed as save/cancel/import/export are removed.
                     buttonContainer.appendChild(socialButtonsContainer);
-                    buttonContainer.appendChild(mainButtonsContainer);
 
                     dialogContent.appendChild(title);
                     mainContainer.appendChild(sidebar);
@@ -1777,24 +1659,49 @@ app.registerExtension({
                             const lang = button.dataset.lang;
                             if (currentLanguage === lang) return;
 
-                            // Preserve state
-                            const currentState = {
-                                blacklist: blacklistTextarea.value,
-                                filterTags: filterTextarea.value,
-                                filterEnabled: filterEnableCheckbox.checked,
-                                username: usernameInput.value,
-                                apiKey: apiKeyInput.value,
-                                autocompleteEnabled: autocompleteEnableCheckbox.checked,
-                                tooltipEnabled: tooltipEnableCheckbox.checked,
-                                autocompleteMaxResults: autocompleteMaxResultsInput.value,
-                            };
-
                             const success = await saveLanguage(lang);
                             if (success) {
                                 currentLanguage = lang;
                                 updateInterfaceTexts(); // Update main UI
-                                dialog.remove(); // Close current dialog
-                                showSettingsDialog(currentState); // Re-open with new language and preserved state
+
+                                // Update settings dialog in place without closing
+                                dialog.querySelector('.danbooru-language-select-button.active')?.classList.remove('active');
+                                button.classList.add('active');
+
+                                title.textContent = t('settings');
+                                languageTitle.textContent = t('languageSettings');
+                                blacklistTitle.textContent = t('blacklistSettings');
+                                blacklistDescription.textContent = t('blacklistDescription');
+                                blacklistTextarea.placeholder = t('blacklistPlaceholder');
+                                filterTitle.textContent = t('promptFilterSettings');
+                                filterEnableLabel.textContent = t('promptFilterEnable');
+                                filterDescription.textContent = t('promptFilterDescription');
+                                filterTextarea.placeholder = t('promptFilterPlaceholder');
+                                authTitle.textContent = t('userAuth');
+                                authDescription.textContent = t('authDescription');
+                                usernameInput.placeholder = t('authPlaceholderUsername');
+                                apiKeyInput.placeholder = t('authPlaceholderApiKey');
+                                apiKeyHelpButton.textContent = t('apiKeyHelp');
+                                autocompleteTitle.textContent = t('autocompleteSettings');
+                                autocompleteDesc.textContent = t('autocompleteEnableDescription');
+                                autocompleteEnableLabel.textContent = t('autocompleteEnable');
+                                autocompleteMaxResultsLabel.textContent = t('autocompleteMaxResults');
+                                tooltipTitle.textContent = t('tooltipSettings');
+                                tooltipDesc.textContent = t('tooltipEnableDescription');
+                                tooltipEnableLabel.textContent = t('tooltipEnable');
+                                separatorTitle.textContent = t('separatorSettings');
+                                separatorDesc.textContent = t('separatorDescription');
+                                separatorInputLabel.textContent = t('tagSeparator');
+
+                                // Update sidebar
+                                sidebar.querySelectorAll('.sidebar-button').forEach(btn => {
+                                    const key = btn.dataset.key;
+                                    if (key && sections[key]) {
+                                        btn.querySelector('.sidebar-button-title').textContent = t(key + 'Section');
+                                    }
+                                });
+
+                                showToast(t('saveSuccess'), 'success');
                             } else {
                                 alert('Failed to save language setting.');
                             }
@@ -1841,7 +1748,8 @@ app.registerExtension({
                     formatting: {
                         escapeBrackets: true,
                         replaceUnderscores: true,
-                    }
+                    },
+                    tag_separator: ", ",
                 };
 
                 const loadUiSettings = async () => {
@@ -1854,7 +1762,8 @@ app.registerExtension({
                                 tooltip_enabled: data.settings.tooltip_enabled,
                                 autocomplete_max_results: data.settings.autocomplete_max_results || 20,
                                 selected_categories: data.settings.selected_categories || ["copyright", "character", "general"],
-                                formatting: data.settings.formatting || { escapeBrackets: true, replaceUnderscores: true }
+                                formatting: data.settings.formatting || { escapeBrackets: true, replaceUnderscores: true },
+                                tag_separator: data.settings.tag_separator || ", "
                             };
                         }
                     } catch (e) {
@@ -2191,7 +2100,7 @@ app.registerExtension({
                             }
                             return processedTag;
                         });
-                        const prompt = processedTags.join(', ');
+                        const prompt = processedTags.join(uiSettings.tag_separator || ', ');
                         const selection = {
                             prompt: prompt,
                             image_url: imageUrl,
@@ -2343,7 +2252,7 @@ app.registerExtension({
                                 return processedTag;
                             });
 
-                            const prompt = processedTags.join(', ');
+                            const prompt = processedTags.join(uiSettings.tag_separator || ', ');
 
                             const selection = {
                                 prompt: prompt,
@@ -2454,7 +2363,7 @@ app.registerExtension({
                                     return processedTag;
                                 });
 
-                                const formattedTags = processedTags.join(', ');
+                                const formattedTags = processedTags.join(uiSettings.tag_separator || ', ');
 
                                 try {
                                     await navigator.clipboard.writeText(formattedTags);
@@ -2528,7 +2437,7 @@ app.registerExtension({
                                         }
                                         return processedTag;
                                     });
-                                    const prompt = processedTags.join(', ');
+                                    const prompt = processedTags.join(uiSettings.tag_separator || ', ');
                                     const selection = {
                                         prompt: prompt,
                                         image_url: imageUrl,
@@ -2899,7 +2808,7 @@ app.registerExtension({
                                     return processedTag;
                                 });
 
-                                const prompt = processedTags.join(', ');
+                                const prompt = processedTags.join(uiSettings.tag_separator || ', ');
 
                                 const selection = {
                                     prompt: prompt,
