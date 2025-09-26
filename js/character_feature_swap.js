@@ -67,7 +67,25 @@ app.registerExtension({
                     presetSaved: "预设已保存。",
                     saveCurrentPreset: "保存到当前预设",
                     saveAsPreset: "另存为新预设",
-                },
+                    timeout: "超时 (秒)",
+                    timeoutHint: "LLM API请求的等待时间。",
+                    helpTitle: "功能说明",
+                    helpIntro: "此区域用于选择需要进行特征融合的'特征类别'。",
+                    helpWorkflowTitle: "工作流程：",
+                    helpWorkflowStep1: "1. 节点会从'original_prompt'中寻找并移除与所选类别相关的标签。",
+                    helpWorkflowStep2: "2. 同时，节点会将'character_prompt'中与这些类别相关的标签提取出来。",
+                    helpWorkflowStep3: "3. 最后，将提取出的特征标签与处理过的'original_prompt'合并，生成'new_prompt'。",
+                    helpExampleTitle: "示例：",
+                    helpExampleCategories: "- 选择的特征类别: [hair style], [eye color], [clothing]",
+                    helpExampleResult: "- 结果 (new_prompt): 1girl, solo, smile, short hair, green eyes, armor",
+                    importTooltip: "导入设置和预设 (.json)",
+                    exportTooltip: "导出设置和预设 (.json)",
+                    debugTooltip: "查看发送给LLM的最终提示词以进行调试",
+                    settingsTooltip: "打开LLM、提示词和语言设置",
+                    presetsTooltip: "管理和切换特征预设",
+                    helpTooltip: "显示此节点的功能说明",
+                    addTagTooltip: "添加一个新的特征类别",
+                 },
                 en: {
                     language: "Language",
                     prompt: "Prompt",
@@ -116,7 +134,25 @@ app.registerExtension({
                     presetSaved: "Preset saved.",
                     saveCurrentPreset: "Save to Current Preset",
                     saveAsPreset: "Save as New Preset",
-                }
+                    timeout: "Timeout (s)",
+                    timeoutHint: "Time to wait for the LLM API request.",
+                    helpTitle: "Feature Description",
+                    helpIntro: "This area is for selecting 'feature categories' for feature merging.",
+                    helpWorkflowTitle: "Workflow:",
+                    helpWorkflowStep1: "1. The node finds and removes tags related to the selected categories from the 'original_prompt'.",
+                    helpWorkflowStep2: "2. Simultaneously, the node extracts tags related to these categories from the 'character_prompt'.",
+                    helpWorkflowStep3: "3. Finally, it merges the extracted feature tags with the processed 'original_prompt' to generate the 'new_prompt'.",
+                    helpExampleTitle: "Example:",
+                    helpExampleCategories: "- Selected Feature Categories: [hair style], [eye color], [clothing]",
+                    helpExampleResult: "- Result (new_prompt): 1girl, solo, smile, short hair, green eyes, armor",
+                    importTooltip: "Import settings and presets (.json)",
+                    exportTooltip: "Export settings and presets (.json)",
+                    debugTooltip: "View the final prompt sent to the LLM for debugging",
+                    settingsTooltip: "Open LLM, prompt, and language settings",
+                    presetsTooltip: "Manage and switch feature presets",
+                    helpTooltip: "Show the feature description for this node",
+                    addTagTooltip: "Add a new feature category",
+                 }
             };
             let currentLanguage = 'zh';
             const t = (key) => i18n[currentLanguage]?.[key] || i18n.zh[key];
@@ -125,9 +161,16 @@ app.registerExtension({
             function updateAllNodeUIs() {
                 for (const [node, ui] of nodeUIs.entries()) {
                     ui.importButton.innerHTML = `<i class="fas fa-upload"></i> ${t('import')}`;
+                    ui.importButton.title = t('importTooltip');
                     ui.exportButton.innerHTML = `<i class="fas fa-download"></i> ${t('export')}`;
+                    ui.exportButton.title = t('exportTooltip');
                     ui.debugButton.innerHTML = `<i class="fas fa-bug"></i> ${t('debug')}`;
+                    ui.debugButton.title = t('debugTooltip');
                     ui.settingsButton.innerHTML = `<i class="fas fa-cog"></i> ${t('settings')}`;
+                    ui.settingsButton.title = t('settingsTooltip');
+                    ui.presetButton.title = t('presetsTooltip');
+                    ui.helpIcon.title = t('helpTooltip');
+                    ui.addTagButton.title = t('addTagTooltip');
                 }
             }
 
@@ -212,6 +255,11 @@ app.registerExtension({
                         <button id="cfs-test-connection-btn" data-i18n="testConnection"></button>
                         <button id="cfs-test-response-btn" data-i18n="testResponse"></button>
                     </div>
+                     <div class="cfs-timeout-container">
+                        <label for="cfs-timeout-new" data-i18n="timeout"></label>
+                        <input type="number" id="cfs-timeout-new" name="timeout" min="1" max="300">
+                     </div>
+                     <p class="description" data-i18n="timeoutHint"></p>
                     <div id="cfs-llm-test-result" class="cfs-llm-test-result"></div>
                 </div>
             </div>
@@ -298,6 +346,7 @@ app.registerExtension({
                 const apiKeyInput = dialog.querySelector("#cfs-api-key-new");
                 const modelInput = dialog.querySelector("#cfs-model-new");
                 const customPromptInput = dialog.querySelector("#cfs-custom-prompt-new");
+                const timeoutInput = dialog.querySelector("#cfs-timeout-new");
 
                 // --- Custom Searchable Select Logic ---
                 const wrapper = dialog.querySelector(".cfs-custom-select-wrapper");
@@ -425,6 +474,7 @@ app.registerExtension({
 
                             apiUrlInput.value = settings.api_url || "";
                             apiKeyInput.value = settings.api_key || "";
+                            timeoutInput.value = settings.timeout || 30;
                             const defaultCustomPrompt = `You are an AI assistant for Stable Diffusion. Your task is to replace features in a prompt.
 Your goal is to take the features described in the 'New Character Prompt' and intelligently merge them into the 'Original Prompt'.
 The 'Features to Replace' list tells you which categories of features (like hair style, eye color, clothing) should be taken from the 'New Character Prompt'.
@@ -572,6 +622,7 @@ Respond with only the new, modified prompt, without any explanations.
                         api_url: apiUrlInput.value,
                         api_key: apiKeyInput.value,
                         model: selectedDisplay.textContent,
+                        timeout: parseInt(timeoutInput.value, 10) || 30,
                         custom_prompt: customPromptInput.value,
                         language: currentLanguage,
                         // 保留预设的完整结构
@@ -611,25 +662,26 @@ Respond with only the new, modified prompt, without any explanations.
                 const panel = document.createElement("div");
                 panel.className = "cfs-help-panel";
 
+                const preContent = [
+                    t('helpIntro'),
+                    '',
+                    `<strong>${t('helpWorkflowTitle')}</strong>`,
+                    t('helpWorkflowStep1'),
+                    t('helpWorkflowStep2'),
+                    t('helpWorkflowStep3'),
+                    '',
+                    `<strong>${t('helpExampleTitle')}</strong>`,
+                    `- original_prompt: 1girl, solo, long hair, blue eyes, school uniform, smile`,
+                    `- character_prompt: 1boy, short hair, green eyes, armor, serious`,
+                    t('helpExampleCategories'),
+                    t('helpExampleResult')
+                ].join('\n');
+
                 const content = `
         <div class="cfs-help-panel-content">
-            <h2>功能说明</h2>
-            <pre>
-此区域用于选择需要进行特征融合的'特征类别'。
-
-工作流程：
-1. 节点会从'original_prompt'中寻找并移除与所选类别相关的标签。
-2. 同时，节点会将'character_prompt'中与这些类别相关的标签提取出来。
-3. 最后，将提取出的特征标签与处理过的'original_prompt'合并，生成'new_prompt'。
-
-示例：
-- original_prompt: 1girl, solo, long hair, blue eyes, school uniform, smile
-- character_prompt: 1boy, short hair, green eyes, armor, serious
-- 选择的特征类别: [hair style], [eye color], [clothing]
-
-- 结果 (new_prompt): 1girl, solo, smile, short hair, green eyes, armor
-            </pre>
-            <button class="cfs-help-panel-close-button">关闭</button>
+            <h2>${t('helpTitle')}</h2>
+            <pre>${preContent}</pre>
+            <button class="cfs-help-panel-close-button">${t('close')}</button>
         </div>
     `;
 
@@ -1304,6 +1356,8 @@ Respond with only the new, modified prompt, without any explanations.
                     settingsButton,
                     presetButton,
                     messageArea,
+                    helpIcon,
+                    addTagButton,
                 };
                 nodeUIs.set(this, uiElements);
                 this.addDOMWidget(widgetName + "_custom", "div", mainContainer);
@@ -2243,6 +2297,22 @@ Respond with only the new, modified prompt, without any explanations.
                             display: none; /* Hidden by default */
                             max-height: 150px;
                             overflow-y: auto;
+                        }
+                        .cfs-timeout-container {
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                            margin-top: 12px;
+                        }
+                        #cfs-timeout-new {
+                            width: 80px;
+                            padding: 8px;
+                            box-sizing: border-box;
+                            background-color: #222;
+                            border: 1px solid #555;
+                            color: #E0E0E0;
+                            border-radius: 4px;
+                            margin: 0;
                         }
                     `;
                     document.head.appendChild(style);
