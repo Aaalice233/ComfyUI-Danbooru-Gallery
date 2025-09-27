@@ -283,13 +283,14 @@ app.registerExtension({
                         console.log("提示词数据已加载:", this.promptData);
 
                         // 恢复上次选择的分类
-                        const lastCategory = this.promptData.settings?.last_selected_category || "default";
-                        const categoryExists = this.promptData.categories.some(c => c.name === lastCategory);
-                        if (categoryExists) {
-                            this.selectedCategory = lastCategory;
-                        } else if (this.promptData.categories.length > 0) {
+                        // 优先从节点属性中读取，实现节点独立状态
+                        this.selectedCategory = this.properties.selectedCategory || this.promptData.settings?.last_selected_category || "default";
+                        const categoryExists = this.promptData.categories.some(c => c.name === this.selectedCategory);
+                        if (!categoryExists && this.promptData.categories.length > 0) {
                             this.selectedCategory = this.promptData.categories[0].name;
                         }
+                        this.properties.selectedCategory = this.selectedCategory;
+
 
                         this.updateCategoryDropdown();
                         // 初始加载时，恢复所有分类的选择
@@ -871,7 +872,7 @@ app.registerExtension({
                     treeContainer.className = 'ps-category-tree';
                     const treeElement = this.renderCategoryTree(categoryTree, treeContainer, (node) => {
                         this.selectedCategory = node.fullName;
-                        this.saveLastCategory(node.fullName); // 保存到后端
+                        this.properties.selectedCategory = node.fullName; // 保存到节点属性
                         this.updateCategoryDropdown();
                         this.renderContent();
                         closeMenu();
@@ -1710,15 +1711,6 @@ app.registerExtension({
                     });
                 };
 
-                this.saveLastCategory = (categoryName) => {
-                    api.fetchApi("/prompt_selector/last_category", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ category: categoryName }),
-                    }).catch(error => {
-                        console.error("保存最后选择的分类失败:", error);
-                    });
-                };
 
                 this.saveSelection = () => {
                     api.fetchApi("/prompt_selector/selection", {

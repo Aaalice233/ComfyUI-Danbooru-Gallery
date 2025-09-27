@@ -432,31 +432,6 @@ async def save_selection(request):
    except Exception as e:
        return web.json_response({"error": str(e)}, status=500)
 
-@PromptServer.instance.routes.post("/prompt_selector/last_category")
-async def save_last_category(request):
-   """保存最后选择的分类"""
-   try:
-       data = await request.json()
-       category_name = data.get("category")
-
-       if not category_name:
-           return web.json_response({"error": "Missing category name"}, status=400)
-
-       with open(DATA_FILE, 'r', encoding='utf-8') as f:
-           file_data = json.load(f)
-
-       if "settings" not in file_data:
-           file_data["settings"] = {}
-       
-       file_data["settings"]["last_selected_category"] = category_name
-       
-       with open(DATA_FILE, 'w', encoding='utf-8') as f:
-           json.dump(file_data, f, ensure_ascii=False, indent=4)
-
-       return web.json_response({"success": True})
-   except Exception as e:
-       return web.json_response({"error": str(e)}, status=500)
-
 # 确保在启动时 data.json 文件存在
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
@@ -529,6 +504,5 @@ if not os.path.exists(DATA_FILE):
                 "language": "zh-CN",
                 "separator": ", ",
                 "save_selection": True,
-                "last_selected_category": "默认/其他"
             }
         }, f, ensure_ascii=False, indent=4)
