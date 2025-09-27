@@ -168,8 +168,8 @@ app.registerExtension({
                     ui.debugButton.title = t('debugTooltip');
                     ui.settingsButton.innerHTML = `<i class="fas fa-cog"></i> ${t('settings')}`;
                     ui.settingsButton.title = t('settingsTooltip');
-                    ui.presetButton.title = t('presetsTooltip');
-                    ui.helpIcon.title = t('helpTooltip');
+                    // ui.presetButton.title = t('presetsTooltip');
+                    // ui.helpIcon.title = t('helpTooltip');
                     ui.addTagButton.title = t('addTagTooltip');
                 }
             }
