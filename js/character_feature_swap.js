@@ -2327,6 +2327,13 @@ Respond with only the new, modified prompt, without any explanations.
             const onNodeRemoved_orig = nodeType.prototype.onNodeRemoved;
             nodeType.prototype.onNodeRemoved = function () {
                 nodeUIs.delete(this);
+
+                // 清理所有由该节点创建的、附加到 document.body 的UI元素
+                const elementsToRemove = document.querySelectorAll(
+                    ".cfs-new-settings-dialog, .cfs-help-panel, .cfs-preset-dropdown, .cfs-debug-panel"
+                );
+                elementsToRemove.forEach(el => el.remove());
+
                 if (onNodeRemoved_orig) {
                     onNodeRemoved_orig.apply(this, arguments);
                 }

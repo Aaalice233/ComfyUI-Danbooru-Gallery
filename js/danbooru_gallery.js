@@ -3670,6 +3670,18 @@ app.registerExtension({
                     }
                 }
             };
+
+            const onRemoved = nodeType.prototype.onRemoved;
+            nodeType.prototype.onRemoved = function() {
+                // 移除所有可能由该节点创建的全局UI元素
+                const elementsToRemove = document.querySelectorAll(
+                    ".danbooru-settings-dialog, .danbooru-edit-panel, .danbooru-tag-tooltip, .danbooru-tag-context-menu, .danbooru-toast"
+                );
+                elementsToRemove.forEach(el => el.remove());
+
+                // 调用原始的 onRemoved 方法
+                onRemoved?.apply(this, arguments);
+            };
         }
     },
 });
