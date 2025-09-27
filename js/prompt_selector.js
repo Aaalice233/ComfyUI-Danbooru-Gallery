@@ -669,6 +669,7 @@ app.registerExtension({
 
 
                         item.addEventListener('click', (e) => {
+                            this.hidePromptTooltip(); // 在处理点击前，强制隐藏悬浮提示
                             // 忽略拖拽带起的点击事件
                             if (e.target.closest('.ps-item-edit-btn, .ps-item-delete-btn, .ps-item-copy-btn')) {
                                 return;
@@ -2556,6 +2557,7 @@ app.registerExtension({
 
                         // 单击加载提示词或切换选择
                         item.addEventListener('click', (e) => {
+                            this.hidePromptTooltip(); // 在处理点击前，强制隐藏悬浮提示
                             if (e.target.closest('.ps-prompt-item-controls, .ps-tag')) {
                                 return; // 忽略在按钮或标签上的点击
                             }
