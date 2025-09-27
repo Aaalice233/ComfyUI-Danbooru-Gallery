@@ -1498,7 +1498,6 @@ Respond with only the new, modified prompt, without any explanations.
                             display: flex;
                             flex-direction: column;
                             min-height: 150px;  /* Set a default height for the whole widget area */
-                            height: 100%; /* Make the container fill the available vertical space */
                             justify-content: space-between; /* Push content and bottom bar apart */
                         }
 
