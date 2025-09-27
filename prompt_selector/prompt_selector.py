@@ -249,8 +249,9 @@ async def delete_category(request):
         if not category_name:
             return web.json_response({"error": "Missing category name"}, status=400)
             
-        if category_name == "default":
-            return web.json_response({"error": "Cannot delete default category"}, status=400)
+        # 允许删除“默认”分类
+        # if category_name == "默认":
+        #     return web.json_response({"error": "Cannot delete default category"}, status=400)
             
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
             file_data = json.load(f)
@@ -459,12 +460,68 @@ async def save_last_category(request):
 # 确保在启动时 data.json 文件存在
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
+        # 为每个提示词生成唯一的ID
+        def create_prompt(alias, prompt_value):
+            return {
+                "alias": alias,
+                "prompt": prompt_value,
+                "image": "",
+                "description": "",
+                "tags": [],
+                "favorite": False,
+                "id": str(uuid.uuid4())
+            }
+
         json.dump({
-            "version": "1.0",
+            "version": "1.6",
             "categories": [
                 {
-                    "name": "default",
-                    "prompts": [],
+                    "name": "默认/其他",
+                    "prompts": [
+                        create_prompt("可选质量串", "supreme masterpiece,official art,best quality,cinematic,fashion photography style,dramatic,visual impact,ultra-high resolution,sharp focus,intricate details,high-end texture,dramatic lighting,colorful,emotional"),
+                        create_prompt("动态镜头串", "movie perspective,dynamic angle,cinematic angle,dutch angle,foreshortening"),
+                        create_prompt("动态姿势串", "dynamic pose,dynamic composition"),
+                        create_prompt("光影增强串", "cinematic lighting,dramatic lighting,volumetric lighting,god rays,rim lighting,dramatic shadows,soft lighting,golden hour lighting,"),
+                        create_prompt("专色", "spot color,limited palette"),
+                        create_prompt("黑暗主题", "dark theme"),
+                    ],
+                    "last_selected": []
+                },
+                {
+                    "name": "默认/画师串",
+                    "prompts": [
+                        create_prompt("JRU厚涂", "(ningen mame:0.7),(reoen:0.85),(nababa:0.3),(wanke:0.4),(modare:0.6),(wlop:0.6),(rei (sanbonzakura):0.4),offical art"),
+                        create_prompt("厚线条绫波丽", "(yd (orange maru):0.9),(misaki kurehito:0.8),(na tarapisu153:1.3),akizone"),
+                        create_prompt("光影立体感增强", "impressionism,impasto,3d,(wanke:0.81),(nababa:0.81),(Torino aqua:1.1),(suzumi (ccroquette):1.331),(wolp:1.1),(nixue:1.1),(ciloranko:0.81),(rei (sanbonzakura):1.21),(love cacao:1.21),year 2024"),
+                        create_prompt("韩风描边", "dishwasher1910,(fuya (tempupupu):0.8),(shion (mirudakemann):0.6),(wada arco:1.1),bartolomeobari,(michking:0.6)"),
+                        create_prompt("国风淡雅", "(liduke:1.2),(stu dts:0.8),(wlop:0.8),(ningen mame:1),(rella:0.8),(ciloranko:0.6)"),
+                        create_prompt("银月常用", "sola7764,jima,rhasta"),
+                        create_prompt("官方艺术", "amagi hana,(2gong (9ujin):1),Ogipote,taya oco,seasonanimes,offical art"),
+                        create_prompt("渡边富城", "(watanabe tomari:1.05),(fjsmu:0.7),(watari (nijimukiokuiro):0.85)"),
+                        create_prompt("本庄雷太", "(artist:quasarcake:0.8),(wlop:0.6),honjou raita,lack,rella,wanke"),
+                    ],
+                    "last_selected": []
+                },
+                {
+                    "name": "默认/角色",
+                    "prompts": [
+                        create_prompt("碧蓝档案 伊吹", "blue archive, ibuki (blue archive), 1girl, armband, asymmetrical hair, black coat, black hat, black ribbon, blonde hair, blue dress, blush, boots, bow, coat, collared shirt, crime prevention buzzer, demon girl, demon tail, demon wings, dress, hair ribbon, hat, hat bow, highres, long sleeves, military hat, neck ribbon, notice lines, one eye closed, open mouth, outline, oversized clothes, peaked cap, pinafore dress, pink bow, pleated dress, red armband, ribbon, shirt, side ponytail, signature, sleeveless, sleeveless dress, sleeves past fingers, sleeves past wrists, solo, tail, white outline, white shirt, wings, yellow boots, yellow eyes"),
+                        create_prompt("明日方舟 铃兰 花田", "1girl,petite,cute face,small breasts,skinny,suzuran (spring praise) (arknights),green eyes,blonde hair, multicolored hair,two-tone hair,frilled hairband,neck ribbon,puffy sleeves,high-waist skirt,white socks, cardigan,shoulder bag,white pantyhose,multiple_tails,blush,happy,light smile,looking at viewer,open mouth,walking,hand up,from side,outdoors,garden,day,flower,leaf,butterfly,flying petals,blue sky,cloud,depth of field,bokeh,light particles,incredibly,close-up,face focus,close shot,dynamic pose,dutch angle"),
+                        create_prompt("碧蓝幻想 姬塔 玩水", "granblue fantasy, djeeta (granblue fantasy), 1girl, ;d, bikini, bikini skirt, blonde hair, blue sky, bow, bow bikini, breasts, brown eyes, cloud, cloudy sky, cowboy shot, english text, finger on trigger, flower, hair flower, hair ornament, hairband, holding, holding water gun, jacket, jacket over swimsuit, large breasts, navel, one eye closed, open clothes, open jacket, pink bow, pink flower, pink hairband, pink trim, shading eyes, short hair, sky, smile, solo, stomach, swimsuit, underboob, water gun, white bikini, white jacket"),
+                        create_prompt("碧蓝幻想 奶刀 女上位NSFW", "granblue fantasy, narmaya (granblue fantasy), 1girl, completely nude, black gloves, black panties, blush, braid, breasts, clothing aside, covering own eyes, draph, drooling, fingerless gloves, gloves, horns, large breasts, nipples, no bra, panties, panties aside, penis, pink hair, pussy, sex, single thighhigh, smile, solo focus, straddling, thigh strap, thighhighs, underwear, v, vaginal"),
+                        create_prompt("碧蓝幻想 尤埃尔 张腿NSFW", "1girl,yuel (granblue fantasy),granblue fantasy,animal ears,anus,bell,blue hair,blush,breasts,completely nude,erune,fang,female pubic hair,fox ears,fox shadow puppet,hair ornament,jingle bell,large breasts,leg up,long hair,looking at viewer,nipples,nude,open mouth,pubic hair,pussy,red eyes,smile,solo focus,spread legs,spread pussy,sweat,on back,thighs,feet,navel,hetero,barefoot,lying,hair bell,soles,toes,very long hair,areolae,tail,fox tail,fox girl,ass visible through thighs,animal ear fluff"),
+                        create_prompt("碧蓝档案 伊吹 抱娃娃", "ibuki (blue archive), 1girl, solo, long hair, blush, open mouth, blonde hair, gloves, dress, bare shoulders, sitting, collarbone, tail, closed eyes, flower, pantyhose, horns, wings, black gloves, pointy ears, elbow gloves, official alternate costume, black dress, side ponytail, cup, black pantyhose, rose, chair, stuffed toy, table, demon girl, demon horns, sleeping, stuffed animal, demon tail, purple dress, black wings, drinking glass, demon wings, teddy bear, low wings, black horns, wine glass, grey pantyhose, black tail"),
+                        create_prompt("偶像大师 梨沙 泳圈冰淇淋", "matoba risa,solo,loli,1girl, long hair, breasts, looking at viewer, blush, bangs, black hair, ribbon, navel, holding, hair between eyes, bare shoulders, twintails, collarbone, swimsuit, hair ribbon, yellow eyes, heart, bikini, small breasts, food, choker, water, nail polish, flat chest, cup, side-tie bikini bottom, black choker, sunglasses, scrunchie, animal print, holding cup, eyewear on head, pink nails, drinking glass, innertube, ice cream, pink bikini, wrist scrunchie, heart-shaped eyewear, leopard print, pink-framed eyewear, swim ring"),
+                        create_prompt("碧蓝档案 伊吹 睡衣NSFW", "ibuki (blue archive), 1girl, long hair, blush, blonde hair, long sleeves, 1boy, ribbon, closed mouth, twintails, nipples, underwear, panties, closed eyes, hair ribbon, hetero, sweat, small breasts, lying, horns, barefoot, pussy, pointy ears, solo focus, cum, on back, halo, feet, white panties, flat chest, loli, toes, black ribbon, cum in pussy, soles, demon horns, sleeping, cum on body, clothing aside, after sex, pink shirt, cumdrip, pajamas, panties aside, foot focus, foot out of frame, black horns, after vaginal, yellow halo, pink pants, sleep molestation, pink pajamas, cum on feet, holding another's foot"),
+                        create_prompt("明日方舟 刻俄柏 吃汉堡", "arknights, ceobe (arknights), ceobe (unfettered) (arknights), + +, 1girl, animal ears, artist name, black jacket, brown hair, bucket hat, burger, dog ears, dog girl, eating, food, hands up, hat, holding, holding burger, holding food, jacket, long hair, long sleeves, looking at food, portrait, red eyes, solo, sparkle, white hat"),
+                        create_prompt("碧蓝档案 伊吹 掀裙子吹风", "ibuki (blue archive),1girl,solo,long hair,looking at viewer,blush,open mouth,shirt,skirt,blonde hair,navel,sitting,tail,yellow eyes,short sleeves,sweat,horns,wings,pointy ears,fang,halo,side ponytail,blue skirt,feet out of frame,demon girl,demon horns,demon tail,black wings,demon wings,pink shirt,low wings,black horns,yellow halo,black tail,electric fan,tail between legs,skirt lift"),
+                        create_prompt("血源 猎人", "1girl, lady maria of the astral clocktower, bloodborne, ascot, black coat, black pants, blood, blood on clothes, blood stain, coat, double-blade, gem, green gemstone, hat, hat feather, long hair, looking at viewer, pants, ponytail, solo, tricorne, blood in hair, injury, dark persona, black cape, blue gemstone, sidelocks, white ascot, teeth, green eyes, cape, blood on face, parted lips, hair over one eye, bleeding from forehead, buttons, grey hair, cowboy shot, black hat, rakuyo (bloodborne), dark room, church"),
+                        create_prompt("东方 帕秋莉", "1girl,patchouli knowledge,touhou,blush,braid,chibi,chibi inset,collarbone,crescent,crescent hat ornament,flying sweatdrops,hat,hat ornament,long hair,looking at viewer,purple eyes,purple hair,solo,starry background,striped clothes,striped headwear,very long hair,wide sleeves,blue ribbon,star (symbol),frilled capelet,upper body,hair bow,bright pupils,blue bow,twin braids,capelet,bow,ribbon,purple dress,vertical-striped dress,blunt bangs,mob cap,pink hat,multicolored eyes,book,dress,purple background,vertical-striped clothes,long sleeves,hat ribbon,pajamas,frills,holding,striped dress,holding book,gradient eyes,open mouth,white pupils,red bow"),
+                        create_prompt("星空秋千", "1girl, solo, long hair, sitting, monochrome, outdoors, sky, cloud, night, grass, bug, star (sky), butterfly, night sky, scenery, starry sky, blue theme, silhouette, swing, masterpiece, best quality, good quality, very awa, very aesthetic, absurdres, newest, (perfect details), usnr, brushstroke, oil painting (medium), chiaroscuro"),
+                        create_prompt("魔法少女樱 大道寺知世", "daidouji tomoyo, 1girl, tomoeda elementary school uniform, black hair, skirt, long hair, white skirt, school uniform, purple eyes, smile, bangs, blunt bangs, black shirt, simple background, shirt, bow, white sailor collar, looking at viewer, holding, bag, white background, pleated skirt, serafuku, sailor collar, hair bow, long sleeves, cat, red bow, hairband, kero, backpack, closed mouth, solo, animal, hat"),
+                        create_prompt("国风龙女", "1girl, solo, long hair, looking at viewer, smile, simple background, long sleeves, hair ornament, white background, red eyes, dress, animal ears, ribbon, hair between eyes, closed mouth, upper body, white hair, grey hair, hair ribbon, horns, japanese clothes, wide sleeves, kimono, red ribbon, sleeves past wrists, sash, chinese clothes, obi, red dress, sleeves past fingers, dragon horns, dragon girl, dragon, antlers, chinese zodiac, red kimono, hands in opposite sleeves, hanfu, eastern dragon, black sash, year of the dragon, deer antlers"),
+                        create_prompt("阿比盖尔", "abigail williams (fate),fate/grand order,fate (series),1girl,bare shoulders,bikini,blonde hair,blush,bonnet,bow,braid,braided hair rings,breasts,closed eyes,forehead,hair bow,hair rings,long hair,navel,nipples,open mouth,out-of-frame censoring,parted bangs,petite,pussy,pussy peek,ribs,sidelocks,small breasts,solo,swimsuit,twin braids,twintails,very long hair,white bikini,white bow"),
+                    ],
                     "last_selected": []
                 }
             ],
@@ -472,6 +529,6 @@ if not os.path.exists(DATA_FILE):
                 "language": "zh-CN",
                 "separator": ", ",
                 "save_selection": True,
-                "last_selected_category": "default"
+                "last_selected_category": "默认/其他"
             }
         }, f, ensure_ascii=False, indent=4)
