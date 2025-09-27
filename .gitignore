@@ -59,3 +59,7 @@ Thumbs.db
 
 # Cache files
 character_feature_swap/cache/
+
+# Prompt Selector specific
+prompt_selector/preview/
+prompt_selector/data.json

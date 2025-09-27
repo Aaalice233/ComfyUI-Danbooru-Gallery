@@ -32,6 +32,7 @@ app.registerExtension({
                     "variable_type": "变量类型", "text": "文本", "number": "数字", "statistics": "统计信息",
                     "open_library_hint": "点击左上角书本图标打开提示词库",
                     "import_success": "导入成功！正在刷新...",
+                    "refresh_success": "刷新成功！",
                     "import_fail": "导入失败",
                     "delete_prompt_confirm": "确定要删除提示词 \"{prompt}\" 吗？",
                     "alias_placeholder": "提示词的显示名称",
@@ -57,7 +58,17 @@ app.registerExtension({
                     "search_placeholder": "搜索提示词、标签或描述...", "advanced_search": "高级搜索",
                     "search_in_prompts": "在提示词中搜索", "search_in_tags": "在标签中搜索", "search_in_descriptions": "在描述中搜索",
                     "interface": "界面", "theme_color": "主题色", "function": "功能",
-                    "clear_all_confirm": "确定要取消所有已选中的提示词吗？"
+                    "clear_all_confirm": "确定要取消所有已选中的提示词吗？",
+                    "clear_category": "清空分类",
+                    "clear_category_confirm": "确定要清空分类 \"{category}\" 中的所有提示词吗？此操作不可撤销。",
+                    "clear_category_success": "分类已清空！",
+                    "cannot_clear_default": "不能清空默认分类！",
+                    "cannot_create_special_category": "不能创建此名称的分类。",
+                    "create_subcategory": "创建子分类",
+                    "subcategory_prompt": "输入新的子分类名称:",
+                    "move_favorites_to_top": "置顶收藏",
+                    "copy_prompt": "复制提示词",
+                    "copy_success": "复制成功！"
                 },
                 "en-US": {
                     "add_prompt": "Add Prompt", "delete_selected": "Delete Selected", "import": "Import", "export": "Export", "settings": "Settings",
@@ -82,6 +93,7 @@ app.registerExtension({
                     "variable_type": "Variable Type", "text": "Text", "number": "Number", "statistics": "Statistics",
                     "open_library_hint": "Click the book icon in the upper left corner to open the prompt library",
                     "import_success": "Import successful! Refreshing...",
+                    "refresh_success": "Refresh successful!",
                     "import_fail": "Import failed",
                     "delete_prompt_confirm": "Are you sure you want to delete prompt \"{prompt}\"?",
                     "alias_placeholder": "Display name for the prompt",
@@ -107,7 +119,17 @@ app.registerExtension({
                     "search_placeholder": "Search prompts, tags or descriptions...", "advanced_search": "Advanced Search",
                     "search_in_prompts": "Search in Prompts", "search_in_tags": "Search in Tags", "search_in_descriptions": "Search in Descriptions",
                     "interface": "Interface", "theme_color": "Theme Color", "function": "Function",
-                    "clear_all_confirm": "Are you sure you want to deselect all selected prompts?"
+                    "clear_all_confirm": "Are you sure you want to deselect all selected prompts?",
+                    "clear_category": "Clear Category",
+                    "clear_category_confirm": "Are you sure you want to clear all prompts in category \"{category}\"? This action cannot be undone.",
+                    "clear_category_success": "Category cleared!",
+                    "cannot_clear_default": "Cannot clear the default category!",
+                    "cannot_create_special_category": "Cannot create a category with this name.",
+                    "create_subcategory": "Create Subcategory",
+                    "subcategory_prompt": "Enter new subcategory name:",
+                    "move_favorites_to_top": "Move Favorites to Top",
+                    "copy_prompt": "Copy Prompt",
+                    "copy_success": "Copied successfully!"
                 }
             };
             let currentLanguage = "zh-CN";
@@ -160,6 +182,7 @@ app.registerExtension({
                 }
             };
 
+
             // 节点创建时的回调
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
@@ -168,13 +191,11 @@ app.registerExtension({
                 console.log("提示词选择器节点已创建！");
 
                 this.promptData = null; // 用于存储从后端获取的数据
-                this.selectedCategory = "default";
+                this.selectedCategory = "default"; // Default value, will be overwritten
                 this.selectionMode = "multi"; // 'single' or 'multi'
                 this.selectedPrompts = {}; // 用于按分类存储多选模式下的选中项
                 this.batchMode = false; // 批量操作模式
                 this.selectedForBatch = new Set(); // 批量操作选中的提示词ID
-                this.currentSortBy = "created_at"; // 当前排序方式
-                this.currentSortOrder = "desc"; // 当前排序顺序
                 this.currentFilter = { favorites: false, tags: [], search: "" }; // 当前过滤条件
                 this.draggedItem = null; // 拖拽的项目
 
@@ -260,6 +281,16 @@ app.registerExtension({
                         currentLanguage = this.promptData.settings?.language || "zh-CN";
                         this.applyTheme(); // 应用主题
                         console.log("提示词数据已加载:", this.promptData);
+
+                        // 恢复上次选择的分类
+                        const lastCategory = this.promptData.settings?.last_selected_category || "default";
+                        const categoryExists = this.promptData.categories.some(c => c.name === lastCategory);
+                        if (categoryExists) {
+                            this.selectedCategory = lastCategory;
+                        } else if (this.promptData.categories.length > 0) {
+                            this.selectedCategory = this.promptData.categories[0].name;
+                        }
+
                         this.updateCategoryDropdown();
                         // 初始加载时，恢复所有分类的选择
                         if (this.promptData.settings?.save_selection) {
@@ -363,7 +394,24 @@ app.registerExtension({
                 categoryBtn.addEventListener("click", (e) => {
                     this.showCategoryMenu(e.currentTarget);
                 });
-                // The hover preview is now on the badge itself, so these are removed.
+
+                // Re-add hover preview to the main category button
+                // categoryBtn.addEventListener("mouseenter", (e) => {
+                //     console.log("categoryBtn mouseenter triggered", e.currentTarget);
+                //     if (this.hidePreviewTimeout) {
+                //         clearTimeout(this.hidePreviewTimeout);
+                //         this.hidePreviewTimeout = null;
+                //     }
+                //     // Only show preview if the menu is not open
+                //     if (!document.querySelector(".ps-category-menu")) {
+                //         this.showAllActivePromptsPreview(e.currentTarget);
+                //     }
+                // });
+                // categoryBtn.addEventListener("mouseleave", () => {
+                //     this.hidePreviewTimeout = setTimeout(() => {
+                //         this.hideActivePromptsPreview();
+                //     }, 100);
+                // });
 
 
                 const importBtn = footer.querySelector("#ps-import-btn");
@@ -389,9 +437,36 @@ app.registerExtension({
                                 const data = await api.fetchApi("/prompt_selector/data").then(r => r.json());
                                 this.promptData = data;
                                 currentLanguage = this.promptData.settings?.language || "zh-CN";
+
+                                // 导入后设置默认分类并刷新
+                                if (this.promptData.categories.length > 0) {
+                                    this.selectedCategory = this.promptData.categories[0].name;
+                                    this.saveLastCategory(this.selectedCategory);
+                                } else {
+                                    this.selectedCategory = "default";
+                                }
+
                                 this.updateCategoryDropdown();
                                 this.renderContent();
                                 updateUIText(this);
+
+                                // 如果词库是打开的，则刷新它
+                                const modal = document.querySelector('.ps-library-modal');
+                                if (modal) {
+                                    const categoryTreeContainer = modal.querySelector('.ps-category-tree');
+                                    const categoryTree = this.buildCategoryTree(this.promptData.categories);
+                                    const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
+                                    categoryTreeContainer.innerHTML = '';
+                                    categoryTreeContainer.appendChild(treeElement);
+
+                                    const firstItem = categoryTreeContainer.querySelector('.ps-tree-item');
+                                    if (firstItem) {
+                                        firstItem.classList.add('selected');
+                                    }
+                                    this.renderPromptList(this.selectedCategory);
+                                }
+
+                                this.showToast(t('refresh_success'));
                             } else {
                                 const error = await response.json();
                                 throw new Error(error.error || t('import_fail'));
@@ -414,7 +489,10 @@ app.registerExtension({
                     const categoryBtn = header.querySelector("#ps-category-btn");
                     if (categoryBtn) {
                         const text = categoryBtn.querySelector('span:not(.ps-total-count-badge)');
-                        if (text) text.textContent = this.selectedCategory;
+                        if (text) {
+                            text.textContent = this.selectedCategory;
+                            console.log(`updateCategoryDropdown: Setting category button text to "${this.selectedCategory}"`);
+                        }
 
                         // Remove old count badge if it exists
                         const existingBadge = categoryBtn.querySelector('.ps-total-count-badge');
@@ -439,6 +517,7 @@ app.registerExtension({
 
                             // Add hover events to the badge itself
                             countBadge.addEventListener("mouseenter", (e) => {
+                                console.log("countBadge mouseenter triggered", e.currentTarget);
                                 if (this.hidePreviewTimeout) {
                                     clearTimeout(this.hidePreviewTimeout);
                                     this.hidePreviewTimeout = null;
@@ -509,11 +588,30 @@ app.registerExtension({
                         deleteBtn.className = "ps-item-delete-btn";
                         deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v6"></path></svg>`;
 
+                        const copyBtn = document.createElement("button");
+                        copyBtn.className = "ps-item-copy-btn";
+                        copyBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+                        copyBtn.title = t('copy_prompt');
+
+                        controlsContainer.appendChild(copyBtn);
                         controlsContainer.appendChild(editBtn);
                         controlsContainer.appendChild(deleteBtn);
 
                         item.appendChild(textContainer);
                         item.appendChild(controlsContainer);
+
+                        // --- Hover Tooltip Logic ---
+                        item.addEventListener('mouseenter', (e) => {
+                            const aliasEl = item.querySelector('.prompt-item-alias');
+                            const promptEl = item.querySelector('.prompt-item-full-prompt');
+                            // Always show tooltip for now to ensure the mechanism works
+                            this.showPromptTooltip(e, p);
+                        });
+
+                        item.addEventListener('mouseleave', (e) => {
+                            this.hidePromptTooltip();
+                        });
+
 
                         // --- Drag and Drop Logic ---
                         item.addEventListener('dragstart', (e) => {
@@ -524,6 +622,7 @@ app.registerExtension({
 
                         item.addEventListener('dragend', (e) => {
                             item.classList.remove('dragging');
+                            this.draggedItem = null;
                         });
 
                         item.addEventListener('dragover', (e) => {
@@ -570,7 +669,7 @@ app.registerExtension({
 
                         item.addEventListener('click', (e) => {
                             // 忽略拖拽带起的点击事件
-                            if (e.target.closest('.ps-item-edit-btn, .ps-item-delete-btn')) {
+                            if (e.target.closest('.ps-item-edit-btn, .ps-item-delete-btn, .ps-item-copy-btn')) {
                                 return;
                             }
                             if (item.classList.contains('dragging')) {
@@ -602,6 +701,13 @@ app.registerExtension({
                             }
                             this.renderContent(); // Re-render to update selection state
                             this.updateOutput();
+                        });
+
+                        copyBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(p.prompt).then(() => {
+                                this.showToast(t('copy_success'));
+                            });
                         });
 
                         editBtn.addEventListener('click', (e) => {
@@ -729,6 +835,7 @@ app.registerExtension({
                             document.removeEventListener("click", button.clickOutsideHandler, true);
                             button.clickOutsideHandler = null;
                         }
+                        this.hideActivePromptsPreview();
                         return;
                     }
 
@@ -747,6 +854,7 @@ app.registerExtension({
                             document.removeEventListener("click", button.clickOutsideHandler, true);
                             button.clickOutsideHandler = null;
                         }
+                        this.hideActivePromptsPreview();
                     };
 
 
@@ -758,61 +866,46 @@ app.registerExtension({
                     searchInput.type = "text";
                     searchInput.placeholder = "搜索类别...";
                     searchInput.value = searchTerm; // Restore search term on refresh
+                    const categoryTree = this.buildCategoryTree(this.promptData.categories);
+                    const treeContainer = document.createElement('div');
+                    treeContainer.className = 'ps-category-tree';
+                    const treeElement = this.renderCategoryTree(categoryTree, treeContainer, (node) => {
+                        this.selectedCategory = node.fullName;
+                        this.saveLastCategory(node.fullName); // 保存到后端
+                        this.updateCategoryDropdown();
+                        this.renderContent();
+                        closeMenu();
+                    });
+                    treeContainer.appendChild(treeElement);
+
                     searchInput.addEventListener("input", (e) => {
                         const currentSearchTerm = e.target.value.toLowerCase();
-                        ul.querySelectorAll("li").forEach(li => {
+                        const allItems = ul.querySelectorAll("li");
+                        allItems.forEach(li => {
                             const categoryName = li.dataset.fullName.toLowerCase();
-                            li.style.display = categoryName.includes(currentSearchTerm) ? "" : "none";
+                            const match = categoryName.includes(currentSearchTerm);
+                            li.style.display = match ? "" : "none";
+
+                            if (!currentSearchTerm) {
+                                li.classList.remove('open');
+                            } else if (match) {
+                                let parent = li.parentElement.closest('li.parent');
+                                while (parent) {
+                                    parent.classList.add('open');
+                                    parent.style.display = "";
+                                    parent = parent.parentElement.closest('li.parent');
+                                }
+                            }
                         });
                     });
+
                     // Trigger filtering on refresh
                     if (searchTerm) {
                         setTimeout(() => searchInput.dispatchEvent(new Event('input')), 0);
                     }
 
-                    const ul = document.createElement("ul");
-                    this.promptData.categories.forEach(cat => {
-                        const li = document.createElement("li");
-
-                        li.dataset.fullName = cat.name;
-                        const nameSpan = document.createElement("span");
-                        nameSpan.textContent = cat.name;
-                        li.appendChild(nameSpan);
-
-                        const activeCount = this.selectedPrompts[cat.name]?.size || 0;
-                        if (activeCount > 0) {
-                            const countBadge = document.createElement("span");
-                            countBadge.className = "ps-category-count";
-                            countBadge.innerHTML = `<span class="ps-count-number">${activeCount}</span><span class="ps-delete-icon">×</span>`;
-
-                            countBadge.addEventListener("mouseenter", () => {
-                                this.showActivePromptsPreview(cat.name);
-                            });
-
-                            countBadge.addEventListener("click", (e) => {
-                                e.stopPropagation();
-                                this.clearSelection(cat.name);
-                            });
-
-                            li.appendChild(countBadge);
-                        }
-
-                        li.addEventListener("click", (e) => {
-                            // Prevent closing menu when clicking on the count badge
-                            if (e.target.classList.contains('ps-category-count')) {
-                                e.stopPropagation();
-                                return;
-                            }
-                            this.selectedCategory = cat.name;
-                            this.updateCategoryDropdown();
-                            this.renderContent();
-                            closeMenu();
-                        });
-                        ul.appendChild(li);
-                    });
-
                     menu.appendChild(searchInput);
-                    menu.appendChild(ul);
+                    menu.appendChild(treeContainer);
                     document.body.appendChild(menu);
 
                     const rect = button.getBoundingClientRect();
@@ -836,45 +929,73 @@ app.registerExtension({
                     }
                 };
 
+
                 this.hideActivePromptsPreview = () => {
-                    const previewBox = document.querySelector(".ps-active-prompts-preview");
-                    if (previewBox) {
-                        previewBox.remove();
+                    const previewBoxes = document.querySelectorAll(".ps-active-prompts-preview");
+                    if (previewBoxes.length > 0) {
+                        previewBoxes.forEach(p => p.remove());
                     }
                 };
 
-                this.showActivePromptsPreview = (categoryName) => {
+                this.showActivePromptsPreview = (categoryName, targetElement) => {
                     this.hideActivePromptsPreview(); // Ensure no multiple tooltips
 
-                    const activePrompts = this.selectedPrompts[categoryName];
-                    if (!activePrompts || activePrompts.size === 0) return;
+                    const activePromptDetails = [];
+                    if (this.promptData && this.selectedPrompts) {
+                        for (const catName in this.selectedPrompts) {
+                            if (catName === categoryName || catName.startsWith(categoryName + '/')) {
+                                const selectionSet = this.selectedPrompts[catName];
+                                if (selectionSet && selectionSet.size > 0) {
+                                    const category = this.promptData.categories.find(c => c.name === catName);
+                                    if (category) {
+                                        const details = category.prompts
+                                            .filter(p => selectionSet.has(p.prompt))
+                                            .map(p => ({ category: catName, text: p.alias || p.prompt }));
+                                        activePromptDetails.push(...details);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+
+                    if (activePromptDetails.length === 0) return;
 
                     const previewBox = document.createElement("div");
                     previewBox.className = "ps-active-prompts-preview";
 
                     const ul = document.createElement("ul");
-                    // Get full prompt objects to display alias or prompt
-                    const category = this.promptData.categories.find(c => c.name === categoryName);
-                    if (!category) return;
-
-                    const activePromptDetails = category.prompts.filter(p => activePrompts.has(p.prompt));
-
-                    activePromptDetails.forEach(p => {
+                    activePromptDetails.forEach(promptInfo => {
                         const li = document.createElement("li");
-                        li.textContent = p.alias || p.prompt;
+                        const displayCategory = promptInfo.category.startsWith(categoryName + '/')
+                            ? '...' + promptInfo.category.substring(categoryName.length)
+                            : (promptInfo.category !== categoryName ? `[${promptInfo.category}]` : '');
+
+                        li.innerHTML = `${displayCategory ? `<span class="ps-preview-category">${displayCategory}</span> ` : ''}${promptInfo.text}`;
                         ul.appendChild(li);
                     });
                     previewBox.appendChild(ul);
 
+                    // Prevent preview from hiding when mouse enters it
+                    previewBox.addEventListener("mouseenter", () => {
+                        if (this.hidePreviewTimeout) {
+                            clearTimeout(this.hidePreviewTimeout);
+                            this.hidePreviewTimeout = null;
+                        }
+                    });
+                    previewBox.addEventListener("mouseleave", () => {
+                        this.hideActivePromptsPreview();
+                    });
+
                     document.body.appendChild(previewBox);
 
+                    const targetRect = targetElement.getBoundingClientRect();
                     const menu = document.querySelector(".ps-category-menu");
-                    if (menu) {
-                        const menuRect = menu.getBoundingClientRect();
-                        previewBox.style.left = `${menuRect.right + 5}px`;
-                        previewBox.style.top = `${menuRect.top}px`;
-                        previewBox.style.maxHeight = `${menuRect.height}px`;
-                    }
+                    const menuRect = menu ? menu.getBoundingClientRect() : targetRect;
+
+                    previewBox.style.left = `${targetRect.right + 5}px`;
+                    previewBox.style.top = `${targetRect.top}px`;
+                    previewBox.style.maxHeight = `${window.innerHeight - targetRect.top - 20}px`;
                 };
 
                 this.showAllActivePromptsPreview = (targetElement) => {
@@ -924,6 +1045,8 @@ app.registerExtension({
                     if (anchorElement && mainButton) {
                         const anchorRect = anchorElement.getBoundingClientRect();
                         const mainButtonRect = mainButton.getBoundingClientRect();
+                        console.log("showAllActivePromptsPreview - anchorRect:", anchorRect);
+                        console.log("showAllActivePromptsPreview - mainButtonRect:", mainButtonRect);
                         previewBox.style.left = `${mainButtonRect.left}px`;
                         previewBox.style.top = `${anchorRect.bottom + 5}px`;
                         previewBox.style.minWidth = `${mainButtonRect.width}px`;
@@ -937,16 +1060,25 @@ app.registerExtension({
                     const modal = document.createElement("div");
                     modal.className = "ps-edit-modal";
                     modal.innerHTML = `
-                        <div class="ps-modal-content" style="width: 600px; max-width: 90vw;">
+                        <div class="ps-modal-content" style="width: 800px; max-width: 90vw;">
                             <h3>${isNew ? t('add_prompt') : t('edit_prompt')}</h3>
-                            
-                            <label>${t('alias')}:</label>
-                            <input type="text" id="ps-edit-alias" value="${prompt.alias || ''}" placeholder="${t('alias_placeholder')}">
-                            
-                            <label>${t('full_prompt')}:</label>
-                            <textarea id="ps-edit-prompt" rows="5" placeholder="${t('full_prompt_placeholder')}">${prompt.prompt || ''}</textarea>
-                            
-                            
+                            <div class="ps-edit-form-container">
+                                <div class="ps-edit-form-left">
+                                    <label>${t('alias')}:</label>
+                                    <input type="text" id="ps-edit-alias" value="${prompt.alias || ''}" placeholder="${t('alias_placeholder')}">
+                                    
+                                    <label>${t('full_prompt')}:</label>
+                                    <textarea id="ps-edit-prompt" rows="8" placeholder="${t('full_prompt_placeholder')}">${prompt.prompt || ''}</textarea>
+                                </div>
+                                <div class="ps-edit-form-right">
+                                    <label>${t('preview_image')}:</label>
+                                    <div id="ps-preview-container" class="ps-preview-container">
+                                        ${prompt.image ? `<img src="/prompt_selector/preview/${prompt.image}?t=${new Date().getTime()}" alt="Preview">` : `<div class="ps-no-preview"><span>暂无预览</span></div>`}
+                                    </div>
+                                    <input type="file" id="ps-image-upload" accept="image/png, image/jpeg, image/webp" style="display: none;">
+                                    <button id="ps-upload-btn" class="ps-btn ps-btn-sm" style="width: 100%; margin-top: 10px;">上传预览图</button>
+                                </div>
+                            </div>
                             <div class="ps-modal-buttons">
                                 <button id="ps-edit-save">${isNew ? t('add') : t('save')}</button>
                                 <button id="ps-edit-cancel">${t('cancel')}</button>
@@ -956,17 +1088,64 @@ app.registerExtension({
                     document.body.appendChild(modal);
 
                     const closeModal = () => modal.remove();
+                    let selectedImageFile = null;
 
+                    const uploadBtn = modal.querySelector("#ps-upload-btn");
+                    const fileInput = modal.querySelector("#ps-image-upload");
+                    const previewContainer = modal.querySelector("#ps-preview-container");
+
+                    uploadBtn.addEventListener("click", () => fileInput.click());
+
+                    fileInput.addEventListener("change", (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            selectedImageFile = file;
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                previewContainer.innerHTML = `<img src="${event.target.result}" alt="Preview">`;
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    });
 
                     modal.querySelector("#ps-edit-cancel").addEventListener("click", closeModal);
                     modal.querySelector("#ps-edit-save").addEventListener("click", async () => {
+                        const saveButton = modal.querySelector("#ps-edit-save");
+                        this.setButtonLoading(saveButton, true);
+
+                        let imageUrl = prompt.image || "";
+
+                        if (selectedImageFile) {
+                            const formData = new FormData();
+                            formData.append("image", selectedImageFile);
+                            const alias = modal.querySelector("#ps-edit-alias").value.trim();
+                            formData.append("alias", alias);
+                            try {
+                                const response = await api.fetchApi("/prompt_selector/upload_image", {
+                                    method: "POST",
+                                    body: formData,
+                                });
+                                if (response.ok) {
+                                    const res = await response.json();
+                                    imageUrl = res.filename;
+                                } else {
+                                    throw new Error("Image upload failed");
+                                }
+                            } catch (error) {
+                                console.error("Image upload error:", error);
+                                this.showToast("图片上传失败!", 'error');
+                                this.setButtonLoading(saveButton, false);
+                                return;
+                            }
+                        }
+
                         const newId = `prompt-${Date.now()}`;
                         const updatedPrompt = {
                             id: isNew ? newId : prompt.id,
                             alias: modal.querySelector("#ps-edit-alias").value.trim(),
                             prompt: modal.querySelector("#ps-edit-prompt").value.trim(),
                             description: prompt.description || "",
-                            image: prompt.image || "",
+                            image: imageUrl,
                             tags: prompt.tags || [],
                             favorite: prompt.favorite || false,
                             template: prompt.template || false,
@@ -977,6 +1156,7 @@ app.registerExtension({
 
                         if (!updatedPrompt.alias || !updatedPrompt.prompt) {
                             this.showToast(t('prompt_empty_error'), 'error');
+                            this.setButtonLoading(saveButton, false);
                             return;
                         }
 
@@ -998,7 +1178,6 @@ app.registerExtension({
 
                             await this.saveData();
 
-                            // Dispatch event to notify library modal to refresh
                             document.dispatchEvent(new CustomEvent('ps-data-updated', {
                                 detail: {
                                     categoryName: categoryName,
@@ -1007,7 +1186,6 @@ app.registerExtension({
                                 }
                             }));
 
-                            // 刷新主列表并滚动
                             this.renderContent();
                             const contentArea = mainContainer.querySelector(".prompt-selector-content-area");
                             if (contentArea) {
@@ -1019,6 +1197,8 @@ app.registerExtension({
                         } catch (error) {
                             console.error('保存提示词失败:', error);
                             this.showToast(t('save_fail_retry'), 'error');
+                        } finally {
+                            this.setButtonLoading(saveButton, false);
                         }
                     });
                 };
@@ -1032,7 +1212,7 @@ app.registerExtension({
                     if (prompt.image) {
                         // 注意：这里的图片路径需要一个方法来解析。暂时假定它可以直接访问。
                         // 实际应用中可能需要一个API端点来服务图片。
-                        imageHTML = `<img src="/prompt_selector/images/${prompt.image}" alt="Preview">`;
+                        imageHTML = `<img src="/prompt_selector/preview/${prompt.image}" alt="Preview">`;
                     }
 
                     tooltip.innerHTML = `
@@ -1051,6 +1231,47 @@ app.registerExtension({
                     const tooltip = document.querySelector(".ps-tooltip");
                     if (tooltip) {
                         tooltip.remove();
+                    }
+                };
+
+                this.showPromptTooltip = (e, prompt) => {
+                    this.hidePromptTooltip(); // Ensure no multiple tooltips
+                    const tooltip = document.createElement("div");
+                    tooltip.className = "ps-prompt-tooltip";
+
+                    let imageHTML = '';
+                    if (prompt.image) {
+                        imageHTML = `<img src="/prompt_selector/preview/${prompt.image}?t=${new Date().getTime()}" alt="Preview">`;
+                    } else {
+                        imageHTML = `<div class="ps-tooltip-no-preview"><span>暂无预览</span></div>`;
+                    }
+
+                    tooltip.innerHTML = `
+                        <div class="ps-tooltip-content">
+                            <div class="ps-tooltip-image-container">${imageHTML}</div>
+                            <div class="ps-tooltip-text-container"><p>${prompt.prompt}</p></div>
+                        </div>
+                    `;
+                    document.body.appendChild(tooltip);
+
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    tooltip.style.left = `${e.clientX + 15}px`;
+                    tooltip.style.top = `${e.clientY + 15}px`;
+
+                    // Adjust if it goes off-screen
+                    const tooltipRect = tooltip.getBoundingClientRect();
+                    if (tooltipRect.right > window.innerWidth) {
+                        tooltip.style.left = `${window.innerWidth - tooltipRect.width - 10}px`;
+                    }
+                    if (tooltipRect.bottom > window.innerHeight) {
+                        tooltip.style.top = `${window.innerHeight - tooltipRect.height - 10}px`;
+                    }
+                };
+
+                this.hidePromptTooltip = () => {
+                    const tooltips = document.querySelectorAll(".ps-prompt-tooltip");
+                    if (tooltips.length > 0) {
+                        tooltips.forEach(t => t.remove());
                     }
                 };
 
@@ -1074,21 +1295,7 @@ app.registerExtension({
                                     <input type="text" id="ps-library-search-input" placeholder="${t('search_placeholder')}">
                                 </div>
                                 <div class="ps-filter-bar">
-                                    <div class="ps-filter-group">
-                                        <select id="ps-sort-select" class="ps-select">
-                                            <option value="created_at">${t('created_time')}</option>
-                                            <option value="alphabetical">${t('alphabetical')}</option>
-                                        </select>
-                                        <button class="ps-btn ps-btn-sm" id="ps-sort-order-btn">
-                                            <svg viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M6 12h12"></path><path d="M9 18h6"></path></svg>
-                                        </button>
-                                    </div>
-                                    <div class="ps-batch-controls" style="display: none;">
-                                        <button class="ps-btn ps-btn-sm" id="ps-select-all-btn">${t('select_all')}</button>
-                                        <button class="ps-btn ps-btn-sm" id="ps-batch-delete-btn">${t('batch_delete')}</button>
-                                        <button class="ps-btn ps-btn-sm" id="ps-batch-move-btn">${t('batch_move')}</button>
-                                        <button class="ps-btn ps-btn-sm" id="ps-exit-batch-btn">${t('exit_batch')}</button>
-                                    </div>
+                                    <!-- Batch controls are now moved to the prompt header -->
                                 </div>
                             </div>
                             <div class="ps-library-body">
@@ -1105,14 +1312,26 @@ app.registerExtension({
                                     <div class="ps-prompt-header">
                                         <h4>${t('prompt_list')}</h4>
                                         <div class="ps-prompt-controls">
-                                            <button class="ps-btn ps-btn-sm" id="ps-batch-mode-btn">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.5l1.5 1.5l2.5 -2.5"></path><path d="M3.5 11.5l1.5 1.5l2.5 -2.5"></path><path d="M3.5 17.5l1.5 1.5l2.5 -2.5"></path><path d="M11 6l9 0"></path><path d="M11 12l9 0"></path><path d="M11 18l9 0"></path></svg>
-                                                <span>${t('batch_operations')}</span>
-                                            </button>
-                                            <button class="ps-btn ps-btn-sm ps-btn-primary" id="ps-add-prompt-btn">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                                                <span>${t('add_new')}</span>
-                                            </button>
+                                            <div class="ps-default-controls" style="display: flex; gap: 8px;">
+                                                <button class="ps-btn ps-btn-sm" id="ps-move-favorites-top-btn">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 12 5 19 12"></polyline></svg>
+                                                    <span>${t('move_favorites_to_top')}</span>
+                                                </button>
+                                                <button class="ps-btn ps-btn-sm" id="ps-batch-mode-btn">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.5l1.5 1.5l2.5 -2.5"></path><path d="M3.5 11.5l1.5 1.5l2.5 -2.5"></path><path d="M3.5 17.5l1.5 1.5l2.5 -2.5"></path><path d="M11 6l9 0"></path><path d="M11 12l9 0"></path><path d="M11 18l9 0"></path></svg>
+                                                    <span>${t('batch_operations')}</span>
+                                                </button>
+                                                <button class="ps-btn ps-btn-sm ps-btn-primary" id="ps-add-prompt-btn">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                                    <span>${t('add_new')}</span>
+                                                </button>
+                                            </div>
+                                            <div class="ps-batch-controls" style="display: none; gap: 8px;">
+                                                <button class="ps-btn ps-btn-sm" id="ps-select-all-btn">${t('select_all')}</button>
+                                                <button class="ps-btn ps-btn-sm" id="ps-batch-delete-btn">${t('batch_delete')}</button>
+                                                <button class="ps-btn ps-btn-sm" id="ps-batch-move-btn">${t('batch_move')}</button>
+                                                <button class="ps-btn ps-btn-sm" id="ps-exit-batch-btn">${t('exit_batch')}</button>
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="ps-prompt-list-container">
@@ -1149,7 +1368,7 @@ app.registerExtension({
                     const dataUpdateHandler = (e) => {
                         // Check if the update is for the currently selected category
                         if (e.detail.categoryName === this.selectedCategory) {
-                            renderPromptList(this.selectedCategory);
+                            this.renderPromptList(this.selectedCategory);
 
                             // If a new prompt was added, scroll to it
                             if (e.detail.isNew && e.detail.promptId) {
@@ -1186,263 +1405,8 @@ app.registerExtension({
                         searchTimeout = setTimeout(callback, delay);
                     };
 
-                    // --- 类别树逻辑 ---
-                    const buildCategoryTree = (categories) => {
-                        const tree = { children: [] }; // 使用一个根节点
-                        const map = { 'root': tree };
-
-                        categories.sort((a, b) => a.name.localeCompare(b.name)).forEach(cat => {
-                            const parts = cat.name.split('/');
-                            let currentLevel = tree.children;
-                            let path = '';
-
-                            parts.forEach((part, i) => {
-                                const oldPath = path;
-                                path = i === 0 ? part : `${path}/${part}`;
-
-                                let node = map[path];
-                                if (!node) {
-                                    node = { name: part, fullName: path, children: [] };
-                                    map[path] = node;
-                                    // 找到父节点并添加
-                                    const parentNode = i === 0 ? tree : map[oldPath];
-                                    parentNode.children.push(node);
-                                }
-                                currentLevel = node.children;
-                            });
-                        });
-                        return tree.children;
-                    };
-
-                    const renderCategoryTree = (nodes, container) => {
-                        const ul = document.createElement("ul");
-
-                        // Add Favorites at the top
-                        // const favoritesLi = document.createElement("li");
-                        // favoritesLi.dataset.fullName = "__favorites__"; // Special name
-                        // favoritesLi.innerHTML = `<div class="ps-tree-item"><span>${t('favorites_category')}</span></div>`;
-                        // const favoritesItemDiv = favoritesLi.querySelector('.ps-tree-item');
-                        // favoritesItemDiv.addEventListener('click', (e) => {
-                        //     e.stopPropagation();
-                        //     this.selectedCategory = "__favorites__";
-                        //     renderPromptList("__favorites__");
-                        //     modal.querySelectorAll('.ps-tree-item.selected').forEach(el => el.classList.remove('selected'));
-                        //     favoritesItemDiv.classList.add('selected');
-                        // });
-                        // ul.appendChild(favoritesLi);
-
-                        nodes.forEach(node => {
-                            const li = document.createElement("li");
-                            li.dataset.fullName = node.fullName;
-                            li.innerHTML = `<div class="ps-tree-item"><span>${node.name}</span></div>`;
-
-                            const itemDiv = li.querySelector('.ps-tree-item');
-
-                            if (node.children.length > 0) {
-                                li.classList.add("parent");
-                                const childrenUl = renderCategoryTree(node.children, li);
-                                li.appendChild(childrenUl);
-                                itemDiv.addEventListener('click', (e) => {
-                                    e.stopPropagation();
-                                    li.classList.toggle('open');
-                                });
-                            } else {
-                                itemDiv.addEventListener('click', (e) => {
-                                    e.stopPropagation();
-                                    this.selectedCategory = node.fullName;
-                                    renderPromptList(this.selectedCategory); // 更新右侧视图
-                                    // 高亮显示
-                                    modal.querySelectorAll('.ps-tree-item.selected').forEach(el => el.classList.remove('selected'));
-                                    modal.querySelector('.ps-favorites-btn')?.classList.remove('selected');
-                                    itemDiv.classList.add('selected');
-                                });
-
-                                // Add context menu for non-favorite categories
-                                itemDiv.addEventListener('contextmenu', (e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    this.showCategoryContextMenu(e, node.fullName);
-                                });
-                            }
-                            ul.appendChild(li);
-                        });
-                        return ul;
-                    };
-
-                    // --- 提示词列表逻辑 ---
-                    const rightPanel = modal.querySelector('.ps-library-right-panel');
-                    const promptListContainer = rightPanel.querySelector('.ps-prompt-list-container');
-
-                    const renderPromptList = (categoryName, searchTerm = '') => {
-                        promptListContainer.innerHTML = ''; // 清空
-                        let promptsToShow = [];
-
-                        if (categoryName === "__favorites__") {
-                            promptsToShow = this.promptData.categories.flatMap(c => c.prompts).filter(p => p.favorite);
-                        } else {
-                            const category = this.promptData.categories.find(c => c.name === categoryName);
-                            if (category) {
-                                promptsToShow = [...category.prompts];
-                            }
-                        }
-
-                        // 应用搜索过滤
-                        if (searchTerm) {
-                            const lowerCaseSearchTerm = searchTerm.toLowerCase();
-                            if (!categoryName) {
-                                promptsToShow = this.promptData.categories.flatMap(c => c.prompts);
-                            }
-                            promptsToShow = promptsToShow.filter(p => {
-                                const searchInAlias = p.alias.toLowerCase().includes(lowerCaseSearchTerm);
-                                const searchInPrompt = p.prompt.toLowerCase().includes(lowerCaseSearchTerm);
-                                const searchInTags = p.tags && p.tags.some(tag => tag.toLowerCase().includes(lowerCaseSearchTerm));
-                                const searchInDesc = p.description && p.description.toLowerCase().includes(lowerCaseSearchTerm);
-                                return searchInAlias || searchInPrompt || searchInTags || searchInDesc;
-                            });
-                        }
-
-                        // 应用收藏过滤
-                        if (this.currentFilter.favorites) {
-                            promptsToShow = promptsToShow.filter(p => p.favorite);
-                        }
-
-                        // 应用标签过滤
-                        if (this.currentFilter.tags.length > 0) {
-                            promptsToShow = promptsToShow.filter(p =>
-                                p.tags && this.currentFilter.tags.some(tag => p.tags.includes(tag))
-                            );
-                        }
-
-                        // 应用排序
-                        this.sortPrompts(promptsToShow);
-
-                        if (!promptsToShow.length) {
-                            promptListContainer.innerHTML = `<p style="color: #555; text-align: center;">${t('no_matching_prompts')}</p>`;
-                            return;
-                        }
-
-                        const list = document.createElement("ul");
-                        list.className = "ps-prompt-list";
-                        list.setAttribute('data-category', categoryName);
-
-                        promptsToShow.forEach((p, index) => {
-                            // 确保每个提示词都有ID
-                            if (!p.id) {
-                                p.id = `prompt-${Date.now()}-${index}`;
-                            }
-
-                            const item = document.createElement("li");
-                            item.className = "ps-prompt-list-item";
-                            item.setAttribute('data-prompt-id', p.id);
-                            item.draggable = categoryName !== '__favorites__';
-
-                            const favoriteClass = p.favorite ? 'favorite' : '';
-                            const usageCount = p.usage_count || 0;
-                            const tags = p.tags || [];
-
-                            item.innerHTML = `
-                                ${this.batchMode ? `<input type="checkbox" class="ps-batch-checkbox" data-prompt-id="${p.id}">` : ''}
-                                <div class="ps-prompt-content">
-                                    <div class="ps-prompt-list-item-name">${p.alias}</div>
-                                    <div class="ps-prompt-list-item-preview">${p.prompt}</div>
-                                    ${p.description ? `<div class="ps-prompt-description">${p.description}</div>` : ''}
-                                    ${tags.length > 0 ? `<div class="ps-prompt-tags">${tags.map(tag => `<span class="ps-tag">${tag}</span>`).join('')}</div>` : ''}
-                                </div>
-                                <div class="ps-prompt-item-controls">
-                                    <button class="ps-btn ps-btn-icon ps-favorite-btn ${favoriteClass}" title="${t('mark_favorite')}" data-prompt-id="${p.id}">
-                                        <svg viewBox="0 0 24 24"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"></polygon></svg>
-                                    </button>
-                                    <button class="ps-btn ps-btn-icon ps-edit-btn" title="${t('edit_prompt')}" data-prompt-id="${p.id}">
-                                        <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                                    </button>
-                                    <button class="ps-btn ps-btn-icon ps-delete-btn" title="${t('delete_prompt_confirm', { prompt: p.alias })}" data-prompt-id="${p.id}">
-                                        <svg viewBox="0 0 24 24"><polyline points="3,6 5,6 21,6"></polyline><path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path></svg>
-                                    </button>
-                                </div>
-                            `;
-
-                            // 拖拽事件
-                            item.addEventListener('dragstart', (e) => {
-                                this.draggedItem = { id: p.id, index: index };
-                                e.dataTransfer.effectAllowed = 'move';
-                            });
-
-                            item.addEventListener('dragover', (e) => {
-                                e.preventDefault();
-                                e.dataTransfer.dropEffect = 'move';
-                            });
-
-                            item.addEventListener('drop', (e) => {
-                                e.preventDefault();
-                                if (this.draggedItem && this.draggedItem.id !== p.id) {
-                                    this.reorderPrompts(categoryName, this.draggedItem.index, index);
-                                }
-                            });
-
-                            // 单击加载提示词
-                            const contentEl = item.querySelector('.ps-prompt-content');
-                            if (contentEl) {
-                                contentEl.addEventListener('click', () => {
-                                    if (!this.batchMode) {
-                                        this.loadPrompt(p);
-                                        closeModal();
-                                    }
-                                });
-                            }
-
-                            // 按钮事件
-                            const controlsEl = item.querySelector('.ps-prompt-item-controls');
-                            if (controlsEl) {
-                                const getRealCategory = (promptId) => {
-                                    if (categoryName !== '__favorites__') {
-                                        return categoryName;
-                                    }
-                                    const { category } = this.findPromptAndCategory(promptId);
-                                    return category ? category.name : null;
-                                };
-
-                                controlsEl.querySelector('.ps-favorite-btn').addEventListener('click', (e) => {
-                                    e.stopPropagation();
-                                    const realCategoryName = getRealCategory(p.id);
-                                    if (realCategoryName) this.toggleFavorite(realCategoryName, p.id);
-                                });
-                                controlsEl.querySelector('.ps-edit-btn').addEventListener('click', (e) => {
-                                    e.stopPropagation();
-                                    const realCategoryName = getRealCategory(p.id);
-                                    if (realCategoryName) this.showEditModal(p, realCategoryName);
-                                });
-                                controlsEl.querySelector('.ps-delete-btn').addEventListener('click', (e) => {
-                                    e.stopPropagation();
-                                    const realCategoryName = getRealCategory(p.id);
-                                    if (realCategoryName) {
-                                        this.showConfirmModal(t('delete_prompt_confirm', { prompt: p.alias }), () => {
-                                            this.deletePrompt(realCategoryName, p.id);
-                                        });
-                                    }
-                                });
-                            }
-
-                            // 批量选择事件
-                            const batchCheckbox = item.querySelector('.ps-batch-checkbox');
-                            if (batchCheckbox) {
-                                batchCheckbox.addEventListener('change', (e) => {
-                                    if (e.target.checked) {
-                                        this.selectedForBatch.add(p.id);
-                                    } else {
-                                        this.selectedForBatch.delete(p.id);
-                                    }
-                                    this.updateBatchControls();
-                                });
-                            }
-
-                            list.appendChild(item);
-                        });
-
-                        promptListContainer.appendChild(list);
-                    };
-
-                    const categoryTree = buildCategoryTree(this.promptData.categories);
-                    const treeElement = renderCategoryTree(categoryTree, categoryTreeContainer);
+                    const categoryTree = this.buildCategoryTree(this.promptData.categories);
+                    const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
                     categoryTreeContainer.innerHTML = ''; // 清空占位符
                     categoryTreeContainer.appendChild(treeElement);
 
@@ -1455,7 +1419,7 @@ app.registerExtension({
                     favoritesButton.innerHTML = `<span>${t('favorites_category')}</span>`;
                     favoritesButton.addEventListener('click', (e) => {
                         this.selectedCategory = "__favorites__";
-                        renderPromptList("__favorites__");
+                        this.renderPromptList("__favorites__");
                         // Handle selection state
                         modal.querySelectorAll('.ps-tree-item.selected').forEach(el => el.classList.remove('selected'));
                         favoritesButton.classList.add('selected');
@@ -1469,18 +1433,19 @@ app.registerExtension({
 
                     // 默认渲染第一个分类的提示词
                     // Select first non-favorite category by default
-                    const favoritesCount = this.promptData.categories.flatMap(c => c.prompts).filter(p => p.favorite).length;
-                    if (favoritesCount > 0) {
-                        this.selectedCategory = "__favorites__";
-                        favoritesButton.classList.add('selected');
-                        renderPromptList(this.selectedCategory);
-                    } else if (this.promptData.categories.length > 0) {
-                        this.selectedCategory = this.promptData.categories[0].name;
-                        const firstItem = categoryTreeContainer.querySelector('li:not([data-full-name="__favorites__"]) .ps-tree-item');
+                    if (this.promptData.categories.length > 0) {
+                        const firstItem = categoryTreeContainer.querySelector('.ps-tree-item'); // 获取树中的第一个项目
                         if (firstItem) {
+                            this.selectedCategory = firstItem.closest('li').dataset.fullName; // 从元素中获取正确的分类名
+
+                            // 清除所有已选项并选中第一个
+                            modal.querySelectorAll('.ps-tree-item.selected, .ps-favorites-btn.selected').forEach(el => el.classList.remove('selected'));
                             firstItem.classList.add('selected');
-                            renderPromptList(this.selectedCategory);
+
+                            this.renderPromptList(this.selectedCategory);
                         }
+                    } else {
+                        this.renderPromptList(null); // 没有分类时清空列表
                     }
 
                     // --- 搜索逻辑 (使用防抖) ---
@@ -1511,80 +1476,62 @@ app.registerExtension({
 
                             // 过滤右侧列表
                             const categoryToRender = selectedCategoryExists ? this.selectedCategory : null;
-                            renderPromptList(categoryToRender, searchTerm);
+                            this.renderPromptList(categoryToRender, searchTerm);
                         });
                     });
 
                     // --- 底部按钮逻辑 ---
                     const newCategoryBtn = modal.querySelector('#ps-new-category-btn');
                     newCategoryBtn.addEventListener('click', () => {
-                        const newName = prompt(t('new_category_prompt'));
-                        if (!newName || !newName.trim()) return;
-                        const finalName = newName.trim();
-                        if (finalName === "__favorites__" || finalName === t('favorites_category').replace('⭐ ', '')) {
-                            this.showToast("不能创建此名称的分类。", 'error');
-                            return;
-                        }
-                        if (this.promptData.categories.some(c => c.name === finalName)) {
-                            this.showToast(t('category_exists'), 'error');
-                            return;
-                        }
-                        const newCategory = { name: finalName, prompts: [] };
-                        this.promptData.categories.push(newCategory);
-                        this.saveData();
+                        this.showInputModal(t('add'), t('new_category_prompt'), '', (newName) => {
+                            if (!newName || !newName.trim()) return;
+                            const finalName = newName.trim();
+                            if (finalName === "__favorites__" || finalName === t('favorites_category').replace('⭐ ', '')) {
+                                this.showToast(t('cannot_create_special_category'), 'error');
+                                return;
+                            }
+                            if (this.promptData.categories.some(c => c.name === finalName)) {
+                                this.showToast(t('category_exists'), 'error');
+                                return;
+                            }
+                            const newCategory = { name: finalName, prompts: [] };
+                            this.promptData.categories.push(newCategory);
+                            this.saveData();
 
-                        // 刷新树
-                        const categoryTree = buildCategoryTree(this.promptData.categories);
-                        const treeElement = renderCategoryTree(categoryTree, categoryTreeContainer);
-                        categoryTreeContainer.innerHTML = '';
-                        categoryTreeContainer.appendChild(treeElement);
+                            // 刷新树
+                            const categoryTree = this.buildCategoryTree(this.promptData.categories);
+                            const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
+                            categoryTreeContainer.innerHTML = '';
+                            categoryTreeContainer.appendChild(treeElement);
+                        });
                     });
 
 
                     // --- 新增的事件监听器 ---
 
 
-                    // 排序选择
-                    const sortSelect = modal.querySelector('#ps-sort-select');
-                    sortSelect.value = this.currentSortBy;
-                    sortSelect.addEventListener('change', (e) => {
-                        this.currentSortBy = e.target.value;
-                        renderPromptList(this.selectedCategory);
-                    });
 
-                    // 排序顺序
-                    const sortOrderBtn = modal.querySelector('#ps-sort-order-btn');
-                    sortOrderBtn.addEventListener('click', () => {
-                        this.currentSortOrder = this.currentSortOrder === 'desc' ? 'asc' : 'desc';
-                        const svg = sortOrderBtn.querySelector('svg');
-                        if (this.currentSortOrder === 'asc') {
-                            svg.innerHTML = '<path d="M3 18h18"></path><path d="M6 12h12"></path><path d="M9 6h6"></path>';
+                    this.updateBatchControlsVisibility = () => {
+                        const modal = document.querySelector('.ps-library-modal');
+                        if (!modal) return;
+                        const defaultControls = modal.querySelector('.ps-default-controls');
+                        const batchControls = modal.querySelector('.ps-batch-controls');
+
+                        if (this.batchMode) {
+                            defaultControls.style.display = 'none';
+                            batchControls.style.display = 'flex';
                         } else {
-                            svg.innerHTML = '<path d="M3 6h18"></path><path d="M6 12h12"></path><path d="M9 18h6"></path>';
+                            defaultControls.style.display = 'flex';
+                            batchControls.style.display = 'none';
                         }
-                        renderPromptList(this.selectedCategory);
-                    });
+                    };
 
                     // 批量操作模式
                     const batchModeBtn = modal.querySelector('#ps-batch-mode-btn');
                     batchModeBtn.addEventListener('click', () => {
-                        this.batchMode = !this.batchMode;
-                        batchModeBtn.textContent = this.batchMode ? t('exit_batch') : t('batch_operations');
-                        batchModeBtn.classList.toggle('active', this.batchMode);
-
-                        const filterGroup = modal.querySelector('.ps-filter-group');
-                        const batchControls = modal.querySelector('.ps-batch-controls');
-
-                        if (this.batchMode) {
-                            filterGroup.style.display = 'none';
-                            batchControls.style.display = 'flex';
-                        } else {
-                            filterGroup.style.display = 'flex';
-                            batchControls.style.display = 'none';
-                            this.selectedForBatch.clear();
-                        }
-
-                        renderPromptList(this.selectedCategory);
+                        this.batchMode = true;
+                        this.updateBatchControlsVisibility();
+                        this.renderPromptList(this.selectedCategory);
                     });
 
                     // 全选按钮
@@ -1603,7 +1550,6 @@ app.registerExtension({
                             }
                         });
 
-                        selectAllBtn.textContent = allChecked ? t('select_all') : t('deselect_all');
                         this.updateBatchControls();
                     });
 
@@ -1627,11 +1573,23 @@ app.registerExtension({
                                     // 更新本地数据
                                     const category = this.promptData.categories.find(c => c.name === this.selectedCategory);
                                     if (category) {
+                                        const promptsToDelete = category.prompts.filter(p => this.selectedForBatch.has(p.id));
+                                        // 从选中项中移除
+                                        if (this.selectedPrompts[this.selectedCategory]) {
+                                            promptsToDelete.forEach(p => {
+                                                this.selectedPrompts[this.selectedCategory].delete(p.prompt);
+                                            });
+                                        }
                                         category.prompts = category.prompts.filter(p => !this.selectedForBatch.has(p.id));
                                     }
                                     this.selectedForBatch.clear();
-                                    renderPromptList(this.selectedCategory);
-                                    this.showToast(t('delete_success'));
+                                    this.renderPromptList(this.selectedCategory);
+                                    this.renderContent(); // 刷新主节点
+                                    this.updateOutput(); // 更新输出和徽章
+                                    this.showToast(t('batch_delete_success'));
+                                } else {
+                                    const error = await response.json();
+                                    throw new Error(error.error || t('batch_delete_fail'));
                                 }
                             } catch (error) {
                                 console.error("批量删除失败:", error);
@@ -1645,27 +1603,63 @@ app.registerExtension({
                     batchMoveBtn.addEventListener('click', () => {
                         if (this.selectedForBatch.size === 0) return;
 
-                        const targetCategory = prompt(t('move_to_category_prompt'));
-                        if (!targetCategory) return;
+                        this.showCategorySelectionModal((targetCategory) => {
+                            if (!targetCategory || targetCategory === this.selectedCategory) return;
 
-                        // TODO: 实现批量移动功能
-                        this.showToast(t('batch_move_wip'), 'warning');
+                            this.showConfirmModal(
+                                `确定要将 ${this.selectedForBatch.size} 个提示词移动到 "${targetCategory}" 分类吗？`,
+                                async () => {
+                                    try {
+                                        const response = await api.fetchApi("/prompt_selector/prompts/batch_move", {
+                                            method: "POST",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({
+                                                source_category: this.selectedCategory,
+                                                target_category: targetCategory,
+                                                prompt_ids: Array.from(this.selectedForBatch)
+                                            })
+                                        });
+
+                                        if (response.ok) {
+                                            const data = await response.json();
+                                            console.log("[DEBUG] Batch move API response data:", data);
+                                            console.log("[DEBUG] Batch move API response data.categories:", data.categories); // Add new logging here
+                                            // 更新本地数据
+                                            if (data.categories) {
+                                                this.promptData.categories = data.categories;
+                                                console.log("[DEBUG] this.promptData.categories updated after batch move:", this.promptData.categories);
+                                            } else {
+                                                console.warn("[DEBUG] Batch move API response did not contain categories, attempting to re-fetch all data.");
+                                                // If categories are missing, re-fetch all data to ensure consistency
+                                                const refreshedData = await api.fetchApi("/prompt_selector/data").then(r => r.json());
+                                                this.promptData = refreshedData;
+                                                console.log("[DEBUG] this.promptData updated after re-fetch:", this.promptData);
+                                            }
+                                            this.selectedForBatch.clear();
+                                            this.renderPromptList(this.selectedCategory);
+                                            this.showToast('批量移动成功！');
+                                        } else {
+                                            const error = await response.json();
+                                            console.error("Batch move API error response:", error); // Add logging here
+                                            throw new Error(error.error || '批量移动失败');
+                                        }
+                                    } catch (error) {
+                                        console.error("批量移动失败:", error);
+                                        this.showToast(error.message, 'error');
+                                    }
+                                }
+                            );
+                        });
                     });
 
+                    // 退出批量模式
                     // 退出批量模式
                     const exitBatchBtn = modal.querySelector('#ps-exit-batch-btn');
                     exitBatchBtn.addEventListener('click', () => {
                         this.batchMode = false;
-                        batchModeBtn.textContent = t('batch_operations');
-                        batchModeBtn.classList.remove('active');
-
-                        const filterGroup = modal.querySelector('.ps-filter-group');
-                        const batchControls = modal.querySelector('.ps-batch-controls');
-                        filterGroup.style.display = 'flex';
-                        batchControls.style.display = 'none';
-
                         this.selectedForBatch.clear();
-                        renderPromptList(this.selectedCategory);
+                        this.updateBatchControlsVisibility();
+                        this.renderPromptList(this.selectedCategory);
                     });
 
                     // 新增提示词按钮
@@ -1680,6 +1674,49 @@ app.registerExtension({
                             favorite: false,
                             description: ''
                         }, this.selectedCategory, true);
+                    });
+
+                    const moveFavoritesBtn = modal.querySelector('#ps-move-favorites-top-btn');
+                    moveFavoritesBtn.addEventListener('click', async () => {
+                        const categoryName = this.selectedCategory;
+                        const category = this.promptData.categories.find(c => c.name === categoryName);
+                        if (!category || categoryName === "__favorites__") {
+                            this.showToast("只能在常规分类中执行此操作", 'warning');
+                            return;
+                        }
+
+                        const favorites = category.prompts.filter(p => p.favorite);
+                        const nonFavorites = category.prompts.filter(p => !p.favorite);
+
+                        if (favorites.length === 0) {
+                            this.showToast("当前分类没有收藏的词条", 'info');
+                            return;
+                        }
+
+                        category.prompts = [...favorites, ...nonFavorites];
+
+                        try {
+                            await this.saveData();
+                            this.renderPromptList(categoryName, '', true);
+                            // 刷新外部列表和输出
+                            this.renderContent();
+                            this.updateOutput();
+                            this.showToast("收藏词条已置顶！");
+                        } catch (error) {
+                            console.error("置顶收藏失败:", error);
+                            this.showToast("操作失败，请重试", 'error');
+                            // 如果失败，可能需要恢复原始顺序
+                        }
+                    });
+                };
+
+                this.saveLastCategory = (categoryName) => {
+                    api.fetchApi("/prompt_selector/last_category", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ category: categoryName }),
+                    }).catch(error => {
+                        console.error("保存最后选择的分类失败:", error);
                     });
                 };
 
@@ -1814,33 +1851,6 @@ app.registerExtension({
                     return { prompt: null, category: null };
                 };
 
-                this.sortPrompts = (prompts) => {
-                    switch (this.currentSortBy) {
-                        case 'alphabetical':
-                            prompts.sort((a, b) => {
-                                const result = a.alias.localeCompare(b.alias);
-                                return this.currentSortOrder === 'desc' ? -result : result;
-                            });
-                            break;
-                        case 'created_at':
-                        default:
-                            prompts.sort((a, b) => {
-                                const dateA = new Date(a.created_at || 0);
-                                const dateB = new Date(b.created_at || 0);
-                                return this.currentSortOrder === 'desc' ? dateB - dateA : dateA - dateB;
-                            });
-                            break;
-                    }
-
-                    // 收藏的提示词优先显示
-                    if (this.promptData.settings?.show_favorites_first) {
-                        prompts.sort((a, b) => {
-                            if (a.favorite && !b.favorite) return -1;
-                            if (!a.favorite && b.favorite) return 1;
-                            return 0;
-                        });
-                    }
-                };
 
                 this.loadPrompt = (prompt) => {
                     const outputWidget = this.widgets.find(w => w.name === "selected_prompts");
@@ -1873,8 +1883,7 @@ app.registerExtension({
                             // 重新渲染列表
                             const modal = document.querySelector('.ps-library-modal');
                             if (modal) {
-                                const renderPromptList = modal.renderPromptList;
-                                if (renderPromptList) renderPromptList(categoryName);
+                                this.renderPromptList(this.selectedCategory);
                             }
                         }
                     } catch (error) {
@@ -1894,18 +1903,28 @@ app.registerExtension({
                             // 更新本地数据
                             const category = this.promptData.categories.find(c => c.name === categoryName);
                             if (category) {
+                                const promptToDelete = category.prompts.find(p => p.id === promptId);
                                 category.prompts = category.prompts.filter(p => p.id !== promptId);
+                                // 从选中项中移除
+                                if (promptToDelete && this.selectedPrompts[categoryName]) {
+                                    this.selectedPrompts[categoryName].delete(promptToDelete.prompt);
+                                }
                             }
                             // 重新渲染列表
                             const modal = document.querySelector('.ps-library-modal');
                             if (modal) {
-                                const renderPromptList = modal.renderPromptList;
-                                if (renderPromptList) renderPromptList(categoryName);
+                                this.renderPromptList(this.selectedCategory);
                             }
+                            this.renderContent(); // 刷新主节点
+                            this.updateOutput(); // 更新输出和徽章
                             this.showToast(t('delete_success'));
+                        } else {
+                            const error = await response.json();
+                            throw new Error(error.error || '删除失败');
                         }
                     } catch (error) {
                         console.error("删除提示词失败:", error);
+                        this.showToast(error.message, 'error');
                     }
                 };
 
@@ -1946,12 +1965,37 @@ app.registerExtension({
 
                     menu.innerHTML = `
                         <ul>
+                            <li id="ps-context-add-sub">➕ ${t('create_subcategory')}</li>
                             <li id="ps-context-rename">✏️ ${t('rename_category')}</li>
                             <li id="ps-context-delete">🗑️ ${t('delete_category')}</li>
+                            <li id="ps-context-clear">🧹 ${t('clear_category')}</li>
                         </ul>
                     `;
 
                     document.body.appendChild(menu);
+
+                    menu.querySelector('#ps-context-add-sub').addEventListener('click', () => {
+                        this.showInputModal(t('create_subcategory'), t('subcategory_prompt'), '', (subName) => {
+                            if (!subName || !subName.trim()) return;
+                            const finalName = `${categoryName}/${subName.trim()}`;
+                            if (this.promptData.categories.some(c => c.name === finalName)) {
+                                this.showToast(t('category_exists'), 'error');
+                                return;
+                            }
+                            const newCategory = { name: finalName, prompts: [] };
+                            this.promptData.categories.push(newCategory);
+                            this.saveData();
+                            // Refresh tree
+                            const modal = document.querySelector('.ps-library-modal');
+                            if (modal) {
+                                const categoryTreeContainer = modal.querySelector('.ps-category-tree');
+                                const categoryTree = this.buildCategoryTree(this.promptData.categories);
+                                const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
+                                categoryTreeContainer.innerHTML = '';
+                                categoryTreeContainer.appendChild(treeElement);
+                            }
+                        });
+                    });
 
                     menu.querySelector('#ps-context-rename').addEventListener('click', () => {
                         this.renameCategory(categoryName);
@@ -1961,35 +2005,9 @@ app.registerExtension({
                         this.deleteCategory(categoryName);
                     });
 
-                    const closeMenu = () => {
-                        menu.remove();
-                        document.removeEventListener('click', closeMenu);
-                    };
-
-                    // Close menu on next click
-                    setTimeout(() => document.addEventListener('click', closeMenu), 0);
-                };
-
-                this.showCategoryContextMenu = (event, categoryName) => {
-                    // Close any existing menu
-                    const existingMenu = document.querySelector('.ps-context-menu');
-                    if (existingMenu) {
-                        existingMenu.remove();
-                    }
-
-                    const menu = document.createElement('div');
-                    menu.className = 'ps-context-menu';
-                    menu.style.left = `${event.clientX}px`;
-                    menu.style.top = `${event.clientY}px`;
-
-                    // Menu items will be added in the next step
-                    menu.innerHTML = `
-                        <ul>
-                            <li>To be implemented</li>
-                        </ul>
-                    `;
-
-                    document.body.appendChild(menu);
+                    menu.querySelector('#ps-context-clear').addEventListener('click', () => {
+                        this.clearCategory(categoryName);
+                    });
 
                     const closeMenu = () => {
                         menu.remove();
@@ -2001,36 +2019,83 @@ app.registerExtension({
                 };
 
                 this.renameCategory = (oldName) => {
-                    const newName = prompt(t('new_category_prompt'), oldName);
-                    if (!newName || !newName.trim() || newName === oldName) {
-                        return;
-                    }
-                    const finalName = newName.trim();
-                    if (this.promptData.categories.some(c => c.name === finalName)) {
-                        this.showToast(t('category_exists'), 'error');
-                        return;
-                    }
+                    const oldNameParts = oldName.split('/');
+                    const nameToEdit = oldNameParts.pop();
 
-                    const category = this.promptData.categories.find(c => c.name === oldName);
-                    if (category) {
-                        category.name = finalName;
-                        this.saveData().then(() => {
-                            this.showToast(t('update_prompt_success'));
-                            // Refresh the category tree
-                            const modal = document.querySelector('.ps-library-modal');
-                            if (modal) {
-                                const categoryTreeContainer = modal.querySelector('.ps-category-tree');
-                                const categoryTree = buildCategoryTree(this.promptData.categories);
-                                const treeElement = renderCategoryTree(categoryTree, categoryTreeContainer);
-                                categoryTreeContainer.innerHTML = '';
-                                categoryTreeContainer.appendChild(treeElement);
-                            }
-                            // Update selected category if it was the one renamed
-                            if (this.selectedCategory === oldName) {
-                                this.selectedCategory = finalName;
+                    this.showInputModal(t('rename_category'), t('new_category_prompt'), nameToEdit, (newNameInput) => {
+                        const newName = newNameInput.trim();
+                        if (!newName || newName.includes('/') || newName === nameToEdit) {
+                            if (newName.includes('/')) this.showToast("分类名不能包含'/'", 'error');
+                            return;
+                        }
+
+                        const parentPath = oldNameParts.join('/');
+                        const newFullName = parentPath ? `${parentPath}/${newName}` : newName;
+
+                        if (this.promptData.categories.some(c => c.name === newFullName)) {
+                            this.showToast(t('category_exists'), 'error');
+                            return;
+                        }
+
+                        let wasUpdated = false;
+                        this.promptData.categories.forEach(cat => {
+                            if (cat.name === oldName) {
+                                cat.name = newFullName;
+                                wasUpdated = true;
+                            } else if (cat.name.startsWith(oldName + '/')) {
+                                const restOfPath = cat.name.substring(oldName.length);
+                                cat.name = newFullName + restOfPath;
+                                wasUpdated = true;
                             }
                         });
-                    }
+
+                        if (wasUpdated) {
+                            const newSelectedPrompts = {};
+                            for (const key in this.selectedPrompts) {
+                                if (key === oldName || key.startsWith(oldName + '/')) {
+                                    const restOfPath = key.substring(oldName.length);
+                                    const newKey = newFullName + restOfPath;
+                                    newSelectedPrompts[newKey] = this.selectedPrompts[key];
+                                } else {
+                                    newSelectedPrompts[key] = this.selectedPrompts[key];
+                                }
+                            }
+                            this.selectedPrompts = newSelectedPrompts;
+
+                            this.saveData().then(() => {
+                                this.showToast(t('update_prompt_success'));
+
+                                if (this.selectedCategory === oldName || this.selectedCategory.startsWith(oldName + '/')) {
+                                    const restOfPath = this.selectedCategory.substring(oldName.length);
+                                    this.selectedCategory = newFullName + restOfPath;
+                                    this.saveLastCategory(this.selectedCategory);
+                                }
+
+                                const modal = document.querySelector('.ps-library-modal');
+                                if (modal) {
+                                    const categoryTreeContainer = modal.querySelector('.ps-category-tree');
+                                    const categoryTree = this.buildCategoryTree(this.promptData.categories);
+                                    const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
+                                    categoryTreeContainer.innerHTML = '';
+                                    categoryTreeContainer.appendChild(treeElement);
+
+                                    const newSelectedItem = categoryTreeContainer.querySelector(`.ps-tree-item[data-full-name="${this.selectedCategory}"]`);
+                                    if (newSelectedItem) {
+                                        newSelectedItem.classList.add('selected');
+                                        let parentLi = newSelectedItem.closest('li.parent');
+                                        while (parentLi) {
+                                            parentLi.classList.add('open');
+                                            parentLi = parentLi.parentElement.closest('li.parent');
+                                        }
+                                    }
+
+                                    this.renderPromptList(this.selectedCategory);
+                                }
+                                this.updateCategoryDropdown();
+                                updateUIText(this); // 确保节点上的分类显示更新
+                            });
+                        }
+                    });
                 };
 
                 this.deleteCategory = (categoryName) => {
@@ -2038,45 +2103,585 @@ app.registerExtension({
                         this.showToast(t('delete_default_category_alert'), 'error');
                         return;
                     }
-                    this.showConfirmModal(t('delete_category_confirm', { category: categoryName }), () => {
-                        const index = this.promptData.categories.findIndex(c => c.name === categoryName);
-                        if (index > -1) {
-                            this.promptData.categories.splice(index, 1);
+
+                    const hasChildren = this.promptData.categories.some(c => c.name.startsWith(categoryName + '/'));
+                    const confirmMessage = hasChildren
+                        ? `确定要删除分类 "${categoryName}" 及其所有子分类吗？此操作不可撤销。`
+                        : t('delete_category_confirm', { category: categoryName });
+
+                    this.showConfirmModal(confirmMessage, () => {
+                        const categoriesToDelete = this.promptData.categories
+                            .filter(c => c.name === categoryName || c.name.startsWith(categoryName + '/'))
+                            .map(c => c.name);
+
+                        if (categoriesToDelete.length > 0) {
+                            this.promptData.categories = this.promptData.categories.filter(c => !categoriesToDelete.includes(c.name));
+
+                            categoriesToDelete.forEach(catName => {
+                                delete this.selectedPrompts[catName];
+                            });
+
+                            // Check if the current selection is affected by the deletion
+                            if (categoriesToDelete.some(deletedCat => this.selectedCategory.startsWith(deletedCat))) {
+                                // Find a new category to select
+                                const remainingCategories = this.promptData.categories;
+                                if (remainingCategories.some(c => c.name === "default")) {
+                                    this.selectedCategory = "default";
+                                } else if (remainingCategories.length > 0) {
+                                    this.selectedCategory = remainingCategories[0].name;
+                                } else {
+                                    // If no categories are left, create a new default one
+                                    const newDefault = { name: "default", prompts: [] };
+                                    this.promptData.categories.push(newDefault);
+                                    this.selectedCategory = "default";
+                                }
+                                this.saveLastCategory(this.selectedCategory);
+                            }
+
                             this.saveData().then(() => {
                                 this.showToast(t('delete_success'));
-                                // Refresh the category tree in the library modal if it's open
+
                                 const modal = document.querySelector('.ps-library-modal');
                                 if (modal) {
                                     const categoryTreeContainer = modal.querySelector('.ps-category-tree');
-                                    const categoryTree = buildCategoryTree(this.promptData.categories);
-                                    const treeElement = renderCategoryTree(categoryTree, categoryTreeContainer);
+                                    const categoryTree = this.buildCategoryTree(this.promptData.categories);
+                                    const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
                                     categoryTreeContainer.innerHTML = '';
                                     categoryTreeContainer.appendChild(treeElement);
+
+                                    // Ensure the new selected category is highlighted in the tree
+                                    const selectedItem = categoryTreeContainer.querySelector(`.ps-tree-item[data-full-name="${this.selectedCategory}"]`);
+                                    if (selectedItem) {
+                                        selectedItem.classList.add('selected');
+                                    }
+                                    this.renderPromptList(this.selectedCategory);
+                                }
+                                this.renderContent();
+                                this.updateOutput();
+                                this.updateCategoryDropdown();
+                            });
+                        }
+                    });
+                };
+
+                this.clearCategory = (categoryName) => {
+                    if (categoryName === 'default') {
+                        this.showToast(t('cannot_clear_default'), 'error');
+                        return;
+                    }
+                    this.showConfirmModal(t('clear_category_confirm', { category: categoryName }), () => {
+                        const category = this.promptData.categories.find(c => c.name === categoryName);
+                        if (category) {
+                            category.prompts = [];
+                            this.saveData().then(() => {
+                                this.showToast(t('clear_category_success'));
+                                const modal = document.querySelector('.ps-library-modal');
+                                if (modal && this.selectedCategory === categoryName) {
+                                    this.renderPromptList(categoryName);
                                 }
                             });
                         }
                     });
                 };
 
+                this.showInputModal = (title, message, defaultValue, onConfirm) => {
+                    if (document.querySelector(".ps-input-modal")) return;
+
+                    const modal = document.createElement("div");
+                    modal.className = "ps-edit-modal ps-input-modal";
+                    modal.innerHTML = `
+                        <div class="ps-modal-content" style="width: 450px; max-width: 90vw;">
+                            <h3>${title}</h3>
+                            <label>${message}</label>
+                            <input type="text" id="ps-input-value" value="${defaultValue || ''}">
+                            <div class="ps-modal-buttons">
+                                <button id="ps-input-confirm">${t('save')}</button>
+                                <button id="ps-input-cancel">${t('cancel')}</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+
+                    const input = modal.querySelector("#ps-input-value");
+                    input.focus();
+                    input.select();
+
+                    const closeModal = () => modal.remove();
+
+                    const confirmButton = modal.querySelector("#ps-input-confirm");
+                    confirmButton.addEventListener("click", () => {
+                        if (onConfirm) {
+                            onConfirm(input.value);
+                        }
+                        closeModal();
+                    });
+
+                    modal.querySelector("#ps-input-cancel").addEventListener("click", closeModal);
+
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            confirmButton.click();
+                        } else if (e.key === 'Escape') {
+                            closeModal();
+                        }
+                    });
+                };
+
                 this.updateBatchControls = () => {
                     const modal = document.querySelector('.ps-library-modal');
-                    if (!modal) return;
+                    if (!modal || !this.batchMode) return;
 
-                    const batchControls = modal.querySelector('.ps-batch-controls');
+                    const deleteBtn = modal.querySelector('#ps-batch-delete-btn');
+                    const moveBtn = modal.querySelector('#ps-batch-move-btn');
+                    const selectAllBtn = modal.querySelector('#ps-select-all-btn');
                     const selectedCount = this.selectedForBatch.size;
 
-                    if (selectedCount > 0) {
-                        batchControls.style.display = 'flex';
-                        const deleteBtn = modal.querySelector('#ps-batch-delete-btn');
-                        const moveBtn = modal.querySelector('#ps-batch-move-btn');
-                        deleteBtn.textContent = `${t('batch_delete')} (${selectedCount})`;
-                        moveBtn.textContent = `${t('batch_move')} (${selectedCount})`;
-                    } else {
-                        batchControls.style.display = 'none';
-                    }
+                    // 启用/禁用删除和移动按钮
+                    deleteBtn.disabled = selectedCount === 0;
+                    moveBtn.disabled = selectedCount === 0;
+
+                    // 更新按钮文本
+                    deleteBtn.textContent = selectedCount > 0 ? `${t('batch_delete')} (${selectedCount})` : t('batch_delete');
+                    moveBtn.textContent = selectedCount > 0 ? `${t('batch_move')} (${selectedCount})` : t('batch_move');
+
+                    // 更新全选/取消全选按钮的文本
+                    const checkboxes = modal.querySelectorAll('.ps-prompt-list-container .ps-batch-checkbox');
+                    const allChecked = checkboxes.length > 0 && Array.from(checkboxes).every(cb => cb.checked);
+                    selectAllBtn.textContent = allChecked ? t('deselect_all') : t('select_all');
                 };
 
 
+                this.renderCategoryTree = (nodes, container, onSelect, level = 0) => {
+                    const ul = document.createElement("ul");
+                    if (level > 0) {
+                        ul.classList.add('nested');
+                    }
+
+                    nodes.forEach(node => {
+                        const li = document.createElement("li");
+                        li.dataset.fullName = node.fullName;
+
+                        const itemDiv = document.createElement('div');
+                        itemDiv.className = 'ps-tree-item';
+
+                        const toggleSpan = document.createElement('span');
+                        toggleSpan.className = 'ps-tree-toggle';
+
+                        const nameSpan = document.createElement('span');
+                        nameSpan.className = 'ps-tree-name';
+                        nameSpan.textContent = node.name;
+
+                        itemDiv.appendChild(toggleSpan);
+                        itemDiv.appendChild(nameSpan);
+
+                        // --- Add Category Count Badge ---
+                        const getCategoryAndSubCategorySelectionCount = (categoryFullName) => {
+                            let count = 0;
+                            if (!this.selectedPrompts) return 0;
+                            for (const categoryName in this.selectedPrompts) {
+                                if (categoryName === categoryFullName || categoryName.startsWith(categoryFullName + '/')) {
+                                    const selectionSet = this.selectedPrompts[categoryName];
+                                    if (selectionSet) {
+                                        count += selectionSet.size;
+                                    }
+                                }
+                            }
+                            return count;
+                        };
+
+                        const count = getCategoryAndSubCategorySelectionCount(node.fullName);
+
+                        if (count > 0) {
+                            const countBadge = document.createElement("span");
+                            countBadge.className = "ps-category-count";
+                            countBadge.innerHTML = `<span class="ps-count-number">${count}</span><span class="ps-delete-icon">×</span>`;
+                            itemDiv.appendChild(countBadge);
+
+                            countBadge.addEventListener("mouseenter", (e) => {
+                                e.stopPropagation();
+                                if (this.hidePreviewTimeout) {
+                                    clearTimeout(this.hidePreviewTimeout);
+                                    this.hidePreviewTimeout = null;
+                                }
+                                this.showActivePromptsPreview(node.fullName, e.currentTarget);
+                            });
+                            countBadge.addEventListener("mouseleave", (e) => {
+                                e.stopPropagation();
+                                this.hidePreviewTimeout = setTimeout(() => {
+                                    this.hideActivePromptsPreview();
+                                }, 100);
+                            });
+
+                            countBadge.addEventListener("click", (e) => {
+                                e.stopPropagation();
+                                this.clearCategorySelectionWithSubcategories(node.fullName);
+                            });
+                        }
+                        // --- End of Badge Logic ---
+
+
+                        li.appendChild(itemDiv);
+
+                        if (node.children.length > 0) {
+                            li.classList.add("parent");
+                            const childrenUl = this.renderCategoryTree(node.children, li, onSelect, level + 1);
+                            li.appendChild(childrenUl);
+                        }
+
+                        if (onSelect) {
+                            // Dropdown menu logic: click on item toggles parent or selects leaf
+                            itemDiv.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                if (e.target.closest('.ps-category-count')) return; // Ignore clicks on badge
+                                // 如果是父分类，则切换展开/折叠
+                                if (li.classList.contains('parent')) {
+                                    li.classList.toggle('open');
+                                } else {
+                                    // 否则，选择该分类并关闭菜单
+                                    onSelect(node);
+                                }
+                            });
+                        } else {
+                            // Library modal logic: combined click for the whole item
+                            itemDiv.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                const modal = document.querySelector('.ps-library-modal');
+                                if (!modal) return;
+
+                                if (li.classList.contains('parent')) {
+                                    li.classList.toggle('open');
+                                }
+                                this.selectedCategory = node.fullName;
+                                this.renderPromptList(this.selectedCategory);
+                                modal.querySelectorAll('.ps-tree-item.selected').forEach(el => el.classList.remove('selected'));
+                                modal.querySelector('.ps-favorites-btn')?.classList.remove('selected');
+                                itemDiv.classList.add('selected');
+                            });
+
+                            // Context menu for library items
+                            itemDiv.addEventListener('contextmenu', (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                this.showCategoryContextMenu(e, node.fullName);
+                            });
+                        }
+
+                        ul.appendChild(li);
+                    });
+                    return ul;
+                };
+
+                this.renderPromptList = (categoryName, searchTerm = '', skipSort = false) => {
+                    console.log(`[DEBUG] renderPromptList called for category: "${categoryName}" with search term: "${searchTerm}"`);
+                    const modal = document.querySelector('.ps-library-modal');
+                    if (!modal) return;
+                    const promptListContainer = modal.querySelector('.ps-prompt-list-container');
+                    if (!promptListContainer) return;
+
+                    promptListContainer.innerHTML = ''; // 清空
+                    let promptsToShow = [];
+                    const isParentCategory = categoryName && categoryName !== "__favorites__" && this.promptData.categories.some(c => c.name.startsWith(categoryName + '/'));
+
+                    if (categoryName === "__favorites__") {
+                        promptsToShow = this.promptData.categories.flatMap(c =>
+                            c.prompts.map(p => ({ ...p, sourceCategory: c.name }))
+                        ).filter(p => p.favorite);
+                    } else if (isParentCategory) {
+                        promptsToShow = this.promptData.categories
+                            .filter(c => c.name === categoryName || c.name.startsWith(categoryName + '/'))
+                            .flatMap(c => c.prompts.map(p => ({ ...p, sourceCategory: c.name })));
+                    } else {
+                        const category = this.promptData.categories.find(c => c.name === categoryName);
+                        if (category) {
+                            promptsToShow = category.prompts.map(p => ({ ...p, sourceCategory: category.name }));
+                        }
+                    }
+
+                    // 应用搜索过滤
+                    const currentSearchTerm = modal.querySelector('#ps-library-search-input').value.toLowerCase();
+                    if (currentSearchTerm) {
+                        if (!categoryName) { // If searching globally
+                            promptsToShow = this.promptData.categories.flatMap(c => c.prompts);
+                        }
+                        promptsToShow = promptsToShow.filter(p => {
+                            const searchInAlias = p.alias.toLowerCase().includes(currentSearchTerm);
+                            const searchInPrompt = p.prompt.toLowerCase().includes(currentSearchTerm);
+                            const searchInTags = p.tags && p.tags.some(tag => tag.toLowerCase().includes(currentSearchTerm));
+                            const searchInDesc = p.description && p.description.toLowerCase().includes(currentSearchTerm);
+                            return searchInAlias || searchInPrompt || searchInTags || searchInDesc;
+                        });
+                    }
+
+
+                    // 应用收藏过滤
+                    if (this.currentFilter.favorites) {
+                        promptsToShow = promptsToShow.filter(p => p.favorite);
+                    }
+
+                    // 应用标签过滤
+                    if (this.currentFilter.tags.length > 0) {
+                        promptsToShow = promptsToShow.filter(p =>
+                            p.tags && this.currentFilter.tags.some(tag => p.tags.includes(tag))
+                        );
+                    }
+
+
+                    if (!promptsToShow.length) {
+                        promptListContainer.innerHTML = `<p style="color: #555; text-align: center;">${t('no_matching_prompts')}</p>`;
+                        return;
+                    }
+
+                    const list = document.createElement("ul");
+                    list.className = "ps-prompt-list";
+                    if (this.batchMode) {
+                        list.classList.add('ps-batch-mode');
+                    }
+                    list.setAttribute('data-category', categoryName);
+
+                    promptsToShow.forEach((p, index) => {
+                        // 确保每个提示词都有ID
+                        if (!p.id) {
+                            p.id = `prompt-${Date.now()}-${index}`;
+                        }
+
+                        const item = document.createElement("li");
+                        item.className = "ps-prompt-list-item";
+                        item.setAttribute('data-prompt-id', p.id);
+                        const isSingleCategoryView = categoryName && categoryName !== "__favorites__" && !isParentCategory && !currentSearchTerm;
+                        item.draggable = isSingleCategoryView;
+
+                        const favoriteClass = p.favorite ? 'favorite' : '';
+                        const usageCount = p.usage_count || 0;
+                        const tags = p.tags || [];
+
+                        const showCategoryTag = isParentCategory && p.sourceCategory && p.sourceCategory !== categoryName;
+                        // 从完整路径中提取子分类的名称
+                        const subCategoryName = showCategoryTag ? p.sourceCategory.substring(categoryName.length + 1) : '';
+
+
+                        item.innerHTML = `
+                            ${this.batchMode ? `<div class="ps-batch-checkbox-wrapper"><input type="checkbox" class="ps-batch-checkbox" data-prompt-id="${p.id}"></div>` : ''}
+                            <div class="ps-prompt-content">
+                                <div class="ps-prompt-list-item-header">
+                                    <div class="ps-prompt-list-item-name">${p.favorite ? '<span class="ps-favorite-star">⭐</span>' : ''}${p.alias}</div>
+                                    ${showCategoryTag ? `<span class="ps-subcategory-tag">${subCategoryName}</span>` : ''}
+                                </div>
+                                <div class="ps-prompt-list-item-preview">${p.prompt}</div>
+                                ${p.description ? `<div class="ps-prompt-description">${p.description}</div>` : ''}
+                            </div>
+                            <div class="ps-prompt-item-controls">
+                                <button class="ps-btn ps-btn-icon ps-favorite-btn ${favoriteClass}" title="${t('mark_favorite')}" data-prompt-id="${p.id}">
+                                    <svg viewBox="0 0 24 24"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"></polygon></svg>
+                                </button>
+                                <button class="ps-btn ps-btn-icon ps-copy-btn" title="${t('copy_prompt')}" data-prompt-id="${p.id}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                </button>
+                                <button class="ps-btn ps-btn-icon ps-edit-btn" title="${t('edit_prompt')}" data-prompt-id="${p.id}">
+                                    <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                </button>
+                                <button class="ps-btn ps-btn-icon ps-delete-btn" title="${t('delete_prompt_confirm', { prompt: p.alias })}" data-prompt-id="${p.id}">
+                                    <svg viewBox="0 0 24 24"><polyline points="3,6 5,6 21,6"></polyline><path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path></svg>
+                                </button>
+                            </div>
+                        `;
+
+                        // 拖拽事件
+                        if (isSingleCategoryView) {
+                            item.addEventListener('dragstart', (e) => {
+                                this.draggedItem = { id: p.id, index: index };
+                                e.dataTransfer.effectAllowed = 'move';
+                                item.classList.add('dragging');
+                            });
+
+                            item.addEventListener('dragend', (e) => {
+                                item.classList.remove('dragging');
+                                this.draggedItem = null;
+                            });
+
+                            item.addEventListener('dragover', (e) => {
+                                e.preventDefault();
+                                e.dataTransfer.dropEffect = 'move';
+                                const rect = item.getBoundingClientRect();
+                                const midY = rect.top + rect.height / 2;
+                                if (e.clientY < midY) {
+                                    item.classList.remove('drag-over-bottom');
+                                    item.classList.add('drag-over-top');
+                                } else {
+                                    item.classList.remove('drag-over-top');
+                                    item.classList.add('drag-over-bottom');
+                                }
+                            });
+
+                            item.addEventListener('dragleave', () => {
+                                item.classList.remove('drag-over-top', 'drag-over-bottom');
+                            });
+
+                            item.addEventListener('drop', (e) => {
+                                e.preventDefault();
+                                item.classList.remove('drag-over-top', 'drag-over-bottom');
+                                if (this.draggedItem && this.draggedItem.id !== p.id) {
+                                    const fromIndex = this.draggedItem.index;
+                                    let toIndex = index;
+
+                                    const rect = item.getBoundingClientRect();
+                                    const midY = rect.top + rect.height / 2;
+                                    if (e.clientY > midY) {
+                                        toIndex++;
+                                    }
+
+                                    if (fromIndex < toIndex) {
+                                        toIndex--;
+                                    }
+
+                                    this.reorderPrompts(categoryName, fromIndex, toIndex);
+                                    this.renderPromptList(categoryName); // Re-render to show new order
+
+                                    // Also re-render the main node view if the category is the same
+                                    if (this.selectedCategory === categoryName) {
+                                        this.renderContent();
+                                        this.updateOutput();
+                                    }
+                                }
+                                this.draggedItem = null;
+                            });
+                        }
+
+                        // 悬浮预览
+                        item.addEventListener('mouseenter', (e) => {
+                            this.showPromptTooltip(e, p);
+                        });
+                        item.addEventListener('mouseleave', (e) => {
+                            this.hidePromptTooltip();
+                        });
+
+                        // 悬浮预览
+                        item.addEventListener('mouseenter', (e) => {
+                            this.showPromptTooltip(e, p);
+                        });
+                        item.addEventListener('mouseleave', (e) => {
+                            this.hidePromptTooltip();
+                        });
+
+                        // 单击加载提示词或切换选择
+                        item.addEventListener('click', (e) => {
+                            if (e.target.closest('.ps-prompt-item-controls, .ps-tag')) {
+                                return; // 忽略在按钮或标签上的点击
+                            }
+
+                            if (this.batchMode) {
+                                const checkbox = item.querySelector('.ps-batch-checkbox');
+                                if (checkbox) {
+                                    checkbox.checked = !checkbox.checked;
+                                    checkbox.dispatchEvent(new Event('change'));
+                                }
+                            } else {
+                                this.loadPrompt(p);
+                                const libraryModal = document.querySelector('.ps-library-modal');
+                                if (libraryModal) libraryModal.querySelector("#ps-library-close").click();
+                            }
+                        });
+
+                        // 按钮事件
+                        const controlsEl = item.querySelector('.ps-prompt-item-controls');
+                        if (controlsEl) {
+                            const getRealCategory = (promptId) => {
+                                if (categoryName !== '__favorites__') {
+                                    return categoryName;
+                                }
+                                const { category } = this.findPromptAndCategory(promptId);
+                                return category ? category.name : null;
+                            };
+
+                            controlsEl.querySelector('.ps-favorite-btn').addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                const realCategoryName = getRealCategory(p.id);
+                                if (realCategoryName) this.toggleFavorite(realCategoryName, p.id);
+                            });
+                            controlsEl.querySelector('.ps-copy-btn').addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(p.prompt).then(() => {
+                                    this.showToast(t('copy_success'));
+                                });
+                            });
+                            controlsEl.querySelector('.ps-edit-btn').addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                const realCategoryName = getRealCategory(p.id);
+                                if (realCategoryName) this.showEditModal(p, realCategoryName);
+                            });
+                            controlsEl.querySelector('.ps-delete-btn').addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                const realCategoryName = getRealCategory(p.id);
+                                if (realCategoryName) {
+                                    this.showConfirmModal(t('delete_prompt_confirm', { prompt: p.alias }), () => {
+                                        this.deletePrompt(realCategoryName, p.id);
+                                    });
+                                }
+                            });
+                        }
+
+                        // 批量选择事件
+                        const batchCheckbox = item.querySelector('.ps-batch-checkbox');
+                        if (batchCheckbox) {
+                            batchCheckbox.addEventListener('change', (e) => {
+                                if (e.target.checked) {
+                                    this.selectedForBatch.add(p.id);
+                                } else {
+                                    this.selectedForBatch.delete(p.id);
+                                }
+                                this.updateBatchControls();
+                            });
+                        }
+
+                        list.appendChild(item);
+                    });
+
+                    promptListContainer.appendChild(list);
+                };
+
+                this.buildCategoryTree = (categories) => {
+                    const tree = [];
+                    const map = {};
+
+                    // Create a node for every category and subcategory
+                    categories.forEach(cat => {
+                        const parts = cat.name.split('/');
+                        let currentPath = '';
+                        parts.forEach(part => {
+                            const oldPath = currentPath;
+                            currentPath += (currentPath ? '/' : '') + part;
+                            if (!map[currentPath]) {
+                                map[currentPath] = {
+                                    name: part,
+                                    fullName: currentPath,
+                                    children: [],
+                                    parent: oldPath || null
+                                };
+                            }
+                        });
+                    });
+
+                    // Link nodes to build the tree
+                    Object.values(map).forEach(node => {
+                        if (node.parent && map[node.parent]) {
+                            if (!map[node.parent].children.some(child => child.fullName === node.fullName)) {
+                                map[node.parent].children.push(node);
+                            }
+                        } else {
+                            if (!tree.some(rootNode => rootNode.fullName === node.fullName)) {
+                                tree.push(node);
+                            }
+                        }
+                    });
+
+                    // Sort children alphabetically
+                    const sortNodes = (nodes) => {
+                        nodes.sort((a, b) => a.name.localeCompare(b.name));
+                        nodes.forEach(node => sortNodes(node.children));
+                    };
+                    sortNodes(tree);
+
+                    return tree;
+                };
                 // 添加拖拽功能实现
                 this.makeDraggable = (element, handle) => {
                     let isDragging = false;
@@ -2223,6 +2828,28 @@ app.registerExtension({
                     });
                 };
 
+                this.clearCategorySelectionWithSubcategories = (categoryName) => {
+                    this.showConfirmModal(`确定要清空分类 "${categoryName}" 及其子分类中的所有已选项吗？`, () => {
+                        for (const catName in this.selectedPrompts) {
+                            if (catName === categoryName || catName.startsWith(categoryName + '/')) {
+                                delete this.selectedPrompts[catName];
+                            }
+                        }
+                        // Refresh the menu to update counts
+                        const menu = document.querySelector(".ps-category-menu");
+                        if (menu) {
+                            const searchInput = menu.querySelector("input");
+                            const searchTerm = searchInput ? searchInput.value : '';
+                            const categoryBtn = this.widgets.find(w => w.name === "prompt_selector")?.element.querySelector("#ps-category-btn");
+                            if (categoryBtn) {
+                                this.showCategoryMenu(categoryBtn, true, searchTerm);
+                            }
+                        }
+                        this.renderContent();
+                        this.updateOutput();
+                    });
+                };
+
                 this.applyTheme = () => {
                     const themeColor = this.promptData.settings?.theme_color || '#8a2be2';
                     document.documentElement.style.setProperty('--ps-theme-color', themeColor);
@@ -2264,7 +2891,113 @@ app.registerExtension({
                         size[1] = min_height;
                     }
                 };
+
+                this.showCategorySelectionModal = (onConfirm) => {
+                    if (document.querySelector(".ps-category-select-modal")) return;
+
+                    const modal = document.createElement("div");
+                    modal.className = "ps-edit-modal ps-category-select-modal";
+                    modal.innerHTML = `
+                        <div class="ps-modal-content" style="width: 450px; max-width: 90vw; height: 500px; display: flex; flex-direction: column;">
+                            <h3>${t('batch_move')}</h3>
+                            <p>请选择目标分类:</p>
+                            <div class="ps-category-tree" style="flex-grow: 1; overflow-y: auto; border: 1px solid #444; padding: 10px; border-radius: 8px; background: #222;"></div>
+                            <div class="ps-modal-buttons">
+                                <button id="ps-select-confirm" disabled>${t('save')}</button>
+                                <button id="ps-select-cancel">${t('cancel')}</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+
+                    const treeContainer = modal.querySelector(".ps-category-tree");
+                    console.log("[Debug] promptData.categories:", this.promptData.categories); // Debugging line
+                    const categoryTree = this.buildCategoryTree(this.promptData.categories);
+                    console.log("[Debug] categoryTree:", categoryTree); // Debugging line
+
+                    let selectedCategory = null;
+                    const confirmBtn = modal.querySelector("#ps-select-confirm");
+
+                    // Local renderer for the selection tree
+                    const _renderSelectionTree = (nodes, level = 0) => {
+                        const ul = document.createElement("ul");
+                        if (level > 0) ul.classList.add('nested');
+
+                        nodes.forEach(node => {
+                            const li = document.createElement("li");
+                            li.dataset.fullName = node.fullName;
+
+                            const itemDiv = document.createElement('div');
+                            itemDiv.className = 'ps-tree-item';
+
+                            const toggleSpan = document.createElement('span');
+                            toggleSpan.className = 'ps-tree-toggle';
+
+                            const nameSpan = document.createElement('span');
+                            nameSpan.className = 'ps-tree-name';
+                            nameSpan.textContent = node.name;
+
+                            itemDiv.appendChild(toggleSpan);
+                            itemDiv.appendChild(nameSpan);
+                            li.appendChild(itemDiv);
+
+                            if (node.children.length > 0) {
+                                li.classList.add("parent");
+                                const childrenUl = _renderSelectionTree(node.children, level + 1);
+                                li.appendChild(childrenUl);
+                            }
+
+                            itemDiv.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                if (li.classList.contains('parent')) {
+                                    li.classList.toggle('open');
+                                }
+                                treeContainer.querySelectorAll('.ps-tree-item.selected').forEach(el => el.classList.remove('selected'));
+                                itemDiv.classList.add('selected');
+                                selectedCategory = node.fullName;
+                                confirmBtn.disabled = !selectedCategory || selectedCategory === this.selectedCategory;
+                            });
+
+                            ul.appendChild(li);
+                        });
+                        return ul;
+                    };
+
+                    const treeElement = _renderSelectionTree(categoryTree);
+                    if (treeElement) { // Add a check here
+                        treeContainer.appendChild(treeElement);
+                    } else {
+                        console.warn("[Debug] treeElement is null or undefined, not appending.");
+                    }
+
+                    const closeModal = () => modal.remove();
+                    modal.querySelector("#ps-select-cancel").addEventListener("click", closeModal);
+                    confirmBtn.addEventListener("click", () => {
+                        if (onConfirm && selectedCategory) {
+                            onConfirm(selectedCategory);
+                        }
+                        closeModal();
+                    });
+                };
             };
+
+            // 节点移除时的回调
+            const onRemoved = nodeType.prototype.onRemoved;
+            nodeType.prototype.onRemoved = function () {
+                // 移除所有可能悬浮的UI元素
+                this.hidePromptTooltip?.();
+                this.hideActivePromptsPreview?.();
+
+                // 移除可能打开的菜单或模态框
+                const elementsToRemove = document.querySelectorAll(
+                    ".ps-category-menu, .ps-edit-modal, .ps-library-modal, .ps-context-menu, .ps-toast"
+                );
+                elementsToRemove.forEach(el => el.remove());
+
+                onRemoved?.apply(this, arguments);
+                console.log("提示词选择器节点已移除，相关UI已清理。");
+            };
+
 
             // --- 添加样式 ---
             if (!document.getElementById("ps-style")) {
@@ -2431,9 +3164,9 @@ app.registerExtension({
                         border: 1px solid #333;
                         transition: background-color 0.2s;
                         position: relative;
-                        overflow: hidden;
+                        /* overflow: hidden; */ /* This was causing the top drag indicator to be clipped */
                     }
-                    .prompt-item::before {
+                    .prompt-item::after {
                         content: '';
                         position: absolute;
                         left: 0;
@@ -2452,7 +3185,7 @@ app.registerExtension({
                         color: white;
                         box-shadow: 0 0 5px color-mix(in srgb, var(--ps-theme-color) 50%, transparent);
                     }
-                    .prompt-item.selected::before {
+                    .prompt-item.selected::after {
                         background-color: var(--ps-theme-color);
                     }
                     .prompt-text-container {
@@ -2478,7 +3211,7 @@ app.registerExtension({
                         display: flex;
                         flex-shrink: 0;
                     }
-                    .ps-item-edit-btn, .ps-item-delete-btn {
+                    .ps-item-edit-btn, .ps-item-delete-btn, .ps-item-copy-btn {
                         background: none;
                         border: none;
                         color: #888;
@@ -2488,10 +3221,11 @@ app.registerExtension({
                         display: none; /* Hidden by default */
                     }
                     .prompt-item:hover .prompt-item-controls-wrapper .ps-item-edit-btn,
-                    .prompt-item:hover .prompt-item-controls-wrapper .ps-item-delete-btn {
+                    .prompt-item:hover .prompt-item-controls-wrapper .ps-item-delete-btn,
+                    .prompt-item:hover .prompt-item-controls-wrapper .ps-item-copy-btn {
                         display: block; /* Show on hover */
                     }
-                    .ps-item-edit-btn:hover {
+                    .ps-item-edit-btn:hover, .ps-item-copy-btn:hover {
                         color: var(--ps-theme-color-secondary);
                     }
                     .ps-item-delete-btn:hover {
@@ -2539,27 +3273,15 @@ app.registerExtension({
                         padding: 0;
                         margin: 0;
                     }
-                    .ps-category-menu li {
-                        padding: 8px 12px;
-                        cursor: pointer;
-                        border-radius: 4px;
-                    }
-                    .ps-category-menu li:hover {
-                        background-color: var(--ps-theme-color-secondary);
-                        color: var(--ps-theme-contrast-color-secondary);
-                    }
-                    .ps-category-menu li {
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                    }
                     .ps-category-count {
                         background-color: var(--ps-theme-color);
                         color: var(--ps-theme-contrast-color);
                         padding: 1px 6px;
                         border-radius: 10px;
                         font-size: 11px;
-                        margin-left: 10px;
+                        margin-left: auto;
+                        padding-left: 10px;
+                        flex-shrink: 0;
                         font-weight: bold;
                     }
                     .ps-total-count-badge {
@@ -2645,6 +3367,11 @@ app.registerExtension({
                         padding: 6px;
                         border-radius: 4px;
                     }
+                    .ps-category-menu .ps-category-tree {
+                         flex-grow: 1;
+                         overflow-y: auto;
+                         margin-top: 8px;
+                    }
                     .ps-category-tree {
                         flex-grow: 1;
                         overflow-y: auto;
@@ -2653,10 +3380,10 @@ app.registerExtension({
                     }
                     .ps-category-tree > ul {
                         list-style: none;
-                        padding-left: 10px;
+                        padding-left: 0;
                     }
                     .ps-category-tree ul ul {
-                        padding-left: 15px;
+                        padding-left: 10px;
                     }
                     .ps-category-tree li {
                         padding: 2px 0;
@@ -2668,21 +3395,6 @@ app.registerExtension({
                     }
                     .ps-category-tree li span:hover {
                         color: var(--ps-theme-color-secondary); /* Lighter Orchid */
-                    }
-                    .ps-category-tree li.parent > .ps-tree-item > span {
-                        font-weight: bold;
-                    }
-                    .ps-category-tree li.parent > .ps-tree-item > span::before {
-                        content: '▶';
-                        font-size: 10px;
-                        transition: transform 0.2s;
-                        display: inline-block;
-                        width: 1.5em;
-                        text-align: center;
-                        transform-origin: center;
-                    }
-                    .ps-category-tree li.parent.open > .ps-tree-item > span::before {
-                        transform: rotate(90deg);
                     }
                     .ps-category-tree li ul {
                         display: none;
@@ -2715,7 +3427,18 @@ app.registerExtension({
                         cursor: not-allowed;
                     }
 
-                   /* Edit Modal Base Style */
+                    .ps-category-menu ul.nested {
+                        display: none;
+                    }
+                    .ps-category-menu li.open > ul.nested {
+                        display: block;
+                    }
+                    .ps-category-menu li {
+                        padding: 0;
+                        list-style: none;
+                    }
+
+                    /* Edit Modal Base Style */
                     .ps-edit-modal {
                         position: fixed;
                         top: 0;
@@ -2806,10 +3529,12 @@ app.registerExtension({
                    }
 
                    .ps-library-left-panel {
-                       background-color: #1B1B1B;
+                       background-color: #222;
                        border-radius: 8px;
                        padding: 10px;
                        overflow-y: auto;
+                       display: flex;
+                       flex-direction: column;
                    }
                    .ps-library-right-panel {
                        background-color: #1B1B1B;
@@ -2821,7 +3546,7 @@ app.registerExtension({
                    .ps-library-left-panel {
                        width: 35%;
                        flex-shrink: 0;
-                       min-width: 150px;
+                       min-width: 200px;
                    }
 
                    .ps-library-right-panel {
@@ -2857,8 +3582,8 @@ app.registerExtension({
                    }
 
                    .ps-filter-bar {
-                       display: flex;
-                       justify-content: space-between;
+                       display: none; /* Hidden by default */
+                       justify-content: flex-end;
                        align-items: center;
                        margin-top: 10px;
                        padding-top: 10px;
@@ -2983,6 +3708,9 @@ app.registerExtension({
                        background-color: #3a3a3a;
                        color: white;
                    }
+                   .ps-prompt-item-controls .ps-copy-btn:hover {
+                       color: var(--ps-theme-color-secondary);
+                   }
                    .ps-prompt-item-controls .ps-btn-icon svg {
                        width: 16px;
                        height: 16px;
@@ -3009,14 +3737,32 @@ app.registerExtension({
                        padding-right: 10px;
                    }
 
+                   .ps-prompt-list-item-header {
+                       display: flex;
+                       align-items: baseline;
+                       gap: 8px;
+                       margin-bottom: 4px;
+                   }
+
                    .ps-prompt-list-item-name {
                        font-weight: bold;
                        color: #eee;
-                       margin-bottom: 4px;
                        font-size: 14px;
                        white-space: nowrap;
                        overflow: hidden;
                        text-overflow: ellipsis;
+                       flex-shrink: 1;
+                   }
+
+                   .ps-subcategory-tag {
+                       background-color: color-mix(in srgb, var(--ps-theme-color) 50%, #444);
+                       color: #fff;
+                       padding: 2px 6px;
+                       border-radius: 4px;
+                       font-size: 11px;
+                       font-weight: bold;
+                       flex-shrink: 0;
+                       white-space: nowrap;
                    }
 
                    .ps-prompt-list-item-preview {
@@ -3055,12 +3801,35 @@ app.registerExtension({
                        color: #FFD700;
                    }
 
+                   .ps-favorite-star {
+                       margin-right: 5px;
+                       color: #FFD700;
+                   }
+
                    .ps-favorite-btn.favorite svg {
                        fill: #FFD700;
                    }
 
+                   .ps-batch-checkbox-wrapper {
+                       flex-shrink: 0;
+                       margin-right: 15px;
+                       display: flex;
+                       align-items: center;
+                       justify-content: center;
+                   }
                    .ps-batch-checkbox {
-                       accent-color: #9932CC;
+                       width: 18px;
+                       height: 18px;
+                       accent-color: var(--ps-theme-color);
+                   }
+                   .ps-prompt-list-item {
+                       cursor: default; /* Remove pointer cursor from the whole item */
+                   }
+                   .ps-prompt-list.ps-batch-mode .ps-prompt-list-item {
+                       cursor: pointer; /* Add pointer cursor in batch mode */
+                   }
+                   .ps-prompt-content {
+                       cursor: pointer; /* Add pointer cursor only to the content area */
                    }
 
                    .ps-status-text {
@@ -3130,6 +3899,105 @@ app.registerExtension({
                        border-radius: 12px;
                        padding: 20px;
                        color: #eee;
+                   }
+                   .ps-edit-form-container {
+                       display: flex;
+                       gap: 20px;
+                   }
+                   .ps-edit-form-left {
+                       flex: 2;
+                   }
+                   .ps-edit-form-right {
+                       flex: 1;
+                       display: flex;
+                       flex-direction: column;
+                   }
+                   .ps-preview-container {
+                       width: 100%;
+                       aspect-ratio: 1 / 1;
+                       background-color: #1b1b1b;
+                       border: 1px dashed #555;
+                       border-radius: 8px;
+                       display: flex;
+                       align-items: center;
+                       justify-content: center;
+                       overflow: hidden;
+                       margin-bottom: 10px;
+                   }
+                   .ps-preview-container img {
+                       width: 100%;
+                       height: 100%;
+                       object-fit: cover;
+                   }
+                   .ps-no-preview {
+                       color: #777;
+                       font-size: 14px;
+                   }
+                   .ps-edit-form-container {
+                       display: flex;
+                       gap: 20px;
+                   }
+                   .ps-edit-form-left {
+                       flex: 2;
+                   }
+                   .ps-edit-form-right {
+                       flex: 1;
+                       display: flex;
+                       flex-direction: column;
+                   }
+                   .ps-preview-container {
+                       width: 100%;
+                       aspect-ratio: 1 / 1;
+                       background-color: #1b1b1b;
+                       border: 1px dashed #555;
+                       border-radius: 8px;
+                       display: flex;
+                       align-items: center;
+                       justify-content: center;
+                       overflow: hidden;
+                       margin-bottom: 10px;
+                   }
+                   .ps-preview-container img {
+                       width: 100%;
+                       height: 100%;
+                       object-fit: cover;
+                   }
+                   .ps-no-preview {
+                       color: #777;
+                       font-size: 14px;
+                   }
+                   .ps-edit-form-container {
+                       display: flex;
+                       gap: 20px;
+                   }
+                   .ps-edit-form-left {
+                       flex: 2;
+                   }
+                   .ps-edit-form-right {
+                       flex: 1;
+                       display: flex;
+                       flex-direction: column;
+                   }
+                   .ps-preview-container {
+                       width: 100%;
+                       aspect-ratio: 1 / 1;
+                       background-color: #1b1b1b;
+                       border: 1px dashed #555;
+                       border-radius: 8px;
+                       display: flex;
+                       align-items: center;
+                       justify-content: center;
+                       overflow: hidden;
+                       margin-bottom: 10px;
+                   }
+                   .ps-preview-container img {
+                       width: 100%;
+                       height: 100%;
+                       object-fit: cover;
+                   }
+                   .ps-no-preview {
+                       color: #777;
+                       font-size: 14px;
                    }
 
                    .ps-edit-modal h3 {
@@ -3238,24 +4106,59 @@ app.registerExtension({
                    }
 
                    /* 拖拽样式 */
-                   .prompt-item.dragging {
+                   .prompt-item.dragging,
+                   .ps-prompt-list-item.dragging {
                        opacity: 0.4;
                        background: #444;
-                   }
-                   .prompt-item.drag-over-top {
-                       border-top: 2px solid var(--ps-theme-color);
-                   }
-                   .prompt-item.drag-over-bottom {
-                       border-bottom: 2px solid var(--ps-theme-color);
-                   }
-                   .ps-prompt-list-item.dragging {
-                       opacity: 0.5;
-                       transform: rotate(2deg);
+                       transform: scale(0.98);
+                       z-index: 100;
                    }
 
-                   .ps-prompt-list-item.drag-over {
-                       border-color: var(--ps-theme-color-secondary);
-                       background-color: color-mix(in srgb, var(--ps-theme-color-secondary) 20%, #1b1b1b);
+                   .prompt-item,
+                   .ps-prompt-list-item {
+                       position: relative; /* Ensure pseudo-elements are positioned relative to the item */
+                   }
+
+                   .prompt-item.drag-over-top::before,
+                   .ps-prompt-list-item.drag-over-top::before {
+                       content: '';
+                       position: absolute;
+                       top: -2px;
+                       left: 10px;
+                       right: 10px;
+                       height: 4px;
+                       background-color: var(--ps-theme-color);
+                       border-radius: 2px;
+                       box-shadow: 0 0 10px var(--ps-theme-color);
+                       z-index: 1;
+                   }
+
+                   /* For .prompt-item, ::after is the side-bar, so we must use ::before for the bottom indicator */
+                   .prompt-item.drag-over-bottom::before {
+                       content: '';
+                       position: absolute;
+                       bottom: -2px;
+                       left: 10px;
+                       right: 10px;
+                       height: 4px;
+                       background-color: var(--ps-theme-color);
+                       border-radius: 2px;
+                       box-shadow: 0 0 10px var(--ps-theme-color);
+                       z-index: 1;
+                   }
+
+                   /* For .ps-prompt-list-item, pseudo-elements are free, so we can keep using ::after for the bottom */
+                   .ps-prompt-list-item.drag-over-bottom::after {
+                       content: '';
+                       position: absolute;
+                       bottom: -2px;
+                       left: 10px;
+                       right: 10px;
+                       height: 4px;
+                       background-color: var(--ps-theme-color);
+                       border-radius: 2px;
+                       box-shadow: 0 0 10px var(--ps-theme-color);
+                       z-index: 1;
                    }
 
                    /* 加载状态样式 */
@@ -3329,33 +4232,67 @@ app.registerExtension({
                        }
                    }
 
+                   .ps-category-tree ul {
+                       list-style: none;
+                       padding: 0;
+                       margin: 0;
+                   }
                    .ps-category-tree li {
+                       position: relative;
+                       padding-left: 0;
                        transition: all 0.2s ease;
                    }
-
-                   .ps-category-tree li ul {
-                       transition: all 0.3s ease;
-                       overflow: hidden;
+                   .ps-category-tree li::before, .ps-category-tree li::after {
+                       display: none;
                    }
-
-                   .ps-category-tree li.parent > span::before {
-                       transition: transform 0.2s ease;
+                   .ps-category-tree ul.nested {
+                       display: none;
                    }
-
+                   .ps-category-tree li.open > ul.nested {
+                       display: block;
+                   }
                    .ps-tree-item {
-                       padding: 6px 0;
-                       border-radius: 4px;
+                       display: flex;
+                       align-items: center;
+                       padding: 4px 8px;
+                       margin: 2px 0;
+                       border-radius: 6px;
                        transition: all 0.2s ease;
                        cursor: pointer;
                    }
-
                    .ps-tree-item:hover {
                        background-color: #333;
                    }
-
                    .ps-tree-item.selected {
-                       background-color: var(--ps-theme-color-secondary);
-                       color: var(--ps-theme-contrast-color-secondary);
+                       background-color: var(--ps-theme-color);
+                       color: var(--ps-theme-contrast-color);
+                       box-shadow: 0 0 8px color-mix(in srgb, var(--ps-theme-color) 50%, transparent);
+                   }
+                   .ps-tree-toggle {
+                       width: 16px;
+                       height: 16px;
+                       display: flex;
+                       align-items: center;
+                       justify-content: center;
+                       flex-shrink: 0;
+                       margin-right: 6px;
+                   }
+                   li:not(.parent) .ps-tree-toggle {
+                       visibility: hidden; /* Hide toggle for non-parent items but keep space */
+                   }
+                   .ps-tree-toggle::before {
+                       content: '▸';
+                       color: #888;
+                       transition: transform 0.2s ease;
+                       transform: rotate(0deg);
+                   }
+                   li.open > .ps-tree-item > .ps-tree-toggle::before {
+                       transform: rotate(90deg);
+                   }
+                   .ps-tree-name {
+                       white-space: nowrap;
+                       overflow: hidden;
+                       text-overflow: ellipsis;
                    }
 
                    .ps-prompt-list-item {
@@ -3532,11 +4469,12 @@ app.registerExtension({
                    .ps-favorites-btn {
                        width: 100%;
                        text-align: left;
-                       padding: 10px 15px;
+                       padding: 8px 15px;
                        font-size: 14px;
                        background-color: #282828;
                        border: 1px solid #333;
                        justify-content: flex-start;
+                       border-radius: 8px;
                    }
 
                    .ps-favorites-btn.selected {
@@ -3586,6 +4524,72 @@ app.registerExtension({
                        color: #ccc;
                        font-size: 13px;
                        line-height: 1.4;
+                   }
+
+                   /* New Prompt Tooltip */
+                   .ps-prompt-tooltip {
+                       position: fixed;
+                       background-color: #181818;
+                       border: 1px solid #555;
+                       color: #eee;
+                       padding: 0;
+                       border-radius: 8px;
+                       z-index: 1005; /* High z-index */
+                       font-size: 13px;
+                       max-width: 500px;
+                       word-wrap: break-word;
+                       pointer-events: none; /* Prevent tooltip from blocking mouse events */
+                       animation: ps-tooltip-fade-in 0.15s ease-out;
+                       box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+                       display: flex;
+                   }
+                   .ps-tooltip-content {
+                       display: flex;
+                       flex-direction: row;
+                       align-items: flex-start;
+                       padding: 10px;
+                       gap: 10px;
+                   }
+                   .ps-tooltip-image-container {
+                       flex-shrink: 0;
+                       width: 150px;
+                       max-width: 150px;
+                       max-height: 200px;
+                       overflow: hidden;
+                       display: flex;
+                       align-items: center;
+                       justify-content: center;
+                   }
+                   .ps-prompt-tooltip img {
+                       max-width: 100%;
+                       max-height: 100%;
+                       object-fit: contain;
+                       border-radius: 4px;
+                       margin-bottom: 0;
+                   }
+                   .ps-tooltip-text-container {
+                       flex-grow: 1;
+                       min-width: 0;
+                       border: 1px solid #444;
+                       padding: 8px;
+                       border-radius: 4px;
+                       background-color: #222;
+                   }
+                   .ps-prompt-tooltip p {
+                       margin: 0;
+                       line-height: 1.4;
+                   }
+                   .ps-tooltip-no-preview {
+                       width: 150px;
+                       height: 150px;
+                       background-color: #222;
+                       display: flex;
+                       align-items: center;
+                       justify-content: center;
+                       color: #777;
+                       font-size: 16px;
+                       border-radius: 4px;
+                       margin-bottom: 0;
                    }
 
                    /* 滚动条美化 */

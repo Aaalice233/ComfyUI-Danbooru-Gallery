@@ -13,9 +13,12 @@ import uuid
 from datetime import datetime
 
 # 插件目录
+# 插件目录
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+# The root directory of the custom node
+CUSTOM_NODE_DIR = os.path.abspath(os.path.join(PLUGIN_DIR, '..'))
 DATA_FILE = os.path.join(PLUGIN_DIR, "data.json")
-IMAGE_DIR = os.path.join(PLUGIN_DIR, "images")
+PREVIEW_DIR = os.path.join(PLUGIN_DIR, "preview")
 
 class PromptSelector:
     """
@@ -39,9 +42,9 @@ class PromptSelector:
     CATEGORY = "Danbooru" # 暂定，可以根据需要修改
 
     def __init__(self):
-        # 确保图片目录存在
-        if not os.path.exists(IMAGE_DIR):
-            os.makedirs(IMAGE_DIR)
+        # 确保预览图片目录存在
+        if not os.path.exists(PREVIEW_DIR):
+            os.makedirs(PREVIEW_DIR)
 
     def execute(self, **kwargs):
         prefix = kwargs.get("prefix_prompt", "")
@@ -91,18 +94,59 @@ async def save_data(request):
         print(f"[PromptSelector] Error saving data: {e}") # 添加日志
         return web.json_response({"error": str(e)}, status=500)
 
-@PromptServer.instance.routes.get("/prompt_selector/images/{filename}")
-async def get_image(request):
+@PromptServer.instance.routes.get("/prompt_selector/preview/{filename}")
+async def get_preview_image(request):
     filename = request.match_info['filename']
-    image_path = os.path.join(IMAGE_DIR, filename)
+    image_path = os.path.join(PREVIEW_DIR, filename)
     
     # 安全检查，防止路径遍历
-    if not os.path.abspath(image_path).startswith(os.path.abspath(IMAGE_DIR)):
+    if not os.path.abspath(image_path).startswith(os.path.abspath(PREVIEW_DIR)):
         return web.Response(status=403)
         
     if os.path.exists(image_path):
         return web.FileResponse(image_path)
     return web.Response(status=404)
+
+@PromptServer.instance.routes.post("/prompt_selector/upload_image")
+async def upload_image(request):
+    post = await request.post()
+    image_file = post.get("image")
+    alias = post.get("alias", "")
+
+    if not image_file or not image_file.file:
+        return web.json_response({"error": "No image file uploaded"}, status=400)
+
+    if not os.path.exists(PREVIEW_DIR):
+        os.makedirs(PREVIEW_DIR)
+
+    _, file_extension = os.path.splitext(image_file.filename)
+    if not file_extension:
+        file_extension = '.png'
+
+    # Sanitize the alias to create a valid filename
+    sanitized_alias = "".join(c for c in alias if c.isalnum() or c in (' ', '_')).rstrip()
+    if not sanitized_alias:
+        sanitized_alias = "untitled"
+
+    # Create a unique filename based on alias and timestamp
+    timestamp = int(time.time())
+    unique_filename = f"{sanitized_alias}_{timestamp}{file_extension}"
+    image_path = os.path.join(PREVIEW_DIR, unique_filename)
+
+    # Ensure the filename is unique
+    count = 1
+    while os.path.exists(image_path):
+        unique_filename = f"{sanitized_alias}_{timestamp}_{count}{file_extension}"
+        image_path = os.path.join(PREVIEW_DIR, unique_filename)
+        count += 1
+
+    try:
+        with open(image_path, 'wb') as f:
+            shutil.copyfileobj(image_file.file, f)
+        
+        return web.json_response({"filename": unique_filename})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 @PromptServer.instance.routes.post("/prompt_selector/import")
 async def import_zip(request):
@@ -123,8 +167,10 @@ async def import_zip(request):
             
             # 提取图片
             for member in zf.infolist():
-                if member.filename.startswith('images/') and not member.is_dir():
-                    target_path = os.path.join(IMAGE_DIR, os.path.basename(member.filename))
+                if member.filename.startswith('preview/') and not member.is_dir():
+                    if not os.path.exists(PREVIEW_DIR):
+                        os.makedirs(PREVIEW_DIR)
+                    target_path = os.path.join(PREVIEW_DIR, os.path.basename(member.filename))
                     with zf.open(member) as source, open(target_path, 'wb') as target:
                         shutil.copyfileobj(source, target)
             
@@ -144,10 +190,10 @@ async def export_zip(request):
             # 添加 data.json
             zf.write(DATA_FILE, arcname='data.json')
             # 添加图片
-            if os.path.exists(IMAGE_DIR):
-                for root, _, files in os.walk(IMAGE_DIR):
+            if os.path.exists(PREVIEW_DIR):
+                for root, _, files in os.walk(PREVIEW_DIR):
                     for file in files:
-                        zf.write(os.path.join(root, file), arcname=os.path.join('images', file))
+                        zf.write(os.path.join(root, file), arcname=os.path.join('preview', file))
         
         memory_file.seek(0)
         return web.Response(
@@ -385,6 +431,31 @@ async def save_selection(request):
    except Exception as e:
        return web.json_response({"error": str(e)}, status=500)
 
+@PromptServer.instance.routes.post("/prompt_selector/last_category")
+async def save_last_category(request):
+   """保存最后选择的分类"""
+   try:
+       data = await request.json()
+       category_name = data.get("category")
+
+       if not category_name:
+           return web.json_response({"error": "Missing category name"}, status=400)
+
+       with open(DATA_FILE, 'r', encoding='utf-8') as f:
+           file_data = json.load(f)
+
+       if "settings" not in file_data:
+           file_data["settings"] = {}
+       
+       file_data["settings"]["last_selected_category"] = category_name
+       
+       with open(DATA_FILE, 'w', encoding='utf-8') as f:
+           json.dump(file_data, f, ensure_ascii=False, indent=4)
+
+       return web.json_response({"success": True})
+   except Exception as e:
+       return web.json_response({"error": str(e)}, status=500)
+
 # 确保在启动时 data.json 文件存在
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
@@ -400,6 +471,7 @@ if not os.path.exists(DATA_FILE):
             "settings": {
                 "language": "zh-CN",
                 "separator": ", ",
-                "save_selection": True
+                "save_selection": True,
+                "last_selected_category": "default"
             }
         }, f, ensure_ascii=False, indent=4)
