@@ -1,12 +1,12 @@
-import requests
 import json
 import os
 import folder_paths
 from server import PromptServer
 from comfy import model_management
+import aiohttp
 from aiohttp import web
-import threading
-import time
+import traceback
+import asyncio
 
 # 日志记录
 import logging
@@ -48,9 +48,19 @@ PROMPT_CACHE_FILE = os.path.join(PLUGIN_DIR, "cache", "prompt_cache.json")
 def load_llm_settings():
     """加载LLM设置，并处理从旧格式到新预设格式的迁移"""
     default_settings = {
-        "api_url": "https://openrouter.ai/api/v1/chat/completions",
-        "api_key": "",
-        "model": "gryphe/mythomax-l2-13b",
+        "api_channel": "openrouter",
+        "api_url": "https://openrouter.ai/api/v1/chat/completions", # 将被弃用
+        "api_key": "", # 将被弃用
+        "model": "gryphe/mythomax-l2-13b", # 将被弃用
+        "channel_models": {},
+        "channels_config": { # 新增: 存储每个渠道的独立配置
+            "openrouter": {"api_url": "https://openrouter.ai/api/v1", "api_key": ""},
+            "gemini_api": {"api_url": "https://generativelanguage.googleapis.com/v1beta", "api_key": ""},
+            "gemini_cli": {"api_url": "gemini_cli_mode", "api_key": ""},
+            "deepseek": {"api_url": "https://api.deepseek.com/v1", "api_key": ""},
+            "grok": {"api_url": "https://api.groq.com/openai/v1", "api_key": ""},
+            "openai_compatible": {"api_url": "", "api_key": ""}
+        },
         "timeout": 30,
         "custom_prompt": (
             "You are an AI assistant for Stable Diffusion. Your task is to replace features in a prompt.\n"
@@ -82,25 +92,48 @@ def load_llm_settings():
         with open(LLM_SETTINGS_FILE, 'r', encoding='utf-8') as f:
             settings = json.load(f)
 
-        # --- 迁移逻辑 ---
         migrated = False
+        # --- 迁移逻辑: 确保所有默认键都存在 ---
+        for key, value in default_settings.items():
+            if key not in settings:
+                migrated = True
+                settings[key] = value
+        
+        # --- 迁移逻辑: 从旧的顶层 api_url/api_key 到新的 channels_config ---
+        if "channels_config" not in settings or not isinstance(settings["channels_config"], dict):
+             settings["channels_config"] = default_settings["channels_config"]
+             migrated = True
+
+        # 检查旧的顶层字段是否存在且有值
+        old_api_url = settings.get("api_url")
+        old_api_key = settings.get("api_key")
+        old_channel = settings.get("api_channel", "openrouter")
+
+        if old_api_url and old_api_key:
+            # 如果新结构中对应的渠道没有key，则迁移旧的key
+            if old_channel in settings["channels_config"] and not settings["channels_config"][old_channel].get("api_key"):
+                logger.info(f"正在迁移渠道 '{old_channel}' 的旧 API Key...")
+                settings["channels_config"][old_channel]["api_key"] = old_api_key
+                # 对于 'openai_compatible'，也迁移URL
+                if old_channel == "openai_compatible":
+                    settings["channels_config"][old_channel]["api_url"] = old_api_url
+                migrated = True
+
+        # --- 迁移逻辑: 预设 ---
         if "presets" not in settings:
             migrated = True
-            # 从旧的 target_features 或默认值创建 'default' 预设
             old_features = settings.get("target_features", default_settings["presets"][0]["features"])
             settings["presets"] = [{"name": "default", "features": old_features}]
             settings["active_preset_name"] = "default"
             if "target_features" in settings:
                 del settings["target_features"]
 
-        # 确保所有默认键都存在
-        for key, value in default_settings.items():
-            if key not in settings:
-                migrated = True
-                settings[key] = value
-        
         # 如果迁移过，保存更新后的文件
         if migrated:
+            # 清理掉已经迁移的顶层废弃字段
+            if "api_url" in settings: del settings["api_url"]
+            if "api_key" in settings: del settings["api_key"]
+            if "model" in settings: del settings["model"]
             save_llm_settings(settings)
 
         return settings
@@ -111,8 +144,26 @@ def load_llm_settings():
 def save_llm_settings(settings):
     """保存LLM设置"""
     try:
+        # 为了向后兼容，执行时仍然依赖顶层的api_url, api_key, model
+        # 所以在保存时，根据当前渠道，将分渠道的配置同步到顶层
+        active_channel = settings.get("api_channel", "openrouter")
+        
+        if "channels_config" in settings and active_channel in settings["channels_config"]:
+            channel_conf = settings["channels_config"][active_channel]
+            settings["api_url"] = channel_conf.get("api_url", "")
+            settings["api_key"] = channel_conf.get("api_key", "")
+
+        if "channel_models" in settings and active_channel in settings["channel_models"]:
+            settings["model"] = settings["channel_models"][active_channel]
+
+        # 创建一个副本用于保存，移除废弃的顶层键
+        settings_to_save = settings.copy()
+        if "api_url" in settings_to_save: del settings_to_save["api_url"]
+        if "api_key" in settings_to_save: del settings_to_save["api_key"]
+        if "model" in settings_to_save: del settings_to_save["model"]
+
         with open(LLM_SETTINGS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=2)
+            json.dump(settings_to_save, f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
         logger.error(f"保存LLM设置失败: {e}")
@@ -136,25 +187,130 @@ async def save_llm_settings_route(request):
         logger.error(f"保存LLM设置接口错误: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=500)
 
-@PromptServer.instance.routes.get("/character_swap/llm_models")
+import sys
+import shutil
+import subprocess
+
+def _get_gemini_executable_path():
+    """
+    Tries to find the full path to the gemini executable, as the npm global bin
+    directory may not be in the PATH for the Python process started by ComfyUI.
+    """
+    # On Windows, the npm global path is usually in AppData.
+    # This path might not be in the PATH for the ComfyUI environment.
+    if sys.platform == "win32":
+        # We get the npm global prefix and add it to the PATH.
+        try:
+            # We can't rely on `npm` being in the path, so let's try to construct the path manually.
+            npm_global_path = os.path.join(os.environ.get("APPDATA", ""), "npm")
+            if os.path.exists(npm_global_path):
+                logger.info(f"Adding npm global path to environment: {npm_global_path}")
+                os.environ["PATH"] = npm_global_path + os.pathsep + os.environ["PATH"]
+        except Exception as e:
+            logger.error(f"Failed to add npm global path to PATH: {e}")
+
+    # Now, shutil.which should be able to find 'gemini.cmd' if it was installed globally.
+    gemini_executable = shutil.which("gemini")
+
+    if gemini_executable:
+        logger.info(f"Found Gemini CLI executable at: {gemini_executable}")
+        return gemini_executable
+    else:
+        logger.error("Could not find 'gemini' executable. Please ensure it is installed globally ('npm install -g @google/gemini-cli') and that the npm global bin directory is in your system's PATH.")
+        # Fallback to just "gemini" and let the subprocess call fail, which will be caught and reported to the user.
+        return "gemini"
+
+@PromptServer.instance.routes.post("/character_swap/llm_models")
 async def get_llm_models(request):
-    """从OpenRouter获取可用的LLM模型列表"""
+    """根据提供的API凭据获取LLM模型列表"""
     try:
+        data = await request.json()
+        api_channel = data.get("api_channel")
+        if not api_channel:
+            return web.json_response({"error": "未提供渠道(api_channel)"}, status=400)
+
         settings = load_llm_settings()
+        channels_config = settings.get("channels_config", {})
+        channel_conf = channels_config.get(api_channel, {})
+        
+        api_url = channel_conf.get("api_url", "").strip()
+        api_key = channel_conf.get("api_key", "").strip()
         timeout = settings.get("timeout", 15)
-        response = requests.get("https://openrouter.ai/api/v1/models", timeout=timeout)
-        response.raise_for_status()
-        models_data = response.json().get("data", [])
-        # 我们可以只返回模型的ID和名称，或者整个对象
-        # 这里我们返回ID，因为API调用需要它
-        model_ids = sorted([model["id"] for model in models_data])
-        return web.json_response(model_ids)
-    except requests.exceptions.RequestException as e:
-        logger.error(f"从OpenRouter获取模型列表失败: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+
+        logger.info(f"[get_llm_models] Channel: '{api_channel}', URL: '{api_url}'")
+
+        if api_channel == "gemini_cli":
+            return web.json_response(sorted([
+                "gemini-1.5-flash-002",
+                "gemini-1.5-flash-8b-exp-0827",
+                "gemini-1.5-flash-exp-0827",
+                "gemini-1.5-flash-latest",
+                "gemini-1.5-pro-002",
+                "gemini-1.5-pro-exp-0827",
+                "gemini-1.5-pro-latest",
+                "gemini-2.0-flash-001",
+                "gemini-2.0-flash-exp",
+                "gemini-2.0-flash-thinking-exp-01-21",
+                "gemini-2.0-flash-thinking-exp-1219",
+                "gemini-2.5-flash",
+                "gemini-2.5-pro",
+                "gemini-exp-1206",
+                "gemini-pro",
+            ]))
+
+        if not api_url:
+            return web.json_response({"error": "当前渠道的 API URL 为空"}, status=400)
+
+        async with aiohttp.ClientSession() as session:
+            # --- Gemini API 特殊处理 ---
+            if api_channel == 'gemini_api':
+                if not api_key:
+                    return web.json_response({"error": "Gemini API Key为空"}, status=400)
+                
+                models_url = f"{api_url.rstrip('/')}/models?key={api_key}"
+                async with session.get(models_url, timeout=timeout, ssl=False) as response:
+                    response.raise_for_status()
+                    models_data = (await response.json()).get("models", [])
+                    model_ids = sorted([
+                        model["name"].split('/')[-1] for model in models_data
+                        if "generateContent" in model.get("supportedGenerationMethods", [])
+                    ])
+                    return web.json_response(model_ids)
+
+            # --- 其他 OpenAI 兼容 API 的通用处理 ---
+            headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+            models_url = f"{api_url.rstrip('/')}/models"
+            logger.info(f"[get_llm_models] Attempting to get models from: {models_url}")
+            
+            async with session.get(models_url, headers=headers, timeout=timeout, ssl=False) as response:
+                response.raise_for_status()
+                models_data = (await response.json()).get("data", [])
+                model_ids = sorted([model["id"] for model in models_data])
+                return web.json_response(model_ids)
+            
+    except aiohttp.ClientResponseError as e:
+        error_message = f"HTTP错误: {e.status} - {e.message}"
+        logger.error(f"获取LLM模型列表失败: {error_message}")
+        # API调用失败时，返回一个硬编码的列表作为回退
+        fallback_models = {
+            "openrouter": ["gryphe/mythomax-l2-13b", "google/gemini-flash-1.5", "anthropic/claude-3-haiku"],
+            "gemini_api": [
+                "gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-pro",
+                "gemini-2.5-flash", "gemini-2.5-pro"
+            ],
+            "deepseek": ["deepseek-chat", "deepseek-coder"],
+            "grok": ["gemma-7b-it", "llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768"],
+            "openai_compatible": ["default-model-1", "default-model-2"]
+        }
+        models = fallback_models.get(api_channel, [])
+        logger.info(f"API call failed, returning fallback models for channel '{api_channel}': {models}")
+        return web.json_response(models)
+    except asyncio.TimeoutError:
+        logger.error(f"获取LLM模型列表超时")
+        return web.json_response({"error": f"请求超时: {timeout}s"}, status=500)
     except Exception as e:
         logger.error(f"处理模型列表时出错: {e}")
-        return web.json_response({"error": "处理模型数据时出错"}, status=500)
+        return web.json_response({"error": f"未知错误: {e}"}, status=500)
 
 @PromptServer.instance.routes.post("/character_swap/debug_prompt")
 async def debug_llm_prompt(request):
@@ -208,39 +364,58 @@ async def test_llm_connection(request):
     """测试与LLM API的连接和认证"""
     try:
         data = await request.json()
-        api_url = data.get("api_url", "").strip()
-        api_key = data.get("api_key", "").strip()
+        api_channel = data.get("api_channel")
+        if not api_channel:
+            return web.json_response({"success": False, "error": "未提供渠道(api_channel)"}, status=400)
+
+        settings = load_llm_settings()
+        channels_config = settings.get("channels_config", {})
+        channel_conf = channels_config.get(api_channel, {})
+        
+        api_url = channel_conf.get("api_url", "").strip()
+        api_key = channel_conf.get("api_key", "").strip()
+        timeout = settings.get("timeout", 15)
+
+        if api_channel == 'gemini_cli':
+            # 简单地检查可执行文件是否存在
+            gemini_executable = _get_gemini_executable_path()
+            if gemini_executable and shutil.which(gemini_executable):
+                 return web.json_response({"success": True, "message": "Gemini CLI 可访问。"})
+            else:
+                 return web.json_response({"success": False, "error": "找不到 Gemini CLI。请全局安装并确保在PATH中。"}, status=400)
 
         if not api_url or not api_key:
-            return web.json_response({"success": False, "error": "API URL或API Key为空"}, status=400)
+            return web.json_response({"success": False, "error": "当前渠道的 API URL 或 API Key 为空"}, status=400)
 
-        # 使用OpenRouter的models端点作为通用的连接测试
-        # 这通常只需要有效的API密钥
-        test_url = "https://openrouter.ai/api/v1/models"
-        
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-        }
-        
-        settings = load_llm_settings()
-        timeout = settings.get("timeout", 15)
-        response = requests.get(test_url, headers=headers, timeout=timeout)
-        response.raise_for_status() # 如果状态码不是2xx，则会引发异常
+        async with aiohttp.ClientSession() as session:
+            # --- Gemini API 特殊处理 ---
+            if api_channel == 'gemini_api':
+                test_url = f"{api_url.rstrip('/')}/models?key={api_key}"
+                async with session.get(test_url, timeout=timeout, ssl=False) as response:
+                    response.raise_for_status()
+                    if "models" in await response.json():
+                        return web.json_response({"success": True, "message": "成功连接到 Gemini API。"})
+                    else:
+                        raise Exception("Gemini API 响应格式不正确。")
 
-        return web.json_response({"success": True, "message": "成功连接到OpenRouter并验证凭据。"})
+            # --- 默认/OpenAI 兼容 API 处理 ---
+            test_url = f"{api_url.rstrip('/')}/models"
+            headers = {"Authorization": f"Bearer {api_key}"}
+            
+            async with session.get(test_url, headers=headers, timeout=timeout, ssl=False) as response:
+                response.raise_for_status()
+                if "data" in await response.json():
+                    return web.json_response({"success": True, "message": "成功连接到 API。"})
+                else:
+                    raise Exception("API 响应格式不正确。")
 
-    except requests.exceptions.HTTPError as e:
-        error_message = f"HTTP错误: {e.response.status_code}"
-        try:
-            error_details = e.response.json()
-            error_message += f" - {error_details.get('error', {}).get('message', '无详细信息')}"
-        except:
-            pass
+    except aiohttp.ClientResponseError as e:
+        error_message = f"HTTP错误: {e.status} - {e.message}"
         logger.error(f"LLM连接测试失败: {error_message}")
         return web.json_response({"success": False, "error": error_message}, status=400)
-    except requests.exceptions.RequestException as e:
-        logger.error(f"LLM连接测试失败: {e}")
-        return web.json_response({"success": False, "error": f"请求错误: {e}"}, status=500)
+    except asyncio.TimeoutError:
+        logger.error(f"LLM连接测试超时")
+        return web.json_response({"success": False, "error": f"请求超时: {timeout}s"}, status=500)
     except Exception as e:
         logger.error(f"LLM连接测试时发生未知错误: {e}")
         return web.json_response({"success": False, "error": f"未知错误: {e}"}, status=500)
@@ -250,51 +425,96 @@ async def test_llm_response(request):
     """测试向指定模型发送消息并获得回复"""
     try:
         data = await request.json()
-        api_url = data.get("api_url", "").strip()
-        api_key = data.get("api_key", "").strip()
-        model = data.get("model", "").strip()
+        api_channel = data.get("api_channel")
+        if not api_channel:
+            return web.json_response({"success": False, "error": "未提供渠道(api_channel)"}, status=400)
 
-        if not api_url or not api_key or not model:
-            return web.json_response({"success": False, "error": "API URL, API Key, 或模型为空"}, status=400)
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "user", "content": "Hello!"}
-            ],
-            "max_tokens": 10 # 限制回复长度
-        }
-        
         settings = load_llm_settings()
-        timeout = settings.get("timeout", 30)
-        response = requests.post(api_url, headers=headers, json=payload, timeout=timeout)
-        response.raise_for_status()
+        channels_config = settings.get("channels_config", {})
+        channel_conf = channels_config.get(api_channel, {})
         
-        result = response.json()
-        reply = result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+        api_url = channel_conf.get("api_url", "").strip()
+        api_key = channel_conf.get("api_key", "").strip()
+        model = settings.get("channel_models", {}).get(api_channel)
+        timeout = settings.get("timeout", 30)
 
-        if not reply:
-             raise Exception("模型返回了空回复。")
+        if not model:
+            return web.json_response({"success": False, "error": "当前渠道未选择模型"}, status=400)
 
-        return web.json_response({"success": True, "message": f"模型回复: '{reply}'"})
+        if api_channel == "gemini_cli":
+            try:
+                gemini_executable = _get_gemini_executable_path()
+                command = [gemini_executable, "-m", model]
+                
+                process = await asyncio.create_subprocess_exec(
+                    *command,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(input=b"Hello!"),
+                    timeout=timeout
+                )
+                
+                if process.returncode != 0:
+                    raise subprocess.CalledProcessError(process.returncode, command, output=stdout, stderr=stderr)
+                    
+                reply = stdout.decode('utf-8').strip()
+                if not reply:
+                    raise Exception("Gemini CLI returned an empty response.")
+                
+                return web.json_response({"success": True, "message": f"模型回复: '{reply}'"})
 
-    except requests.exceptions.HTTPError as e:
-        error_message = f"HTTP错误: {e.response.status_code}"
-        try:
-            error_details = e.response.json()
-            error_message += f" - {error_details.get('error', {}).get('message', '无详细信息')}"
-        except:
-            pass
+            except FileNotFoundError:
+                return web.json_response({"success": False, "error": "找不到 Gemini CLI。"}, status=500)
+            except asyncio.TimeoutError:
+                return web.json_response({"success": False, "error": f"Gemini CLI 命令超时 ({timeout}s)。"}, status=500)
+            except subprocess.CalledProcessError as e:
+                error_output = e.stderr.decode('utf-8').strip()
+                return web.json_response({"success": False, "error": f"Gemini CLI 错误: {error_output}"}, status=500)
+            except Exception as e:
+                return web.json_response({"success": False, "error": f"未知的 Gemini CLI 错误: {e}"}, status=500)
+
+        if not api_url or not api_key:
+            return web.json_response({"success": False, "error": "当前渠道的 API URL 或 API Key 为空"}, status=400)
+
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        
+        async with aiohttp.ClientSession() as session:
+            if api_channel == 'gemini_api':
+                payload = { "contents": [{ "parts": [{ "text": "Hello!" }] }] }
+                api_endpoint = f"{api_url.rstrip('/')}/models/{model}:generateContent?key={api_key}"
+                headers = {"Content-Type": "application/json"}
+                async with session.post(api_endpoint, headers=headers, json=payload, timeout=timeout, ssl=False) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    reply = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '').strip()
+            else: # OpenAI-compatible
+                payload = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": "Hello!"}],
+                    "max_tokens": 15
+                }
+                api_endpoint = f"{api_url.rstrip('/')}/chat/completions"
+                async with session.post(api_endpoint, headers=headers, json=payload, timeout=timeout, ssl=False) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    reply = result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+
+            if not reply:
+                 raise Exception("模型返回了空回复。")
+
+            return web.json_response({"success": True, "message": f"模型回复: '{reply}'"})
+
+    except aiohttp.ClientResponseError as e:
+        error_message = f"HTTP错误: {e.status} - {e.message}"
         logger.error(f"LLM响应测试失败: {error_message}")
         return web.json_response({"success": False, "error": error_message}, status=400)
-    except requests.exceptions.RequestException as e:
-        logger.error(f"LLM响应测试失败: {e}")
-        return web.json_response({"success": False, "error": f"请求错误: {e}"}, status=500)
+    except asyncio.TimeoutError:
+        logger.error(f"LLM响应测试超时")
+        return web.json_response({"success": False, "error": f"请求超时: {timeout}s"}, status=500)
     except Exception as e:
         logger.error(f"LLM响应测试时发生未知错误: {e}")
         return web.json_response({"success": False, "error": f"未知错误: {e}"}, status=500)
@@ -360,53 +580,28 @@ class CharacterFeatureSwapNode:
     FUNCTION = "execute"
     CATEGORY = "Danbooru"
 
-    def _execute_llm_request(self, api_url, headers, data, result_container):
-        """在单独的线程中执行LLM API请求"""
-        try:
-            response = requests.post(api_url, headers=headers, json=data)
-            response.raise_for_status()
-            result = response.json()
-            new_prompt = result['choices'][0]['message']['content'].strip()
-            
-            # 简单的后处理
-            if new_prompt.startswith('"') and new_prompt.endswith('"'):
-                new_prompt = new_prompt[1:-1]
-            
-            result_container['result'] = (new_prompt,)
-        except requests.exceptions.Timeout as e:
-            logger.error(f"调用LLM API超时: {e}")
-            result_container['error'] = (f"API Error: Request timed out after {data.get('timeout')} seconds.",)
-        except requests.exceptions.RequestException as e:
-            logger.error(f"调用LLM API失败: {e}")
-            result_container['error'] = (f"API Error: {e}",)
-        except Exception as e:
-            logger.error(f"处理LLM响应失败: {e}")
-            result_container['error'] = (f"Processing Error: {e}",)
-
-    def execute(self, original_prompt, character_prompt, target_features):
+    async def execute(self, original_prompt, character_prompt, target_features):
         logger.info(f"[CharacterFeatureSwapNode] Received original_prompt (raw): {original_prompt}")
         original_prompt = _parse_prompt_input(original_prompt)
         logger.info(f"[CharacterFeatureSwapNode] Received original_prompt (parsed): {original_prompt}")
         character_prompt = _parse_prompt_input(character_prompt)
 
         settings = load_llm_settings()
-        api_url = settings.get("api_url")
-        api_key = settings.get("api_key")
-        model = settings.get("model")
+        api_channel = settings.get("api_channel", "openrouter")
+        channels_config = settings.get("channels_config", {})
+        channel_conf = channels_config.get(api_channel, {})
+        
+        api_url = channel_conf.get("api_url", "").strip()
+        api_key = channel_conf.get("api_key", "").strip()
+        model = settings.get("channel_models", {}).get(api_channel)
+        
         custom_prompt_template = settings.get("custom_prompt")
         timeout = settings.get("timeout", 30)
 
         active_preset_name = settings.get("active_preset_name", "default")
         active_preset = next((p for p in settings.get("presets", []) if p["name"] == active_preset_name), None)
         
-        if active_preset:
-            final_target_features = ", ".join(active_preset.get("features", []))
-        else:
-            final_target_features = target_features
-
-        if not api_key:
-            logger.error("LLM API Key未设置。请在设置中配置。")
-            return ("ERROR: LLM API Key is not set. Please configure it in the node's settings.",)
+        final_target_features = ", ".join(active_preset["features"]) if active_preset else target_features
 
         prompt_for_llm = custom_prompt_template.format(
             original_prompt=original_prompt,
@@ -414,44 +609,155 @@ class CharacterFeatureSwapNode:
             target_features=final_target_features
         )
 
+        # 缓存原始和角色提示词
         try:
+            cache_dir = os.path.dirname(PROMPT_CACHE_FILE)
+            if not os.path.exists(cache_dir):
+                os.makedirs(cache_dir)
             with open(PROMPT_CACHE_FILE, 'w', encoding='utf-8') as f:
                 json.dump({"original_prompt": original_prompt, "character_prompt": character_prompt}, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"写入提示词缓存失败: {e}")
-        
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        data = {"model": model, "messages": [{"role": "user", "content": prompt_for_llm}]}
-        
-        result_container = {}
-        thread = threading.Thread(target=self._execute_llm_request, args=(api_url, headers, data, result_container))
-        thread.start()
 
-        start_time = time.time()
-        
-        while thread.is_alive():
-            if time.time() - start_time > timeout:
-                logger.error(f"LLM请求超时（超过 {timeout} 秒）。")
-                # 虽然线程无法被强制停止，但我们可以从主流程中返回一个错误。
-                return (f"Error: Request timed out after {timeout} seconds. The API call might still be running in the background.",)
-
-            # 正确的ComfyUI中断检查方式
+        # --- Gemini CLI 执行 (异步) ---
+        if api_channel == "gemini_cli":
             if model_management.processing_interrupted():
-                logger.warning("检测到工作流中断。")
-                # 同样，线程可能仍在后台运行，但我们中断了节点的执行。
-                return ("Error: Execution was interrupted by the user.",)
+                return ("错误: 执行被用户中断。",)
             
-            time.sleep(0.1) # 短暂休眠以降低CPU使用率
+            logger.info("[Execute Gemini CLI] Starting async execution via stdin.")
+            if not model:
+                logger.error("[Execute Gemini CLI] Error: Model not selected for Gemini CLI channel.")
+                return ("错误: Gemini CLI 渠道未选择模型。",)
+            
+            process = None
+            try:
+                gemini_executable = _get_gemini_executable_path()
+                command = [gemini_executable, "-m", model]
+                
+                cli_env = os.environ.copy()
+                cli_env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
+                logger.info(f"[Execute Gemini CLI] Executing command: {' '.join(command)}")
 
-        thread.join() # 确保线程已结束
+                process = await asyncio.create_subprocess_exec(
+                    *command,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=cli_env
+                )
 
-        if 'error' in result_container:
-            return result_container['error']
+                process.stdin.write(prompt_for_llm.encode('utf-8'))
+                await process.stdin.drain()
+                process.stdin.close()
+
+                start_time = asyncio.get_event_loop().time()
+                while process.returncode is None:
+                    if model_management.processing_interrupted():
+                        logger.warning("[Execute Gemini CLI] Interruption detected. Killing subprocess.")
+                        process.kill()
+                        await process.wait()
+                        return ("错误: 执行被用户中断。",)
+                    
+                    if (asyncio.get_event_loop().time() - start_time) > timeout:
+                         logger.error(f"[Execute Gemini CLI] Subprocess timed out. Killing.")
+                         process.kill()
+                         await process.wait()
+                         return (f"错误: Gemini CLI 命令超时 ({timeout}s)。",)
+
+                    await asyncio.sleep(0.1)
+
+                stdout, stderr = await process.communicate()
+                stdout_res = stdout.decode('utf-8', errors='ignore').strip()
+                stderr_res = stderr.decode('utf-8', errors='ignore').strip()
+
+                if process.returncode != 0:
+                    logger.error(f"[Execute Gemini CLI] Subprocess failed. Stderr: {stderr_res}")
+                    return (f"Gemini CLI 错误: {stderr_res}",)
+
+                new_prompt = stdout_res.strip('"')
+                return (new_prompt,)
+
+            except asyncio.CancelledError:
+                logger.warning("[Execute Gemini CLI] Execution was cancelled.")
+                if process:
+                    try:
+                        process.kill()
+                        await process.wait()
+                    except (ProcessLookupError, AttributeError):
+                        pass
+                raise
+            except Exception as e:
+                logger.error(f"Gemini CLI 未知错误: {traceback.format_exc()}")
+                return (f"Gemini CLI 未知错误: {e}",)
+
+        # --- HTTP API 执行 (异步) ---
+        if not api_key:
+            return (f"错误: 渠道 '{api_channel}' 的 API Key 未设置。",)
+        if not model:
+            return (f"错误: 渠道 '{api_channel}' 的模型未选择。",)
+
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         
-        if 'result' in result_container:
-            return result_container['result']
-            
-        return ("Error: Unknown error occurred in the LLM request thread.",)
+        if api_channel == 'gemini_api':
+            api_endpoint = f"{api_url.rstrip('/')}/models/{model}:generateContent?key={api_key}"
+            headers = {"Content-Type": "application/json"}
+            payload = {"contents": [{"parts": [{"text": prompt_for_llm}]}]}
+        else: # OpenAI 兼容
+            api_endpoint = f"{api_url.rstrip('/')}/chat/completions"
+            payload = {"model": model, "messages": [{"role": "user", "content": prompt_for_llm}]}
+
+        if model_management.processing_interrupted():
+            return ("错误: 执行被用户中断。",)
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                post_task = asyncio.create_task(
+                    session.post(api_endpoint, headers=headers, json=payload, timeout=timeout, ssl=False)
+                )
+                
+                while not post_task.done():
+                    if model_management.processing_interrupted():
+                        logger.warning("[Execute HTTP] Interruption detected. Cancelling task.")
+                        post_task.cancel()
+                        try:
+                            await post_task
+                        except asyncio.CancelledError:
+                            pass
+                        return ("错误: 执行被用户中断。",)
+                    await asyncio.sleep(0.1)
+
+                response = await post_task
+                response.raise_for_status()
+                result = await response.json()
+
+                if model_management.processing_interrupted():
+                    return ("错误: 执行被用户中断。",)
+
+                if api_channel == 'gemini_api':
+                    new_prompt = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '').strip()
+                else: # OpenAI 兼容
+                    new_prompt = result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+                
+                new_prompt = new_prompt.strip('"')
+                return (new_prompt,)
+        except asyncio.CancelledError:
+            logger.warning("LLM API 调用被用户取消。")
+            return ("错误: 执行被用户中断。",)
+        except aiohttp.ClientResponseError as e:
+            error_details = ""
+            try:
+                error_details = await e.text()
+            except:
+                pass
+            logger.error(f"调用LLM API失败 (HTTP {e.status}): {e.message}. Details: {error_details}")
+            return (f"API Error: HTTP {e.status} - {e.message}",)
+        except asyncio.TimeoutError:
+            logger.error(f"调用LLM API超时")
+            return (f"API Error: Request timed out after {timeout} seconds.",)
+        except Exception as e:
+            logger.error(f"处理LLM响应失败: {traceback.format_exc()}")
+            return (f"Processing Error: {e}",)
+
 
 # 节点映射
 NODE_CLASS_MAPPINGS = {

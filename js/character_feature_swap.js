@@ -11,6 +11,19 @@ function debounce(func, delay) {
     };
 }
 
+// 带超时的 fetch 函数
+async function fetchWithTimeout(resource, options = {}, timeout = 60000) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(resource, {
+        ...options,
+        signal: controller.signal
+    });
+    clearTimeout(id);
+
+    return response;
+}
 // --- 扩展 ComfyUI ---
 app.registerExtension({
     name: "Comfy.CharacterFeatureSwap",
@@ -29,6 +42,7 @@ app.registerExtension({
                     promptPlaceholder: "使用 <code>{original_prompt}</code>、<code>{character_prompt}</code> 和 <code>{target_features}</code> 作为占位符。",
                     llmSettings: "LLM 设置",
                     llmDescription: `配置用于特征替换的LLM API。推荐使用 <a href="https://openrouter.ai" target="_blank">OpenRouter</a> (部分模型免费)。`,
+                    channel: "渠道:",
                     apiUrl: "API URL:",
                     apiKey: "API Key:",
                     model: "模型 (Model):",
@@ -38,6 +52,7 @@ app.registerExtension({
                     settingsSaved: "设置已保存！",
                     saveFailed: "保存失败: ",
                     testConnection: "测试连接",
+                    getModels: "获取模型列表",
                     testResponse: "测试回复",
                     testing: "测试中...",
                     connectionSuccess: "连接成功！",
@@ -65,8 +80,12 @@ app.registerExtension({
                     presetNameExists: "预设名称已存在。",
                     presetDeleted: "预设已删除。",
                     presetSaved: "预设已保存。",
-                    saveCurrentPreset: "保存到当前预设",
+                    saveCurrentPreset: "保存到当前预set",
                     saveAsPreset: "另存为新预设",
+                    loadingModels: "正在加载模型...",
+                    selectModel: "选择一个模型",
+                    errorLoadingModels: "加载模型失败",
+                    modelsRefreshed: "模型列表已刷新！",
                     timeout: "超时 (秒)",
                     timeoutHint: "LLM API请求的等待时间。",
                     helpTitle: "功能说明",
@@ -85,7 +104,7 @@ app.registerExtension({
                     presetsTooltip: "管理和切换特征预设",
                     helpTooltip: "显示此节点的功能说明",
                     addTagTooltip: "添加一个新的特征类别",
-                 },
+                },
                 en: {
                     language: "Language",
                     prompt: "Prompt",
@@ -96,6 +115,7 @@ app.registerExtension({
                     promptPlaceholder: "Use <code>{original_prompt}</code>, <code>{character_prompt}</code>, and <code>{target_features}</code> as placeholders.",
                     llmSettings: "LLM Settings",
                     llmDescription: `Configure the LLM API for feature swapping. <a href="https://openrouter.ai" target="_blank">OpenRouter</a> is recommended (Some models are free).`,
+                    channel: "Channel:",
                     apiUrl: "API URL:",
                     apiKey: "API Key:",
                     model: "Model:",
@@ -105,6 +125,7 @@ app.registerExtension({
                     settingsSaved: "Settings saved!",
                     saveFailed: "Save failed: ",
                     testConnection: "Test Connection",
+                    getModels: "Get Models",
                     testResponse: "Test Response",
                     testing: "Testing...",
                     connectionSuccess: "Connection successful!",
@@ -134,6 +155,10 @@ app.registerExtension({
                     presetSaved: "Preset saved.",
                     saveCurrentPreset: "Save to Current Preset",
                     saveAsPreset: "Save as New Preset",
+                    loadingModels: "Loading models...",
+                    selectModel: "Select a model",
+                    errorLoadingModels: "Error loading models",
+                    modelsRefreshed: "Model list refreshed!",
                     timeout: "Timeout (s)",
                     timeoutHint: "Time to wait for the LLM API request.",
                     helpTitle: "Feature Description",
@@ -152,7 +177,7 @@ app.registerExtension({
                     presetsTooltip: "Manage and switch feature presets",
                     helpTooltip: "Show the feature description for this node",
                     addTagTooltip: "Add a new feature category",
-                 }
+                }
             };
             let currentLanguage = 'zh';
             const t = (key) => i18n[currentLanguage]?.[key] || i18n.zh[key];
@@ -181,19 +206,59 @@ app.registerExtension({
                 ui.messageArea.style.display = text ? "block" : "none";
             }
 
+            function showToast(message, type = 'success', duration = 3000) {
+                const dialog = document.querySelector(".cfs-new-settings-dialog");
+                if (!dialog) return;
+
+                let toastContainer = dialog.querySelector(".cfs-toast-container");
+                if (!toastContainer) {
+                    toastContainer = document.createElement("div");
+                    toastContainer.className = "cfs-toast-container";
+                    dialog.appendChild(toastContainer);
+                }
+
+                const toast = document.createElement("div");
+                toast.className = `cfs-toast cfs-toast-${type}`;
+                toast.textContent = message;
+
+                toastContainer.appendChild(toast);
+
+                // Animate in
+                setTimeout(() => {
+                    toast.style.opacity = "1";
+                    toast.style.transform = "translateY(0)";
+                }, 10);
+
+                // Animate out and remove
+                setTimeout(() => {
+                    toast.style.opacity = "0";
+                    toast.style.transform = "translateY(-20px)";
+                    setTimeout(() => {
+                        toast.remove();
+                        // If container is empty, remove it
+                        if (toastContainer.children.length === 0) {
+                            toastContainer.remove();
+                        }
+                    }, 300);
+                }, duration);
+            }
+
             async function checkConnectionStatus(ui, settingsOverride = null) {
                 if (!ui) return;
                 showMessage(ui, t('checkingConnection'), '#ccc');
                 try {
                     const settings = settingsOverride || await api.fetchApi("/character_swap/llm_settings").then(r => r.json());
-                    if (!settings.api_key) {
+                    const channel = settings.api_channel || 'openrouter';
+                    const channelConf = settings.channels_config?.[channel] || {};
+
+                    if (channel !== 'gemini_cli' && !channelConf.api_key) {
                         showMessage(ui, t('apiKeyMissingWarning'));
                         return;
                     }
                     const response = await api.fetchApi("/character_swap/test_llm_connection", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ api_url: settings.api_url, api_key: settings.api_key }),
+                        body: JSON.stringify({ api_channel: channel }),
                     });
                     if (!response.ok) {
                         showMessage(ui, t('connectionFailedWarning'));
@@ -238,10 +303,21 @@ app.registerExtension({
                 <div class="cfs-new-settings-pane" data-pane="llm">
                      <h3 data-i18n="llmSettings"></h3>
                      <p data-i18n="llmDescription" data-i18n-html></p>
+                     <label for="cfs-api-channel-new" data-i18n="channel"></label>
+                      <select id="cfs-api-channel-new" name="api_channel" style="margin-bottom: 12px; width: 100%; padding: 8px; box-sizing: border-box; background-color: #222; border: 1px solid #555; color: #E0E0E0; border-radius: 4px;">
+                          <option value="openrouter">OpenRouter</option>
+                          <option value="gemini_api">Gemini API</option>
+                          <option value="gemini_cli">Gemini CLI</option>
+                          <option value="deepseek">DeepSeek</option>
+                          <option value="grok">Grok</option>
+                          <option value="openai_compatible">OpenAI Compatible</option>
+                      </select>
                      <label for="cfs-api-url-new" data-i18n="apiUrl"></label>
                      <input type="text" id="cfs-api-url-new" name="api_url">
+                     <div id="cfs-api-url-placeholder" class="cfs-input-placeholder" style="display: none;">不需要</div>
                      <label for="cfs-api-key-new" data-i18n="apiKey"></label>
                      <input type="password" id="cfs-api-key-new" name="api_key">
+                     <div id="cfs-api-key-placeholder" class="cfs-input-placeholder" style="display: none;">不需要</div>
                      <label for="cfs-model-new" data-i18n="model"></label>
                      <div class="cfs-custom-select-wrapper">
                          <div id="cfs-model-selected" class="cfs-custom-select-selected" tabindex="0"></div>
@@ -252,6 +328,7 @@ app.registerExtension({
                      </div>
                      <select id="cfs-model-new" name="model" style="display: none;"></select>
                      <div class="cfs-llm-test-buttons">
+                        <button id="cfs-get-models-btn" data-i18n="getModels"></button>
                         <button id="cfs-test-connection-btn" data-i18n="testConnection"></button>
                         <button id="cfs-test-response-btn" data-i18n="testResponse"></button>
                     </div>
@@ -260,7 +337,6 @@ app.registerExtension({
                         <input type="number" id="cfs-timeout-new" name="timeout" min="1" max="300">
                      </div>
                      <p class="description" data-i18n="timeoutHint"></p>
-                    <div id="cfs-llm-test-result" class="cfs-llm-test-result"></div>
                 </div>
             </div>
         </div>
@@ -322,11 +398,19 @@ app.registerExtension({
                 dialog.querySelector("#cfs-close-new-dialog").addEventListener("click", () => {
                     const ui = nodeUIs.get(node);
                     if (ui) {
-                        const tempSettings = {
-                            api_url: apiUrlInput.value,
-                            api_key: apiKeyInput.value,
+                        // 当关闭对话框时，使用当前选择的渠道重新检查连接状态
+                        const currentSettings = {
+                            ...node.cfs_settings,
+                            api_channel: apiChannelSelect.value,
+                            channels_config: {
+                                ...node.cfs_settings.channels_config,
+                                [apiChannelSelect.value]: {
+                                    api_url: apiUrlInput.value,
+                                    api_key: apiKeyInput.value
+                                }
+                            }
                         };
-                        checkConnectionStatus(ui, tempSettings);
+                        checkConnectionStatus(ui, currentSettings);
                     }
                     dialog.remove();
                 });
@@ -342,11 +426,16 @@ app.registerExtension({
                 }
 
                 // --- Load and Save Logic ---
+                const apiChannelSelect = dialog.querySelector("#cfs-api-channel-new");
                 const apiUrlInput = dialog.querySelector("#cfs-api-url-new");
                 const apiKeyInput = dialog.querySelector("#cfs-api-key-new");
                 const modelInput = dialog.querySelector("#cfs-model-new");
                 const customPromptInput = dialog.querySelector("#cfs-custom-prompt-new");
                 const timeoutInput = dialog.querySelector("#cfs-timeout-new");
+                const apiUrlLabel = dialog.querySelector('label[for="cfs-api-url-new"]');
+                const apiKeyLabel = dialog.querySelector('label[for="cfs-api-key-new"]');
+                const apiUrlPlaceholder = dialog.querySelector('#cfs-api-url-placeholder');
+                const apiKeyPlaceholder = dialog.querySelector('#cfs-api-key-placeholder');
 
                 // --- Custom Searchable Select Logic ---
                 const wrapper = dialog.querySelector(".cfs-custom-select-wrapper");
@@ -358,6 +447,68 @@ app.registerExtension({
                 const originalParent = itemsContainer.parentNode;
 
                 let allModels = [];
+
+                async function fetchAndPopulateModels(force = false, silent = false) {
+                    if (allModels.length > 0 && !force) {
+                        return Promise.resolve();
+                    }
+
+                    if (!silent) {
+                        showToast(t('loadingModels'), 'info', 2000);
+                    }
+
+                    try {
+                        const selectedChannel = apiChannelSelect.value;
+                        // 在获取模型之前，我们先将当前的api_key保存到节点的临时设置中
+                        // 这样后端就能从settings文件中读取到正确的key
+                        const tempSettings = {
+                            ...node.cfs_settings,
+                            api_channel: selectedChannel,
+                            channels_config: {
+                                ...(node.cfs_settings.channels_config || {}),
+                                [selectedChannel]: {
+                                    api_url: apiUrlInput.value,
+                                    api_key: apiKeyInput.value
+                                }
+                            }
+                        };
+
+                        // 先进行一次静默保存
+                        await api.fetchApi("/character_swap/llm_settings", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(tempSettings),
+                        });
+
+                        // 现在后端可以从保存的设置中获取正确的凭据
+                        const response = await api.fetchApi("/character_swap/llm_models", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ api_channel: selectedChannel }),
+                        });
+
+                        if (!response.ok) {
+                            const err = await response.json();
+                            throw new Error(err.error || 'Unknown error');
+                        }
+
+                        const models = await response.json();
+                        allModels = models;
+                        updateOptions();
+
+                        // Keep current selection, just show a success message
+                        // testResultDiv.textContent = t('modelsRefreshed');
+                        // testResultDiv.style.color = '#8BC34A';
+                        showToast(t('modelsRefreshed'), 'success');
+
+                    } catch (error) {
+                        console.error("Failed to load LLM models:", error);
+                        // Don't change the selection text on error
+                        allModels = [];
+                        updateOptions();
+                        showToast(`${t('errorLoadingModels')}: ${error.message}`, 'error');
+                    }
+                }
 
                 function fuzzySearch(needle, haystack) {
                     const h = haystack.toLowerCase();
@@ -418,23 +569,10 @@ app.registerExtension({
                             searchInput.focus();
                         };
 
-                        if (allModels.length === 0) {
-                            selectedDisplay.textContent = "Loading models...";
-                            api.fetchApi("/character_swap/llm_models")
-                                .then(response => response.json())
-                                .then(models => {
-                                    allModels = models;
-                                    // Restore original selected text before opening
-                                    selectedDisplay.textContent = hiddenSelect.value || "Select a model";
-                                    openDropdown();
-                                })
-                                .catch(error => {
-                                    console.error("Failed to load LLM models:", error);
-                                    selectedDisplay.textContent = "Error loading models";
-                                });
-                        } else {
+                        // Always try to fetch, the function itself will handle caching
+                        fetchAndPopulateModels(false, false).then(() => {
                             openDropdown();
-                        }
+                        });
                     } else {
                         closeDropdown();
                     }
@@ -460,11 +598,6 @@ app.registerExtension({
                 });
 
                 // --- Load Models and Settings ---
-                function loadModels() {
-                    // This function is now only called on demand.
-                    // The logic is moved to the selectedDisplay click handler.
-                }
-
                 function loadSettings() {
                     api.fetchApi("/character_swap/llm_settings")
                         .then(response => response.json())
@@ -472,9 +605,16 @@ app.registerExtension({
                             currentLanguage = settings.language || 'zh';
                             updateUITexts(); // Update UI text first
 
-                            apiUrlInput.value = settings.api_url || "";
-                            apiKeyInput.value = settings.api_key || "";
-                            timeoutInput.value = settings.timeout || 30;
+                            node.cfs_settings = settings; // 缓存最新的设置
+                            const savedChannel = settings.api_channel || 'openrouter';
+                            const channelsConfig = settings.channels_config || {};
+
+                            timeoutInput.value = settings.timeout || 60;
+                            apiChannelSelect.value = savedChannel;
+
+                            // 根据渠道更新UI
+                            updateUIForChannel(savedChannel, channelsConfig);
+
                             const defaultCustomPrompt = `You are an AI assistant for Stable Diffusion. Your task is to replace features in a prompt.
 Your goal is to take the features described in the 'New Character Prompt' and intelligently merge them into the 'Original Prompt'.
 The 'Features to Replace' list tells you which categories of features (like hair style, eye color, clothing) should be taken from the 'New Character Prompt'.
@@ -496,10 +636,11 @@ Respond with only the new, modified prompt, without any explanations.
                             }
                             customPromptInput.value = prompt;
 
-                            // Don't assume allModels is loaded. Just set the value.
-                            const currentModel = settings.model || "gryphe/mythomax-l2-13b";
+                            // 加载当前渠道的模型
+                            const channelModels = settings.channel_models || {};
+                            const currentModel = channelModels[savedChannel] || "";
                             hiddenSelect.value = currentModel;
-                            selectedDisplay.textContent = currentModel;
+                            selectedDisplay.textContent = currentModel || t('selectModel');
 
                             // Create language buttons
                             const langOptionsContainer = dialog.querySelector("#cfs-language-options");
@@ -516,6 +657,9 @@ Respond with only the new, modified prompt, without any explanations.
 
                             langOptionsContainer.appendChild(zhButton);
                             langOptionsContainer.appendChild(enButton);
+
+                            // Pre-fetch models silently when the dialog opens
+                            fetchAndPopulateModels(false, true);
                         });
                 }
 
@@ -541,36 +685,45 @@ Respond with only the new, modified prompt, without any explanations.
                 }
 
                 // --- LLM Testing Logic ---
+                const getModelsBtn = dialog.querySelector("#cfs-get-models-btn");
                 const testConnectionBtn = dialog.querySelector("#cfs-test-connection-btn");
                 const testResponseBtn = dialog.querySelector("#cfs-test-response-btn");
-                const testResultDiv = dialog.querySelector("#cfs-llm-test-result");
+
+                getModelsBtn.addEventListener("click", () => {
+                    fetchAndPopulateModels(true, false); // Force refresh, not silent
+                });
 
                 testConnectionBtn.addEventListener("click", async () => {
-                    testResultDiv.style.display = "block";
-                    testResultDiv.textContent = t('testing');
-                    testResultDiv.style.color = '#ccc';
+                    showToast(t('testing'), 'info', 2000);
                     testConnectionBtn.disabled = true;
                     testResponseBtn.disabled = true;
 
                     try {
-                        const response = await api.fetchApi("/character_swap/test_llm_connection", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                api_url: apiUrlInput.value,
-                                api_key: apiKeyInput.value,
-                            }),
-                        });
+                        const selectedChannel = apiChannelSelect.value;
+                        const timeout = parseInt(timeoutInput.value, 10) * 1000 || 60000;
+
+                        const response = await fetchWithTimeout(
+                            api.api_base + "/character_swap/test_llm_connection",
+                            {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ api_channel: selectedChannel }),
+                            },
+                            timeout
+                        );
+
                         const result = await response.json();
                         if (response.ok && result.success) {
-                            testResultDiv.textContent = t('connectionSuccess') + (result.message ? `\n${result.message}` : '');
-                            testResultDiv.style.color = '#8BC34A';
+                            showToast(t('connectionSuccess'), 'success');
                         } else {
                             throw new Error(result.error || 'Unknown error');
                         }
                     } catch (error) {
-                        testResultDiv.textContent = t('connectionFailed') + error.message;
-                        testResultDiv.style.color = '#c53939';
+                        let errorMessage = error.message;
+                        if (error.name === 'AbortError') {
+                            errorMessage = `请求超时（${(parseInt(timeoutInput.value, 10) || 60)}秒）`;
+                        }
+                        showToast(`${t('connectionFailed')} ${errorMessage}`, 'error');
                     } finally {
                         testConnectionBtn.disabled = false;
                         testResponseBtn.disabled = false;
@@ -578,75 +731,146 @@ Respond with only the new, modified prompt, without any explanations.
                 });
 
                 testResponseBtn.addEventListener("click", async () => {
-                    testResultDiv.style.display = "block";
-                    testResultDiv.textContent = t('testing');
-                    testResultDiv.style.color = '#ccc';
+                    showToast(t('testing'), 'info', 2000);
                     testConnectionBtn.disabled = true;
                     testResponseBtn.disabled = true;
 
                     try {
-                        const response = await api.fetchApi("/character_swap/test_llm_response", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                api_url: apiUrlInput.value,
-                                api_key: apiKeyInput.value,
-                                model: selectedDisplay.textContent,
-                            }),
-                        });
+                        const selectedChannel = apiChannelSelect.value;
+                        const timeout = parseInt(timeoutInput.value, 10) * 1000 || 60000;
+
+                        const response = await fetchWithTimeout(
+                            api.api_base + "/character_swap/test_llm_response",
+                            {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ api_channel: selectedChannel }),
+                            },
+                            timeout
+                        );
+
                         const result = await response.json();
                         if (response.ok && result.success) {
-                            testResultDiv.textContent = t('responseSuccess') + `\n${result.message}`;
-                            testResultDiv.style.color = '#8BC34A';
+                            showToast(result.message, 'success');
                         } else {
                             throw new Error(result.error || 'Unknown error');
                         }
                     } catch (error) {
-                        testResultDiv.textContent = t('responseFailed') + error.message;
-                        testResultDiv.style.color = '#c53939';
+                        let errorMessage = error.message;
+                        if (error.name === 'AbortError') {
+                            errorMessage = `请求超时（${(parseInt(timeoutInput.value, 10) || 60)}秒）`;
+                        }
+                        showToast(`${t('responseFailed')} ${errorMessage}`, 'error');
                     } finally {
                         testConnectionBtn.disabled = false;
                         testResponseBtn.disabled = false;
                     }
                 });
 
-                loadSettings(); // Initial call, but without loading models
+                loadSettings();
+
+                // --- Channel Switch Logic ---
+                function updateUIForChannel(channel, config) {
+                    const channelConf = config[channel] || {};
+                    const url = channelConf.api_url || "";
+                    const key = channelConf.api_key || "";
+
+                    apiUrlInput.value = url;
+                    apiKeyInput.value = key;
+
+                    // Reset to default state first
+                    apiUrlInput.style.display = '';
+                    apiUrlLabel.style.display = '';
+                    apiUrlPlaceholder.style.display = 'none';
+                    apiUrlInput.disabled = false;
+                    apiUrlInput.readOnly = false;
+
+                    apiKeyInput.style.display = '';
+                    apiKeyLabel.style.display = '';
+                    apiKeyPlaceholder.style.display = 'none';
+                    apiKeyInput.disabled = false;
+
+                    if (channel === 'gemini_cli') {
+                        apiUrlInput.style.display = 'none';
+                        apiUrlLabel.style.display = 'none';
+                        apiUrlPlaceholder.style.display = 'block';
+
+                        apiKeyInput.style.display = 'none';
+                        apiKeyLabel.style.display = 'none';
+                        apiKeyPlaceholder.style.display = 'block';
+                    } else if (url && (channel !== 'openai_compatible')) {
+                        apiUrlInput.readOnly = true;
+                    }
+                }
+
+                apiChannelSelect.addEventListener("change", (e) => {
+                    const selectedChannel = e.target.value;
+                    const channelsConfig = node.cfs_settings.channels_config || {};
+
+                    // 更新UI显示
+                    updateUIForChannel(selectedChannel, channelsConfig);
+
+                    // 加载并设置新渠道的模型
+                    fetchAndPopulateModels(true, false).then(() => {
+                        const channelModels = node.cfs_settings.channel_models || {};
+                        let newModel = channelModels[selectedChannel];
+
+                        if (!newModel && allModels.length > 0) {
+                            newModel = allModels[0];
+                        }
+
+                        hiddenSelect.value = newModel || "";
+                        selectedDisplay.textContent = newModel || t('selectModel');
+                    });
+                });
 
                 // Save settings
-                dialog.querySelector("#cfs-save-new-settings").addEventListener("click", () => {
-                    // 从节点小部件获取当前的特征
-                    const featureWidget = node.widgets.find(w => w.name === "target_features");
-                    const currentFeatures = featureWidget ? featureWidget.value.split(",").map(t => t.trim()).filter(t => t) : [];
+                dialog.querySelector("#cfs-save-new-settings").addEventListener("click", async () => {
+                    const selectedChannel = apiChannelSelect.value;
 
-                    const newSettings = {
-                        api_url: apiUrlInput.value,
-                        api_key: apiKeyInput.value,
-                        model: selectedDisplay.textContent,
-                        timeout: parseInt(timeoutInput.value, 10) || 30,
-                        custom_prompt: customPromptInput.value,
-                        language: currentLanguage,
-                        // 保留预设的完整结构
-                        active_preset_name: node.cfs_settings.active_preset_name,
-                        presets: node.cfs_settings.presets,
+                    // 1. 复制现有设置
+                    const newSettings = JSON.parse(JSON.stringify(node.cfs_settings || {}));
+
+                    // 2. 更新顶层设置
+                    newSettings.api_channel = selectedChannel;
+                    newSettings.timeout = parseInt(timeoutInput.value, 10) || 60;
+                    newSettings.custom_prompt = customPromptInput.value;
+                    newSettings.language = currentLanguage;
+
+                    // 3. 更新分渠道配置
+                    if (!newSettings.channels_config) newSettings.channels_config = {};
+                    newSettings.channels_config[selectedChannel] = {
+                        api_url: (selectedChannel === 'gemini_cli') ? "gemini_cli_mode" : apiUrlInput.value,
+                        api_key: (selectedChannel === 'gemini_cli') ? "" : apiKeyInput.value,
                     };
 
-                    api.fetchApi("/character_swap/llm_settings", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(newSettings),
-                    }).then(response => {
+                    // 4. 更新分渠道模型
+                    if (!newSettings.channel_models) newSettings.channel_models = {};
+                    newSettings.channel_models[selectedChannel] = selectedDisplay.textContent;
+
+                    try {
+                        const response = await api.fetchApi("/character_swap/llm_settings", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(newSettings),
+                        });
+
                         if (response.ok) {
-                            alert(t('settingsSaved'));
+                            node.cfs_settings = newSettings; // 更新节点上的缓存
+                            showToast(t('settingsSaved'), 'success');
+
+
                             const ui = nodeUIs.get(node);
                             if (ui) {
-                                // Use the just-saved settings for the check
                                 checkConnectionStatus(ui, newSettings);
                             }
-                            dialog.remove();
                         } else {
-                            alert(t('saveFailed') + response.statusText);
+                            const error = await response.json();
+                            throw new Error(error.error || response.statusText);
                         }
-                    });
+                    } catch (error) {
+                        showToast(t('saveFailed') + error.message, 'error');
+                    }
                 });
             }
 
@@ -1844,6 +2068,15 @@ Respond with only the new, modified prompt, without any explanations.
                         }
 
 
+                        .cfs-input-placeholder {
+                            padding: 8px;
+                            margin-bottom: 12px;
+                            background-color: #222;
+                            border: 1px solid #555;
+                            color: #888; /* Dark text */
+                            border-radius: 4px;
+                        }
+    
                         /* Custom Searchable Select */
                         .cfs-custom-select-wrapper {
                             position: relative;
@@ -2314,6 +2547,41 @@ Respond with only the new, modified prompt, without any explanations.
                             margin: 0;
                         }
                     `;
+                    style.textContent += `
+                       /* Toast Notification */
+                       .cfs-toast-container {
+                           position: absolute;
+                           top: 15px;
+                           left: 50%;
+                           transform: translateX(-50%);
+                           z-index: 2200;
+                           display: flex;
+                           flex-direction: column;
+                           align-items: center;
+                           gap: 8px;
+                           pointer-events: none;
+                       }
+                       .cfs-toast {
+                           padding: 10px 18px;
+                           border-radius: 6px;
+                           color: #fff;
+                           font-size: 14px;
+                           opacity: 0;
+                           transition: opacity 0.3s ease, transform 0.3s ease;
+                           box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+                           white-space: nowrap;
+                           transform: translateY(-20px);
+                       }
+                       .cfs-toast-success {
+                           background-color: #4CAF50; /* Green */
+                       }
+                       .cfs-toast-error {
+                           background-color: #f44336; /* Red */
+                       }
+                       .cfs-toast-info {
+                           background-color: #2196F3; /* Blue */
+                       }
+                   `;
                     document.head.appendChild(style);
                 }
 

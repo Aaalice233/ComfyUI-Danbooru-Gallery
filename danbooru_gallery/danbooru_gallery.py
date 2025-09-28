@@ -422,7 +422,7 @@ def check_network_connection():
     try:
         # 使用一个简单的公开API端点来检测连接
         test_url = f"{BASE_URL}/posts.json?limit=1"
-        response = requests.get(test_url, timeout=10)
+        response = requests.get(test_url, timeout=10, verify=False)
         return response.status_code == 200, False
     except requests.exceptions.Timeout:
         logger.error("网络连接超时")
@@ -440,7 +440,7 @@ def verify_danbooru_auth(username, api_key):
         return False, False
     try:
         test_url = f"{BASE_URL}/profile.json"
-        response = requests.get(test_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
+        response = requests.get(test_url, auth=HTTPBasicAuth(username, api_key), timeout=15, verify=False)
         is_valid = response.status_code == 200
         return is_valid, False
     except Exception as e:
@@ -451,7 +451,7 @@ def get_user_favorites(username, api_key):
     """获取用户的收藏列表"""
     try:
         favorites_url = f"{BASE_URL}/favorites.json"
-        response = requests.get(favorites_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
+        response = requests.get(favorites_url, auth=HTTPBasicAuth(username, api_key), timeout=15, verify=False)
         if response.status_code == 200:
             return response.json()
         return []
@@ -488,7 +488,8 @@ async def add_favorite(request):
                 favorite_url,
                 auth=HTTPBasicAuth(username, api_key),
                 data={"post_id": post_id},
-                timeout=15
+                timeout=15,
+                verify=False
             )
 
 
@@ -566,7 +567,7 @@ async def remove_favorite(request):
         try:
             # 直接使用帖子ID删除收藏
             delete_url = f"{BASE_URL}/favorites/{post_id}.json"
-            delete_response = requests.delete(delete_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
+            delete_response = requests.delete(delete_url, auth=HTTPBasicAuth(username, api_key), timeout=15, verify=False)
 
 
             if delete_response.status_code in [200, 204]:
@@ -731,7 +732,7 @@ async def get_autocomplete(request):
         username, api_key = load_user_auth()
         auth = HTTPBasicAuth(username, api_key) if username and api_key else None
 
-        response = requests.get(tags_url, params=params, auth=auth, timeout=10)
+        response = requests.get(tags_url, params=params, auth=auth, timeout=10, verify=False)
         response.raise_for_status()
 
         result = response.json()
@@ -908,7 +909,7 @@ async def get_autocomplete_with_translation(request):
         username, api_key = load_user_auth()
         auth = HTTPBasicAuth(username, api_key) if username and api_key else None
 
-        response = requests.get(tags_url, params=params, auth=auth, timeout=10)
+        response = requests.get(tags_url, params=params, auth=auth, timeout=10, verify=False)
         response.raise_for_status()
 
         result = response.json()
@@ -999,7 +1000,7 @@ class DanbooruGalleryNode:
         }
         
         try:
-            response = requests.get(posts_url, params=params, auth=auth, timeout=15)
+            response = requests.get(posts_url, params=params, auth=auth, timeout=15, verify=False)
             response.raise_for_status()
             return (response.text,)
         except requests.exceptions.RequestException as e:

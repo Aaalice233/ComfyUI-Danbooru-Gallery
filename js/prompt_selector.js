@@ -2755,34 +2755,17 @@ app.registerExtension({
                 };
 
                 this.showToast = (message, type = 'success') => {
-                    // Remove any existing toast
-                    const existingToast = document.querySelector(".ps-toast");
-                    if (existingToast) {
-                        existingToast.remove();
+                    let toastContainer = document.querySelector("#ps-toast-container");
+                    if (!toastContainer) {
+                        toastContainer = document.createElement("div");
+                        toastContainer.id = "ps-toast-container";
+                        document.body.appendChild(toastContainer);
                     }
 
                     const toast = document.createElement("div");
                     toast.className = `ps-toast ps-toast-${type}`;
                     toast.textContent = message;
-                    document.body.appendChild(toast);
-
-                    // New positioning logic
-                    const nodeWidget = this.widgets.find(w => w.name === "prompt_selector");
-                    if (nodeWidget && nodeWidget.element) {
-                        const nodeRect = nodeWidget.element.getBoundingClientRect();
-                        const toastRect = toast.getBoundingClientRect();
-
-                        // Center it horizontally above the node
-                        let left = nodeRect.left + (nodeRect.width / 2) - (toastRect.width / 2);
-                        let top = nodeRect.top - toastRect.height - 10; // 10px margin
-
-                        // Adjust if it goes off-screen
-                        if (left < 0) left = 10;
-                        if (top < 0) top = 10;
-
-                        toast.style.left = `${left}px`;
-                        toast.style.top = `${top}px`;
-                    }
+                    toastContainer.appendChild(toast);
 
                     setTimeout(() => {
                         toast.classList.add('show');
@@ -2792,6 +2775,9 @@ app.registerExtension({
                         toast.classList.remove('show');
                         setTimeout(() => {
                             toast.remove();
+                            if (toastContainer.children.length === 0) {
+                                toastContainer.remove();
+                            }
                         }, 300);
                     }, 3000);
                 };
@@ -4657,16 +4643,23 @@ app.registerExtension({
                 `;
                 style.textContent += `
                     /* Toast Notification */
-                    .ps-toast {
+                    #ps-toast-container {
                         position: fixed;
-                        /* top and right are now set by JS */
+                        top: 20px;
+                        right: 20px;
+                        z-index: 2000;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 8px;
+                        align-items: flex-end;
+                    }
+                    .ps-toast {
                         background-color: #333;
                         color: white;
                         padding: 12px 20px;
                         border-radius: 8px;
-                        z-index: 2000;
                         opacity: 0;
-                        transform: translateY(-20px);
+                        transform: translateX(100%);
                         transition: opacity 0.3s ease, transform 0.3s ease;
                         box-shadow: 0 4px 15px rgba(0,0,0,0.5);
                         font-size: 14px;

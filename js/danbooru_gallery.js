@@ -302,67 +302,7 @@ app.registerExtension({
 
                 // 显示错误信息的函数
                 const showError = (message, persistent = false, anchorElement = null) => {
-                    // 尝试使用 ComfyUI 的内置系统
-                    if (app.ui && app.ui.showToast) {
-                        app.ui.showToast(message, 'error');
-                        return;
-                    }
-
-                    if (app.ui && app.ui.notification && app.ui.notification.show) {
-                        app.ui.notification.show(message, 'error');
-                        return;
-                    }
-
-                    if (app.ui && app.ui.dialog && app.ui.dialog.showMessage) {
-                        app.ui.dialog.showMessage(message);
-                        return;
-                    }
-
-                    const toast = $el("div", {
-                        textContent: message,
-                        style: {
-                            position: "fixed",
-                            padding: "8px 16px",
-                            borderRadius: "4px",
-                            color: "white",
-                            fontSize: "12px",
-                            fontWeight: "500",
-                            zIndex: "999999",
-                            maxWidth: "200px",
-                            wordWrap: "break-word",
-                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
-                            backgroundColor: "#dc3545", // Error color
-                            borderLeft: `3px solid #bd2130`,
-                            pointerEvents: "none",
-                            opacity: "0",
-                            transition: "opacity 0.3s ease-out"
-                        }
-                    });
-
-                    // 计算位置
-                    if (anchorElement) {
-                        const rect = anchorElement.getBoundingClientRect();
-                        toast.style.left = `${rect.left + rect.width / 2 - 100}px`; // 居中对齐
-                        toast.style.top = `${rect.top - 40}px`; // 在元素上方
-                    } else {
-                        toast.style.top = "20px";
-                        toast.style.right = "20px";
-                    }
-
-                    document.body.appendChild(toast);
-
-                    setTimeout(() => {
-                        toast.style.opacity = "1";
-                    }, 10);
-
-                    setTimeout(() => {
-                        toast.style.opacity = "0";
-                        setTimeout(() => {
-                            if (toast.parentNode) {
-                                toast.remove();
-                            }
-                        }, 300);
-                    }, 5000); // 5秒后自动移除
+                    showToast(message, 'error');
                 };
 
                 // 清除错误信息的函数
@@ -467,65 +407,43 @@ app.registerExtension({
                         app.ui.showToast(message, type);
                         return;
                     }
-
                     if (app.ui && app.ui.notification && app.ui.notification.show) {
                         app.ui.notification.show(message, type);
                         return;
                     }
-
                     if (app.ui && app.ui.dialog && app.ui.dialog.showMessage) {
                         app.ui.dialog.showMessage(message);
                         return;
                     }
 
-                    const toast = $el("div", {
-                        textContent: message,
-                        style: {
-                            position: "fixed",
-                            padding: "8px 16px",
-                            borderRadius: "4px",
-                            color: "white",
-                            fontSize: "12px",
-                            fontWeight: "500",
-                            zIndex: "999999",
-                            maxWidth: "200px",
-                            wordWrap: "break-word",
-                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
-                            backgroundColor: type === 'success' ? "#28a745" : type === 'error' ? "#dc3545" : "#17a2b8",
-                            borderLeft: `3px solid ${type === 'success' ? "#1e7e34" : type === 'error' ? "#bd2130" : "#117a8b"}`,
-                            pointerEvents: "none",
-                            opacity: "0",
-                            transition: "opacity 0.3s ease-out"
-                        }
-                    });
-
-                    // 计算位置
-                    if (anchorElement) {
-                        const rect = anchorElement.getBoundingClientRect();
-                        toast.style.left = `${rect.left + rect.width / 2 - 100}px`; // 居中对齐
-                        toast.style.top = `${rect.top - 40}px`; // 在元素上方
-                    } else {
-                        toast.style.top = "20px";
-                        toast.style.right = "20px";
+                    // Custom fallback with stacking
+                    let toastContainer = document.querySelector("#danbooru-gallery-toast-container");
+                    if (!toastContainer) {
+                        toastContainer = $el("div#danbooru-gallery-toast-container");
+                        document.body.appendChild(toastContainer);
                     }
 
-                    // 强制添加到 document.body
-                    document.body.appendChild(toast);
+                    const toast = $el("div.danbooru-toast", {
+                        textContent: message,
+                    });
+                    toast.classList.add(`danbooru-toast-${type}`);
+                    toastContainer.appendChild(toast);
 
-                    // 立即显示
                     setTimeout(() => {
-                        toast.style.opacity = "1";
+                        toast.classList.add('show');
                     }, 10);
 
-                    // 3秒后自动移除
+                    const duration = type === 'error' ? 5000 : 3000;
                     setTimeout(() => {
-                        toast.style.opacity = "0";
+                        toast.classList.remove('show');
+                        toast.classList.add('fade-out');
                         setTimeout(() => {
-                            if (toast.parentNode) {
-                                toast.remove();
+                            toast.remove();
+                            if (toastContainer.children.length === 0) {
+                                toastContainer.remove();
                             }
                         }, 300);
-                    }, 3000);
+                    }, duration);
                 };
 
                 // 收藏管理功能
@@ -3672,7 +3590,7 @@ app.registerExtension({
             };
 
             const onRemoved = nodeType.prototype.onRemoved;
-            nodeType.prototype.onRemoved = function() {
+            nodeType.prototype.onRemoved = function () {
                 // 移除所有可能由该节点创建的全局UI元素
                 const elementsToRemove = document.querySelectorAll(
                     ".danbooru-settings-dialog, .danbooru-edit-panel, .danbooru-tag-tooltip, .danbooru-tag-context-menu, .danbooru-toast"
@@ -4432,20 +4350,32 @@ $el("style", {
         }
 
         /* Toast提示样式 */
-        .danbooru-toast {
+        #danbooru-gallery-toast-container {
             position: fixed;
             top: 20px;
             right: 20px;
+            z-index: 999999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-end;
+        }
+        .danbooru-toast {
             padding: 12px 20px;
             border-radius: 6px;
             color: white;
             font-size: 14px;
             font-weight: 500;
-            z-index: 999999;
             max-width: 300px;
             word-wrap: break-word;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            animation: toastSlideIn 0.3s ease-out;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+        }
+        .danbooru-toast.show {
+            opacity: 1;
+            transform: translateX(0);
         }
 
         .danbooru-toast-success {
