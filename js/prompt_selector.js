@@ -284,7 +284,12 @@ app.registerExtension({
 
                         // 恢复上次选择的分类
                         // 优先从节点属性中读取，实现节点独立状态
-                        this.selectedCategory = this.properties.selectedCategory || this.promptData.settings?.last_selected_category || "default";
+                        const nodeCategory = this.properties.selectedCategory;
+
+                        // If the node has its own saved category, use it. Otherwise, default to "default".
+                        // This prevents nodes in old workflows from all adopting the same global category.
+                        this.selectedCategory = nodeCategory || "default";
+
                         const categoryExists = this.promptData.categories.some(c => c.name === this.selectedCategory);
                         if (!categoryExists && this.promptData.categories.length > 0) {
                             this.selectedCategory = this.promptData.categories[0].name;
@@ -293,13 +298,23 @@ app.registerExtension({
 
 
                         this.updateCategoryDropdown();
-                        // 初始加载时，恢复所有分类的选择
-                        if (this.promptData.settings?.save_selection) {
-                            this.promptData.categories.forEach(cat => {
-                                if (cat.last_selected && cat.last_selected.length > 0) {
-                                    this.selectedPrompts[cat.name] = new Set(cat.last_selected);
+                        // Restore selected prompts from node properties for independent state
+                        if (this.properties.selectedPrompts) {
+                            try {
+                                const savedSelections = JSON.parse(this.properties.selectedPrompts);
+                                // Convert arrays back to Sets
+                                for (const category in savedSelections) {
+                                    if (Array.isArray(savedSelections[category])) {
+                                        this.selectedPrompts[category] = new Set(savedSelections[category]);
+                                    }
                                 }
-                            });
+                            } catch (e) {
+                                console.error(`[PromptSelector #${this.id}] Failed to parse saved selections:`, e);
+                                this.selectedPrompts = {};
+                            }
+                        } else {
+                            // If no selections are saved in the node, start with a clean slate.
+                            this.selectedPrompts = {};
                         }
                         this.renderContent();
                         this.updateOutput(); // 更新一次初始输出
@@ -767,9 +782,15 @@ app.registerExtension({
                     const outputString = allSelected.join(separator);
                     outputWidget.value = outputString;
                     console.log("Output updated:", outputString);
-                    if (this.promptData.settings?.save_selection) {
-                        this.saveSelection(); // 保存当前分类的选择
+                    // Serialize the selectedPrompts object for saving in properties.
+                    // We need to convert Sets to Arrays for JSON serialization.
+                    const serializableSelections = {};
+                    for (const category in this.selectedPrompts) {
+                        if (this.selectedPrompts[category].size > 0) { // Only save categories with selections
+                            serializableSelections[category] = Array.from(this.selectedPrompts[category]);
+                        }
                     }
+                    this.properties.selectedPrompts = JSON.stringify(serializableSelections);
                     this.updateCategoryDropdown();
                 };
 
@@ -1713,27 +1734,7 @@ app.registerExtension({
                 };
 
 
-                this.saveSelection = () => {
-                    api.fetchApi("/prompt_selector/selection", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            category: this.selectedCategory,
-                            selected_prompts: Array.from(this.selectedPrompts[this.selectedCategory] || [])
-                        }),
-                    }).then(response => {
-                        if (response.ok) {
-                            // this.showToast(t('save_selection') + ' ' + t('saveSuccess'));
-                        }
-                    }).catch(error => {
-                        console.error("保存选择失败:", error);
-                    });
-                };
 
-                this.restoreSelection = () => {
-                    // This function is now handled at initial load to support multi-category selections.
-                    // It is kept to prevent errors if called elsewhere, but its body is cleared.
-                };
 
                 this.showSettingsModal = () => {
                     if (document.querySelector(".ps-settings-modal")) return;
