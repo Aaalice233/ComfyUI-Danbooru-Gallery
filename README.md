@@ -34,6 +34,77 @@
 - 🖼️ **查看大图**: 支持点击图片查看全尺寸大图
 - ✍️ **编辑提示词**: 支持对提示词进行增加、删减标签，并提供智能补全和一键还原功能
 - 📋 **一键复制**: 方便地一键复制所有标签
+- 🔄 **人物特征替换**: 新增 `Character Feature Swap` 节点，利用 LLM 智能替换提示词中的人物特征。
+- 📚 **提示词选择器**: 新增 `Prompt Selector` 节点，用于分类管理和选择常用提示词。
+
+### 新增节点详细说明
+
+#### 🌟 人物特征替换 (Character Feature Swap)
+
+这是一个利用大语言模型（LLM）API 来智能替换提示词中人物相关特征的节点。你可以用它来将一张图中的角色特征（如发型、眼睛颜色、服装等）替换为你想要的特征，同时尽可能保留原始构图、姿势和环境。
+
+##### 功能
+
+-   **智能替换**：通过 LLM 理解并替换提示词中的人物特征。
+-   **多渠道支持**：支持 OpenRouter, Gemini API, DeepSeek, 以及其他兼容 OpenAI 的 API。同时支持通过 `@google/gemini-cli` 在本地执行。
+-   **高度可配置**：支持自定义 LLM API 服务、模型和 AI 提示。
+-   **预设管理**：可以保存和切换多组要替换的“特征类别”，方便不同场景使用。
+-   **易于使用**：节点上提供独立的“设置”按钮，方便配置 API Key 等敏感信息，并提供连接测试功能。
+
+##### 如何使用
+
+1.  **添加节点**：在 ComfyUI 中，添加 `Danbooru > 人物特征替换 (Character Feature Swap)` 节点。
+2.  **配置API**：
+    -   点击节点上的 **“设置 (Settings)”** 按钮。
+    -   在弹出的对话框中，选择你要使用的 `API渠道`。
+    -   根据所选渠道，填入你的 API URL 和 API Key。
+        -   **OpenRouter**: `https://openrouter.ai/api/v1`
+        -   **Gemini API**: `https://generativelanguage.googleapis.com/v1beta`
+        -   **DeepSeek**: `https://api.deepseek.com/v1`
+        -   **OpenAI兼容**: 填入你的服务地址，例如 `http://localhost:11434/v1`
+        -   **Gemini CLI**: 无需 URL 和 Key，但需要预先安装 `gemini-cli`。
+    -   点击 **“获取模型列表”** 并选择一个你偏好的模型。
+    -   点击 **“测试连接”** 和 **“测试回复”** 确保配置正确。
+    -   点击 **“保存”**。
+3.  **连接输入**：
+    -   `original_prompt`：输入你从 Danbooru Gallery 或其他地方获取的、包含完整人物特征的原始提示词。
+    -   `character_prompt`：输入你想要替换成的新的人物特征提示词，例如你自己的虚拟角色的特征。
+4.  **获取输出**：
+    -   `new_prompt` 输出的就是经过 LLM 处理后、替换了特征的新提示词。你可以将它连接到你的提示词编码器（如 `CLIPTextEncode`）中使用。
+
+> [!NOTE]
+> 如果选择使用 `Gemini CLI` 渠道，你需要先通过 `npm` 全局安装它：
+> `npm install -g @google/gemini-cli`
+> 并确保 `gemini` 命令在你的系统 `PATH` 中。
+
+#### 📚 提示词选择器 (Prompt Selector)
+
+这是一个用于分类、管理和选择常用提示词的节点。你可以用它来打造自己的提示词库，提高工作流效率。
+
+##### 功能
+
+-   **分类管理**：创建多个分类来组织你的提示词，例如“质量串”、“画风串”、“LORA”等。
+-   **预览图支持**：为每个提示词条目上传一张预览图，方便直观选择。
+-   **导入/导出**：支持通过 `.zip` 文件完整地导入和导出整个提示词库，方便备份和分享。
+-   **批量操作**：支持批量删除和移动提示词。
+-   **排序与收藏**：支持拖拽排序和标记常用提示词。
+-   **灵活拼接**：可以将选择的提示词与上游节点（如 `Danbooru Gallery`）的输出拼接在一起。
+
+##### 如何使用
+
+1.  **添加节点**：在 ComfyUI 中，添加 `Danbooru > 提示词选择器 (Prompt Selector)` 节点。
+2.  **管理词库**：
+    -   双击节点打开管理界面。
+    -   通过 **“添加分类”**、**“添加提示词”** 来构建你的词库。
+    -   点击提示词条目右侧的图片图标可以上传预览图。
+    -   使用 **“导入/导出”** 按钮来备份或恢复你的数据。
+3.  **选择提示词**：
+    -   在界面中点击你想要使用的提示词，它们会被添加到下方的“已选提示词”区域。
+    -   你可以直接在“已选提示词”区域调整顺序或删除。
+4.  **连接输入 (可选)**：
+    -   `prefix_prompt`：可以连接一个上游的提示词输出（例如 `Danbooru Gallery`），选择器中的提示词会自动追加在后面。
+5.  **获取输出**：
+    -   `prompt` 输出拼接好的最终提示词。
 
 ### 快速安装
 
@@ -149,19 +220,27 @@ pip install -r requirements.txt
 
 ```
 ComfyUI-Danbooru-Gallery/
-├── __init__.py                 # 插件入口
-├── danbooru_gallery.py         # 主要后端逻辑
-├── install.py                  # 智能安装脚本
-├── requirements.txt            # 依赖清单
-├── pyproject.toml             # 项目配置
+├── __init__.py                     # 插件入口
+├── danbooru_gallery/
+│   ├── __init__.py
+│   └── danbooru_gallery.py         # Danbooru画廊后端逻辑
+├── character_feature_swap/
+│   ├── __init__.py
+│   └── character_feature_swap.py   # 人物特征替换后端逻辑
+├── prompt_selector/
+│   ├── __init__.py
+│   └── prompt_selector.py          # 提示词选择器后端逻辑
+├── install.py                      # 智能安装脚本
+├── requirements.txt                # 依赖清单
 ├── js/
-│   └── danbooru_gallery.js     # 前端界面
-├── zh_cn/                      # 中文翻译数据
-│   ├── all_tags_cn.json        # JSON格式翻译数据
-│   ├── danbooru.csv            # CSV格式翻译数据
-│   └── wai_characters.csv      # 角色翻译数据
-├── cache/                      # 缓存目录
-└── README.md                   # 说明文档
+│   ├── danbooru_gallery.js         # Danbooru画廊前端
+│   ├── character_feature_swap.js   # 人物特征替换前端
+│   └── prompt_selector.js          # 提示词选择器前端
+├── danbooru_gallery/zh_cn/         # 中文翻译数据
+│   ├── all_tags_cn.json
+│   ├── danbooru.csv
+│   └── wai_characters.csv
+└── README.md                       # 说明文档
 ```
 
 ### 故障排除
@@ -202,6 +281,77 @@ A ComfyUI plugin for browsing and importing images from Danbooru using its API, 
 - 🖼️ **View Full Image**: Click on an image to view the full-size version
 - ✍️ **Edit Prompts**: Add or remove tags from prompts, with intelligent autocomplete and one-click restore
 - 📋 **One-Click Copy**: Easily copy all tags with a single click
+- 🔄 **Character Feature Swap**: Adds a `Character Feature Swap` node to intelligently replace character features in prompts using an LLM.
+- 📚 **Prompt Selector**: Adds a `Prompt Selector` node for categorizing, managing, and selecting frequently used prompts.
+
+### New Nodes in Detail
+
+#### 🌟 Character Feature Swap
+
+This node utilizes a Large Language Model (LLM) API to intelligently replace character-related features in a prompt. You can use it to swap features from one image's prompt (like hair style, eye color, clothing) with your desired features, while preserving the original composition, pose, and environment as much as possible.
+
+##### Features
+
+-   **Intelligent Swapping**: Understands and replaces character features in prompts via an LLM.
+-   **Multi-Channel Support**: Supports OpenRouter, Gemini API, DeepSeek, and other OpenAI-compatible APIs. Also supports local execution via `@google/gemini-cli`.
+-   **Highly Configurable**: Allows customization of the LLM API service, model, and AI prompt.
+-   **Preset Management**: Save and switch between multiple sets of "feature categories" to replace, making it convenient for different scenarios.
+-   **Easy to Use**: A dedicated "Settings" button on the node simplifies the configuration of sensitive information like API keys and includes connection testing functionality.
+
+##### How to Use
+
+1.  **Add Node**: In ComfyUI, add the `Danbooru > Character Feature Swap` node.
+2.  **Configure API**:
+    -   Click the **"Settings"** button on the node.
+    -   In the dialog, select the `API Channel` you want to use.
+    -   Enter your API URL and API Key based on the selected channel.
+        -   **OpenRouter**: `https://openrouter.ai/api/v1`
+        -   **Gemini API**: `https://generativelanguage.googleapis.com/v1beta`
+        -   **DeepSeek**: `https://api.deepseek.com/v1`
+        -   **OpenAI-compatible**: Enter your service address, e.g., `http://localhost:11434/v1`
+        -   **Gemini CLI**: No URL or Key needed, but requires `gemini-cli` to be pre-installed.
+    -   Click **"Get Model List"** and choose your preferred model.
+    -   Click **"Test Connection"** and **"Test Response"** to ensure the configuration is correct.
+    -   Click **"Save"**.
+3.  **Connect Inputs**:
+    -   `original_prompt`: Input the original prompt containing full character features, obtained from Danbooru Gallery or elsewhere.
+    -   `character_prompt`: Input the new character features you want to swap in, such as your own virtual character's features.
+4.  **Get Output**:
+    -   `new_prompt` outputs the new prompt with the replaced features, processed by the LLM. You can connect it to your prompt encoder (e.g., `CLIPTextEncode`).
+
+> [!NOTE]
+> If you choose the `Gemini CLI` channel, you need to install it globally via `npm` first:
+> `npm install -g @google/gemini-cli`
+> And ensure the `gemini` command is in your system's `PATH`.
+
+#### 📚 Prompt Selector
+
+This node is for categorizing, managing, and selecting frequently used prompts. You can use it to build your own prompt library and improve your workflow efficiency.
+
+##### Features
+
+-   **Category Management**: Create multiple categories to organize your prompts, such as "Quality Tags," "Style Tags," "LORAs," etc.
+-   **Preview Image Support**: Upload a preview image for each prompt entry for intuitive selection.
+-   **Import/Export**: Supports importing and exporting the entire prompt library via a `.zip` file for easy backup and sharing.
+-   **Batch Operations**: Supports batch deletion and moving of prompts.
+-   **Sorting and Favorites**: Supports drag-and-drop sorting and marking frequently used prompts.
+-   **Flexible Concatenation**: The selected prompts can be concatenated with the output of an upstream node (like `Danbooru Gallery`).
+
+##### How to Use
+
+1.  **Add Node**: In ComfyUI, add the `Danbooru > Prompt Selector` node.
+2.  **Manage Library**:
+    -   Double-click the node to open the management interface.
+    -   Build your library using **"Add Category"** and **"Add Prompt"**.
+    -   Click the image icon on the right of a prompt entry to upload a preview image.
+    -   Use the **"Import/Export"** buttons to back up or restore your data.
+3.  **Select Prompts**:
+    -   Click the prompts you want to use in the interface, and they will be added to the "Selected Prompts" area below.
+    -   You can reorder or delete them directly in the "Selected Prompts" area.
+4.  **Connect Input (Optional)**:
+    -   `prefix_prompt`: You can connect an upstream prompt output (e.g., from `Danbooru Gallery`), and the prompts from the selector will be appended to it.
+5.  **Get Output**:
+    -   `prompt` outputs the final concatenated prompt.
 
 ### Quick Installation
 
@@ -317,19 +467,27 @@ Example: 1girl blue_eyes smile -blurry
 
 ```
 ComfyUI-Danbooru-Gallery/
-├── __init__.py                 # Plugin entry point
-├── danbooru_gallery.py         # Main backend logic
-├── install.py                  # Smart installation script
-├── requirements.txt            # Dependency list
-├── pyproject.toml             # Project configuration
+├── __init__.py                     # Plugin entry point
+├── danbooru_gallery/
+│   ├── __init__.py
+│   └── danbooru_gallery.py         # Danbooru Gallery backend logic
+├── character_feature_swap/
+│   ├── __init__.py
+│   └── character_feature_swap.py   # Character Feature Swap backend logic
+├── prompt_selector/
+│   ├── __init__.py
+│   └── prompt_selector.py          # Prompt Selector backend logic
+├── install.py                      # Smart installation script
+├── requirements.txt                # Dependency list
 ├── js/
-│   └── danbooru_gallery.js     # Frontend interface
-├── zh_cn/                      # Chinese translation data
-│   ├── all_tags_cn.json        # JSON format translation data
-│   ├── danbooru.csv            # CSV format translation data
-│   └── wai_characters.csv      # Character translation data
-├── cache/                      # Cache directory
-└── README.md                   # Documentation
+│   ├── danbooru_gallery.js         # Danbooru Gallery frontend
+│   ├── character_feature_swap.js   # Character Feature Swap frontend
+│   └── prompt_selector.js          # Prompt Selector frontend
+├── danbooru_gallery/zh_cn/         # Chinese translation data
+│   ├── all_tags_cn.json
+│   ├── danbooru.csv
+│   └── wai_characters.csv
+└── README.md                       # Documentation
 ```
 
 ### Troubleshooting
@@ -372,41 +530,3 @@ MIT License
 - [ComfyUI_Mira](https://github.com/mirabarukaso/ComfyUI_Mira) - 角色翻译数据
 
 
----
-
-### 🌟 新增节点：人物特征替换 (Character Feature Swap)
-
-> [!WARNING]
-> **此节点目前正在开发中，尚不可用。**
-
-这是一个利用大语言模型（LLM）API 来智能替换提示词中人物相关特征的节点。你可以用它来将一张图中的角色特征（如发型、眼睛颜色、服装等）替换为你想要的特征，同时尽可能保留原始构图、姿势和环境。
-
-#### 功能
-
--   **智能替换**：通过 LLM 理解并替换提示词中的人物特征。
--   **高度可配置**：支持自定义 LLM API 服务（默认 OpenRouter）、模型和 AI 提示。
--   **易于使用**：节点上提供独立的“设置”按钮，方便配置 API Key 等敏感信息。
-
-#### 如何使用
-
-1.  **添加节点**：在 ComfyUI 中，添加 `Danbooru > 人物特征替换` 节点。
-2.  **配置API**：
-    -   点击节点上的 **“设置 (Settings)”** 按钮。
-    -   在弹出的对话框中，填入你的 LLM API URL 和 API Key。推荐使用 [OpenRouter](https://openrouter.ai/)，它支持多种模型。
-    -   默认 API URL: `https://openrouter.ai/api/v1/chat/completions`
-    -   默认模型: `gryphe/mythomax-l2-13b` (你也可以换成其他兼容的模型)
-    -   点击 **“保存”**。
-3.  **连接输入**：
-    -   `original_prompt`：输入你从 D 站或其他地方获取的、包含完整人物特征的原始提示词。
-    -   `target_features`：输入你想要替换成的新的人物特征提示词，例如你自己的虚拟角色的特征。
-    -   `feature_categories_to_replace` (可选): 告知 AI 需要重点关注和替换哪些特征类别，有助于提高准确性。
-4.  **获取输出**：
-    -   `new_prompt` 输出的就是经过 LLM 处理后、替换了特征的新提示词。你可以将它连接到你的提示词编码器（如 `CLIPTextEncode`）中使用。
-
-#### 示例
-
--   **原始提示词 (original\_prompt)**: `1girl, solo, long hair, blue eyes, school uniform, classroom, from side`
--   **目标特征 (target\_features)**: `short silver hair, red eyes, witch hat, magical forest`
--   **输出的新提示词 (new\_prompt)**: `1girl, solo, short silver hair, red eyes, witch hat, magical forest, from side` (这是一个理想的输出示例)
-
----
