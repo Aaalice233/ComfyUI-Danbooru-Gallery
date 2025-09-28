@@ -523,7 +523,7 @@ async def test_llm_response(request):
 @PromptServer.instance.routes.get("/character_swap/get_all_tags")
 async def get_all_tags(request):
     """提供所有可用的标签给前端，优先使用JSON，失败则回退到CSV"""
-    zh_cn_dir = os.path.join(PLUGIN_ROOT_DIR, "danbooru_gallery", "zh_cn")
+    zh_cn_dir = os.path.join(PLUGIN_DIR, "..", "danbooru_gallery", "zh_cn")
     json_file = os.path.join(zh_cn_dir, "all_tags_cn.json")
     csv_file = os.path.join(zh_cn_dir, "danbooru.csv")
     
@@ -581,10 +581,19 @@ class CharacterFeatureSwapNode:
     CATEGORY = "Danbooru"
 
     async def execute(self, original_prompt, character_prompt, target_features):
+        """
+        异步执行角色特征交换，支持ComfyUI中断机制
+        """
+        # 在执行开始时立即检查中断状态
+        model_management.throw_exception_if_processing_interrupted()
+            
         logger.info(f"[CharacterFeatureSwapNode] Received original_prompt (raw): {original_prompt}")
         original_prompt = _parse_prompt_input(original_prompt)
         logger.info(f"[CharacterFeatureSwapNode] Received original_prompt (parsed): {original_prompt}")
         character_prompt = _parse_prompt_input(character_prompt)
+
+        # 在处理输入后再次检查中断状态
+        model_management.throw_exception_if_processing_interrupted()
 
         settings = load_llm_settings()
         api_channel = settings.get("api_channel", "openrouter")
@@ -603,11 +612,17 @@ class CharacterFeatureSwapNode:
         
         final_target_features = ", ".join(active_preset["features"]) if active_preset else target_features
 
+        # 在格式化提示词前检查中断
+        model_management.throw_exception_if_processing_interrupted()
+            
         prompt_for_llm = custom_prompt_template.format(
             original_prompt=original_prompt,
             character_prompt=character_prompt,
             target_features=final_target_features
         )
+
+        # 在缓存操作前检查中断
+        model_management.throw_exception_if_processing_interrupted()
 
         # 缓存原始和角色提示词
         try:
@@ -621,8 +636,7 @@ class CharacterFeatureSwapNode:
 
         # --- Gemini CLI 执行 (异步) ---
         if api_channel == "gemini_cli":
-            if model_management.processing_interrupted():
-                return ("错误: 执行被用户中断。",)
+            model_management.throw_exception_if_processing_interrupted()
             
             logger.info("[Execute Gemini CLI] Starting async execution via stdin.")
             if not model:
@@ -646,25 +660,56 @@ class CharacterFeatureSwapNode:
                     env=cli_env
                 )
 
+                # 写入输入数据前检查中断
+                model_management.throw_exception_if_processing_interrupted()
+                
                 process.stdin.write(prompt_for_llm.encode('utf-8'))
                 await process.stdin.drain()
                 process.stdin.close()
 
+                # 使用更频繁的中断检查（每25ms检查一次）
                 start_time = asyncio.get_event_loop().time()
+                check_interval = 0.025
+                
                 while process.returncode is None:
-                    if model_management.processing_interrupted():
-                        logger.warning("[Execute Gemini CLI] Interruption detected. Killing subprocess.")
-                        process.kill()
-                        await process.wait()
-                        return ("错误: 执行被用户中断。",)
+                    try:
+                        model_management.throw_exception_if_processing_interrupted()
+                    except model_management.InterruptProcessingException:
+                        logger.warning("[Execute Gemini CLI] Interruption detected. Terminating subprocess.")
+                        try:
+                            # 尝试优雅终止
+                            process.terminate()
+                            # 等待短时间看是否能优雅退出
+                            try:
+                                await asyncio.wait_for(process.wait(), timeout=1.0)
+                            except asyncio.TimeoutError:
+                                # 如果优雅终止失败，强制杀死进程
+                                logger.warning("[Execute Gemini CLI] Force killing subprocess.")
+                                process.kill()
+                                await process.wait()
+                        except (ProcessLookupError, AttributeError):
+                            # 进程已经不存在
+                            pass
+                        raise  # 重新抛出异常，让ComfyUI处理
                     
-                    if (asyncio.get_event_loop().time() - start_time) > timeout:
-                         logger.error(f"[Execute Gemini CLI] Subprocess timed out. Killing.")
-                         process.kill()
-                         await process.wait()
+                    current_time = asyncio.get_event_loop().time()
+                    if (current_time - start_time) > timeout:
+                         logger.error(f"[Execute Gemini CLI] Subprocess timed out. Terminating.")
+                         try:
+                             process.terminate()
+                             try:
+                                 await asyncio.wait_for(process.wait(), timeout=1.0)
+                             except asyncio.TimeoutError:
+                                 process.kill()
+                                 await process.wait()
+                         except (ProcessLookupError, AttributeError):
+                             pass
                          return (f"错误: Gemini CLI 命令超时 ({timeout}s)。",)
 
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(check_interval)
+
+                # 获取输出前最后检查一次中断
+                model_management.throw_exception_if_processing_interrupted()
 
                 stdout, stderr = await process.communicate()
                 stdout_res = stdout.decode('utf-8', errors='ignore').strip()
@@ -681,20 +726,40 @@ class CharacterFeatureSwapNode:
                 logger.warning("[Execute Gemini CLI] Execution was cancelled.")
                 if process:
                     try:
+                        # 尝试优雅终止进程
+                        process.terminate()
+                        try:
+                            await asyncio.wait_for(process.wait(), timeout=2.0)
+                        except asyncio.TimeoutError:
+                            # 优雅终止失败，强制杀死
+                            process.kill()
+                            await process.wait()
+                    except (ProcessLookupError, AttributeError):
+                        # 进程已经不存在
+                        pass
+                return ("错误: 执行被用户中断。",)
+            except Exception as e:
+                logger.error(f"Gemini CLI 未知错误: {traceback.format_exc()}")
+                # 确保在异常情况下也能清理进程
+                if process:
+                    try:
                         process.kill()
                         await process.wait()
                     except (ProcessLookupError, AttributeError):
                         pass
-                raise
-            except Exception as e:
-                logger.error(f"Gemini CLI 未知错误: {traceback.format_exc()}")
                 return (f"Gemini CLI 未知错误: {e}",)
 
         # --- HTTP API 执行 (异步) ---
+        # 在开始HTTP API调用前检查中断
+        model_management.throw_exception_if_processing_interrupted()
+            
         if not api_key:
             return (f"错误: 渠道 '{api_channel}' 的 API Key 未设置。",)
         if not model:
             return (f"错误: 渠道 '{api_channel}' 的模型未选择。",)
+
+        # 在准备请求数据前检查中断
+        model_management.throw_exception_if_processing_interrupted()
 
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         
@@ -706,32 +771,54 @@ class CharacterFeatureSwapNode:
             api_endpoint = f"{api_url.rstrip('/')}/chat/completions"
             payload = {"model": model, "messages": [{"role": "user", "content": prompt_for_llm}]}
 
-        if model_management.processing_interrupted():
-            return ("错误: 执行被用户中断。",)
+        # 在发送请求前最后检查一次中断状态
+        model_management.throw_exception_if_processing_interrupted()
 
         try:
             async with aiohttp.ClientSession() as session:
-                post_task = asyncio.create_task(
-                    session.post(api_endpoint, headers=headers, json=payload, timeout=timeout, ssl=False)
-                )
+                # 创建HTTP请求任务
+                async def make_http_request():
+                    return await session.post(api_endpoint, headers=headers, json=payload, timeout=timeout, ssl=False)
                 
-                while not post_task.done():
-                    if model_management.processing_interrupted():
-                        logger.warning("[Execute HTTP] Interruption detected. Cancelling task.")
-                        post_task.cancel()
+                # 使用更短的超时时间进行分段请求，以便能够及时响应中断
+                request_task = asyncio.create_task(make_http_request())
+                
+                # 更频繁地检查中断状态（每50ms检查一次）
+                check_interval = 0.05
+                while not request_task.done():
+                    # 使用throw_exception_if_processing_interrupted进行更强制的中断
+                    try:
+                        model_management.throw_exception_if_processing_interrupted()
+                    except model_management.InterruptProcessingException:
+                        logger.warning("[Execute HTTP] Interruption detected. Cancelling HTTP request.")
+                        request_task.cancel()
                         try:
-                            await post_task
+                            await request_task
                         except asyncio.CancelledError:
-                            pass
-                        return ("错误: 执行被用户中断。",)
-                    await asyncio.sleep(0.1)
+                            logger.info("[Execute HTTP] HTTP request successfully cancelled.")
+                        raise  # 重新抛出异常，让ComfyUI处理
+                    
+                    try:
+                        # 等待一小段时间或直到任务完成
+                        await asyncio.wait_for(asyncio.shield(request_task), timeout=check_interval)
+                        break
+                    except asyncio.TimeoutError:
+                        # 超时说明请求还在进行，继续循环检查中断状态
+                        continue
+                    except asyncio.CancelledError:
+                        # 任务被取消
+                        raise model_management.InterruptProcessingException()
 
-                response = await post_task
+                response = request_task.result()
                 response.raise_for_status()
+                
+                # 在解析响应前再次检查中断状态
+                model_management.throw_exception_if_processing_interrupted()
+                
                 result = await response.json()
 
-                if model_management.processing_interrupted():
-                    return ("错误: 执行被用户中断。",)
+                # 解析响应后最后检查一次中断状态
+                model_management.throw_exception_if_processing_interrupted()
 
                 if api_channel == 'gemini_api':
                     new_prompt = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '').strip()
@@ -742,7 +829,7 @@ class CharacterFeatureSwapNode:
                 return (new_prompt,)
         except asyncio.CancelledError:
             logger.warning("LLM API 调用被用户取消。")
-            return ("错误: 执行被用户中断。",)
+            raise model_management.InterruptProcessingException()
         except aiohttp.ClientResponseError as e:
             error_details = ""
             try:
