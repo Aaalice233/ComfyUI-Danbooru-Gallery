@@ -401,37 +401,6 @@ async def toggle_favorite(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
-@PromptServer.instance.routes.post("/prompt_selector/selection")
-async def save_selection(request):
-   """保存当前选择的提示词"""
-   try:
-       data = await request.json()
-       category_name = data.get("category")
-       selected_prompts = data.get("selected_prompts", [])
-
-       if not category_name:
-           return web.json_response({"error": "Missing category name"}, status=400)
-
-       with open(DATA_FILE, 'r', encoding='utf-8') as f:
-           file_data = json.load(f)
-
-       # 检查是否启用保存
-       if not file_data.get("settings", {}).get("save_selection", False):
-           return web.json_response({"success": True, "message": "Save selection is disabled."})
-
-       # 查找分类并更新 last_selected
-       for category in file_data["categories"]:
-           if category["name"] == category_name:
-               category["last_selected"] = selected_prompts
-               break
-       
-       with open(DATA_FILE, 'w', encoding='utf-8') as f:
-           json.dump(file_data, f, ensure_ascii=False, indent=4)
-
-       return web.json_response({"success": True})
-   except Exception as e:
-       return web.json_response({"error": str(e)}, status=500)
-
 # 确保在启动时 data.json 文件存在
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
@@ -453,6 +422,7 @@ if not os.path.exists(DATA_FILE):
                 {
                     "name": "默认/其他",
                     "prompts": [
+                        create_prompt("默认质量串", "masterpiece,best quality,amazing quality,highres,absurdres,newest,very aesthetic,extreme aesthetic,sensitive,very awa,incredibly absurdres,8K,ultra detailed,HDR,high contrast,high detail RAW color art"),
                         create_prompt("可选质量串", "supreme masterpiece,official art,best quality,cinematic,fashion photography style,dramatic,visual impact,ultra-high resolution,sharp focus,intricate details,high-end texture,dramatic lighting,colorful,emotional"),
                         create_prompt("动态镜头串", "movie perspective,dynamic angle,cinematic angle,dutch angle,foreshortening"),
                         create_prompt("动态姿势串", "dynamic pose,dynamic composition"),
@@ -503,6 +473,6 @@ if not os.path.exists(DATA_FILE):
             "settings": {
                 "language": "zh-CN",
                 "separator": ", ",
-                "save_selection": True,
+                "save_selection": True
             }
         }, f, ensure_ascii=False, indent=4)
