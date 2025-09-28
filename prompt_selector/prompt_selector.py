@@ -423,7 +423,7 @@ if not os.path.exists(DATA_FILE):
                     "name": "默认/其他",
                     "prompts": [
                         create_prompt("默认质量串", "masterpiece,best quality,amazing quality,highres,absurdres,newest,very aesthetic,extreme aesthetic,sensitive,very awa,incredibly absurdres,8K,ultra detailed,HDR,high contrast,high detail RAW color art"),
-                        create_prompt("可选质量串", "supreme masterpiece,official art,best quality,cinematic,fashion photography style,dramatic,visual impact,ultra-high resolution,sharp focus,intricate details,high-end texture,dramatic lighting,colorful,emotional"),
+                        create_prompt("可选质量串", "A shot with tension,supreme masterpiece,official art,best quality,cinematic,fashion photography style,dramatic,visual impact,ultra-high resolution,sharp focus,intricate details,high-end texture,dramatic lighting,colorful,emotional"),
                         create_prompt("动态镜头串", "movie perspective,dynamic angle,cinematic angle,dutch angle,foreshortening"),
                         create_prompt("动态姿势串", "dynamic pose,dynamic composition"),
                         create_prompt("光影增强串", "cinematic lighting,dramatic lighting,volumetric lighting,god rays,rim lighting,dramatic shadows,soft lighting,golden hour lighting,"),
