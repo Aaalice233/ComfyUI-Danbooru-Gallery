@@ -118,7 +118,19 @@ app.registerExtension({
                     importSuccess: "设置已成功导入！",
                     exportSuccess: "设置已成功导出！",
                     importError: "导入设置失败，文件格式错误。",
-                    saveSuccess: "设置已保存！"
+                    saveSuccess: "设置已保存！",
+                    filter: "筛选",
+                    filterTooltip: "筛选图像",
+                    filterByTime: "按时间范围筛选",
+                    startTime: "开始时间",
+                    endTime: "结束时间",
+                    filterByPage: "按起始页码筛选",
+                    startPage: "起始页码",
+                    apply: "应用",
+                    reset: "重置",
+                    filterActive: "筛选已生效",
+                    currentPage: "当前页",
+                    totalPages: "总页数",
                 },
                 en: {
                     // 搜索和控制
@@ -231,7 +243,19 @@ app.registerExtension({
                     importSuccess: "Settings imported successfully!",
                     exportSuccess: "Settings exported successfully!",
                     importError: "Failed to import settings, invalid file format.",
-                    saveSuccess: "Settings saved!"
+                    saveSuccess: "Settings saved!",
+                    filter: "Filter",
+                    filterTooltip: "Filter images",
+                    filterByTime: "Filter by Time Range",
+                    startTime: "Start Time",
+                    endTime: "End Time",
+                    filterByPage: "Filter by Start Page",
+                    startPage: "Start Page",
+                    apply: "Apply",
+                    reset: "Reset",
+                    filterActive: "Filter is active",
+                    currentPage: "Current Page",
+                    totalPages: "Total Pages",
                 }
             };
             // 当前语言
@@ -240,6 +264,25 @@ app.registerExtension({
             // 获取翻译文本
             const t = (key) => {
                 return i18n[currentLanguage]?.[key] || i18n.zh[key] || key;
+            };
+
+            // 本地存储函数
+            const saveToLocalStorage = (key, value) => {
+                try {
+                    localStorage.setItem(`danbooru_gallery_${key}`, JSON.stringify(value));
+                } catch (e) {
+                    console.warn(`[Danbooru Gallery] Failed to save to localStorage: ${key}`, e);
+                }
+            };
+
+            const loadFromLocalStorage = (key, defaultValue) => {
+                try {
+                    const item = localStorage.getItem(`danbooru_gallery_${key}`);
+                    return item ? JSON.parse(item) : defaultValue;
+                } catch (e) {
+                    console.warn(`[Danbooru Gallery] Failed to load from localStorage: ${key}`, e);
+                    return defaultValue;
+                }
             };
 
             const onNodeCreated = nodeType.prototype.onNodeCreated;
@@ -264,6 +307,19 @@ app.registerExtension({
                     selectionWidget.draw = () => { }; // 覆盖draw方法，不绘制任何内容
                     selectionWidget.type = "hidden"; // 设置为隐藏类型
                     Object.defineProperty(selectionWidget, 'hidden', { value: true, writable: false }); // 标记为隐藏
+                }
+
+                // 创建隐藏的 filter_data widget
+                const filterWidget = this.addWidget("text", "filter_data", JSON.stringify({ startTime: null, endTime: null, startPage: null }), () => { }, {
+                    serialize: true // 确保序列化
+                });
+
+                // 确保widget不可见
+                if (filterWidget) {
+                    filterWidget.computeSize = () => [0, -4];
+                    filterWidget.draw = () => { };
+                    filterWidget.type = "hidden";
+                    Object.defineProperty(filterWidget, 'hidden', { value: true, writable: false });
                 }
 
                 const container = $el("div.danbooru-gallery");
@@ -360,6 +416,7 @@ app.registerExtension({
 
                 let globalTooltip, globalTooltipTimeout;
                 let posts = [], currentPage = 1, isLoading = false;
+                let filterState = { startTime: null, endTime: null, startPage: null };
                 let userAuth = { username: "", api_key: "", has_auth: false }; // 用户认证信息
                 let userFavorites = []; // 用户收藏列表，确保字符串
                 let networkStatus = { connected: true, lastChecked: 0 }; // 网络状态跟踪
@@ -700,6 +757,7 @@ app.registerExtension({
                     favoritesButton.title = t('favorites');
                     refreshButton.title = t('refreshTooltip');
                     settingsButton.title = t('settings');
+                    filterButton.title = t('filterTooltip');
 
                     // 更新排行榜按钮文本
                     const rankingIcon = rankingButton.querySelector('.icon');
@@ -753,6 +811,8 @@ app.registerExtension({
                                 button.innerHTML = `${opt.text} <svg class="arrow-down" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
                                 list.classList.remove('show');
                                 button.classList.remove('open');
+                                const ratingValue = opt.value;
+                                saveToLocalStorage('ratingValue', ratingValue);
                                 ratingSelect.dispatchEvent(new Event('change'));
                             }
                         })
@@ -778,6 +838,7 @@ app.registerExtension({
                     checkbox.addEventListener('change', async () => {
                         const newSelectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
                         uiSettings.selected_categories = newSelectedCategories;
+                        saveToLocalStorage('selectedCategories', newSelectedCategories);
                         await saveUiSettings(uiSettings);
                     });
                     return $el("div.danbooru-category-item", [
@@ -809,6 +870,7 @@ app.registerExtension({
                             replaceUnderscores: formattingDropdown.querySelector('[name="replaceUnderscores"]').checked,
                         };
                         uiSettings.formatting = newFormattingOptions;
+                        saveToLocalStorage('formatting', newFormattingOptions);
                         await saveUiSettings(uiSettings);
                     });
                     return $el("div.danbooru-category-item", [
@@ -1733,6 +1795,17 @@ app.registerExtension({
                     }
                 });
 
+                // 创建筛选按钮
+                const filterButton = $el("button.danbooru-filter-button", {
+                    innerHTML: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon">
+                        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                    </svg>`,
+                    title: t('filterTooltip'),
+                    onclick: () => {
+                        showFilterDialog();
+                    }
+                });
+
                 const refreshButton = $el("button.danbooru-refresh-button", {
                     title: t('refreshTooltip')
                 });
@@ -1744,6 +1817,252 @@ app.registerExtension({
 
 
                 const imageGrid = $el("div.danbooru-image-grid");
+
+                // 创建筛选对话框
+                const showFilterDialog = () => {
+                    const dialog = $el("div.danbooru-settings-dialog", {
+                        style: {
+                            position: "absolute",
+                            top: "0",
+                            left: "0",
+                            width: "100%",
+                            height: "100%",
+                            backgroundColor: "rgba(0, 0, 0, 0.7)",
+                            zIndex: "1000",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center"
+                        },
+                        onclick: (e) => { if (e.target === dialog) dialog.remove(); }
+                    });
+
+                    const content = $el("div.danbooru-settings-dialog-content", {
+                        style: {
+                            width: "420px",
+                            padding: "20px",
+                            backgroundColor: "var(--comfy-menu-bg)",
+                            border: "1px solid var(--input-border-color)",
+                            borderRadius: "12px",
+                            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "20px",
+                            position: "relative", // 确保内容在对话框内
+                            zIndex: "1001", // 确保内容在背景之上
+                        }
+                    });
+
+                    const title = $el("h2", {
+                        textContent: t('filter'),
+                        style: {
+                            margin: "0",
+                            color: "var(--comfy-input-text)",
+                            fontSize: "1.3em",
+                            borderBottom: "1px solid var(--input-border-color)",
+                            paddingBottom: "15px"
+                        }
+                    });
+
+                    const body = $el("div", { style: { display: "flex", flexDirection: "column", gap: "20px" } });
+
+                    // 筛选类型选择
+                    const filterType = filterState.startPage ? 'page' : 'time';
+
+                    const createRadio = (name, value, label, checked) => {
+                        const radioId = `filter-type-${value}`;
+                        const radio = $el("input", { type: "radio", name, value, id: radioId, checked, style: { display: 'none' } });
+                        const indicator = $el("span.danbooru-radio-indicator");
+                        const radioLabel = $el("label.danbooru-radio-label", {
+                            htmlFor: radioId,
+                            className: checked ? 'checked' : ''
+                        }, [
+                            indicator,
+                            $el("span", { textContent: label, style: { zIndex: '1', position: 'relative' } })
+                        ]);
+
+                        // Set initial styles for checked state
+                        // The container now IS the label, which contains the hidden radio button.
+                        const container = $el("div.danbooru-radio-button-wrapper", {}, [radio, radioLabel]);
+
+                        return container;
+                    };
+
+                    const timeRadio = createRadio("filter-type", "time", t('filterByTime'), filterType === 'time');
+                    const pageRadio = createRadio("filter-type", "page", t('filterByPage'), filterType === 'page');
+
+                    const radioGroup = $el("div", {
+                        className: "danbooru-radio-group",
+                        style: {
+                            display: "flex",
+                            justifyContent: "center",
+                            alignItems: "center",
+                            gap: "20px",
+                            margin: "10px 0"
+                        }
+                    }, [timeRadio, pageRadio]);
+
+
+                    // 时间范围筛选
+                    const timeSection = $el("div.danbooru-settings-section");
+                    const createInputRow = (label, input) => {
+                        const row = $el("div.danbooru-input-row", {}, [
+                            $el("label", { textContent: label, style: { color: "#ccc", fontSize: "0.9em", userSelect: "none" } }),
+                            input
+                        ]);
+                        // Make the whole row clickable to open the date/time picker
+                        row.addEventListener('click', () => {
+                            try {
+                                input.showPicker();
+                            } catch (e) {
+                                console.warn("input.showPicker() is not supported on this browser.", e);
+                            }
+                        });
+                        return row;
+                    };
+
+                    const startTimeInput = $el("input", { type: "datetime-local", id: "startTime", value: filterState.startTime || '' });
+                    const endTimeInput = $el("input", { type: "datetime-local", id: "endTime", value: filterState.endTime || '' });
+
+                    timeSection.append(
+                        $el("div", { style: { display: "flex", flexDirection: "column", gap: "10px" } }, [
+                            createInputRow(t('startTime'), startTimeInput),
+                            createInputRow(t('endTime'), endTimeInput)
+                        ])
+                    );
+
+                    // 起始页码筛选
+                    const pageSection = $el("div.danbooru-settings-section");
+                    const startPageInput = $el("input", { type: "number", id: "startPage", min: "1", placeholder: "1", value: filterState.startPage || '' });
+                    pageSection.append(
+                        createInputRow(t('startPage'), startPageInput)
+                    );
+
+                    body.append(radioGroup, timeSection, pageSection);
+
+                    const toggleSections = (type) => {
+                        if (type === 'time') {
+                            timeSection.style.display = 'block';
+                            pageSection.style.display = 'none';
+                        } else {
+                            timeSection.style.display = 'none';
+                            pageSection.style.display = 'block';
+                        }
+                    };
+
+                    toggleSections(filterType);
+
+                    radioGroup.addEventListener('change', (e) => {
+                        if (e.target.name === 'filter-type') {
+
+                            // New robust logic: Iterate through radios and update their labels
+                            radioGroup.querySelectorAll('input[type="radio"]').forEach(radio => {
+                                const label = radioGroup.querySelector(`label[for="${radio.id}"]`);
+                                if (label) {
+                                    const indicator = label.querySelector('.danbooru-radio-indicator');
+
+                                    if (radio.checked) {
+                                        label.classList.add('checked');
+                                        // FORCE INLINE STYLES FOR DEBUGGING
+                                        label.style.setProperty('border-color', '#7B68EE', 'important');
+                                        if (indicator) {
+                                            indicator.style.setProperty('background-color', '#7B68EE', 'important');
+                                            indicator.style.setProperty('border-color', '#7B68EE', 'important');
+                                        }
+                                    } else {
+                                        label.classList.remove('checked');
+                                        // CLEAR INLINE STYLES
+                                        label.style.borderColor = '';
+                                        if (indicator) {
+                                            indicator.style.backgroundColor = '';
+                                            indicator.style.borderColor = '';
+                                        }
+                                    }
+
+                                    // Use a timeout to allow the browser to apply styles before we log them
+                                    setTimeout(() => {
+                                        if (indicator) {
+                                        }
+                                    }, 0);
+
+                                } else {
+                                }
+                            });
+
+                            const selectedValue = e.target.value;
+                            toggleSections(selectedValue);
+                        }
+                    });
+
+                    // 按钮
+                    const footer = $el("div", { style: { display: "flex", justifyContent: "flex-end", gap: "12px", paddingTop: "15px", borderTop: "1px solid var(--input-border-color)" } });
+
+                    const cancelButton = $el("button.danbooru-dialog-button--secondary", {
+                        textContent: t('cancel'),
+                        onclick: () => dialog.remove()
+                    });
+
+                    const resetButton = $el("button.danbooru-dialog-button--secondary", {
+                        textContent: t('reset'),
+                        onclick: () => {
+                            filterState = { startTime: null, endTime: null, startPage: null };
+                            saveToLocalStorage('filterData', filterState);
+                            filterWidget.value = JSON.stringify(filterState);
+                            filterButton.classList.remove('active');
+                            dialog.remove();
+                            fetchAndRender(true);
+                        }
+                    });
+                    const applyButton = $el("button.danbooru-dialog-button--primary", {
+                        textContent: t('apply'),
+                        onclick: () => {
+                            const selectedType = radioGroup.querySelector('input[name="filter-type"]:checked').value;
+
+                            if (selectedType === 'time') {
+                                const startTime = startTimeInput.value;
+                                const endTime = endTimeInput.value;
+                                if (startTime && endTime && new Date(startTime) > new Date(endTime)) {
+                                    showError("结束时间不能早于开始时间。");
+                                    return;
+                                }
+                                filterState.startTime = startTime || null;
+                                filterState.endTime = endTime || null;
+                                filterState.startPage = null;
+                            } else { // page
+                                const startPage = parseInt(startPageInput.value, 10);
+                                if (startPageInput.value && (isNaN(startPage) || startPage < 1)) {
+                                    showError("起始页码必须是大于0的整数。");
+                                    return;
+                                }
+                                filterState.startTime = null;
+                                filterState.endTime = null;
+                                filterState.startPage = isNaN(startPage) ? null : startPage;
+                            }
+
+                            saveToLocalStorage('filterData', filterState);
+                            filterWidget.value = JSON.stringify(filterState);
+
+                            if (filterState.startTime || filterState.endTime || filterState.startPage) {
+                                filterButton.classList.add('active');
+                            } else {
+                                filterButton.classList.remove('active');
+                            }
+
+                            dialog.remove();
+                            fetchAndRender(true);
+                        }
+                    });
+                    footer.append(cancelButton, resetButton, applyButton);
+
+                    content.append(title, body, footer);
+                    dialog.append(content);
+                    container.appendChild(dialog);
+
+                    // Manually trigger change event to set initial visual state
+                    const initialCheckedRadio = radioGroup.querySelector('input[type="radio"]:checked');
+                    if (initialCheckedRadio) {
+                        initialCheckedRadio.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                };
 
                 // 黑名单功能
                 let currentBlacklist = [];
@@ -1967,7 +2286,7 @@ app.registerExtension({
                     }
 
                     if (reset) {
-                        currentPage = 1;
+                        currentPage = filterState.startPage || 1;
                         posts = [];
                         imageGrid.innerHTML = "";
                         imageGrid.insertAdjacentHTML('beforeend', `<p class="danbooru-status danbooru-loading">${t('loading')}</p>`);
@@ -2008,10 +2327,17 @@ app.registerExtension({
                         }
 
                         // 将搜索框中的标签转换为API格式
-                        const apiFormattedTags = convertTagsToApiFormat(searchValue);
+                        let apiFormattedTags = convertTagsToApiFormat(searchValue);
+
+                        // 添加日期筛选
+                        if (filterState.startTime || filterState.endTime) {
+                            const start = filterState.startTime ? new Date(filterState.startTime).toISOString().split('T')[0] : '';
+                            const end = filterState.endTime ? new Date(filterState.endTime).toISOString().split('T')[0] : '';
+                            apiFormattedTags += ` date:${start}..${end}`;
+                        }
 
                         const params = new URLSearchParams({
-                            "search[tags]": apiFormattedTags,
+                            "search[tags]": apiFormattedTags.trim(),
                             "search[rating]": ratingSelect.querySelector('.danbooru-category-button').dataset.value,
                             limit: "100",
                             page: currentPage,
@@ -3126,14 +3452,20 @@ app.registerExtension({
                 const observer = new ResizeObserver(resizeGrid);
                 observer.observe(imageGrid);
 
+                let scrollTimeout;
                 imageGrid.addEventListener("scroll", () => {
                     if (imageGrid.scrollHeight - imageGrid.scrollTop - imageGrid.clientHeight < 400) {
                         fetchAndRender(false);
                     }
+
+                    // Debounced scroll logic for page indicator
+                    clearTimeout(scrollTimeout);
+                    scrollTimeout = setTimeout(updateCurrentPageIndicator, 150);
                 });
 
                 searchInput.addEventListener("keydown", (e) => {
                     if (e.key === "Enter") {
+                        saveToLocalStorage('searchValue', searchInput.value.trim());
                         fetchAndRender(true);
                     }
                 });
@@ -3183,6 +3515,7 @@ app.registerExtension({
                     }
 
                     // 刷新图像
+                    saveToLocalStorage('searchValue', searchInput.value);
                     fetchAndRender(true);
                 });
 
@@ -3210,6 +3543,7 @@ app.registerExtension({
                 const handleSearchInput = () => {
                     const currentValue = searchInput.value.trim();
                     if (previousSearchValue !== "" && currentValue === "") {
+                        saveToLocalStorage('searchValue', '');
                         fetchAndRender(true); // 清空搜索框时自动刷新
                     }
                     previousSearchValue = currentValue;
@@ -3349,6 +3683,7 @@ app.registerExtension({
                         // 进入收藏夹模式时，不需要手动加载收藏列表，因为 fetchAndRender 会获取
                     }
                     updateFavoritesButtonState();
+                    saveToLocalStorage('searchValue', searchInput.value);
                     fetchAndRender(true);
                 });
 
@@ -3381,8 +3716,26 @@ app.registerExtension({
                 searchContainer.appendChild(chineseSuggestionsPanel);
 
                 // 将包含搜索框和建议面板的容器添加到总控件中
-                container.appendChild($el("div.danbooru-controls", [searchContainer, rankingButton, favoritesButton, ratingSelect, categoryDropdown, formattingDropdown, settingsButton, refreshButton]));
+                container.appendChild($el("div.danbooru-controls", [searchContainer, rankingButton, favoritesButton, ratingSelect, categoryDropdown, formattingDropdown, filterButton, settingsButton, refreshButton]));
                 container.appendChild(imageGrid);
+
+                // 添加页码指示器
+                const pageIndicator = $el("div.danbooru-page-indicator", {
+                    style: {
+                        display: 'none', // Initially hidden
+                        padding: '4px 8px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                        color: 'white',
+                        fontSize: '12px',
+                        borderRadius: '4px',
+                        position: 'absolute',
+                        bottom: '10px',
+                        left: '10px',
+                        zIndex: '20',
+                        backdropFilter: 'blur(5px)'
+                    }
+                });
+                container.appendChild(pageIndicator);
 
                 // --- 自动补全和中文搜索逻辑 ---
                 let debounceTimer;
@@ -3502,6 +3855,16 @@ app.registerExtension({
                 // 初始化功能
                 const initializeApp = async () => {
                     try {
+                        // Try to load filter state from the widget right before we need it
+                        try {
+                            if (filterWidget.value) {
+                                filterState = JSON.parse(filterWidget.value);
+                            }
+                        } catch (e) {
+                            console.warn("Danbooru Gallery: Could not parse filter state, using default.", e);
+                            filterState = { startTime: null, endTime: null, startPage: null };
+                        }
+
                         console.log("Initializing Danbooru Gallery...");
                         let networkConnected = true;
 
@@ -3547,14 +3910,36 @@ app.registerExtension({
                         await loadUiSettings();
                         console.log("UI settings loaded.");
 
-                        // 根据加载的设置更新类别复选框
+                        // 从 localStorage 加载并覆盖筛选状态
+                        const savedSearch = loadFromLocalStorage('searchValue', null);
+                        if (savedSearch !== null) {
+                            searchInput.value = savedSearch;
+                        }
+
+                        const savedRating = loadFromLocalStorage('ratingValue', null);
+                        if (savedRating !== null) {
+                            const ratingButton = ratingSelect.querySelector('.danbooru-category-button');
+                            const ratingItem = ratingSelect.querySelector(`.danbooru-category-item[data-value="${savedRating}"]`);
+                            if (ratingButton && ratingItem) {
+                                ratingButton.dataset.value = savedRating;
+                                const ratingText = ratingItem.textContent;
+                                ratingButton.innerHTML = `${ratingText} <svg class="arrow-down" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
+                            }
+                        }
+
+                        const savedCategories = loadFromLocalStorage('selectedCategories', null);
+                        if (savedCategories) {
+                            uiSettings.selected_categories = savedCategories;
+                        }
                         const categoryCheckboxes = categoryDropdown.querySelectorAll('.danbooru-category-checkbox');
                         categoryCheckboxes.forEach(checkbox => {
                             checkbox.checked = uiSettings.selected_categories.includes(checkbox.name);
                         });
-                        console.log("Category checkboxes updated.");
 
-                        // 根据加载的设置更新格式化复选框
+                        const savedFormatting = loadFromLocalStorage('formatting', null);
+                        if (savedFormatting) {
+                            uiSettings.formatting = savedFormatting;
+                        }
                         const escapeBracketsCheckbox = formattingDropdown.querySelector('[name="escapeBrackets"]');
                         const replaceUnderscoresCheckbox = formattingDropdown.querySelector('[name="replaceUnderscores"]');
                         if (escapeBracketsCheckbox && uiSettings.formatting) {
@@ -3563,17 +3948,60 @@ app.registerExtension({
                         if (replaceUnderscoresCheckbox && uiSettings.formatting) {
                             replaceUnderscoresCheckbox.checked = uiSettings.formatting.replaceUnderscores;
                         }
-                        console.log("Formatting checkboxes updated.");
+
+                        const savedFilterData = loadFromLocalStorage('filterData', null);
+                        if (savedFilterData) {
+                            filterState = savedFilterData;
+                            filterWidget.value = JSON.stringify(filterState);
+                        }
 
                         // 初始化排行榜按钮状态
                         updateRankingButtonState();
                         console.log("Ranking button state updated.");
+                        // 根据加载的 filterState 更新筛选按钮状态
+                        if (filterState.startTime || filterState.endTime || filterState.startPage) {
+                            filterButton.classList.add('active');
+                        } else {
+                            filterButton.classList.remove('active');
+                        }
+
                         // 页面加载时直接获取第一页的帖子
                         fetchAndRender(true);
                         console.log("Initial fetch triggered.");
                     } catch (error) {
                         console.error("Danbooru Gallery initialization failed:", error);
                         showError("图库初始化失败，请检查控制台日志。", true);
+                    }
+                };
+
+                const updateCurrentPageIndicator = () => {
+                    if (posts.length === 0) {
+                        pageIndicator.style.display = 'none';
+                        return;
+                    }
+
+                    const itemsPerPage = 100;
+
+                    // Find the first visible element in the grid
+                    const firstVisibleChild = Array.from(imageGrid.children).find(child => {
+                        const rect = child.getBoundingClientRect();
+                        const gridRect = imageGrid.getBoundingClientRect();
+                        return rect.bottom > gridRect.top && rect.top < gridRect.bottom;
+                    });
+
+                    if (firstVisibleChild) {
+                        const postId = firstVisibleChild.dataset.postId;
+                        const postIndex = posts.findIndex(p => String(p.id) === postId);
+
+                        if (postIndex !== -1) {
+                            const currentPageInView = Math.floor(postIndex / itemsPerPage) + (filterState.startPage || 1);
+                            pageIndicator.textContent = `${t('currentPage')}: ${currentPageInView}`;
+                            pageIndicator.style.display = 'block';
+                        } else {
+                            pageIndicator.style.display = 'none';
+                        }
+                    } else {
+                        pageIndicator.style.display = 'none';
                     }
                 };
 
@@ -3868,6 +4296,9 @@ $el("style", {
     .danbooru-refresh-button { flex-grow: 0; width: 40px; height: 40px; aspect-ratio: 1; padding: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.2s, transform 0.2s; border-radius: 6px; }
     .danbooru-refresh-button:hover { background-color: var(--comfy-menu-bg); transform: scale(1.1); }
     .danbooru-refresh-button.loading { cursor: not-allowed; }
+    .danbooru-filter-button { flex-grow: 0; width: 40px; height: 40px; aspect-ratio: 1; padding: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.2s, transform 0.2s, color 0.2s, border-color 0.2s; border-radius: 6px; }
+    .danbooru-filter-button:hover { background-color: var(--comfy-menu-bg); transform: scale(1.1); }
+    .danbooru-filter-button.active { background-color: #7B68EE; color: white; border-color: #7B68EE; }
     .danbooru-refresh-button.loading .icon { animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .danbooru-ranking-button {
@@ -4189,8 +4620,8 @@ $el("style", {
         }
         
         .danbooru-settings-dialog {
-            backdrop-filter: blur(3px);
-            -webkit-backdrop-filter: blur(3px);
+            /* backdrop-filter: blur(3px); */
+            /* -webkit-backdrop-filter: blur(3px); */
         }
         
         .danbooru-settings-dialog-content {
@@ -4578,6 +5009,207 @@ $el("style", {
     }
     `,
     parent: document.head
+});
+
+$el("style", {
+    textContent: `
+    .danbooru-settings-section {
+        padding: 16px;
+        border: 1px solid var(--input-border-color);
+        border-radius: 8px;
+        background-color: var(--comfy-input-bg);
+    }
+    .danbooru-settings-dialog input[type="datetime-local"],
+    .danbooru-settings-dialog input[type="number"] {
+        background-color: var(--comfy-menu-bg);
+        color: var(--comfy-input-text);
+        border: 1px solid var(--input-border-color);
+        border-radius: 4px;
+        padding: 8px;
+        user-select: none;
+    }
+    .danbooru-primary-button {
+        padding: 10px 20px;
+        border: 2px solid #7B68EE;
+        border-radius: 6px;
+        background-color: #7B68EE;
+        color: white;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+    }
+    .danbooru-radio-group {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 20px;
+        margin: 10px 0;
+    }
+    .danbooru-radio-button-wrapper {
+        flex: 0 0 auto;
+        min-width: 140px;
+    }
+    .danbooru-radio-label {
+        padding: 12px 20px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        background-color: var(--comfy-input-bg);
+        color: var(--comfy-input-text);
+        border: 2px solid var(--input-border-color);
+        border-radius: 8px;
+        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        font-weight: 500;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        transform: translateY(0);
+        position: relative;
+        overflow: hidden;
+    }
+    .danbooru-radio-label:hover {
+        background-color: rgba(123, 104, 238, 0.1);
+        border-color: #7B68EE;
+        color: #7B68EE;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(123, 104, 238, 0.3);
+    }
+    .danbooru-settings-dialog .danbooru-radio-label.checked {
+        background-color: transparent;
+        color: white;
+        border-color: #7B68EE;
+        box-shadow: 0 4px 12px rgba(123, 104, 238, 0.4);
+        transform: translateY(-1px);
+        font-weight: 600;
+    }
+    .danbooru-settings-dialog .danbooru-radio-label.checked::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #7B68EE;
+        z-index: 0;
+        transition: transform 0.4s ease;
+        transform: scaleX(1);
+        transform-origin: left;
+    }
+    .danbooru-radio-label::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #7B68EE;
+        z-index: 0;
+        transition: transform 0.4s ease;
+        transform: scaleX(0);
+        transform-origin: right;
+    }
+    .danbooru-radio-label:hover::before {
+        transform: scaleX(1);
+        transform-origin: left;
+    }
+    .danbooru-settings-dialog .danbooru-radio-label.checked:hover::before {
+        transform: scaleX(1);
+    }
+    .danbooru-settings-dialog .danbooru-radio-label.checked:hover {
+        background-color: transparent;
+        color: white;
+        border-color: #9a8ee8;
+        transform: translateY(-3px);
+        box-shadow: 0 6px 16px rgba(123, 104, 238, 0.5);
+    }
+    .danbooru-settings-dialog .danbooru-radio-label.checked:hover::before {
+        background-color: #9a8ee8;
+    }
+    .danbooru-radio-indicator {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 2px solid #888;
+        margin-right: 10px;
+        transition: all 0.2s;
+        flex-shrink: 0;
+        z-index: 1;
+        position: relative;
+    }
+    .danbooru-radio-label:hover .danbooru-radio-indicator {
+        border-color: #7B68EE;
+    }
+    .danbooru-settings-dialog .danbooru-radio-label.checked .danbooru-radio-indicator {
+        background-color: #7B68EE;
+        border-color: #7B68EE;
+        position: relative;
+    }
+    .danbooru-settings-dialog .danbooru-radio-label.checked .danbooru-radio-indicator::before {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 8px;
+        height: 8px;
+        background-color: white;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1;
+    }
+   .danbooru-input-row {
+       display: flex;
+       justify-content: space-between;
+       align-items: center;
+       width: 100%;
+       padding: 8px;
+       border-radius: 6px;
+       transition: background-color 0.2s ease;
+       cursor: pointer;
+       user-select: none;
+   }
+   .danbooru-input-row:hover {
+       background-color: rgba(255, 255, 255, 0.1);
+   }
+   .danbooru-input-row input {
+       cursor: pointer;
+   }
+    .danbooru-dialog-button--secondary {
+       padding: 8px 16px;
+       border: 1px solid var(--input-border-color);
+       border-radius: 6px;
+       background-color: var(--comfy-input-bg);
+       color: var(--comfy-input-text);
+       cursor: pointer;
+       transition: all 0.2s ease;
+   }
+   .danbooru-dialog-button--secondary:hover {
+       background-color: var(--comfy-menu-bg);
+       border-color: #999;
+       transform: translateY(-2px);
+       box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+   }
+
+   .danbooru-dialog-button--primary {
+       padding: 8px 16px;
+       border: 1px solid #7B68EE;
+       border-radius: 6px;
+       background-color: #7B68EE;
+       color: white;
+       cursor: pointer;
+       font-weight: 600;
+       transition: all 0.2s ease;
+   }
+   .danbooru-dialog-button--primary:hover {
+       background-color: #9a8ee8;
+       border-color: #9a8ee8;
+       transform: translateY(-2px);
+       box-shadow: 0 4px 8px rgba(123, 104, 238, 0.3);
+   }
+    `,
+    parent: document.head,
 });
 
 

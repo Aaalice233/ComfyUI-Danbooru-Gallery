@@ -931,6 +931,8 @@ async def get_autocomplete_with_translation(request):
         return web.json_response({"error": "Internal server error"}, status=500)
 
 class DanbooruGalleryNode:
+    _post_cache = {}
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -980,15 +982,45 @@ class DanbooruGalleryNode:
     
     @staticmethod
     def get_posts_internal(tags: str, limit: int = 100, page: int = 1, rating: str = None):
+        settings = load_settings()
+        cache_enabled = settings.get("cache_enabled", True)
+        max_cache_age = settings.get("max_cache_age", 3600)
+
+        # 创建缓存键
+        cache_key = f"{tags}:{limit}:{page}:{rating}"
+
+        # 如果启用了缓存，则检查缓存
+        if cache_enabled:
+            if cache_key in DanbooruGalleryNode._post_cache:
+                cached_data, timestamp = DanbooruGalleryNode._post_cache[cache_key]
+                if time.time() - timestamp < max_cache_age:
+                    logger.info(f"从缓存加载: {cache_key}")
+                    return (cached_data,)
+
         posts_url = f"{BASE_URL}/posts.json"
         
-        tag_list = [tag for tag in tags.split(' ') if tag.strip()]
-        if len(tag_list) > 2:
-            tag_list = tag_list[:2]
-        tags = ' '.join(tag_list)
+        # 分离 date: 标签和其他标签
+        date_tag = ''
+        other_tags = []
+        for tag in tags.split(' '):
+            if tag.strip().startswith('date:'):
+                date_tag = tag.strip()
+            elif tag.strip():
+                other_tags.append(tag.strip())
+
+        # 限制其他标签的数量
+        if len(other_tags) > 2:
+            other_tags = other_tags[:2]
+        
+        # 重新组合标签
+        final_tags = ' '.join(other_tags)
+        if date_tag:
+            final_tags = f"{final_tags} {date_tag}".strip()
 
         if rating and rating.lower() != 'all':
-            tags = f"{tags} rating:{rating}".strip()
+            final_tags = f"{final_tags} rating:{rating}".strip()
+        
+        tags = final_tags
         
         username, api_key = load_user_auth()
         auth = HTTPBasicAuth(username, api_key) if username and api_key else None
@@ -1000,9 +1032,21 @@ class DanbooruGalleryNode:
         }
         
         try:
+            logger.info(f"从API获取: {cache_key}")
             response = requests.get(posts_url, params=params, auth=auth, timeout=15, verify=False)
             response.raise_for_status()
-            return (response.text,)
+            
+            result_text = response.text
+            
+            # 如果启用了缓存，则存储结果
+            if cache_enabled:
+                DanbooruGalleryNode._post_cache[cache_key] = (result_text, time.time())
+                # 清理旧缓存（可选，防止内存无限增长）
+                if len(DanbooruGalleryNode._post_cache) > 200: # 假设最多缓存200个请求
+                    oldest_key = min(DanbooruGalleryNode._post_cache.keys(), key=lambda k: DanbooruGalleryNode._post_cache[k][1])
+                    del DanbooruGalleryNode._post_cache[oldest_key]
+            
+            return (result_text,)
         except requests.exceptions.RequestException as e:
             logger.error(f"网络请求时发生错误: {e}")
             return ("[]",)

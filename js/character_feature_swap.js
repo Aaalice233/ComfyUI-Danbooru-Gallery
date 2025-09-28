@@ -309,7 +309,6 @@ app.registerExtension({
                           <option value="gemini_api">Gemini API</option>
                           <option value="gemini_cli">Gemini CLI</option>
                           <option value="deepseek">DeepSeek</option>
-                          <option value="grok">Grok</option>
                           <option value="openai_compatible">OpenAI Compatible</option>
                       </select>
                      <label for="cfs-api-url-new" data-i18n="apiUrl"></label>

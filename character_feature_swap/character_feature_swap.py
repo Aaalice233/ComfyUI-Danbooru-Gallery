@@ -58,7 +58,6 @@ def load_llm_settings():
             "gemini_api": {"api_url": "https://generativelanguage.googleapis.com/v1beta", "api_key": ""},
             "gemini_cli": {"api_url": "gemini_cli_mode", "api_key": ""},
             "deepseek": {"api_url": "https://api.deepseek.com/v1", "api_key": ""},
-            "grok": {"api_url": "https://api.groq.com/openai/v1", "api_key": ""},
             "openai_compatible": {"api_url": "", "api_key": ""}
         },
         "timeout": 30,
@@ -299,7 +298,6 @@ async def get_llm_models(request):
                 "gemini-2.5-flash", "gemini-2.5-pro"
             ],
             "deepseek": ["deepseek-chat", "deepseek-coder"],
-            "grok": ["gemma-7b-it", "llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768"],
             "openai_compatible": ["default-model-1", "default-model-2"]
         }
         models = fallback_models.get(api_channel, [])
