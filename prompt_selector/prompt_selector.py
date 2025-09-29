@@ -184,8 +184,8 @@ def _ensure_data_compatibility(data):
                 prompt["last_used"] = None
     return data
 
-@PromptServer.instance.routes.post("/prompt_selector/import")
-async def import_zip(request):
+@PromptServer.instance.routes.post("/prompt_selector/pre_import")
+async def pre_import_zip(request):
     post = await request.post()
     zip_file = post.get("zip_file")
     if not zip_file or not zip_file.file:
@@ -193,29 +193,105 @@ async def import_zip(request):
 
     try:
         with zipfile.ZipFile(zip_file.file, 'r') as zf:
-            # 检查必要文件
             if 'data.json' not in zf.namelist():
                 return web.json_response({"error": "ZIP file must contain data.json"}, status=400)
             
-            # 提取 data.json
             with zf.open('data.json') as f:
-                new_data = json.load(f)
+                import_data = json.load(f)
+            
+            categories = [cat.get("name") for cat in import_data.get("categories", [])]
+            return web.json_response({"categories": categories})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
-            # 确保数据兼容
-            compatible_data = _ensure_data_compatibility(new_data)
+@PromptServer.instance.routes.post("/prompt_selector/import")
+async def import_zip(request):
+    post = await request.post()
+    zip_file = post.get("zip_file")
+    selected_categories_str = post.get("selected_categories", "[]")
+    
+    if not zip_file or not zip_file.file:
+        return web.json_response({"error": "No file uploaded"}, status=400)
+
+    try:
+        selected_categories = json.loads(selected_categories_str)
+        
+        # 加载本地数据
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                local_data = json.load(f)
+        else:
+            # 如果本地文件不存在，则创建一个空的结构
+            local_data = {
+                "version": "1.6",
+                "categories": [],
+                "settings": { "language": "zh-CN", "separator": ", ", "save_selection": True }
+            }
+
+        with zipfile.ZipFile(zip_file.file, 'r') as zf:
+            if 'data.json' not in zf.namelist():
+                return web.json_response({"error": "ZIP file must contain data.json"}, status=400)
             
-            # 提取图片
-            for member in zf.infolist():
-                if member.filename.startswith('preview/') and not member.is_dir():
-                    if not os.path.exists(PREVIEW_DIR):
-                        os.makedirs(PREVIEW_DIR)
-                    target_path = os.path.join(PREVIEW_DIR, os.path.basename(member.filename))
-                    with zf.open(member) as source, open(target_path, 'wb') as target:
-                        shutil.copyfileobj(source, target)
+            with zf.open('data.json') as f:
+                import_data = json.load(f)
+
+            compatible_data = _ensure_data_compatibility(import_data)
             
-            # 覆盖 data.json
+            local_categories = {cat["name"]: cat for cat in local_data["categories"]}
+            imported_images = set()
+
+            for category in compatible_data.get("categories", []):
+                cat_name = category.get("name")
+                if cat_name not in selected_categories:
+                    continue
+
+                # 如果本地不存在该分类，则直接添加
+                if cat_name not in local_categories:
+                    local_data["categories"].append(category)
+                    local_categories[cat_name] = category # 更新映射
+                    # 记录所有该分类下的图片
+                    for prompt in category.get("prompts", []):
+                        if prompt.get("image"):
+                            imported_images.add(prompt["image"])
+                else:
+                    # 如果本地存在该分类，则合并
+                    local_category = local_categories[cat_name]
+                    local_prompts = {p.get("alias", p.get("prompt")): p for p in local_category.get("prompts", [])}
+                    
+                    for prompt in category.get("prompts", []):
+                        prompt_key = prompt.get("alias", prompt.get("prompt"))
+                        
+                        # 如果本地已存在同名提示词，则更新
+                        if prompt_key in local_prompts:
+                            # 更新除了 id 之外的所有字段
+                            existing_prompt = local_prompts[prompt_key]
+                            for key, value in prompt.items():
+                                if key != "id":
+                                    existing_prompt[key] = value
+                        else:
+                            # 如果不存在，则新增
+                            local_category.get("prompts", []).append(prompt)
+                        
+                        # 记录图片
+                        if prompt.get("image"):
+                            imported_images.add(prompt["image"])
+
+            # 提取并保存相关的图片
+            if not os.path.exists(PREVIEW_DIR):
+                os.makedirs(PREVIEW_DIR)
+                
+            for image_name in imported_images:
+                zip_image_path = f'preview/{image_name}'
+                if zip_image_path in zf.namelist():
+                    target_path = os.path.join(PREVIEW_DIR, image_name)
+                    # 只有当文件不存在时才写入，避免覆盖
+                    if not os.path.exists(target_path):
+                        with zf.open(zip_image_path) as source, open(target_path, 'wb') as target:
+                            shutil.copyfileobj(source, target)
+
+            # 保存合并后的数据
             with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                json.dump(compatible_data, f, ensure_ascii=False, indent=4)
+                json.dump(local_data, f, ensure_ascii=False, indent=4)
 
         return web.json_response({"success": True})
     except Exception as e:
