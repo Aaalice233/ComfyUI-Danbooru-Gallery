@@ -605,11 +605,49 @@ class CharacterFeatureSwapNode:
         # 在格式化提示词前检查中断
         model_management.throw_exception_if_processing_interrupted()
             
-        prompt_for_llm = custom_prompt_template.format(
-            original_prompt=original_prompt,
-            character_prompt=character_prompt,
-            target_features=final_target_features
-        )
+        # --- 优雅地校验占位符 ---
+        import re
+        required_placeholders = {"original_prompt", "character_prompt", "target_features"}
+        
+        # 使用 re.DOTALL 来匹配包含换行符的占位符内容
+        all_found_placeholders = re.findall(r"\{(.+?)\}", custom_prompt_template, re.DOTALL)
+        
+        # 清理占位符，移除换行符等，用于检查是否存在
+        cleaned_placeholders = set(ph.replace('\n', '').replace('\r', '') for ph in all_found_placeholders)
+
+        # 1. 检查缺失的占位符
+        missing = required_placeholders - cleaned_placeholders
+        if missing:
+            error_msg = f"错误: 自定义提示词模板缺少占位符: {', '.join(missing)}。请在设置中修复。"
+            logger.error(error_msg)
+            return (error_msg,)
+
+        # 2. 检查格式错误的占位符 (包含换行符)
+        malformed_errors = []
+        for ph in all_found_placeholders:
+            if '\n' in ph or '\r' in ph:
+                display_ph = ph.replace('\n', '\\n').replace('\r', '\\r')
+                correct_ph = ph.replace('\n', '').replace('\r', '')
+                error = f"错误格式 '{{{display_ph}}}' -> 正确应为 '{{{correct_ph}}}'"
+                malformed_errors.append(error)
+        
+        if malformed_errors:
+            error_msg = "错误: 模板中发现格式错误的占位符:\n" + "\n".join(malformed_errors) + "\n请在设置中修复。"
+            logger.error(error_msg)
+            return (error_msg,)
+
+        # 3. 如果一切正常，则尝试格式化
+        try:
+            prompt_for_llm = custom_prompt_template.format(
+                original_prompt=original_prompt,
+                character_prompt=character_prompt,
+                target_features=final_target_features
+            )
+        except KeyError as e:
+            # 这是一个后备检查，以防有未预料到的占位符问题
+            error_msg = f"错误: 格式化提示词失败，未知的占位符: {e}。请检查自定义提示词模板。"
+            logger.error(error_msg)
+            return (error_msg,)
 
         # 在缓存操作前检查中断
         model_management.throw_exception_if_processing_interrupted()
@@ -807,6 +845,9 @@ class CharacterFeatureSwapNode:
                 
                 result = await response.json()
 
+                # 增加日志记录完整的API响应
+                logger.info(f"[Execute HTTP - Gemini Raw Response] {json.dumps(result, indent=2)}")
+
                 # 解析响应后最后检查一次中断状态
                 model_management.throw_exception_if_processing_interrupted()
 
@@ -816,6 +857,10 @@ class CharacterFeatureSwapNode:
                     new_prompt = result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
                 
                 new_prompt = new_prompt.strip('"')
+
+                if not new_prompt:
+                    return ("错误: API 返回了空回复。",)
+
                 return (new_prompt,)
         except asyncio.CancelledError:
             logger.warning("LLM API 调用被用户取消。")
@@ -826,8 +871,9 @@ class CharacterFeatureSwapNode:
                 error_details = await e.text()
             except:
                 pass
-            logger.error(f"调用LLM API失败 (HTTP {e.status}): {e.message}. Details: {error_details}")
-            return (f"API Error: HTTP {e.status} - {e.message}",)
+            error_message = f"错误: API 请求失败 (HTTP {e.status})。详情: {error_details}"
+            logger.error(error_message)
+            return (error_message,)
         except asyncio.TimeoutError:
             logger.error(f"调用LLM API超时")
             return (f"API Error: Request timed out after {timeout} seconds.",)
