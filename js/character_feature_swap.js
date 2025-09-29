@@ -698,15 +698,21 @@ Respond with only the new, modified prompt, without any explanations.
                     testResponseBtn.disabled = true;
 
                     try {
-                        const selectedChannel = apiChannelSelect.value;
-                        const timeout = parseInt(timeoutInput.value, 10) * 1000 || 60000;
+                        const settingsPayload = {
+                            api_channel: apiChannelSelect.value,
+                            api_url: apiUrlInput.value,
+                            api_key: apiKeyInput.value,
+                            model: selectedDisplay.textContent,
+                            timeout: parseInt(timeoutInput.value, 10) || 60,
+                        };
+                        const timeout = settingsPayload.timeout * 1000;
 
                         const response = await fetchWithTimeout(
                             api.api_base + "/character_swap/test_llm_connection",
                             {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ api_channel: selectedChannel }),
+                                body: JSON.stringify(settingsPayload),
                             },
                             timeout
                         );
@@ -735,15 +741,22 @@ Respond with only the new, modified prompt, without any explanations.
                     testResponseBtn.disabled = true;
 
                     try {
-                        const selectedChannel = apiChannelSelect.value;
-                        const timeout = parseInt(timeoutInput.value, 10) * 1000 || 60000;
+                        console.log("[CFS Debug] 'Test Response' clicked. Channel:", apiChannelSelect.value);
+                        const settingsPayload = {
+                            api_channel: apiChannelSelect.value,
+                            api_url: apiUrlInput.value,
+                            api_key: apiKeyInput.value,
+                            model: selectedDisplay.textContent,
+                            timeout: parseInt(timeoutInput.value, 10) || 60,
+                        };
+                        const timeout = settingsPayload.timeout * 1000;
 
                         const response = await fetchWithTimeout(
                             api.api_base + "/character_swap/test_llm_response",
                             {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ api_channel: selectedChannel }),
+                                body: JSON.stringify(settingsPayload),
                             },
                             timeout
                         );
@@ -846,6 +859,8 @@ Respond with only the new, modified prompt, without any explanations.
                     // 4. 更新分渠道模型
                     if (!newSettings.channel_models) newSettings.channel_models = {};
                     newSettings.channel_models[selectedChannel] = selectedDisplay.textContent;
+
+                    console.log("[CFS Debug] 'Save' clicked. Settings to be saved:", JSON.stringify(newSettings, null, 2));
 
                     try {
                         const response = await api.fetchApi("/character_swap/llm_settings", {

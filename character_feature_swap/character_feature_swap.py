@@ -363,16 +363,12 @@ async def test_llm_connection(request):
     try:
         data = await request.json()
         api_channel = data.get("api_channel")
+        api_url = data.get("api_url", "").strip()
+        api_key = data.get("api_key", "").strip()
+        timeout = data.get("timeout", 15)
+
         if not api_channel:
             return web.json_response({"success": False, "error": "未提供渠道(api_channel)"}, status=400)
-
-        settings = load_llm_settings()
-        channels_config = settings.get("channels_config", {})
-        channel_conf = channels_config.get(api_channel, {})
-        
-        api_url = channel_conf.get("api_url", "").strip()
-        api_key = channel_conf.get("api_key", "").strip()
-        timeout = settings.get("timeout", 15)
 
         if api_channel == 'gemini_cli':
             # 简单地检查可执行文件是否存在
@@ -424,17 +420,13 @@ async def test_llm_response(request):
     try:
         data = await request.json()
         api_channel = data.get("api_channel")
+        api_url = data.get("api_url", "").strip()
+        api_key = data.get("api_key", "").strip()
+        model = data.get("model")
+        timeout = data.get("timeout", 30)
+        
         if not api_channel:
             return web.json_response({"success": False, "error": "未提供渠道(api_channel)"}, status=400)
-
-        settings = load_llm_settings()
-        channels_config = settings.get("channels_config", {})
-        channel_conf = channels_config.get(api_channel, {})
-        
-        api_url = channel_conf.get("api_url", "").strip()
-        api_key = channel_conf.get("api_key", "").strip()
-        model = settings.get("channel_models", {}).get(api_channel)
-        timeout = settings.get("timeout", 30)
 
         if not model:
             return web.json_response({"success": False, "error": "当前渠道未选择模型"}, status=400)
