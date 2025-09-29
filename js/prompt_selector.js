@@ -280,7 +280,7 @@ app.registerExtension({
                         this.promptData = data;
                         currentLanguage = this.promptData.settings?.language || "zh-CN";
                         this.applyTheme(); // 应用主题
-                        console.log("提示词数据已加载:", this.promptData);
+                        // console.log("提示词数据已加载:", this.promptData);
 
                         // 恢复上次选择的分类
                         // 优先从节点属性中读取，实现节点独立状态
@@ -507,7 +507,7 @@ app.registerExtension({
                         const text = categoryBtn.querySelector('span:not(.ps-total-count-badge)');
                         if (text) {
                             text.textContent = this.selectedCategory;
-                            console.log(`updateCategoryDropdown: Setting category button text to "${this.selectedCategory}"`);
+                            // console.log(`updateCategoryDropdown: Setting category button text to "${this.selectedCategory}"`);
                         }
 
                         // Remove old count badge if it exists
@@ -781,7 +781,7 @@ app.registerExtension({
 
                     const outputString = allSelected.join(separator);
                     outputWidget.value = outputString;
-                    console.log("Output updated:", outputString);
+                    // console.log("Output updated:", outputString);
                     // Serialize the selectedPrompts object for saving in properties.
                     // We need to convert Sets to Arrays for JSON serialization.
                     const serializableSelections = {};
@@ -1072,8 +1072,6 @@ app.registerExtension({
                     if (anchorElement && mainButton) {
                         const anchorRect = anchorElement.getBoundingClientRect();
                         const mainButtonRect = mainButton.getBoundingClientRect();
-                        console.log("showAllActivePromptsPreview - anchorRect:", anchorRect);
-                        console.log("showAllActivePromptsPreview - mainButtonRect:", mainButtonRect);
                         previewBox.style.left = `${mainButtonRect.left}px`;
                         previewBox.style.top = `${anchorRect.bottom + 5}px`;
                         previewBox.style.minWidth = `${mainButtonRect.width}px`;
@@ -1189,10 +1187,13 @@ app.registerExtension({
 
                         try {
                             if (isNew) {
-                                const category = this.promptData.categories.find(c => c.name === categoryName);
-                                if (category) {
-                                    category.prompts.push(updatedPrompt);
+                                let category = this.promptData.categories.find(c => c.name === categoryName);
+                                // 如果分类不存在，则创建它
+                                if (!category) {
+                                    category = { name: categoryName, prompts: [] };
+                                    this.promptData.categories.push(category);
                                 }
+                                category.prompts.push(updatedPrompt);
                             } else {
                                 const category = this.promptData.categories.find(c => c.name === categoryName);
                                 if (category) {
@@ -1649,18 +1650,13 @@ app.registerExtension({
 
                                         if (response.ok) {
                                             const data = await response.json();
-                                            console.log("[DEBUG] Batch move API response data:", data);
-                                            console.log("[DEBUG] Batch move API response data.categories:", data.categories); // Add new logging here
                                             // 更新本地数据
                                             if (data.categories) {
                                                 this.promptData.categories = data.categories;
-                                                console.log("[DEBUG] this.promptData.categories updated after batch move:", this.promptData.categories);
                                             } else {
-                                                console.warn("[DEBUG] Batch move API response did not contain categories, attempting to re-fetch all data.");
                                                 // If categories are missing, re-fetch all data to ensure consistency
                                                 const refreshedData = await api.fetchApi("/prompt_selector/data").then(r => r.json());
                                                 this.promptData = refreshedData;
-                                                console.log("[DEBUG] this.promptData updated after re-fetch:", this.promptData);
                                             }
                                             this.selectedForBatch.clear();
                                             this.renderPromptList(this.selectedCategory);
@@ -2097,67 +2093,79 @@ app.registerExtension({
                 };
 
                 this.deleteCategory = (categoryName) => {
-                    if (categoryName === 'default') {
-                        this.showToast(t('delete_default_category_alert'), 'error');
-                        return;
-                    }
-
                     const hasChildren = this.promptData.categories.some(c => c.name.startsWith(categoryName + '/'));
                     const confirmMessage = hasChildren
                         ? `确定要删除分类 "${categoryName}" 及其所有子分类吗？此操作不可撤销。`
                         : t('delete_category_confirm', { category: categoryName });
 
-                    this.showConfirmModal(confirmMessage, () => {
-                        const categoriesToDelete = this.promptData.categories
-                            .filter(c => c.name === categoryName || c.name.startsWith(categoryName + '/'))
-                            .map(c => c.name);
+                    this.showConfirmModal(confirmMessage, async () => {
+                        // Force hide any lingering tooltips before DOM changes
+                        this.hidePromptTooltip();
+                        this.hideActivePromptsPreview();
 
-                        if (categoriesToDelete.length > 0) {
-                            this.promptData.categories = this.promptData.categories.filter(c => !categoriesToDelete.includes(c.name));
+                        try {
+                            const response = await api.fetchApi("/prompt_selector/category/delete", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ name: categoryName })
+                            });
 
+                            if (!response.ok) {
+                                const error = await response.json();
+                                console.error("[DEBUG] API deletion failed:", error);
+                                throw new Error(error.error || "删除失败");
+                            }
+
+                            // Fetch the entire updated data from the server to ensure consistency
+                            const updatedData = await api.fetchApi("/prompt_selector/data").then(r => r.json());
+                            this.promptData = updatedData;
+
+                            // Clean up selections for deleted categories
+                            const categoriesToDelete = this.promptData.categories
+                                .filter(c => c.name === categoryName || c.name.startsWith(categoryName + '/'))
+                                .map(c => c.name);
                             categoriesToDelete.forEach(catName => {
                                 delete this.selectedPrompts[catName];
                             });
 
-                            // Check if the current selection is affected by the deletion
-                            if (categoriesToDelete.some(deletedCat => this.selectedCategory.startsWith(deletedCat))) {
-                                // Find a new category to select
-                                const remainingCategories = this.promptData.categories;
-                                if (remainingCategories.some(c => c.name === "default")) {
-                                    this.selectedCategory = "default";
-                                } else if (remainingCategories.length > 0) {
-                                    this.selectedCategory = remainingCategories[0].name;
+                            // Determine the next valid selected category
+                            const currentSelectionStillValid = this.promptData.categories.some(c => c.name === this.selectedCategory);
+                            if (!currentSelectionStillValid) {
+                                if (this.promptData.categories.length > 0) {
+                                    this.promptData.categories.sort((a, b) => a.name.localeCompare(b.name));
+                                    this.selectedCategory = this.promptData.categories[0].name;
                                 } else {
-                                    // If no categories are left, create a new default one
-                                    const newDefault = { name: "default", prompts: [] };
-                                    this.promptData.categories.push(newDefault);
-                                    this.selectedCategory = "default";
+                                    this.selectedCategory = ""; // No categories left
                                 }
-                                this.saveLastCategory(this.selectedCategory);
                             }
+                            this.saveLastCategory(this.selectedCategory);
 
-                            this.saveData().then(() => {
-                                this.showToast(t('delete_success'));
+                            // Refresh UI
+                            const modal = document.querySelector('.ps-library-modal');
+                            if (modal) {
+                                const categoryTreeContainer = modal.querySelector('.ps-category-tree');
+                                const categoryTree = this.buildCategoryTree(this.promptData.categories);
+                                const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
+                                categoryTreeContainer.innerHTML = '';
+                                if (treeElement) categoryTreeContainer.appendChild(treeElement);
 
-                                const modal = document.querySelector('.ps-library-modal');
-                                if (modal) {
-                                    const categoryTreeContainer = modal.querySelector('.ps-category-tree');
-                                    const categoryTree = this.buildCategoryTree(this.promptData.categories);
-                                    const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
-                                    categoryTreeContainer.innerHTML = '';
-                                    categoryTreeContainer.appendChild(treeElement);
-
-                                    // Ensure the new selected category is highlighted in the tree
-                                    const selectedItem = categoryTreeContainer.querySelector(`.ps-tree-item[data-full-name="${this.selectedCategory}"]`);
-                                    if (selectedItem) {
-                                        selectedItem.classList.add('selected');
-                                    }
-                                    this.renderPromptList(this.selectedCategory);
+                                modal.querySelectorAll('.ps-tree-item.selected').forEach(el => el.classList.remove('selected'));
+                                const selectedItem = categoryTreeContainer.querySelector(`.ps-tree-item[data-full-name="${this.selectedCategory}"]`);
+                                if (selectedItem) {
+                                    selectedItem.classList.add('selected');
                                 }
-                                this.renderContent();
-                                this.updateOutput();
-                                this.updateCategoryDropdown();
-                            });
+                                this.renderPromptList(this.selectedCategory);
+                            }
+                            this.renderContent();
+                            this.updateOutput();
+                            this.updateCategoryDropdown();
+
+                            // Move toast to the end
+                            this.showToast(t('delete_success'));
+
+                        } catch (e) {
+                            console.error("[PromptSelector] Error during category deletion:", e);
+                            this.showToast(e.message || "删除分类时发生错误", 'error');
                         }
                     });
                 };
@@ -2370,7 +2378,6 @@ app.registerExtension({
                 };
 
                 this.renderPromptList = (categoryName, searchTerm = '', skipSort = false) => {
-                    console.log(`[DEBUG] renderPromptList called for category: "${categoryName}" with search term: "${searchTerm}"`);
                     const modal = document.querySelector('.ps-library-modal');
                     if (!modal) return;
                     const promptListContainer = modal.querySelector('.ps-prompt-list-container');
@@ -2759,6 +2766,7 @@ app.registerExtension({
                 };
 
                 this.showToast = (message, type = 'success') => {
+                    const toastId = `toast-${Date.now()}`;
                     let toastContainer = document.querySelector("#ps-toast-container");
                     if (!toastContainer) {
                         toastContainer = document.createElement("div");
@@ -2766,10 +2774,31 @@ app.registerExtension({
                         document.body.appendChild(toastContainer);
                     }
 
+                    // --- Positioning Logic ---
+                    const widget = this.widgets.find(w => w.name === "prompt_selector");
+                    if (widget && widget.element) {
+                        const nodeRect = widget.element.getBoundingClientRect();
+                        const centerX = nodeRect.left + nodeRect.width / 2;
+                        const top = nodeRect.top;
+
+                        toastContainer.style.left = `${centerX}px`;
+                        toastContainer.style.top = `${top}px`;
+                        toastContainer.style.transform = 'translateX(-50%) translateY(-110%)'; // Move it up a bit more
+                        toastContainer.style.right = 'auto';
+                    } else {
+                        // Fallback to old behavior if node element isn't found
+                        toastContainer.style.top = '20px';
+                        toastContainer.style.right = '20px';
+                        toastContainer.style.left = 'auto';
+                        toastContainer.style.transform = 'none';
+                    }
+                    // --- End Positioning Logic ---
+
                     const toast = document.createElement("div");
+                    toast.id = toastId;
                     toast.className = `ps-toast ps-toast-${type}`;
                     toast.textContent = message;
-                    toastContainer.appendChild(toast);
+                    toastContainer.prepend(toast); // Prepend for column-reverse
 
                     setTimeout(() => {
                         toast.classList.add('show');
@@ -2779,9 +2808,6 @@ app.registerExtension({
                         toast.classList.remove('show');
                         setTimeout(() => {
                             toast.remove();
-                            if (toastContainer.children.length === 0) {
-                                toastContainer.remove();
-                            }
                         }, 300);
                     }, 3000);
                 };
@@ -2896,9 +2922,7 @@ app.registerExtension({
                     document.body.appendChild(modal);
 
                     const treeContainer = modal.querySelector(".ps-category-tree");
-                    console.log("[Debug] promptData.categories:", this.promptData.categories); // Debugging line
                     const categoryTree = this.buildCategoryTree(this.promptData.categories);
-                    console.log("[Debug] categoryTree:", categoryTree); // Debugging line
 
                     let selectedCategory = null;
                     const confirmBtn = modal.querySelector("#ps-select-confirm");
@@ -4649,13 +4673,12 @@ app.registerExtension({
                     /* Toast Notification */
                     #ps-toast-container {
                         position: fixed;
-                        top: 20px;
-                        right: 20px;
                         z-index: 2000;
                         display: flex;
-                        flex-direction: column;
+                        flex-direction: column-reverse;
                         gap: 8px;
-                        align-items: flex-end;
+                        align-items: center;
+                        pointer-events: none;
                     }
                     .ps-toast {
                         background-color: #333;
@@ -4663,10 +4686,11 @@ app.registerExtension({
                         padding: 12px 20px;
                         border-radius: 8px;
                         opacity: 0;
-                        transform: translateX(100%);
+                        transform: translateY(20px);
                         transition: opacity 0.3s ease, transform 0.3s ease;
                         box-shadow: 0 4px 15px rgba(0,0,0,0.5);
                         font-size: 14px;
+                        pointer-events: auto;
                     }
                     .ps-toast.show {
                         opacity: 1;
