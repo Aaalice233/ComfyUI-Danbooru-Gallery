@@ -255,10 +255,16 @@ app.registerExtension({
                         showMessage(ui, t('apiKeyMissingWarning'));
                         return;
                     }
+                    const payload = {
+                        api_channel: channel,
+                        api_url: channelConf.api_url || '',
+                        api_key: channelConf.api_key || '',
+                        timeout: settings.timeout || 60
+                    };
                     const response = await api.fetchApi("/character_swap/test_llm_connection", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ api_channel: channel }),
+                        body: JSON.stringify(payload),
                     });
                     if (!response.ok) {
                         showMessage(ui, t('connectionFailedWarning'));
@@ -398,18 +404,27 @@ app.registerExtension({
                     const ui = nodeUIs.get(node);
                     if (ui) {
                         // 当关闭对话框时，使用当前选择的渠道重新检查连接状态
-                        const currentSettings = {
-                            ...node.cfs_settings,
+                        // 当关闭对话框时，使用UI上当前的值来检查连接状态
+                        const currentUIConfig = {
                             api_channel: apiChannelSelect.value,
+                            api_url: apiUrlInput.value,
+                            api_key: apiKeyInput.value,
+                            timeout: parseInt(timeoutInput.value, 10) || 60
+                        };
+                        // 传递一个临时的、包含当前UI值的settings对象
+                        const tempSettingsForCheck = {
+                            ...node.cfs_settings,
+                            api_channel: currentUIConfig.api_channel,
+                            timeout: currentUIConfig.timeout,
                             channels_config: {
-                                ...node.cfs_settings.channels_config,
-                                [apiChannelSelect.value]: {
-                                    api_url: apiUrlInput.value,
-                                    api_key: apiKeyInput.value
+                                ...(node.cfs_settings.channels_config || {}),
+                                [currentUIConfig.api_channel]: {
+                                    api_url: currentUIConfig.api_url,
+                                    api_key: currentUIConfig.api_key
                                 }
                             }
                         };
-                        checkConnectionStatus(ui, currentSettings);
+                        checkConnectionStatus(ui, tempSettingsForCheck);
                     }
                     dialog.remove();
                 });
