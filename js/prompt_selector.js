@@ -847,6 +847,10 @@ app.registerExtension({
                     });
                 };
 
+                this.saveLastCategory = (categoryName) => {
+                    this.properties.selectedCategory = categoryName;
+                };
+
                 this.showCategoryMenu = (button, isRefresh = false, searchTerm = '') => {
                     const existingMenu = document.querySelector(".ps-category-menu");
 
@@ -2639,7 +2643,7 @@ app.registerExtension({
 
                     // Create a node for every category and subcategory
                     categories.forEach(cat => {
-                        const parts = cat.name.split('/');
+                        const parts = cat.name.split('/').filter(p => p.trim() !== ''); // Filter out empty parts
                         let currentPath = '';
                         parts.forEach(part => {
                             const oldPath = currentPath;
