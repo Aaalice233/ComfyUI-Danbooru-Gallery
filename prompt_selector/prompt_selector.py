@@ -148,6 +148,42 @@ async def upload_image(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
+def _ensure_data_compatibility(data):
+    """确保导入的数据与当前版本兼容"""
+    if "version" not in data:
+        data["version"] = "1.6" # 假设是旧版本
+
+    if "settings" not in data:
+        data["settings"] = {
+            "language": "zh-CN",
+            "separator": ", ",
+            "save_selection": True
+        }
+
+    for category in data.get("categories", []):
+        # 移除旧的 last_selected 字段
+        if "last_selected" in category:
+            del category["last_selected"]
+            
+        for prompt in category.get("prompts", []):
+            if "id" not in prompt or not prompt["id"]:
+                prompt["id"] = str(uuid.uuid4())
+            if "description" not in prompt:
+                prompt["description"] = ""
+            if "tags" not in prompt:
+                prompt["tags"] = []
+            if "favorite" not in prompt:
+                prompt["favorite"] = False
+            if "image" not in prompt:
+                prompt["image"] = ""
+            if "created_at" not in prompt:
+                prompt["created_at"] = datetime.now().isoformat()
+            if "usage_count" not in prompt:
+                prompt["usage_count"] = 0
+            if "last_used" not in prompt:
+                prompt["last_used"] = None
+    return data
+
 @PromptServer.instance.routes.post("/prompt_selector/import")
 async def import_zip(request):
     post = await request.post()
@@ -164,6 +200,9 @@ async def import_zip(request):
             # 提取 data.json
             with zf.open('data.json') as f:
                 new_data = json.load(f)
+
+            # 确保数据兼容
+            compatible_data = _ensure_data_compatibility(new_data)
             
             # 提取图片
             for member in zf.infolist():
@@ -176,7 +215,7 @@ async def import_zip(request):
             
             # 覆盖 data.json
             with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                json.dump(new_data, f, ensure_ascii=False, indent=4)
+                json.dump(compatible_data, f, ensure_ascii=False, indent=4)
 
         return web.json_response({"success": True})
     except Exception as e:
