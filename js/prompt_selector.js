@@ -443,52 +443,21 @@ app.registerExtension({
                         formData.append("zip_file", file);
 
                         try {
-                            const response = await api.fetchApi("/prompt_selector/import", {
+                            this.showToast("正在预解析文件...", 'info');
+                            const response = await api.fetchApi("/prompt_selector/pre_import", {
                                 method: "POST",
                                 body: formData,
                             });
+
                             if (response.ok) {
-                                this.showToast(t('import_success'));
-                                // 重新加载数据
-                                const data = await api.fetchApi("/prompt_selector/data").then(r => r.json());
-                                this.promptData = data;
-                                currentLanguage = this.promptData.settings?.language || "zh-CN";
-
-                                // 导入后设置默认分类并刷新
-                                if (this.promptData.categories.length > 0) {
-                                    this.selectedCategory = this.promptData.categories[0].name;
-                                    this.saveLastCategory(this.selectedCategory);
-                                } else {
-                                    this.selectedCategory = "default";
-                                }
-
-                                this.updateCategoryDropdown();
-                                this.renderContent();
-                                updateUIText(this);
-
-                                // 如果词库是打开的，则刷新它
-                                const modal = document.querySelector('.ps-library-modal');
-                                if (modal) {
-                                    const categoryTreeContainer = modal.querySelector('.ps-category-tree');
-                                    const categoryTree = this.buildCategoryTree(this.promptData.categories);
-                                    const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
-                                    categoryTreeContainer.innerHTML = '';
-                                    categoryTreeContainer.appendChild(treeElement);
-
-                                    const firstItem = categoryTreeContainer.querySelector('.ps-tree-item');
-                                    if (firstItem) {
-                                        firstItem.classList.add('selected');
-                                    }
-                                    this.renderPromptList(this.selectedCategory);
-                                }
-
-                                this.showToast(t('refresh_success'));
+                                const { categories } = await response.json();
+                                this.showImportModal(file, categories);
                             } else {
                                 const error = await response.json();
-                                throw new Error(error.error || t('import_fail'));
+                                throw new Error(error.error || "预解析失败");
                             }
                         } catch (error) {
-                            this.showToast(`${t('import_fail')}: ${error.message}`, 'error');
+                            this.showToast(`导入失败: ${error.message}`, 'error');
                         }
                     };
                     input.click();
@@ -2988,6 +2957,134 @@ app.registerExtension({
                         closeModal();
                     });
                 };
+
+                this.showImportModal = (file, categories) => {
+                    console.log("[Debug] Raw categories for import:", JSON.stringify(categories, null, 2));
+                    if (document.querySelector(".ps-import-modal")) return;
+
+                    const modal = document.createElement("div");
+                    modal.className = "ps-edit-modal ps-import-modal";
+                    modal.innerHTML = `
+                        <div class="ps-modal-content" style="width: 500px; max-width: 90vw;">
+                            <h3>选择要导入的提示词类别</h3>
+                            <div class="ps-import-controls">
+                                <button id="ps-import-select-all">全选</button>
+                                <button id="ps-import-deselect-all">全不选</button>
+                            </div>
+                            <div class="ps-import-list-container"></div>
+                            <div class="ps-modal-buttons">
+                                <button id="ps-import-confirm">确认导入</button>
+                                <button id="ps-import-cancel">取消</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+
+                    const listContainer = modal.querySelector(".ps-import-list-container");
+
+                    // 创建简单的垂直列表
+                    const list = document.createElement("ul");
+                    list.className = "ps-import-category-list";
+
+                    categories.forEach(categoryName => {
+                        const item = document.createElement("li");
+                        item.className = "ps-import-category-item";
+
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.checked = true;
+                        checkbox.className = 'ps-import-checkbox';
+                        checkbox.dataset.fullName = categoryName;
+
+                        const label = document.createElement('span');
+                        label.className = 'ps-import-category-name';
+                        label.textContent = categoryName;
+
+                        item.appendChild(checkbox);
+                        item.appendChild(label);
+
+                        // 点击项目切换复选框
+                        item.addEventListener('click', (e) => {
+                            if (e.target.type !== 'checkbox') {
+                                checkbox.checked = !checkbox.checked;
+                            }
+                        });
+
+                        list.appendChild(item);
+                    });
+
+                    listContainer.appendChild(list);
+
+                    // 简化的复选框逻辑
+                    const allCheckboxes = Array.from(modal.querySelectorAll('.ps-import-checkbox'));
+
+                    modal.querySelector('#ps-import-select-all').addEventListener('click', () => {
+                        allCheckboxes.forEach(cb => cb.checked = true);
+                    });
+                    modal.querySelector('#ps-import-deselect-all').addEventListener('click', () => {
+                        allCheckboxes.forEach(cb => cb.checked = false);
+                    });
+
+                    const closeModal = () => modal.remove();
+                    modal.querySelector("#ps-import-cancel").addEventListener("click", closeModal);
+
+                    modal.querySelector("#ps-import-confirm").addEventListener("click", async () => {
+                        const selectedCategories = allCheckboxes
+                            .filter(cb => cb.checked)
+                            .map(cb => cb.dataset.fullName);
+
+                        if (selectedCategories.length === 0) {
+                            this.showToast("没有选择任何分类", "warning");
+                            return;
+                        }
+
+                        const formData = new FormData();
+                        formData.append("zip_file", file);
+                        formData.append("selected_categories", JSON.stringify(selectedCategories));
+
+                        this.setButtonLoading(modal.querySelector("#ps-import-confirm"), true);
+
+                        try {
+                            const response = await api.fetchApi("/prompt_selector/import", {
+                                method: "POST",
+                                body: formData,
+                            });
+                            if (response.ok) {
+                                this.showToast(t('import_success'));
+                                const data = await api.fetchApi("/prompt_selector/data").then(r => r.json());
+                                this.promptData = data;
+                                currentLanguage = this.promptData.settings?.language || "zh-CN";
+
+                                if (this.promptData.categories.length > 0 && !this.promptData.categories.some(c => c.name === this.selectedCategory)) {
+                                    this.selectedCategory = this.promptData.categories[0].name;
+                                    this.saveLastCategory(this.selectedCategory);
+                                }
+
+                                this.updateCategoryDropdown();
+                                this.renderContent();
+                                updateUIText(this);
+
+                                const libraryModal = document.querySelector('.ps-library-modal');
+                                if (libraryModal) {
+                                    const categoryTreeContainer = libraryModal.querySelector('.ps-category-tree');
+                                    const categoryTree = this.buildCategoryTree(this.promptData.categories);
+                                    const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
+                                    categoryTreeContainer.innerHTML = '';
+                                    categoryTreeContainer.appendChild(treeElement);
+                                    this.renderPromptList(this.selectedCategory);
+                                }
+                                this.showToast(t('refresh_success'));
+                                closeModal();
+                            } else {
+                                const error = await response.json();
+                                throw new Error(error.error || t('import_fail'));
+                            }
+                        } catch (error) {
+                            this.showToast(`${t('import_fail')}: ${error.message}`, 'error');
+                            this.setButtonLoading(modal.querySelector("#ps-import-confirm"), false);
+                        }
+                    });
+                };
             };
 
             // 节点移除时的回调
@@ -4670,6 +4767,86 @@ app.registerExtension({
                    }
                 `;
                 style.textContent += `
+                    /* Import Modal Styles - Simplified List Layout */
+                    .ps-import-list-container {
+                        height: 300px;
+                        overflow-y: auto;
+                        border: 1px solid #444;
+                        padding: 8px;
+                        margin: 15px 0;
+                        border-radius: 8px;
+                        background: #222;
+                    }
+                    .ps-import-category-list {
+                        list-style: none;
+                        padding: 0;
+                        margin: 0;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 4px;
+                    }
+                    .ps-import-category-item {
+                        display: flex;
+                        align-items: center;
+                        padding: 8px 12px;
+                        margin: 0;
+                        border-radius: 6px;
+                        transition: all 0.2s ease;
+                        cursor: pointer;
+                        gap: 10px;
+                        background-color: #282828;
+                        border: 1px solid #333;
+                    }
+                    .ps-import-category-item:hover {
+                        background-color: #333;
+                        border-color: #444;
+                    }
+                    .ps-import-category-name {
+                        flex-grow: 1;
+                        color: #eee;
+                        font-size: 14px;
+                        text-align: left;
+                    }
+                    .ps-import-controls {
+                        display: flex;
+                        gap: 10px;
+                        margin-bottom: 10px;
+                    }
+                    .ps-import-controls button {
+                        background-color: #444;
+                        border: 1px solid #666;
+                        color: #eee;
+                        padding: 6px 12px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 13px;
+                    }
+                    .ps-import-controls button:hover {
+                        background-color: #555;
+                    }
+                    .ps-import-modal .ps-import-checkbox {
+                        width: 18px;
+                        height: 18px;
+                        accent-color: var(--ps-theme-color);
+                        margin: 0;
+                        flex-shrink: 0;
+                    }
+                    /* 滚动条样式 */
+                    .ps-import-list-container::-webkit-scrollbar {
+                        width: 8px;
+                    }
+                    .ps-import-list-container::-webkit-scrollbar-track {
+                        background: #1b1b1b;
+                        border-radius: 4px;
+                    }
+                    .ps-import-list-container::-webkit-scrollbar-thumb {
+                        background: #444;
+                        border-radius: 4px;
+                    }
+                    .ps-import-list-container::-webkit-scrollbar-thumb:hover {
+                        background: #555;
+                    }
+
                     /* Toast Notification */
                     #ps-toast-container {
                         position: fixed;
