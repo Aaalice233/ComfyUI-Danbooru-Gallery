@@ -186,13 +186,13 @@ app.registerExtension({
             function updateAllNodeUIs() {
                 for (const [node, ui] of nodeUIs.entries()) {
                     ui.importButton.innerHTML = `<i class="fas fa-upload"></i> ${t('import')}`;
-                    ui.importButton.title = t('importTooltip');
+                    ui.importButton.removeAttribute('title');
                     ui.exportButton.innerHTML = `<i class="fas fa-download"></i> ${t('export')}`;
-                    ui.exportButton.title = t('exportTooltip');
+                    ui.exportButton.removeAttribute('title');
                     ui.debugButton.innerHTML = `<i class="fas fa-bug"></i> ${t('debug')}`;
-                    ui.debugButton.title = t('debugTooltip');
+                    ui.debugButton.removeAttribute('title');
                     ui.settingsButton.innerHTML = `<i class="fas fa-cog"></i> ${t('settings')}`;
-                    ui.settingsButton.title = t('settingsTooltip');
+                    ui.settingsButton.removeAttribute('title');
                     // ui.presetButton.title = t('presetsTooltip');
                     // ui.helpIcon.title = t('helpTooltip');
                     ui.addTagButton.title = t('addTagTooltip');
@@ -1112,6 +1112,7 @@ Respond with only the new, modified prompt, without any explanations.
                 // --- 创建底部按钮栏 ---
                 const bottomBar = document.createElement("div");
                 bottomBar.className = "cfs-bottom-bar";
+                bottomBar.title = "";
 
                 const importButton = document.createElement("button");
                 importButton.innerHTML = `<i class="fas fa-upload"></i> ${t('import')}`;
@@ -1396,6 +1397,7 @@ Respond with only the new, modified prompt, without any explanations.
 
                 const mainContainer = document.createElement("div");
                 mainContainer.className = "cfs-main-container";
+                mainContainer.title = "";
 
                 const presetButtonContainer = document.createElement("div");
                 presetButtonContainer.className = "cfs-preset-button-container";
