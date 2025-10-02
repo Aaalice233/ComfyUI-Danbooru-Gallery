@@ -47,13 +47,15 @@ class MaskEditor {
             width: 100%;
             height: 100%;
             cursor: crosshair;
-            background: #1a1a1a;
+            background: linear-gradient(135deg, #1a1a2e 0%, #262638 100%);
             display: block !important;
             visibility: visible !important;
             position: absolute !important;
             top: 0 !important;
             left: 0 !important;
             z-index: 1 !important;
+            border-radius: 0 0 8px 0;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.2);
         `;
 
         // 确保容器样式正确
@@ -62,7 +64,8 @@ class MaskEditor {
             width: 100% !important;
             height: 100% !important;
             overflow: auto !important;
-            background: #1a1a1a !important;
+            background: linear-gradient(135deg, rgba(26, 26, 38, 0.4) 0%, rgba(38, 38, 56, 0.4) 100%) !important;
+            border-radius: 0 0 8px 0;
         `;
 
         // 添加调试日志
@@ -75,27 +78,30 @@ class MaskEditor {
 
         this.container.appendChild(this.canvas);
 
-        // 监听容器大小变化
+        // 监听容器大小变化（使用节流）
         this.resizeObserver = new ResizeObserver((entries) => {
             // 如果正在拖动或调整大小，不处理容器大小变化
             if (this.isDragging || this.isResizing || this.isPanning) {
                 return;
             }
 
-            for (let entry of entries) {
-                const { width, height } = entry.contentRect;
-                // 确保容器尺寸有效
-                if (width > 0 && height > 0) {
-                    this.resizeCanvas();
-                    this.scheduleRender();
+            // 使用节流处理容器大小变化
+            if (this.resizeTimeout) {
+                clearTimeout(this.resizeTimeout);
+            }
 
-                    // 添加延迟渲染，确保在DOM完全更新后渲染
-                    setTimeout(() => {
+            this.resizeTimeout = setTimeout(() => {
+                this.resizeTimeout = null;
+
+                for (let entry of entries) {
+                    const { width, height } = entry.contentRect;
+                    // 确保容器尺寸有效
+                    if (width > 0 && height > 0) {
                         this.resizeCanvas();
                         this.scheduleRender();
-                    }, 50);
+                    }
                 }
-            }
+            }, 100); // 100ms的节流延迟
         });
         this.resizeObserver.observe(this.container);
 
@@ -335,6 +341,37 @@ class MaskEditor {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
+        // 首先检查是否点击了选中蒙版的手柄（优先级最高）
+        let handle = null;
+        if (this.selectedMask) {
+            handle = this.getResizeHandle(this.selectedMask, x, y);
+            if (handle) {
+                // 直接处理手柄点击，不需要重新选择蒙版
+                this.isResizing = true;
+                this.resizeHandle = handle;
+                this.dragStart = { x, y };
+
+                // console.log('MaskEditor调试:开始缩放选中蒙版', {
+                //     handle,
+                //     dragStart: this.dragStart,
+                //     maskSnapshot: { ...this.selectedMask }
+                // });
+
+                // 保存初始蒙版状态用于调整大小
+                this.initialMaskState = { ...this.selectedMask };
+
+                // 临时禁用 ResizeObserver，防止干扰拖动操作
+                if (this.resizeObserver) {
+                    this.resizeObserver.disconnect();
+                    // console.log('临时禁用 ResizeObserver');
+                }
+
+                this.canvas.style.cursor = this.getCursor(this.selectedMask, handle);
+                return;
+            }
+        }
+
+        // 如果没有点击到手柄，则检查是否点击了蒙版
         const mask = this.getMaskAtPosition(x, y);
 
         // console.log('MaskEditor调试:onMouseDown', {
@@ -346,7 +383,8 @@ class MaskEditor {
 
         if (mask) {
             this.selectedMask = mask;
-            const handle = this.getResizeHandle(mask, x, y);
+            // 再次检查手柄，这次是新选中的蒙版
+            handle = this.getResizeHandle(mask, x, y);
 
             if (handle) {
                 this.isResizing = true;
@@ -403,6 +441,19 @@ class MaskEditor {
     }
 
     onMouseMove(e) {
+        // 使用节流处理鼠标移动事件，提高性能
+        if (this.mouseMoveTimeout) {
+            return;
+        }
+
+        this.mouseMoveTimeout = setTimeout(() => {
+            this.mouseMoveTimeout = null;
+            this.processMouseMove(e);
+        }, 8); // 约120fps的鼠标移动更新频率
+    }
+
+    // 实际处理鼠标移动的方法
+    processMouseMove(e) {
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
@@ -414,9 +465,6 @@ class MaskEditor {
 
             this.offset.x = this.initialOffset.x + dx;
             this.offset.y = this.initialOffset.y + dy;
-
-            // 不再限制偏移量，允许画布自由移动
-            // 这样可以确保画布可以正常移动和缩放
 
             // 触发重新渲染
             this.scheduleRender();
@@ -453,25 +501,23 @@ class MaskEditor {
             }
 
         } else if (this.isResizing && this.selectedMask) {
-            // console.log('onMouseMove: 调整大小中', {
-            //     isResizing: this.isResizing,
-            //     selectedMask: !!this.selectedMask,
-            //     resizeHandle: this.resizeHandle,
-            //     mousePosition: { x, y }
-            // });
-
-            // 直接调用 handleResize，不添加延迟或其他可能干扰的代码
+            // 直接调用 handleResize
             this.handleResize(x, y);
 
         } else {
-            // 更新鼠标光标
-            const mask = this.getMaskAtPosition(x, y);
-            const handle = this.getResizeHandle(mask, x, y);
+            // 更新鼠标光标（降低频率）
+            if (!this.cursorUpdateTimeout) {
+                this.cursorUpdateTimeout = setTimeout(() => {
+                    this.cursorUpdateTimeout = null;
+                    const mask = this.getMaskAtPosition(x, y);
+                    const handle = this.getResizeHandle(mask, x, y);
 
-            if (this.isPanning) {
-                this.canvas.style.cursor = 'grabbing';
-            } else {
-                this.canvas.style.cursor = this.getCursor(mask, handle);
+                    if (this.isPanning) {
+                        this.canvas.style.cursor = 'grabbing';
+                    } else {
+                        this.canvas.style.cursor = this.getCursor(mask, handle);
+                    }
+                }, 16); // 约60fps的光标更新频率
             }
         }
     }
@@ -516,6 +562,19 @@ class MaskEditor {
     onWheel(e) {
         e.preventDefault();
 
+        // 使用节流处理滚轮事件，提高性能
+        if (this.wheelTimeout) {
+            return;
+        }
+
+        this.wheelTimeout = setTimeout(() => {
+            this.wheelTimeout = null;
+            this.processWheel(e);
+        }, 16); // 约60fps的滚轮事件处理频率
+    }
+
+    // 实际处理滚轮事件的方法
+    processWheel(e) {
         // 获取画布配置
         const config = this.editor.dataManager.getConfig();
         if (!config || !config.canvas) {
@@ -536,7 +595,7 @@ class MaskEditor {
         const newScale = Math.max(0.1, Math.min(5, this.scale * scaleFactor));
 
         // 如果缩放没有变化，直接返回
-        if (newScale === this.scale) {
+        if (Math.abs(newScale - this.scale) < 0.001) {
             return;
         }
 
@@ -544,9 +603,6 @@ class MaskEditor {
         this.offset.x = mouseX - canvasX * newScale;
         this.offset.y = mouseY - canvasY * newScale;
         this.scale = newScale;
-
-        // 不再限制偏移量，允许画布自由移动
-        // 这样可以确保画布可以正常移动和缩放
 
         // 触发重新渲染
         this.scheduleRender();
@@ -601,6 +657,14 @@ class MaskEditor {
 
         const { width, height } = config.canvas;
 
+        // 首先检查是否点击了选中蒙版的手柄
+        if (this.selectedMask) {
+            const handle = this.getResizeHandle(this.selectedMask, x, y);
+            if (handle) {
+                return this.selectedMask;
+            }
+        }
+
         // 从后往前遍历，优先选择上层的蒙版
         for (let i = this.masks.length - 1; i >= 0; i--) {
             const mask = this.masks[i];
@@ -651,9 +715,11 @@ class MaskEditor {
         const maskWidth = mask.width * width;
         const maskHeight = mask.height * height;
 
-        // 动态调整手柄大小，确保在不同缩放级别下都能点击
-        // 手柄大小应该基于画布坐标，而不是屏幕坐标
-        const handleSize = Math.max(8, 16 / this.scale);
+        // 增加手柄大小，确保更容易点击
+        // 对于选中的蒙版，使用更大的手柄区域
+        const isSelected = this.selectedMask && this.selectedMask.characterId === mask.characterId;
+        const baseHandleSize = isSelected ? 12 : 8; // 选中的蒙版使用更大的基础尺寸
+        const handleSize = Math.max(baseHandleSize, (isSelected ? 24 : 16) / this.scale);
 
         const handles = {
             'nw': { x: maskX, y: maskY },
@@ -666,6 +732,7 @@ class MaskEditor {
             const distance = Math.sqrt(Math.pow(canvasX - pos.x, 2) + Math.pow(canvasY - pos.y, 2));
 
             // 使用距离检测而不是矩形检测，提高准确性
+            // 对于选中的蒙版，使用更宽松的检测条件
             if (distance <= handleSize) {
                 return name;
             }
@@ -1121,11 +1188,8 @@ class MaskEditor {
     }
 
     render() {
-        // console.log('=== render 调试开始 ===');
-
         // 检查画布是否已正确初始化
         if (!this.canvas || !this.ctx) {
-            // console.log('画布未初始化，跳过渲染');
             return;
         }
 
@@ -1133,7 +1197,6 @@ class MaskEditor {
 
         // 确保配置存在
         if (!config || !config.canvas) {
-            // console.log('配置不存在，跳过渲染');
             return;
         }
 
@@ -1142,46 +1205,19 @@ class MaskEditor {
 
         const { width, height } = config.canvas;
 
-        // console.log('渲染参数:', {
-        //     虚拟画布尺寸: { width, height },
-        //     实际画布尺寸: { width: this.canvas.width, height: this.canvas.height },
-        //     容器尺寸: { width: this.container.offsetWidth, height: this.container.offsetHeight },
-        //     缩放: this.scale,
-        //     偏移: this.offset,
-        //     蒙版数量: this.masks.length
-        // });
-
         // 安全检查：防止异常的Canvas尺寸
         if (this.canvas.width <= 0 || this.canvas.height <= 0 ||
             this.canvas.width > 10000 || this.canvas.height > 10000 ||
             !isFinite(this.canvas.width) || !isFinite(this.canvas.height)) {
-            // console.log('画布尺寸异常:', {
-            //     width: this.canvas.width,
-            //     height: this.canvas.height
-            // });
             return;
         }
 
         // 安全检查：防止异常的缩放或偏移
         if (!isFinite(this.scale) || this.scale <= 0 || this.scale > 10 ||
             !isFinite(this.offset.x) || !isFinite(this.offset.y)) {
-            // console.log('缩放或偏移异常，重置为默认值');
             this.scale = 1;
             this.offset = { x: 0, y: 0 };
         }
-
-        // 计算可视区域
-        const viewportLeft = -this.offset.x / this.scale;
-        const viewportTop = -this.offset.y / this.scale;
-        const viewportRight = viewportLeft + this.canvas.width / this.scale;
-        const viewportBottom = viewportTop + this.canvas.height / this.scale;
-
-        // console.log('可视区域:', {
-        //     left: viewportLeft,
-        //     top: viewportTop,
-        //     right: viewportRight,
-        //     bottom: viewportBottom
-        // });
 
         // 清空画布
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -1197,35 +1233,47 @@ class MaskEditor {
         this.ctx.fillStyle = '#1a1a1a';
         this.ctx.fillRect(0, 0, width, height);
 
-        // 绘制点阵网格
-        this.drawGrid(width, height);
+        // 绘制简化的网格（降低渲染频率）
+        this.drawGridOptimized(width, height);
 
-        // 绘制圆角带内阴影的边框
-        this.drawCanvasBorder(width, height);
+        // 绘制简化的边框
+        this.drawCanvasBorderOptimized(width, height);
 
         // 绘制蒙版
-        this.masks.forEach((mask, index) => {
-            // console.log(`绘制蒙版 ${index + 1}/${this.masks.length}:`, mask);
-            this.drawMask(mask);
+        this.masks.forEach((mask) => {
+            this.drawMaskOptimized(mask);
         });
 
-        // 绘制选中框
+        // 确保选中框和手柄在所有蒙版之后绘制
         if (this.selectedMask) {
-            // console.log('绘制选中框:', this.selectedMask);
-            this.drawSelection(this.selectedMask);
+            // 临时保存当前状态
+            this.ctx.save();
+            // 重置变换，确保手柄在最上层
+            this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+            // 重新应用变换
+            this.ctx.translate(this.offset.x, this.offset.y);
+            this.ctx.scale(this.scale, this.scale);
+
+            // 绘制选中框
+            this.drawSelectionOptimized(this.selectedMask);
+
+            // 恢复状态
+            this.ctx.restore();
         }
 
         // 恢复状态
         this.ctx.restore();
 
-        // 添加右下角分辨率信息
-        this.drawResolutionInfo();
-
-        // console.log('=== render 调试结束 ===');
+        // 添加右下角分辨率信息（降低更新频率）
+        if (!this.lastInfoUpdate || Date.now() - this.lastInfoUpdate > 500) {
+            this.drawResolutionInfoOptimized();
+            this.lastInfoUpdate = Date.now();
+        }
     }
 
-    // 在右下角添加分辨率信息
-    drawResolutionInfo() {
+    // 优化的分辨率信息绘制（降低更新频率）
+    drawResolutionInfoOptimized() {
         if (!this.canvas || !this.ctx) return;
 
         // 保存当前状态
@@ -1238,7 +1286,7 @@ class MaskEditor {
 
         // 显示缩放比例
         const zoomLevel = Math.round(this.scale * 100);
-        this.ctx.font = '12px Arial';
+        this.ctx.font = '11px Arial';
         this.ctx.fillStyle = '#CCCCCC';
         this.ctx.textAlign = 'right';
         this.ctx.textBaseline = 'bottom';
@@ -1248,27 +1296,14 @@ class MaskEditor {
             this.canvas.height - 10
         );
 
-        // 显示画布分辨率（使用与缩放文本相同的样式）
+        // 显示画布分辨率
         if (config && config.canvas) {
             this.ctx.fillText(
-                `画布分辨率: ${config.canvas.width}x${config.canvas.height}`,
+                `${config.canvas.width}x${config.canvas.height}`,
                 this.canvas.width - 10,
-                this.canvas.height - 30
-            );
-        } else {
-            this.ctx.fillText(
-                '画布分辨率: 未知',
-                this.canvas.width - 10,
-                this.canvas.height - 30
+                this.canvas.height - 25
             );
         }
-
-        // 添加操作提示
-        this.ctx.fillText(
-            '滚轮缩放 | 拖拽移动',
-            this.canvas.width - 10,
-            this.canvas.height - 50
-        );
 
         // 恢复状态
         this.ctx.restore();
@@ -1298,17 +1333,33 @@ class MaskEditor {
 
 
 
-    // 绘制点阵网格
-    drawGrid(width, height) {
-        const gridSize = 32; // 网格大小，32像素一个点
-        const dotSize = 2; // 增大点的大小
-        const dotColor = '#555555'; // 使用更亮的颜色提高可见性
+    // 优化的网格绘制（降低渲染频率）
+    drawGridOptimized(width, height) {
+        // 只在低缩放级别绘制网格，提高性能
+        if (this.scale < 0.5) {
+            return;
+        }
+
+        const gridSize = 32;
+        const dotSize = Math.max(1, 2 / this.scale); // 根据缩放调整点大小
+        const dotColor = 'rgba(124, 58, 237, 0.2)'; // 降低透明度
 
         this.ctx.fillStyle = dotColor;
 
+        // 只绘制可视区域内的网格点
+        const viewportLeft = -this.offset.x / this.scale;
+        const viewportTop = -this.offset.y / this.scale;
+        const viewportRight = viewportLeft + this.canvas.width / this.scale;
+        const viewportBottom = viewportTop + this.canvas.height / this.scale;
+
+        const startX = Math.max(gridSize, Math.floor(viewportLeft / gridSize) * gridSize);
+        const endX = Math.min(width - gridSize, Math.ceil(viewportRight / gridSize) * gridSize);
+        const startY = Math.max(gridSize, Math.floor(viewportTop / gridSize) * gridSize);
+        const endY = Math.min(height - gridSize, Math.ceil(viewportBottom / gridSize) * gridSize);
+
         // 绘制点阵
-        for (let x = gridSize; x < width; x += gridSize) {
-            for (let y = gridSize; y < height; y += gridSize) {
+        for (let x = startX; x <= endX; x += gridSize) {
+            for (let y = startY; y <= endY; y += gridSize) {
                 this.ctx.beginPath();
                 this.ctx.arc(x, y, dotSize, 0, 2 * Math.PI);
                 this.ctx.fill();
@@ -1316,50 +1367,14 @@ class MaskEditor {
         }
     }
 
-    // 绘制圆角带内阴影的边框
-    drawCanvasBorder(width, height) {
-        const borderRadius = 8;
-        const borderWidth = 2;
-        const borderColor = '#666666';
+    // 优化的边框绘制
+    drawCanvasBorderOptimized(width, height) {
+        const borderWidth = 1;
+        const borderColor = 'rgba(124, 58, 237, 0.3)'; // 降低透明度
 
-        // 保存当前状态
-        this.ctx.save();
-
-        // 设置阴影效果（内阴影）
-        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-        this.ctx.shadowBlur = 4;
-        this.ctx.shadowOffsetX = 0;
-        this.ctx.shadowOffsetY = 0;
-
-        // 绘制圆角矩形边框
-        this.ctx.strokeStyle = borderColor;
-        this.ctx.lineWidth = borderWidth;
-
-        this.ctx.beginPath();
-        this.ctx.moveTo(borderRadius, 0);
-        this.ctx.lineTo(width - borderRadius, 0);
-        this.ctx.quadraticCurveTo(width, 0, width, borderRadius);
-        this.ctx.lineTo(width, height - borderRadius);
-        this.ctx.quadraticCurveTo(width, height, width - borderRadius, height);
-        this.ctx.lineTo(borderRadius, height);
-        this.ctx.quadraticCurveTo(0, height, 0, height - borderRadius);
-        this.ctx.lineTo(0, borderRadius);
-        this.ctx.quadraticCurveTo(0, 0, borderRadius, 0);
-        this.ctx.closePath();
-
-        // 创建内阴影效果
-        this.ctx.clip();
-        this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-        this.ctx.lineWidth = borderWidth * 2;
-        this.ctx.strokeRect(-borderWidth, -borderWidth, width + borderWidth * 2, height + borderWidth * 2);
-
-        // 绘制实际边框
         this.ctx.strokeStyle = borderColor;
         this.ctx.lineWidth = borderWidth;
         this.ctx.strokeRect(0, 0, width, height);
-
-        // 恢复状态
-        this.ctx.restore();
     }
 
     // 获取网格对齐的坐标
@@ -1368,26 +1383,19 @@ class MaskEditor {
         return Math.round(value / gridSize) * gridSize;
     }
 
-    drawMask(mask) {
-        // console.log('=== drawMask 调试开始 ===');
-        // console.log('绘制蒙版:', mask);
-
+    // 优化的蒙版绘制
+    drawMaskOptimized(mask) {
         const character = this.editor.dataManager.getCharacter(mask.characterId);
-        // console.log('获取到的角色:', character);
         if (!character) {
-            // console.log('角色不存在，跳过绘制');
             return;
         }
 
         const config = this.editor.dataManager.getConfig();
-        // console.log('获取到的配置:', config);
         if (!config || !config.canvas) {
-            // console.log('配置或画布配置不存在，跳过绘制');
             return;
         }
 
         const { width, height } = config.canvas;
-        // console.log('画布尺寸:', { width, height });
 
         // 计算实际像素坐标
         const x = mask.x * width;
@@ -1395,20 +1403,18 @@ class MaskEditor {
         const w = mask.width * width;
         const h = mask.height * height;
 
-        // console.log('计算后的蒙版坐标和尺寸:', { x, y, w, h });
-
         // 设置透明度
         const opacity = (mask.opacity || 100) / 100;
         this.ctx.globalAlpha = opacity;
-        // console.log('设置透明度:', opacity);
 
         // 绘制填充 - 使用半透明样式
         const fillColor = character.color + '40'; // 使用25%不透明度
-        // console.log('填充颜色:', fillColor);
         this.ctx.fillStyle = fillColor;
+
+        // 简化矩形填充（移除圆角，提高性能）
         this.ctx.fillRect(x, y, w, h);
 
-        // 绘制细边框
+        // 绘制边框
         const scaledLineWidth = Math.max(0.5, 1 / this.scale);
         this.ctx.strokeStyle = character.color;
         this.ctx.lineWidth = scaledLineWidth;
@@ -1417,18 +1423,19 @@ class MaskEditor {
         // 重置透明度
         this.ctx.globalAlpha = 1;
 
-        // 绘制标签 - 字体大小也应该考虑缩放因素
-        const fontSize = Math.max(12, 16 / this.scale);
-        this.ctx.fillStyle = '#FFFFFF';
-        this.ctx.font = `bold ${fontSize}px sans-serif`;
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        this.ctx.fillText(character.name, x + w / 2, y + h / 2);
-
-        // console.log('=== drawMask 调试结束 ===');
+        // 只在较高缩放级别绘制标签
+        if (this.scale > 0.7) {
+            const fontSize = Math.max(10, 14 / this.scale);
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.font = `bold ${fontSize}px sans-serif`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(character.name, x + w / 2, y + h / 2);
+        }
     }
 
-    drawSelection(mask) {
+    // 优化的选中框绘制
+    drawSelectionOptimized(mask) {
         const { width, height } = this.editor.dataManager.getConfig().canvas;
 
         const x = mask.x * width;
@@ -1437,14 +1444,14 @@ class MaskEditor {
         const h = mask.height * height;
 
         // 绘制选中边框
-        this.ctx.strokeStyle = '#0288D1';
-        this.ctx.lineWidth = 2 / this.scale; // 线宽应该考虑缩放因素
+        this.ctx.strokeStyle = 'rgba(124, 58, 237, 0.8)';
+        this.ctx.lineWidth = Math.max(1, 2 / this.scale);
         this.ctx.setLineDash([5, 5]);
         this.ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
         this.ctx.setLineDash([]);
 
-        // 绘制调整手柄 - 只显示四个角的圆形实心白点
-        const handleRadius = Math.max(4, 8 / this.scale);
+        // 绘制调整手柄 - 简化手柄绘制
+        const handleRadius = Math.max(3, 6 / this.scale);
         const handles = [
             { x: x, y: y }, // nw
             { x: x + w, y: y }, // ne
@@ -1452,6 +1459,7 @@ class MaskEditor {
             { x: x, y: y + h } // sw
         ];
 
+        // 简化手柄绘制，移除光晕效果
         this.ctx.fillStyle = '#FFFFFF';
         handles.forEach(handle => {
             this.ctx.beginPath();

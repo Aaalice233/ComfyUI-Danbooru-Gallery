@@ -1,4 +1,6 @@
 // 输出区域组件
+import { globalToastManager } from './toast_manager.js';
+
 class OutputArea {
     constructor(editor) {
         this.editor = editor;
@@ -53,12 +55,16 @@ class OutputArea {
         style.textContent = `
             .mce-output-area {
                 height: 200px;
-                background: #333333;
-                border-top: 1px solid #555555;
+                background: rgba(42, 42, 62, 0.4);
+                border-top: 1px solid rgba(255, 255, 255, 0.08);
                 display: flex;
                 flex-direction: column;
-                padding: 12px;
-                gap: 8px;
+                padding: 16px;
+                gap: 12px;
+                border-radius: 0 0 8px 8px;
+                margin: 0 4px 4px 4px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                backdrop-filter: blur(5px);
             }
             
             .mce-output-header {
@@ -66,62 +72,115 @@ class OutputArea {
                 justify-content: space-between;
                 align-items: center;
                 flex-shrink: 0;
+                background: linear-gradient(135deg, rgba(42, 42, 62, 0.3) 0%, rgba(58, 58, 78, 0.3) 100%);
+                padding: 0 0 12px 0;
+                position: relative;
+            }
+            
+            .mce-output-header::after {
+                content: '';
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 1px;
+                background: linear-gradient(90deg,
+                    transparent,
+                    rgba(255, 255, 255, 0.05),
+                    transparent);
             }
             
             .mce-output-title {
                 margin: 0;
-                font-size: 14px;
+                font-size: 15px;
                 font-weight: 600;
                 color: #E0E0E0;
+                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
             }
             
             .mce-output-actions {
                 display: flex;
-                gap: 8px;
+                gap: 10px;
             }
             
             .mce-button-small {
-                padding: 4px 8px;
+                padding: 6px 12px;
                 font-size: 11px;
-                background: #404040;
-                border: 1px solid #555555;
-                border-radius: 4px;
+                font-weight: 500;
+                background: linear-gradient(135deg, rgba(64, 64, 84, 0.8) 0%, rgba(74, 74, 94, 0.8) 100%);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 color: #E0E0E0;
                 cursor: pointer;
-                transition: all 0.2s;
+                transition: all 0.2s ease;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                position: relative;
+                overflow: hidden;
+            }
+            
+            .mce-button-small::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg,
+                    transparent,
+                    rgba(255, 255, 255, 0.1),
+                    transparent);
+                transition: left 0.5s;
+            }
+            
+            .mce-button-small:hover::before {
+                left: 100%;
             }
             
             .mce-button-small:hover {
-                background: #4a4a4a;
-                border-color: #0288D1;
+                background: linear-gradient(135deg, rgba(74, 74, 94, 0.9) 0%, rgba(84, 84, 104, 0.9) 100%);
+                border-color: rgba(124, 58, 237, 0.4);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            }
+            
+            .mce-button-small:active {
+                transform: translateY(0);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             }
             
             .mce-generate-button {
-                background: #0288D1;
-                border-color: #0288D1;
+                background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%);
+                border-color: rgba(124, 58, 237, 0.5);
                 color: #ffffff;
                 font-weight: bold;
+                box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
             }
             
             .mce-generate-button:hover {
-                background: #0277BD;
-                border-color: #0277BD;
+                background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+                box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
             }
             
             .mce-generate-button:disabled {
-                background: #666666;
-                border-color: #666666;
+                background: linear-gradient(135deg, #666666 0%, #777777 100%);
+                border-color: rgba(102, 102, 102, 0.5);
                 cursor: not-allowed;
+                box-shadow: none;
             }
             
             .mce-button-small.success {
-                background: #4CAF50;
-                border-color: #4CAF50;
+                background: linear-gradient(135deg, #4CAF50 0%, #66BB6A 100%);
+                border-color: rgba(76, 175, 80, 0.5);
+                box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
             }
             
             .mce-button-small.error {
-                background: #F44336;
-                border-color: #F44336;
+                background: linear-gradient(135deg, #F44336 0%, #EF5350 100%);
+                border-color: rgba(244, 67, 54, 0.5);
+                box-shadow: 0 2px 8px rgba(244, 67, 54, 0.3);
             }
             
             .mce-output-content {
@@ -134,25 +193,32 @@ class OutputArea {
                 height: 100%;
                 min-height: 100px;
                 max-height: 300px;
-                background: #2a2a2a;
-                border: 1px solid #555555;
-                border-radius: 4px;
+                background: rgba(26, 26, 38, 0.6);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 color: #E0E0E0;
-                font-family: 'Courier New', monospace;
+                font-family: 'Courier New', 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
                 font-size: 13px;
-                padding: 8px;
+                padding: 10px 14px;
                 resize: vertical;
                 box-sizing: border-box;
-                line-height: 1.4;
+                line-height: 1.5;
+                transition: all 0.2s ease;
+            }
+            
+            .mce-prompt-textarea:hover {
+                background: rgba(26, 26, 38, 0.8);
+                border-color: rgba(255, 255, 255, 0.15);
             }
             
             .mce-prompt-textarea:focus {
                 outline: none;
-                border-color: #0288D1;
+                border-color: #7c3aed;
+                box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
             }
             
             .mce-prompt-textarea::placeholder {
-                color: #888888;
+                color: rgba(136, 136, 136, 0.8);
                 font-style: italic;
             }
             
@@ -162,7 +228,9 @@ class OutputArea {
                 align-items: center;
                 flex-shrink: 0;
                 font-size: 11px;
-                color: #888888;
+                color: rgba(136, 136, 136, 0.8);
+                padding-top: 8px;
+                border-top: 1px solid rgba(255, 255, 255, 0.05);
             }
             
             .mce-output-status {
@@ -188,31 +256,33 @@ class OutputArea {
                 left: 50%;
                 transform: translateX(-50%);
                 padding: 12px 16px;
-                background: #2a2a2a;
-                border: 1px solid #555555;
-                border-radius: 6px;
+                background: linear-gradient(135deg, rgba(42, 42, 62, 0.9) 0%, rgba(58, 58, 78, 0.9) 100%);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
                 color: #E0E0E0;
                 font-size: 13px;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3),
+                            0 0 0 1px rgba(255, 255, 255, 0.05);
                 z-index: 10000;
                 animation: slideDown 0.3s ease-out;
                 white-space: nowrap;
                 max-width: 80%;
+                backdrop-filter: blur(10px);
             }
             
             .mce-toast.success {
-                border-color: #4CAF50;
-                background: #2a4a2a;
+                border-color: rgba(76, 175, 80, 0.5);
+                background: linear-gradient(135deg, rgba(42, 74, 42, 0.9) 0%, rgba(58, 90, 58, 0.9) 100%);
             }
             
             .mce-toast.error {
-                border-color: #F44336;
-                background: #4a2a2a;
+                border-color: rgba(244, 67, 54, 0.5);
+                background: linear-gradient(135deg, rgba(74, 42, 42, 0.9) 0%, rgba(90, 58, 58, 0.9) 100%);
             }
             
             .mce-toast.warning {
-                border-color: #FF9800;
-                background: #4a3a2a;
+                border-color: rgba(255, 152, 0, 0.5);
+                background: linear-gradient(135deg, rgba(74, 68, 32, 0.9) 0%, rgba(90, 82, 42, 0.9) 100%);
             }
             
             @keyframes slideDown {
@@ -567,35 +637,8 @@ class OutputArea {
 
 
     showToast(message, type = 'info', duration = 3000) {
-        // 移除现有的toast
-        const existingToast = document.querySelector('.mce-toast');
-        if (existingToast) {
-            existingToast.remove();
-        }
-
-        const toast = document.createElement('div');
-        toast.className = `mce-toast ${type}`;
-        toast.textContent = message;
-
-        // 找到节点容器，将toast添加到节点容器中
-        const nodeContainer = this.editor.container;
-        if (nodeContainer) {
-            // 设置相对定位，以便toast可以相对于节点定位
-            if (nodeContainer.style.position !== 'relative' && nodeContainer.style.position !== 'absolute') {
-                nodeContainer.style.position = 'relative';
-            }
-            nodeContainer.appendChild(toast);
-        } else {
-            // 如果找不到节点容器，则添加到body中
-            document.body.appendChild(toast);
-        }
-
-        // 自动移除
-        setTimeout(() => {
-            if (toast.parentNode) {
-                toast.remove();
-            }
-        }, duration);
+        // 使用统一的弹出提示管理系统
+        globalToastManager.showToast(message, type, duration);
     }
 
     clear() {

@@ -1,4 +1,7 @@
 // 角色编辑器组件
+import { globalAutocompleteCache } from "./autocomplete_cache.js";
+import { globalToastManager } from "./toast_manager.js";
+
 class CharacterEditor {
     constructor(editor) {
         this.editor = editor;
@@ -21,14 +24,14 @@ class CharacterEditor {
     createLayout() {
         this.container.innerHTML = `
             <div class="mce-character-header">
-                <h3 class="mce-character-title">角色编辑</h3>
+                <h3 class="mce-character-title">${this.editor.languageManager ? this.editor.languageManager.t('characterEditor') : '角色编辑'}</h3>
                 <div class="mce-character-actions">
                     <button id="mce-add-character" class="mce-button mce-button-primary">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="12" y1="5" x2="12" y2="19"></line>
                             <line x1="5" y1="12" x2="19" y2="12"></line>
                         </svg>
-                        添加角色
+                        ${this.editor.languageManager ? this.editor.languageManager.t('addCharacter') : '添加角色'}
                     </button>
                     <button id="mce-library-button" class="mce-button">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -38,7 +41,7 @@ class CharacterEditor {
                             <line x1="8" y1="10" x2="16" y2="10"></line>
                             <line x1="8" y1="14" x2="13" y2="14"></line>
                         </svg>
-                        从词库添加
+                        ${this.editor.languageManager ? this.editor.languageManager.t('selectFromLibrary') : '从词库添加'}
                     </button>
                 </div>
             </div>
@@ -55,84 +58,161 @@ class CharacterEditor {
         style.textContent = `
             .mce-character-editor {
                 width: 400px;
-                background: #333333;
-                border-right: 1px solid #555555;
+                background: rgba(42, 42, 62, 0.3);
+                border-right: 1px solid rgba(255, 255, 255, 0.08);
                 display: flex;
                 flex-direction: column;
+                backdrop-filter: blur(5px);
             }
             
             .mce-character-header {
-                padding: 12px 16px;
-                border-bottom: 1px solid #555555;
+                padding: 16px 20px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
                 flex-shrink: 0;
+                background: linear-gradient(135deg, rgba(42, 42, 62, 0.5) 0%, rgba(58, 58, 78, 0.5) 100%);
+                position: relative;
+            }
+            
+            .mce-character-header::after {
+                content: '';
+                position: absolute;
+                bottom: 0;
+                left: 20px;
+                right: 20px;
+                height: 1px;
+                background: linear-gradient(90deg,
+                    transparent,
+                    rgba(255, 255, 255, 0.1),
+                    transparent);
             }
             
             .mce-character-title {
                 margin: 0;
-                font-size: 14px;
+                font-size: 15px;
                 font-weight: 600;
                 color: #E0E0E0;
+                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
             }
             
             .mce-character-actions {
                 display: flex;
-                gap: 8px;
+                gap: 10px;
             }
             
             .mce-button {
-                padding: 6px 12px;
-                background: #404040;
-                border: 1px solid #555555;
-                border-radius: 4px;
+                padding: 8px 14px;
+                background: linear-gradient(135deg, rgba(64, 64, 84, 0.8) 0%, rgba(74, 74, 94, 0.8) 100%);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 color: #E0E0E0;
                 cursor: pointer;
                 font-size: 12px;
-                transition: all 0.2s;
+                font-weight: 500;
+                transition: all 0.2s ease;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                position: relative;
+                overflow: hidden;
+            }
+            
+            .mce-button::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg,
+                    transparent,
+                    rgba(255, 255, 255, 0.1),
+                    transparent);
+                transition: left 0.5s;
+            }
+            
+            .mce-button:hover::before {
+                left: 100%;
             }
             
             .mce-button:hover {
-                background: #4a4a4a;
-                border-color: #0288D1;
+                background: linear-gradient(135deg, rgba(74, 74, 94, 0.9) 0%, rgba(84, 84, 104, 0.9) 100%);
+                border-color: rgba(124, 58, 237, 0.4);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            }
+            
+            .mce-button:active {
+                transform: translateY(0);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             }
             
             .mce-button-primary {
-                background: #0288D1;
-                border-color: #0288D1;
+                background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%);
+                border-color: rgba(124, 58, 237, 0.5);
+                box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
             }
             
             .mce-button-primary:hover {
-                background: #0288D1;
+                background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+                box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
             }
             
             .mce-character-list {
                 flex: 1;
                 overflow-y: auto;
-                padding: 8px;
+                padding: 12px;
                 min-height: 200px;
             }
             
             .mce-character-item {
-                background: #2a2a2a;
-                border: 1px solid #555555;
-                border-radius: 6px;
-                margin-bottom: 8px;
-                padding: 12px;
+                background: rgba(42, 42, 62, 0.6);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 8px;
+                margin-bottom: 10px;
+                padding: 14px;
                 cursor: pointer;
-                transition: all 0.2s;
+                transition: all 0.3s ease;
                 position: relative;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                backdrop-filter: blur(5px);
+            }
+            
+            .mce-character-item::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 2px;
+                background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.5), transparent);
+                opacity: 0;
+                transition: opacity 0.3s ease;
             }
             
             .mce-character-item:hover {
-                background: #3a3a3a;
-                border-color: #0288D1;
+                background: rgba(58, 58, 78, 0.7);
+                border-color: rgba(124, 58, 237, 0.3);
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            }
+            
+            .mce-character-item:hover::before {
+                opacity: 1;
             }
             
             .mce-character-item.selected {
-                background: var(--mce-primary-color, #0288D1);
-                border-color: var(--mce-primary-color, #0288D1);
+                background: linear-gradient(135deg, rgba(124, 58, 237, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%);
+                border-color: rgba(124, 58, 237, 0.5);
+                box-shadow: 0 4px 12px rgba(124, 58, 237, 0.2);
+            }
+            
+            .mce-character-item.selected::before {
+                opacity: 1;
+                background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.8), transparent);
             }
             
             .mce-character-item.disabled {
@@ -148,7 +228,7 @@ class CharacterEditor {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                margin-bottom: 8px;
+                margin-bottom: 10px;
             }
             
             .mce-character-name {
@@ -156,49 +236,53 @@ class CharacterEditor {
                 color: #E0E0E0;
                 display: flex;
                 align-items: center;
-                gap: 8px;
+                gap: 10px;
+                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
             }
             
             .mce-character-color {
-                width: 16px;
-                height: 16px;
+                width: 18px;
+                height: 18px;
                 border-radius: 50%;
-                border: 2px solid #555555;
+                border: 2px solid rgba(255, 255, 255, 0.2);
+                box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.2);
             }
             
             .mce-character-item.selected .mce-character-color {
-                border-color: #ffffff;
+                border-color: rgba(255, 255, 255, 0.5);
+                box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
             }
             
             .mce-character-controls {
                 display: flex;
-                gap: 4px;
+                gap: 6px;
             }
             
             .mce-character-control {
-                width: 24px;
-                height: 24px;
+                width: 28px;
+                height: 28px;
                 border: none;
-                background: transparent;
+                background: rgba(255, 255, 255, 0.05);
                 color: #B0B0B0;
                 cursor: pointer;
-                border-radius: 4px;
+                border-radius: 6px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                transition: all 0.2s;
+                transition: all 0.2s ease;
             }
             
             .mce-character-control:hover {
                 background: rgba(255, 255, 255, 0.1);
                 color: #E0E0E0;
+                transform: scale(1.1);
             }
             
             .mce-character-prompt {
                 font-size: 12px;
-                color: #B0B0B0;
-                line-height: 1.4;
-                margin-bottom: 8px;
+                color: rgba(224, 224, 224, 0.8);
+                line-height: 1.5;
+                margin-bottom: 10px;
                 overflow: hidden;
                 text-overflow: ellipsis;
                 display: -webkit-box;
@@ -211,7 +295,7 @@ class CharacterEditor {
                 justify-content: space-between;
                 align-items: center;
                 font-size: 11px;
-                color: #888888;
+                color: rgba(136, 136, 136, 0.8);
             }
             
             .mce-character-weight {
@@ -221,46 +305,53 @@ class CharacterEditor {
             }
             
             .mce-character-properties {
-                border-top: 1px solid #555555;
+                border-top: 1px solid rgba(255, 255, 255, 0.08);
                 padding: 16px;
-                background: #2a2a2a;
+                background: rgba(42, 42, 62, 0.4);
                 max-height: 300px;
                 overflow-y: auto;
             }
             
             .mce-empty-state {
                 text-align: center;
-                color: #888888;
+                color: rgba(136, 136, 136, 0.8);
                 font-style: italic;
-                padding: 20px;
+                padding: 30px 20px;
             }
             
             .mce-property-group {
-                margin-bottom: 16px;
+                margin-bottom: 18px;
             }
             
             .mce-property-label {
                 display: block;
-                margin-bottom: 4px;
+                margin-bottom: 6px;
                 font-size: 12px;
-                color: #B0B0B0;
+                color: rgba(224, 224, 224, 0.8);
                 font-weight: 500;
             }
             
             .mce-property-input {
                 width: 100%;
-                padding: 6px 8px;
-                background: #404040;
-                border: 1px solid #555555;
-                border-radius: 4px;
+                padding: 8px 12px;
+                background: rgba(26, 26, 38, 0.6);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 color: #E0E0E0;
                 font-size: 12px;
                 box-sizing: border-box;
+                transition: all 0.2s ease;
+            }
+            
+            .mce-property-input:hover {
+                background: rgba(26, 26, 38, 0.8);
+                border-color: rgba(255, 255, 255, 0.15);
             }
             
             .mce-property-input:focus {
                 outline: none;
-                border-color: #0288D1;
+                border-color: #7c3aed;
+                box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
             }
             
             .mce-property-textarea {
@@ -283,7 +374,7 @@ class CharacterEditor {
             .mce-property-slider {
                 display: flex;
                 align-items: center;
-                gap: 8px;
+                gap: 10px;
             }
             
             .mce-property-slider input[type="range"] {
@@ -294,20 +385,20 @@ class CharacterEditor {
                 min-width: 40px;
                 text-align: right;
                 font-size: 12px;
-                color: #B0B0B0;
+                color: rgba(224, 224, 224, 0.8);
             }
             
             .mce-property-color {
                 display: flex;
                 align-items: center;
-                gap: 8px;
+                gap: 10px;
             }
             
             .mce-property-color input[type="color"] {
                 width: 40px;
-                height: 30px;
-                border: 1px solid #555555;
-                border-radius: 4px;
+                height: 32px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 background: transparent;
                 cursor: pointer;
             }
@@ -399,7 +490,7 @@ class CharacterEditor {
     }
 
     deleteCharacter(characterId) {
-        if (confirm('确定要删除这个角色吗？')) {
+        if (confirm(this.editor.languageManager ? this.editor.languageManager.t('deleteConfirm') || '确定要删除这个角色吗？' : '确定要删除这个角色吗？')) {
             // 先删除对应的蒙版
             if (this.editor.components.maskEditor) {
                 this.editor.components.maskEditor.deleteMask(characterId);
@@ -410,9 +501,17 @@ class CharacterEditor {
             this.renderCharacterList();
             this.clearProperties();
 
-            // 强制重新渲染蒙版编辑器
+            // 强制重新渲染蒙版编辑器，确保画布立即刷新
             if (this.editor.components.maskEditor) {
+                // 立即同步蒙版数据
+                this.editor.components.maskEditor.syncMasksFromCharacters();
+                // 强制重新渲染
                 this.editor.components.maskEditor.scheduleRender();
+
+                // 添加额外延迟渲染，确保在DOM更新后再次渲染
+                setTimeout(() => {
+                    this.editor.components.maskEditor.scheduleRender();
+                }, 50);
             }
         }
     }
@@ -424,6 +523,19 @@ class CharacterEditor {
                 enabled: !character.enabled
             });
             this.renderCharacterList();
+
+            // 强制重新渲染蒙版编辑器，确保画布立即刷新
+            if (this.editor.components.maskEditor) {
+                // 立即同步蒙版数据
+                this.editor.components.maskEditor.syncMasksFromCharacters();
+                // 强制重新渲染
+                this.editor.components.maskEditor.scheduleRender();
+
+                // 添加额外延迟渲染，确保在DOM更新后再次渲染
+                setTimeout(() => {
+                    this.editor.components.maskEditor.scheduleRender();
+                }, 50);
+            }
         }
     }
 
@@ -441,7 +553,7 @@ class CharacterEditor {
         modal.innerHTML = `
             <div class="mce-edit-modal-content">
                 <div class="mce-edit-modal-header">
-                    <h3>编辑角色</h3>
+                    <h3>${this.editor.languageManager ? this.editor.languageManager.t('characterEditor') : '编辑角色'}</h3>
                     <button class="mce-modal-close" onclick="this.closest('.mce-edit-modal').remove()">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -451,25 +563,36 @@ class CharacterEditor {
                 </div>
                 <div class="mce-edit-modal-body">
                     <div class="mce-property-group">
-                        <label class="mce-property-label">角色名称</label>
+                        <label class="mce-property-label">${this.editor.languageManager ? this.editor.languageManager.t('characterName') : '角色名称'}</label>
                         <input type="text" class="mce-property-input" id="mce-modal-char-name" value="${character.name}">
                     </div>
-                    
-                    <div class="mce-property-group">
-                        <label class="mce-property-label">提示词</label>
-                        <textarea class="mce-property-input mce-property-textarea" id="mce-modal-char-prompt">${character.prompt}</textarea>
+                   
+                    <div class="mce-property-group mce-prompt-input-group">
+                        <label class="mce-property-label">${this.editor.languageManager ? this.editor.languageManager.t('characterPrompt') : '提示词'}</label>
+                        <div class="mce-prompt-input-container">
+                            <textarea class="mce-property-input mce-property-textarea mce-autocomplete-input" id="mce-modal-char-prompt" placeholder="${this.editor.languageManager ? this.editor.languageManager.t('autocomplete') : '输入提示词...'}">${character.prompt}</textarea>
+                            <div class="mce-autocomplete-suggestions"></div>
+                        </div>
                     </div>
-                    
+                   
                     <div class="mce-property-group">
                         <label class="mce-property-checkbox">
                             <input type="checkbox" id="mce-modal-char-enabled" ${character.enabled ? 'checked' : ''}>
-                            启用角色
+                            ${this.editor.languageManager ? this.editor.languageManager.t('enabled') : '启用角色'}
                         </label>
                     </div>
-                    
-                    
+                   
+                   
                     <div class="mce-property-group">
-                        <label class="mce-property-label">颜色</label>
+                        <label class="mce-property-label">${this.editor.languageManager ? this.editor.languageManager.t('characterWeight') : '权重'}</label>
+                        <div class="mce-property-slider">
+                            <input type="range" min="0.1" max="2.0" step="0.1" value="${character.weight}" id="mce-modal-char-weight">
+                            <span class="mce-property-slider-value">${character.weight}</span>
+                        </div>
+                    </div>
+                   
+                    <div class="mce-property-group">
+                        <label class="mce-property-label">${this.editor.languageManager ? this.editor.languageManager.t('color') : '颜色'}</label>
                         <div class="mce-property-color">
                             <input type="color" id="mce-modal-char-color" value="${character.color}">
                             <input type="text" class="mce-property-input mce-property-color-hex" id="mce-modal-char-color-hex" value="${character.color}">
@@ -477,8 +600,8 @@ class CharacterEditor {
                     </div>
                 </div>
                 <div class="mce-edit-modal-footer">
-                    <button class="mce-button" onclick="this.closest('.mce-edit-modal').remove()">取消</button>
-                    <button class="mce-button mce-button-primary" id="mce-modal-save">保存</button>
+                    <button class="mce-button" onclick="this.closest('.mce-edit-modal').remove()">${this.editor.languageManager ? this.editor.languageManager.t('delete') : '取消'}</button>
+                    <button class="mce-button mce-button-primary" id="mce-modal-save">${this.editor.languageManager ? this.editor.languageManager.t('settingsSaved') : '保存'}</button>
                 </div>
             </div>
         `;
@@ -495,6 +618,7 @@ class CharacterEditor {
                     width: 100%;
                     height: 100%;
                     background: rgba(0, 0, 0, 0.7);
+                    backdrop-filter: blur(5px);
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -502,48 +626,71 @@ class CharacterEditor {
                 }
                 
                 .mce-edit-modal-content {
-                    background: #2a2a2a;
-                    border-radius: 8px;
+                    background: linear-gradient(135deg, #1e1e2e 0%, #2a2a3e 100%);
+                    border-radius: 12px;
                     width: 90%;
                     max-width: 500px;
                     max-height: 80vh;
                     overflow: hidden;
                     display: flex;
                     flex-direction: column;
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+                                0 0 0 1px rgba(255, 255, 255, 0.05),
+                                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
                 }
                 
                 .mce-edit-modal-header {
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
-                    padding: 16px 20px;
-                    border-bottom: 1px solid #555;
+                    padding: 20px 24px;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                    background: linear-gradient(135deg, rgba(42, 42, 62, 0.5) 0%, rgba(58, 58, 78, 0.5) 100%);
+                    position: relative;
+                }
+                
+                .mce-edit-modal-header::after {
+                    content: '';
+                    position: absolute;
+                    bottom: 0;
+                    left: 24px;
+                    right: 24px;
+                    height: 1px;
+                    background: linear-gradient(90deg,
+                        transparent,
+                        rgba(255, 255, 255, 0.1),
+                        transparent);
                 }
                 
                 .mce-edit-modal-header h3 {
                     margin: 0;
                     color: #E0E0E0;
+                    font-weight: 600;
+                    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
                 }
                 
                 .mce-modal-close {
-                    background: transparent;
-                    border: none;
+                    background: rgba(255, 255, 255, 0.05);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
                     color: #B0B0B0;
                     cursor: pointer;
-                    padding: 4px;
-                    border-radius: 4px;
+                    padding: 8px;
+                    border-radius: 6px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
+                    transition: all 0.2s ease;
                 }
                 
                 .mce-modal-close:hover {
                     background: rgba(255, 255, 255, 0.1);
                     color: #E0E0E0;
+                    transform: scale(1.1);
                 }
                 
                 .mce-edit-modal-body {
-                    padding: 20px;
+                    padding: 24px;
                     overflow-y: auto;
                     flex: 1;
                 }
@@ -551,9 +698,90 @@ class CharacterEditor {
                 .mce-edit-modal-footer {
                     display: flex;
                     justify-content: flex-end;
-                    gap: 8px;
-                    padding: 16px 20px;
-                    border-top: 1px solid #555;
+                    gap: 12px;
+                    padding: 20px 24px;
+                    border-top: 1px solid rgba(255, 255, 255, 0.08);
+                    background: linear-gradient(135deg, rgba(42, 42, 62, 0.3) 0%, rgba(58, 58, 78, 0.3) 100%);
+                }
+                
+                /* 智能补全样式 */
+                .mce-prompt-input-group {
+                    position: relative;
+                }
+                
+                .mce-prompt-input-container {
+                    position: relative;
+                }
+                
+                .mce-autocomplete-input {
+                    resize: vertical;
+                    min-height: 80px;
+                    font-family: inherit;
+                    background: rgba(26, 26, 38, 0.6);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 6px;
+                    color: #E0E0E0;
+                    padding: 8px 12px;
+                    transition: all 0.2s ease;
+                }
+                
+                .mce-autocomplete-input:hover {
+                    background: rgba(26, 26, 38, 0.8);
+                    border-color: rgba(255, 255, 255, 0.15);
+                }
+                
+                .mce-autocomplete-input:focus {
+                    outline: none;
+                    border-color: #7c3aed;
+                    box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
+                }
+                
+                .mce-autocomplete-suggestions {
+                    position: absolute;
+                    top: 100%;
+                    left: 0;
+                    right: 0;
+                    max-height: 200px;
+                    overflow-y: auto;
+                    background: rgba(42, 42, 62, 0.9);
+                    backdrop-filter: blur(10px);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-top: none;
+                    border-radius: 0 0 8px 8px;
+                    z-index: 1001;
+                    display: none;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                }
+                
+                .mce-suggestion-item {
+                    padding: 10px 14px;
+                    cursor: pointer;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                    color: #E0E0E0;
+                    font-size: 12px;
+                    transition: all 0.2s ease;
+                }
+                
+                .mce-suggestion-item:last-child {
+                    border-bottom: none;
+                }
+                
+                .mce-suggestion-item:hover {
+                    background: rgba(124, 58, 237, 0.2);
+                }
+                
+                .mce-suggestion-item.selected {
+                    background: rgba(124, 58, 237, 0.3);
+                }
+                
+                .mce-suggestion-name {
+                    font-weight: 500;
+                }
+                
+                .mce-suggestion-count {
+                    color: rgba(136, 136, 136, 0.8);
+                    font-size: 11px;
+                    margin-left: 8px;
                 }
             `;
             document.head.appendChild(modalStyles);
@@ -587,18 +815,186 @@ class CharacterEditor {
                 colorInput.value = color;
             }
         });
+        
+        // 权重滑块同步
+        const weightSlider = document.getElementById('mce-modal-char-weight');
+        const weightValue = document.querySelector('.mce-property-slider-value');
+        
+        weightSlider.addEventListener('input', () => {
+            weightValue.textContent = weightSlider.value;
+        });
+        
+        // 智能补全功能
+        this.setupAutocomplete(characterId);
+    }
+    
+    /**
+     * 设置智能补全功能
+     */
+    setupAutocomplete(characterId) {
+        const promptInput = document.getElementById('mce-modal-char-prompt');
+        const suggestionsContainer = document.querySelector('.mce-autocomplete-suggestions');
+        
+        if (!promptInput || !suggestionsContainer) return;
+        
+        // 获取当前语言
+        const currentLang = this.editor.languageManager ? this.editor.languageManager.getLanguage() : 'zh';
+        
+        // 设置缓存系统的语言
+        if (typeof globalAutocompleteCache !== 'undefined') {
+            globalAutocompleteCache.setLanguage(currentLang);
+        }
+        
+        let debounceTimer;
+        let selectedSuggestionIndex = -1;
+        
+        // 输入事件处理
+        promptInput.addEventListener('input', async () => {
+            clearTimeout(debounceTimer);
+            
+            const query = promptInput.value.trim();
+            const lastWord = query.split(/[\s,]+/).pop();
+            
+            if (lastWord.length < 2) {
+                suggestionsContainer.style.display = 'none';
+                return;
+            }
+            
+            debounceTimer = setTimeout(async () => {
+                try {
+                    // 检测是否包含中文字符
+                    const containsChinese = /[\u4e00-\u9fff]/.test(lastWord);
+                    
+                    let suggestions = [];
+                    
+                    if (containsChinese && typeof globalAutocompleteCache !== 'undefined') {
+                        // 中文搜索
+                        suggestions = await globalAutocompleteCache.getChineseSearchSuggestions(lastWord, { limit: 10 });
+                        
+                        suggestionsContainer.innerHTML = '';
+                        if (suggestions.length > 0) {
+                            suggestions.forEach((result, index) => {
+                                const item = document.createElement('div');
+                                item.className = 'mce-suggestion-item';
+                                item.innerHTML = `
+                                    <span class="mce-suggestion-name">${result.chinese}</span>
+                                    <span class="mce-suggestion-name">[${result.english}]</span>
+                                `;
+                                
+                                item.addEventListener('click', () => {
+                                    // 替换最后一个词
+                                    const words = promptInput.value.split(/[\s,]+/);
+                                    words[words.length - 1] = result.english;
+                                    promptInput.value = words.join(' ');
+                                    suggestionsContainer.style.display = 'none';
+                                    promptInput.focus();
+                                });
+                                
+                                suggestionsContainer.appendChild(item);
+                            });
+                            suggestionsContainer.style.display = 'block';
+                        } else {
+                            suggestionsContainer.style.display = 'none';
+                        }
+                    } else if (typeof globalAutocompleteCache !== 'undefined') {
+                        // 英文自动补全
+                        suggestions = await globalAutocompleteCache.getAutocompleteSuggestions(lastWord, { limit: 10 });
+                        
+                        suggestionsContainer.innerHTML = '';
+                        if (suggestions.length > 0) {
+                            suggestions.forEach((tag, index) => {
+                                const item = document.createElement('div');
+                                item.className = 'mce-suggestion-item';
+                                item.innerHTML = `
+                                    <span class="mce-suggestion-name">${tag.name}</span>
+                                    ${tag.post_count ? `<span class="mce-suggestion-count">${tag.post_count}</span>` : ''}
+                                `;
+                                
+                                item.addEventListener('click', () => {
+                                    // 替换最后一个词
+                                    const words = promptInput.value.split(/[\s,]+/);
+                                    words[words.length - 1] = tag.name;
+                                    promptInput.value = words.join(' ');
+                                    suggestionsContainer.style.display = 'none';
+                                    promptInput.focus();
+                                });
+                                
+                                suggestionsContainer.appendChild(item);
+                            });
+                            suggestionsContainer.style.display = 'block';
+                        } else {
+                            suggestionsContainer.style.display = 'none';
+                        }
+                    }
+                    
+                    selectedSuggestionIndex = -1;
+                    
+                } catch (error) {
+                    console.error('[CharacterEditor] 获取智能补全建议失败:', error);
+                    suggestionsContainer.style.display = 'none';
+                }
+            }, 250);
+        });
+        
+        // 键盘事件处理
+        promptInput.addEventListener('keydown', (e) => {
+            const items = suggestionsContainer.querySelectorAll('.mce-suggestion-item');
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (items.length > 0) {
+                    selectedSuggestionIndex = (selectedSuggestionIndex + 1) % items.length;
+                    updateSelectedSuggestion(items, selectedSuggestionIndex);
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (items.length > 0) {
+                    selectedSuggestionIndex = (selectedSuggestionIndex - 1 + items.length) % items.length;
+                    updateSelectedSuggestion(items, selectedSuggestionIndex);
+                }
+            } else if (e.key === 'Enter') {
+                if (selectedSuggestionIndex >= 0 && items[selectedSuggestionIndex]) {
+                    e.preventDefault();
+                    items[selectedSuggestionIndex].click();
+                }
+            } else if (e.key === 'Escape') {
+                suggestionsContainer.style.display = 'none';
+                selectedSuggestionIndex = -1;
+            }
+        });
+        
+        // 点击外部隐藏建议
+        document.addEventListener('click', (e) => {
+            if (!promptInput.contains(e.target) && !suggestionsContainer.contains(e.target)) {
+                suggestionsContainer.style.display = 'none';
+                selectedSuggestionIndex = -1;
+            }
+        });
+        
+        // 更新选中建议的函数
+        function updateSelectedSuggestion(items, selectedIndex) {
+            items.forEach((item, index) => {
+                if (index === selectedIndex) {
+                    item.classList.add('selected');
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+        }
     }
 
     saveCharacterFromModal(characterId) {
         const name = document.getElementById('mce-modal-char-name').value;
         const prompt = document.getElementById('mce-modal-char-prompt').value;
         const enabled = document.getElementById('mce-modal-char-enabled').checked;
+        const weight = parseFloat(document.getElementById('mce-modal-char-weight').value);
         const color = document.getElementById('mce-modal-char-color').value;
 
         this.editor.dataManager.updateCharacter(characterId, {
             name,
             prompt,
             enabled,
+            weight,
             color
         });
 
@@ -633,30 +1029,50 @@ class CharacterEditor {
     }
 
     renderCharacterList() {
+        // 使用防抖函数避免频繁渲染
+        if (this.renderTimeout) {
+            clearTimeout(this.renderTimeout);
+        }
+
+        this.renderTimeout = setTimeout(() => {
+            this.renderTimeout = null;
+            this.doRenderCharacterList();
+        }, 16); // 约60fps的渲染频率
+    }
+
+    // 实际执行角色列表渲染的方法
+    doRenderCharacterList() {
         const listContainer = document.getElementById('mce-character-list');
         const characters = this.editor.dataManager.getCharacters();
 
         if (characters.length === 0) {
             listContainer.innerHTML = `
                 <div class="mce-empty-state">
-                    <p>还没有角色</p>
-                    <p>点击"添加角色"开始创建</p>
+                    <p>${this.editor.languageManager ? this.editor.languageManager.t('noCharacters') || '还没有角色' : '还没有角色'}</p>
+                    <p>${this.editor.languageManager ? this.editor.languageManager.t('clickToAddCharacter') || '点击"添加角色"开始创建' : '点击"添加角色"开始创建'}</p>
                 </div>
             `;
             return;
         }
 
-        listContainer.innerHTML = characters.map(character => `
-            <div class="mce-character-item ${!character.enabled ? 'disabled' : ''}"
-                 data-character-id="${character.id}"
-                 draggable="true">
+        // 使用文档片段减少DOM操作，提高性能
+        const fragment = document.createDocumentFragment();
+
+        characters.forEach(character => {
+            const item = document.createElement('div');
+            item.className = `mce-character-item ${!character.enabled ? 'disabled' : ''}`;
+            item.dataset.characterId = character.id;
+            item.draggable = true;
+
+            // 创建角色项内容
+            item.innerHTML = `
                 <div class="mce-character-item-header">
                     <div class="mce-character-name">
                         <div class="mce-character-color" style="background-color: ${character.color}"></div>
                         <span>${character.name}</span>
                     </div>
                     <div class="mce-character-controls">
-                        <button class="mce-character-control" onclick="characterEditor.toggleCharacterEnabled('${character.id}')" title="${character.enabled ? '禁用' : '启用'}">
+                        <button class="mce-character-control" data-action="toggle" data-character-id="${character.id}" title="${character.enabled ? (this.editor.languageManager ? this.editor.languageManager.t('disable') || '禁用' : '禁用') : (this.editor.languageManager ? this.editor.languageManager.t('enable') || '启用' : '启用')}">
                             ${character.enabled ?
                 `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -668,13 +1084,13 @@ class CharacterEditor {
                                 </svg>`
             }
                         </button>
-                        <button class="mce-character-control" onclick="characterEditor.editCharacter('${character.id}')" title="编辑">
+                        <button class="mce-character-control" data-action="edit" data-character-id="${character.id}" title="${this.editor.languageManager ? this.editor.languageManager.t('edit') || '编辑' : '编辑'}">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                             </svg>
                         </button>
-                        <button class="mce-character-control" onclick="characterEditor.deleteCharacter('${character.id}')" title="删除">
+                        <button class="mce-character-control" data-action="delete" data-character-id="${character.id}" title="${this.editor.languageManager ? this.editor.languageManager.t('delete') || '删除' : '删除'}">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="3,6 5,6 21,6"></polyline>
                                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -688,74 +1104,118 @@ class CharacterEditor {
                         #${character.position + 1}
                     </div>
                 </div>
-            </div>
-        `).join('');
+            `;
 
-        // 绑定角色项事件
-        listContainer.querySelectorAll('.mce-character-item').forEach(item => {
-            const characterId = item.dataset.characterId;
+            fragment.appendChild(item);
+        });
 
-            // 点击选择角色
-            item.addEventListener('click', (e) => {
-                if (!e.target.closest('.mce-character-controls')) {
-                    this.selectCharacter(characterId);
+        // 一次性添加所有角色项，减少DOM操作
+        listContainer.innerHTML = '';
+        listContainer.appendChild(fragment);
+
+        // 使用事件委托处理所有角色项事件，提高性能
+        this.setupCharacterItemEvents(listContainer, characters);
+    }
+
+    // 设置角色项事件处理
+    setupCharacterItemEvents(container, characters) {
+        container.addEventListener('click', (e) => {
+            const characterItem = e.target.closest('.mce-character-item');
+            if (!characterItem) return;
+
+            const characterId = characterItem.dataset.characterId;
+            const actionButton = e.target.closest('.mce-character-control');
+            
+            if (actionButton) {
+                const action = actionButton.dataset.action;
+                const buttonCharacterId = actionButton.dataset.characterId;
+                
+                if (action === 'toggle') {
+                    this.toggleCharacterEnabled(buttonCharacterId);
+                } else if (action === 'edit') {
+                    this.editCharacter(buttonCharacterId);
+                } else if (action === 'delete') {
+                    this.deleteCharacter(buttonCharacterId);
                 }
-            });
+            } else if (!e.target.closest('.mce-character-controls')) {
+                this.selectCharacter(characterId);
+            }
+        });
 
-            // 拖拽事件
-            item.addEventListener('dragstart', (e) => {
-                this.draggedElement = item;
-                item.classList.add('dragging');
-                e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/html', item.innerHTML);
-            });
+        // 拖拽事件处理
+        this.setupDragAndDrop(container, characters);
+    }
 
-            item.addEventListener('dragend', () => {
-                item.classList.remove('dragging');
-                this.draggedElement = null;
-            });
+    // 设置拖拽功能
+    setupDragAndDrop(container, characters) {
+        let draggedElement = null;
+        let draggedIndex = -1;
 
-            item.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
+        container.addEventListener('dragstart', (e) => {
+            const characterItem = e.target.closest('.mce-character-item');
+            if (!characterItem) return;
 
-                if (this.draggedElement && this.draggedElement !== item) {
-                    const rect = item.getBoundingClientRect();
-                    const midpoint = rect.top + rect.height / 2;
+            const characterId = characterItem.dataset.characterId;
+            draggedIndex = characters.findIndex(c => c.id === characterId);
+            
+            draggedElement = characterItem;
+            characterItem.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', characterItem.innerHTML);
+        });
 
-                    if (e.clientY < midpoint) {
-                        item.style.borderTop = '2px solid #8D6E63';
-                        item.style.borderBottom = '';
-                    } else {
-                        item.style.borderBottom = '2px solid #8D6E63';
-                        item.style.borderTop = '';
-                    }
-                }
-            });
+        container.addEventListener('dragend', (e) => {
+            const characterItem = e.target.closest('.mce-character-item');
+            if (characterItem) {
+                characterItem.classList.remove('dragging');
+            }
+            draggedElement = null;
+            draggedIndex = -1;
+        });
 
-            item.addEventListener('dragleave', () => {
-                item.style.borderTop = '';
-                item.style.borderBottom = '';
-            });
+        container.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
 
-            item.addEventListener('drop', (e) => {
-                e.preventDefault();
-                item.style.borderTop = '';
-                item.style.borderBottom = '';
+            const characterItem = e.target.closest('.mce-character-item');
+            if (!characterItem || !draggedElement || draggedElement === characterItem) return;
 
-                if (this.draggedElement && this.draggedElement !== item) {
-                    const draggedId = this.draggedElement.dataset.characterId;
-                    const targetId = item.dataset.characterId;
+            const rect = characterItem.getBoundingClientRect();
+            const midpoint = rect.top + rect.height / 2;
 
-                    const draggedIndex = characters.findIndex(c => c.id === draggedId);
-                    const targetIndex = characters.findIndex(c => c.id === targetId);
+            if (e.clientY < midpoint) {
+                characterItem.style.borderTop = '2px solid #8D6E63';
+                characterItem.style.borderBottom = '';
+            } else {
+                characterItem.style.borderBottom = '2px solid #8D6E63';
+                characterItem.style.borderTop = '';
+            }
+        });
 
-                    if (draggedIndex !== -1 && targetIndex !== -1) {
-                        this.editor.dataManager.reorderCharacters(draggedIndex, targetIndex);
-                        this.renderCharacterList();
-                    }
-                }
-            });
+        container.addEventListener('dragleave', (e) => {
+            const characterItem = e.target.closest('.mce-character-item');
+            if (characterItem) {
+                characterItem.style.borderTop = '';
+                characterItem.style.borderBottom = '';
+            }
+        });
+
+        container.addEventListener('drop', (e) => {
+            const characterItem = e.target.closest('.mce-character-item');
+            if (!characterItem) return;
+
+            characterItem.style.borderTop = '';
+            characterItem.style.borderBottom = '';
+
+            if (!draggedElement || draggedElement === characterItem) return;
+
+            const targetId = characterItem.dataset.characterId;
+            const targetIndex = characters.findIndex(c => c.id === targetId);
+
+            if (draggedIndex !== -1 && targetIndex !== -1) {
+                this.editor.dataManager.reorderCharacters(draggedIndex, targetIndex);
+                this.renderCharacterList();
+            }
         });
     }
 
@@ -777,13 +1237,13 @@ class CharacterEditor {
         modal.innerHTML = `
             <div class="mce-library-content">
                 <div class="mce-library-header">
-                    <h3>从词库添加提示词</h3>
+                    <h3>${this.editor.languageManager ? this.editor.languageManager.t('selectFromLibrary') : '从词库添加提示词'}</h3>
                     <button id="mce-library-close" class="mce-button mce-button-icon">&times;</button>
                 </div>
                 <div class="mce-library-body">
                     <div class="mce-library-left-panel">
                         <div class="mce-category-header">
-                            <h4>分类</h4>
+                            <h4>${this.editor.languageManager ? this.editor.languageManager.t('category') || '分类' : '分类'}</h4>
                         </div>
                         <div class="mce-category-tree">
                             <!-- 分类树将在这里生成 -->
@@ -791,7 +1251,7 @@ class CharacterEditor {
                     </div>
                     <div class="mce-library-right-panel">
                         <div class="mce-prompt-header">
-                            <h4>提示词列表</h4>
+                            <h4>${this.editor.languageManager ? this.editor.languageManager.t('promptList') || '提示词列表' : '提示词列表'}</h4>
                         </div>
                         <div class="mce-prompt-list-container">
                             <!-- 提示词列表将在这里生成 -->
@@ -834,7 +1294,8 @@ class CharacterEditor {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background-color: rgba(0, 0, 0, 0.7);
+                background: rgba(0, 0, 0, 0.7);
+                backdrop-filter: blur(5px);
                 display: flex;
                 justify-content: center;
                 align-items: center;
@@ -844,25 +1305,45 @@ class CharacterEditor {
             .mce-library-content {
                 width: 800px;
                 height: 600px;
-                background-color: #2a2a2a;
-                border: 1px solid #555;
-                border-radius: 8px;
+                background: linear-gradient(135deg, #1e1e2e 0%, #2a2a3e 100%);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+                            0 0 0 1px rgba(255, 255, 255, 0.05),
+                            inset 0 1px 0 rgba(255, 255, 255, 0.1);
             }
             
             .mce-library-header {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                padding: 12px 16px;
-                border-bottom: 1px solid #555;
+                padding: 16px 20px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                background: linear-gradient(135deg, rgba(42, 42, 62, 0.5) 0%, rgba(58, 58, 78, 0.5) 100%);
+                position: relative;
+            }
+            
+            .mce-library-header::after {
+                content: '';
+                position: absolute;
+                bottom: 0;
+                left: 20px;
+                right: 20px;
+                height: 1px;
+                background: linear-gradient(90deg,
+                    transparent,
+                    rgba(255, 255, 255, 0.1),
+                    transparent);
             }
             
             .mce-library-header h3 {
                 margin: 0;
                 color: #E0E0E0;
+                font-weight: 600;
+                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
             }
             
             .mce-library-body {
@@ -873,74 +1354,140 @@ class CharacterEditor {
             
             .mce-library-left-panel {
                 width: 30%;
-                background-color: #333;
-                border-right: 1px solid #555;
+                background: rgba(42, 42, 62, 0.4);
+                border-right: 1px solid rgba(255, 255, 255, 0.08);
                 overflow-y: auto;
             }
             
             .mce-library-right-panel {
                 width: 70%;
-                background-color: #2a2a2a;
+                background: rgba(30, 30, 46, 0.3);
                 overflow-y: auto;
             }
             
             .mce-category-header, .mce-prompt-header {
-                padding: 12px 16px;
-                border-bottom: 1px solid #555;
+                padding: 14px 18px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                background: linear-gradient(135deg, rgba(42, 42, 62, 0.3) 0%, rgba(58, 58, 78, 0.3) 100%);
+                position: relative;
+            }
+            
+            .mce-category-header::after, .mce-prompt-header::after {
+                content: '';
+                position: absolute;
+                bottom: 0;
+                left: 18px;
+                right: 18px;
+                height: 1px;
+                background: linear-gradient(90deg,
+                    transparent,
+                    rgba(255, 255, 255, 0.05),
+                    transparent);
             }
             
             .mce-category-header h4, .mce-prompt-header h4 {
                 margin: 0;
                 color: #E0E0E0;
+                font-weight: 600;
+                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
             }
             
             .mce-category-tree {
-                padding: 8px;
+                padding: 12px;
             }
             
             .mce-category-item {
-                padding: 8px 12px;
+                padding: 10px 14px;
                 cursor: pointer;
-                border-radius: 4px;
-                color: #E0E0E0;
-                margin-bottom: 4px;
+                border-radius: 6px;
+                color: rgba(224, 224, 224, 0.9);
+                margin-bottom: 6px;
+                transition: all 0.2s ease;
+                position: relative;
+            }
+            
+            .mce-category-item::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 2px;
+                background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.5), transparent);
+                opacity: 0;
+                transition: opacity 0.3s ease;
             }
             
             .mce-category-item:hover {
-                background-color: #404040;
+                background: rgba(58, 58, 78, 0.5);
+                transform: translateX(2px);
+            }
+            
+            .mce-category-item:hover::before {
+                opacity: 1;
             }
             
             .mce-category-item.selected {
-                background-color: #0288D1;
+                background: linear-gradient(135deg, rgba(124, 58, 237, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%);
+                border-color: rgba(124, 58, 237, 0.3);
+            }
+            
+            .mce-category-item.selected::before {
+                opacity: 1;
+                background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.8), transparent);
             }
             
             .mce-prompt-list-container {
-                padding: 8px;
+                padding: 12px;
             }
             
             .mce-prompt-item {
-                padding: 12px;
-                border-radius: 6px;
-                background-color: #333;
-                margin-bottom: 8px;
+                padding: 14px;
+                border-radius: 8px;
+                background: rgba(42, 42, 62, 0.6);
+                margin-bottom: 10px;
                 cursor: pointer;
-                transition: background-color 0.2s;
+                transition: all 0.3s ease;
+                position: relative;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                backdrop-filter: blur(5px);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+            }
+            
+            .mce-prompt-item::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 2px;
+                background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.5), transparent);
+                opacity: 0;
+                transition: opacity 0.3s ease;
             }
             
             .mce-prompt-item:hover {
-                background-color: #404040;
+                background: rgba(58, 58, 78, 0.7);
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                border-color: rgba(124, 58, 237, 0.3);
+            }
+            
+            .mce-prompt-item:hover::before {
+                opacity: 1;
             }
             
             .mce-prompt-name {
-                font-weight: bold;
+                font-weight: 600;
                 color: #E0E0E0;
-                margin-bottom: 4px;
+                margin-bottom: 6px;
+                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
             }
             
             .mce-prompt-text {
-                color: #B0B0B0;
+                color: rgba(224, 224, 224, 0.8);
                 font-size: 12px;
-                line-height: 1.4;
+                line-height: 1.5;
             }
         `;
         document.head.appendChild(style);
@@ -1105,7 +1652,7 @@ class CharacterEditor {
 
         const category = this.promptData.categories.find(c => c.name === this.selectedCategory);
         if (!category || !category.prompts) {
-            listContainer.innerHTML = '<div style="color: #888; text-align: center; padding: 20px;">此分类下没有提示词</div>';
+            listContainer.innerHTML = `<div style="color: #888; text-align: center; padding: 20px;">${this.editor.languageManager ? this.editor.languageManager.t('noPromptsInCategory') : '此分类下没有提示词'}</div>`;
             return;
         }
 
@@ -1157,7 +1704,7 @@ class CharacterEditor {
         if (prompt.image) {
             imageHTML = `<img src="/prompt_selector/preview/${prompt.image}" alt="Preview" style="max-width: 150px; max-height: 150px; border-radius: 4px;">`;
         } else {
-            imageHTML = '<div style="width: 150px; height: 150px; background-color: #444; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #888;">暂无预览</div>';
+            imageHTML = `<div style="width: 150px; height: 150px; background-color: #444; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #888;">${this.editor.languageManager ? this.editor.languageManager.t('noPreview') : '暂无预览'}</div>`;
         }
 
         tooltip.innerHTML = `
