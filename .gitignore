@@ -63,3 +63,6 @@ character_feature_swap/cache/
 # Prompt Selector specific
 prompt_selector/preview/
 prompt_selector/data.json
+
+# Multi Character Editor specific
+multi_character_editor/settings/

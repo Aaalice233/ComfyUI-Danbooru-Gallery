@@ -188,7 +188,6 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
 
-                console.log("提示词选择器节点已创建！");
 
                 this.promptData = null; // 用于存储从后端获取的数据
                 this.selectedCategory = "default"; // Default value, will be overwritten
@@ -413,7 +412,7 @@ app.registerExtension({
 
                 // Re-add hover preview to the main category button
                 // categoryBtn.addEventListener("mouseenter", (e) => {
-                //     console.log("categoryBtn mouseenter triggered", e.currentTarget);
+                //     // console.log("categoryBtn mouseenter triggered", e.currentTarget);
                 //     if (this.hidePreviewTimeout) {
                 //         clearTimeout(this.hidePreviewTimeout);
                 //         this.hidePreviewTimeout = null;
@@ -476,7 +475,7 @@ app.registerExtension({
                         const text = categoryBtn.querySelector('span:not(.ps-total-count-badge)');
                         if (text) {
                             text.textContent = this.selectedCategory;
-                            // console.log(`updateCategoryDropdown: Setting category button text to "${this.selectedCategory}"`);
+                            // // console.log(`updateCategoryDropdown: Setting category button text to "${this.selectedCategory}"`);
                         }
 
                         // Remove old count badge if it exists
@@ -502,7 +501,7 @@ app.registerExtension({
 
                             // Add hover events to the badge itself
                             countBadge.addEventListener("mouseenter", (e) => {
-                                console.log("countBadge mouseenter triggered", e.currentTarget);
+                                // console.log("countBadge mouseenter triggered", e.currentTarget);
                                 if (this.hidePreviewTimeout) {
                                     clearTimeout(this.hidePreviewTimeout);
                                     this.hidePreviewTimeout = null;
@@ -750,7 +749,7 @@ app.registerExtension({
 
                     const outputString = allSelected.join(separator);
                     outputWidget.value = outputString;
-                    // console.log("Output updated:", outputString);
+                    // // console.log("Output updated:", outputString);
                     // Serialize the selectedPrompts object for saving in properties.
                     // We need to convert Sets to Arrays for JSON serialization.
                     const serializableSelections = {};
@@ -1632,7 +1631,7 @@ app.registerExtension({
                                             this.showToast('批量移动成功！');
                                         } else {
                                             const error = await response.json();
-                                            console.error("Batch move API error response:", error); // Add logging here
+                                            // console.error("Batch move API error response:", error); // Add logging here
                                             throw new Error(error.error || '批量移动失败');
                                         }
                                     } catch (error) {
@@ -2081,7 +2080,7 @@ app.registerExtension({
 
                             if (!response.ok) {
                                 const error = await response.json();
-                                console.error("[DEBUG] API deletion failed:", error);
+                                // console.error("[DEBUG] API deletion failed:", error);
                                 throw new Error(error.error || "删除失败");
                             }
 
@@ -2945,7 +2944,7 @@ app.registerExtension({
                     if (treeElement) { // Add a check here
                         treeContainer.appendChild(treeElement);
                     } else {
-                        console.warn("[Debug] treeElement is null or undefined, not appending.");
+                        // console.warn("[Debug] treeElement is null or undefined, not appending.");
                     }
 
                     const closeModal = () => modal.remove();
@@ -2959,7 +2958,7 @@ app.registerExtension({
                 };
 
                 this.showImportModal = (file, categories) => {
-                    console.log("[Debug] Raw categories for import:", JSON.stringify(categories, null, 2));
+                    // console.log("[Debug] Raw categories for import:", JSON.stringify(categories, null, 2));
                     if (document.querySelector(".ps-import-modal")) return;
 
                     const modal = document.createElement("div");
@@ -3101,7 +3100,7 @@ app.registerExtension({
                 elementsToRemove.forEach(el => el.remove());
 
                 onRemoved?.apply(this, arguments);
-                console.log("提示词选择器节点已移除，相关UI已清理。");
+                // console.log("提示词选择器节点已移除，相关UI已清理。");
             };
 
 

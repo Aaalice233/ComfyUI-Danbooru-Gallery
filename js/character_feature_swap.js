@@ -756,7 +756,6 @@ Respond with only the new, modified prompt, without any explanations.
                     testResponseBtn.disabled = true;
 
                     try {
-                        console.log("[CFS Debug] 'Test Response' clicked. Channel:", apiChannelSelect.value);
                         const settingsPayload = {
                             api_channel: apiChannelSelect.value,
                             api_url: apiUrlInput.value,
@@ -875,7 +874,6 @@ Respond with only the new, modified prompt, without any explanations.
                     if (!newSettings.channel_models) newSettings.channel_models = {};
                     newSettings.channel_models[selectedChannel] = selectedDisplay.textContent;
 
-                    console.log("[CFS Debug] 'Save' clicked. Settings to be saved:", JSON.stringify(newSettings, null, 2));
 
                     try {
                         const response = await api.fetchApi("/character_swap/llm_settings", {
@@ -1334,7 +1332,6 @@ Respond with only the new, modified prompt, without any explanations.
                             target_features: targetFeatures.split(",").map(t => t.trim()).filter(t => t)
                         };
 
-                        console.log("CFS Debug: Payload sent to /debug_prompt", payload);
 
                         const response = await api.fetchApi("/character_swap/debug_prompt", {
                             method: "POST",
@@ -1344,7 +1341,6 @@ Respond with only the new, modified prompt, without any explanations.
 
                         const data = await response.json();
 
-                        console.log("CFS Debug: Response received from /debug_prompt", data);
 
                         if (!response.ok) {
                             throw new Error(data.error || `获取调试信息失败 (HTTP ${response.status})`);
@@ -1376,7 +1372,6 @@ Respond with only the new, modified prompt, without any explanations.
                         debugPanel.onclick = (e) => { if (e.target === debugPanel) debugPanel.remove(); };
 
                     } catch (error) {
-                        console.error("CFS Debug Error:", error);
                         alert("错误: " + error.message);
                     }
                 };
@@ -1657,7 +1652,6 @@ Respond with only the new, modified prompt, without any explanations.
 
                         if (!saveResponse.ok) throw new Error("Failed to save settings.");
 
-                        // console.log("CFS: Features autosaved."); // 可以在调试时取消注释
 
                     } catch (error) {
                         console.error("CFS: Autosave failed.", error);
@@ -1714,10 +1708,6 @@ Respond with only the new, modified prompt, without any explanations.
                         initialTags.forEach(addSelectedTag);
                     });
 
-                // --- 添加调试日志 ---
-                console.log("CFS Debug: Wrapper element", wrapper);
-                console.log("CFS Debug: Wrapper offsetHeight", wrapper.offsetHeight);
-                console.log("CFS Debug: Wrapper computedStyle", getComputedStyle(wrapper));
 
 
                 // --- 添加样式 (保持不变) ---

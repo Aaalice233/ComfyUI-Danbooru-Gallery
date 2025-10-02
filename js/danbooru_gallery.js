@@ -1155,12 +1155,10 @@ app.registerExtension({
                     languageOptions.appendChild(zhButton);
                     languageOptions.appendChild(enButton);
 
-                    console.log("Language buttons created:", zhButton, enButton);
 
                     languageSection.appendChild(languageTitle);
                     languageSection.appendChild(languageOptions);
 
-                    console.log("Language section appended:", languageSection.innerHTML);
 
                     // 黑名单设置部分
                     const blacklistSection = $el("div.danbooru-settings-section", {
@@ -1790,7 +1788,6 @@ app.registerExtension({
                     </svg>`,
                     title: t('settings'),
                     onclick: () => {
-                        console.log("Settings button clicked");
                         showSettingsDialog();
                     }
                 });
@@ -2394,12 +2391,11 @@ app.registerExtension({
                     const currentSelectedElement = imageGrid.querySelector('.danbooru-image-wrapper.selected');
                     if (currentSelectedElement && currentSelectedElement.dataset.postId && currentSelectedElement.dataset.postId != post.id) { // 检查 dataset.postId 是否存在
                         currentSelectedElement.classList.remove('selected');
-                        console.log(`[DanbooruGallery] showEditPanel: Deselected previously selected post ${currentSelectedElement.dataset.postId}`);
+                        // console.log(`[DanbooruGallery] showEditPanel: Deselected previously selected post ${currentSelectedElement.dataset.postId}`);
                     }
                     const targetWrapper = imageGrid.querySelector(`.danbooru-image-wrapper[data-post-id="${post.id}"]`);
                     if (targetWrapper) {
                         targetWrapper.classList.add('selected');
-                        console.log(`[DanbooruGallery] showEditPanel: Forcibly selected post ${post.id}`);
                         // 触发一次点击事件来更新 selectionWidget
                         // 注意：这里直接调用 onclick 可能会导致事件冒泡问题，
                         // 更好的方式是直接更新 selectionWidget 的值
@@ -2445,12 +2441,12 @@ app.registerExtension({
                             if (selectionWidget) {
                                 selectionWidget.value = JSON.stringify(selection);
                                 selectionWidget.callback();
-                                console.log(`[DanbooruGallery] showEditPanel: selectionWidget.value updated for post ${post.id}`);
+                                // console.log(`[DanbooruGallery] showEditPanel: selectionWidget.value updated for post ${post.id}`);
                             }
                         }
                     }
                     const isPostCurrentlySelected = true; // 因为我们已经强制选中了
-                    console.log(`[DanbooruGallery] showEditPanel for post ${post.id} opened. Post was selected: ${isPostCurrentlySelected} (forced)`);
+                    // console.log(`[DanbooruGallery] showEditPanel for post ${post.id} opened. Post was selected: ${isPostCurrentlySelected} (forced)`);
 
                     if (!temporaryTagEdits[post.id]) {
                         // Create a deep copy for editing if it doesn't exist
@@ -2604,12 +2600,12 @@ app.registerExtension({
                             // 重新给新元素添加选中状态
                             if (newPostElement) {
                                 newPostElement.classList.add('selected');
-                                console.log(`[DanbooruGallery] Re-added 'selected' class to new element for post ID: ${post.id}. Has 'selected' class: ${newPostElement.classList.contains('selected')}`);
+                                // console.log(`[DanbooruGallery] Re-added 'selected' class to new element for post ID: ${post.id}. Has 'selected' class: ${newPostElement.classList.contains('selected')}`);
                             }
                         } else { // 如果打开面板时未选中，则清除所有选中的图像和提示词
-                            console.log(`[DanbooruGallery] Post was not selected when panel opened, clearing selection.`);
+                            // console.log(`[DanbooruGallery] Post was not selected when panel opened, clearing selection.`);
                             imageGrid.querySelectorAll('.danbooru-image-wrapper.selected').forEach(w => {
-                                console.log(`[DanbooruGallery] Clearing 'selected' class from post ID: ${w.dataset.postId}`);
+                                // console.log(`[DanbooruGallery] Clearing 'selected' class from post ID: ${w.dataset.postId}`);
                                 w.classList.remove('selected');
                             });
                             if (nodeInstance && nodeInstance.widgets) {
@@ -2617,7 +2613,7 @@ app.registerExtension({
                                 if (selectionWidget) {
                                     selectionWidget.value = JSON.stringify({});
                                     selectionWidget.callback();
-                                    console.log(`[DanbooruGallery] selectionWidget.value cleared.`);
+                                    // console.log(`[DanbooruGallery] selectionWidget.value cleared.`);
                                 }
                             }
                         }
@@ -2782,7 +2778,7 @@ app.registerExtension({
                                         if (selectionWidget) {
                                             selectionWidget.value = JSON.stringify(selection);
                                             selectionWidget.callback();
-                                            console.log(`[DanbooruGallery] resetTagsButton: selectionWidget.value updated for post ${post.id}`);
+                                            // console.log(`[DanbooruGallery] resetTagsButton: selectionWidget.value updated for post ${post.id}`);
                                         }
                                     }
                                 }
@@ -3082,9 +3078,7 @@ app.registerExtension({
                         onerror: () => { wrapper.style.display = 'none'; },
                         onclick: async (e) => {
                             e.stopPropagation(); // Prevent event from bubbling up and potentially causing issues
-                            console.log(`[DanbooruGallery-Click] Image clicked: ${post.id}`);
                             const isSelected = wrapper.classList.contains('selected');
-                            console.log(`[DanbooruGallery-Click] Wrapper had 'selected' class: ${isSelected}`);
 
                             // fetchAndRender(true); // 移除不必要的调用
 
@@ -3092,14 +3086,14 @@ app.registerExtension({
                             imageGrid.querySelectorAll('.danbooru-image-wrapper').forEach(w => {
                                 if (w !== wrapper) {
                                     w.classList.remove('selected');
-                                    console.log(`[DanbooruGallery-Click] Removed 'selected' from other wrapper: ${w.dataset.postId}`);
+                                    // console.log(`[DanbooruGallery-Click] Removed 'selected' from other wrapper: ${w.dataset.postId}`);
                                 }
                             });
 
                             // 然后，根据当前图像的选中状态进行切换
                             if (!isSelected) {
                                 wrapper.classList.add('selected');
-                                console.log(`[DanbooruGallery-Click] Added 'selected' to wrapper: ${post.id}. Current classes: ${wrapper.classList}`);
+                                // console.log(`[DanbooruGallery-Click] Added 'selected' to wrapper: ${post.id}. Current classes: ${wrapper.classList}`);
 
                                 const imageUrl = post.file_url || post.large_file_url;
 
@@ -3156,18 +3150,18 @@ app.registerExtension({
                                     if (selectionWidget) {
                                         selectionWidget.value = JSON.stringify(selection);
                                         selectionWidget.callback(); // 触发回调，通知ComfyUI值已更新
-                                        console.log(`[DanbooruGallery-Click] selectionWidget.value set to: ${selectionWidget.value}`);
+                                        // console.log(`[DanbooruGallery-Click] selectionWidget.value set to: ${selectionWidget.value}`);
                                     }
                                 }
                             } else {
                                 wrapper.classList.remove('selected');
-                                console.log(`[DanbooruGallery-Click] Removed 'selected' from wrapper: ${post.id}. Current classes: ${wrapper.classList}`);
+                                // console.log(`[DanbooruGallery-Click] Removed 'selected' from wrapper: ${post.id}. Current classes: ${wrapper.classList}`);
                                 if (nodeInstance && nodeInstance.widgets) {
                                     const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
                                     if (selectionWidget) {
                                         selectionWidget.value = JSON.stringify({});
                                         selectionWidget.callback();
-                                        console.log(`[DanbooruGallery-Click] selectionWidget.value cleared.`);
+                                        // console.log(`[DanbooruGallery-Click] selectionWidget.value cleared.`);
                                     }
                                 }
                             }
@@ -3865,7 +3859,7 @@ app.registerExtension({
                             filterState = { startTime: null, endTime: null, startPage: null };
                         }
 
-                        console.log("Initializing Danbooru Gallery...");
+                        // console.log("Initializing Danbooru Gallery...");
                         let networkConnected = true;
 
                         // 优先检测网络连接状态
@@ -3884,31 +3878,30 @@ app.registerExtension({
 
                         // 加载语言设置
                         await loadLanguage();
-                        console.log("Language loaded:", currentLanguage);
+                        // console.log("Language loaded:", currentLanguage);
                         // 加载用户认证信息
                         await loadUserAuth();
-                        console.log("User auth loaded:", userAuth);
+                        // console.log("User auth loaded:", userAuth);
 
                         if (networkConnected && userAuth.has_auth) {
                             await loadFavorites();
-                            console.log("Favorites loaded.");
                         }
 
                         // 更新界面文本
                         updateInterfaceTexts();
-                        console.log("Interface texts updated.");
+                        // console.log("Interface texts updated.");
                         // 更新收藏夹按钮状态
                         updateFavoritesButtonState();
-                        console.log("Favorites button state updated.");
+                        // console.log("Favorites button state updated.");
                         // 加载黑名单
                         await loadBlacklist();
-                        console.log("Blacklist loaded.");
+                        // console.log("Blacklist loaded.");
                         // 加载提示词过滤设置
                         await loadFilterTags();
-                        console.log("Filter tags loaded.");
+                        // console.log("Filter tags loaded.");
                         // 加载UI设置
                         await loadUiSettings();
-                        console.log("UI settings loaded.");
+                        // console.log("UI settings loaded.");
 
                         // 从 localStorage 加载并覆盖筛选状态
                         const savedSearch = loadFromLocalStorage('searchValue', null);
@@ -3957,7 +3950,7 @@ app.registerExtension({
 
                         // 初始化排行榜按钮状态
                         updateRankingButtonState();
-                        console.log("Ranking button state updated.");
+                        // console.log("Ranking button state updated.");
                         // 根据加载的 filterState 更新筛选按钮状态
                         if (filterState.startTime || filterState.endTime || filterState.startPage) {
                             filterButton.classList.add('active');
@@ -3967,7 +3960,7 @@ app.registerExtension({
 
                         // 页面加载时直接获取第一页的帖子
                         fetchAndRender(true);
-                        console.log("Initial fetch triggered.");
+                        // console.log("Initial fetch triggered.");
                     } catch (error) {
                         console.error("Danbooru Gallery initialization failed:", error);
                         showError("图库初始化失败，请检查控制台日志。", true);
