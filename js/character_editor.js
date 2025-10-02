@@ -12,7 +12,7 @@ class CharacterEditor {
     init() {
         this.createLayout();
         this.bindEvents();
-        this.loadTemplates();
+        this.loadPromptData();
 
         // 设置全局引用
         window.characterEditor = this;
@@ -30,13 +30,15 @@ class CharacterEditor {
                         </svg>
                         添加角色
                     </button>
-                    <button id="mce-template-button" class="mce-button">
+                    <button id="mce-library-button" class="mce-button">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                            <line x1="9" y1="9" x2="15" y2="9"></line>
-                            <line x1="9" y1="15" x2="15" y2="15"></line>
+                            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                            <line x1="8" y1="6" x2="16" y2="6"></line>
+                            <line x1="8" y1="10" x2="16" y2="10"></line>
+                            <line x1="8" y1="14" x2="13" y2="14"></line>
                         </svg>
-                        模板
+                        从词库添加
                     </button>
                 </div>
             </div>
@@ -52,7 +54,7 @@ class CharacterEditor {
         const style = document.createElement('style');
         style.textContent = `
             .mce-character-editor {
-                width: 300px;
+                width: 400px;
                 background: #333333;
                 border-right: 1px solid #555555;
                 display: flex;
@@ -314,50 +316,6 @@ class CharacterEditor {
                 flex: 1;
             }
             
-            .mce-template-dropdown {
-                position: fixed;
-                background: #2a2a2a;
-                border: 1px solid #555555;
-                border-radius: 6px;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-                z-index: 1000;
-                max-height: 300px;
-                overflow-y: auto;
-                display: none;
-            }
-            
-            .mce-template-item {
-                padding: 12px 16px;
-                cursor: pointer;
-                border-bottom: 1px solid #404040;
-                transition: background 0.2s;
-            }
-            
-            .mce-template-item:hover {
-                background: #404040;
-            }
-            
-            .mce-template-item:last-child {
-                border-bottom: none;
-            }
-            
-            .mce-template-name {
-                font-weight: 600;
-                color: #E0E0E0;
-                margin-bottom: 4px;
-            }
-            
-            .mce-template-description {
-                font-size: 11px;
-                color: #888888;
-                margin-bottom: 4px;
-            }
-            
-            .mce-template-prompt {
-                font-size: 12px;
-                color: #B0B0B0;
-                font-style: italic;
-            }
         `;
         document.head.appendChild(style);
     }
@@ -376,20 +334,13 @@ class CharacterEditor {
                     });
                 }
 
-                // 模板按钮
-                const templateBtn = document.getElementById('mce-template-button');
-                if (templateBtn) {
-                    templateBtn.addEventListener('click', (e) => {
-                        this.showTemplateDropdown(e.target);
+                // 从词库添加按钮
+                const libraryBtn = document.getElementById('mce-library-button');
+                if (libraryBtn) {
+                    libraryBtn.addEventListener('click', (e) => {
+                        this.showLibraryModal();
                     });
                 }
-
-                // 点击其他地方关闭模板下拉菜单
-                document.addEventListener('click', (e) => {
-                    if (!e.target.closest('#mce-template-button') && !e.target.closest('.mce-template-dropdown')) {
-                        this.hideTemplateDropdown();
-                    }
-                });
 
             } catch (error) {
                 console.error("绑定CharacterEditor事件时发生错误:", error);
@@ -397,23 +348,29 @@ class CharacterEditor {
         }, 100); // 延迟100ms确保DOM完全渲染
     }
 
-    async loadTemplates() {
+    async loadPromptData() {
         try {
-            this.templates = this.editor.getTemplates();
+            // 从提示词选择器获取词库数据
+            const response = await fetch("/prompt_selector/data");
+            if (response.ok) {
+                this.promptData = await response.json();
+            } else {
+                console.error('加载词库数据失败');
+                this.promptData = { categories: [] };
+            }
         } catch (error) {
-            console.error('加载模板失败:', error);
-            this.templates = [];
+            console.error('加载词库数据失败:', error);
+            this.promptData = { categories: [] };
         }
     }
 
-    addCharacter(template = null) {
+    addCharacter(promptData = null) {
         try {
-            const characterData = template ? {
-                name: template.name,
-                prompt: template.prompt,
-                weight: template.weight,
-                color: template.color,
-                template: template.name
+            const characterData = promptData ? {
+                name: promptData.alias || promptData.prompt,
+                prompt: promptData.prompt,
+                weight: 1.0,
+                color: this.getRandomColor(),
             } : null;
 
             if (!this.editor || !this.editor.dataManager) {
@@ -430,6 +387,15 @@ class CharacterEditor {
         } catch (error) {
             console.error("addCharacter() 发生错误:", error);
         }
+    }
+
+    getRandomColor() {
+        const colors = [
+            "#FF6B6B", "#4ECDC4", "#FF9FF3", "#54A0FF",
+            "#FFA502", "#96CEB4", "#786FA6", "#FFEAA7",
+            "#FD79A8", "#A29BFE", "#6C5CE7", "#FDCB6E"
+        ];
+        return colors[Math.floor(Math.random() * colors.length)];
     }
 
     deleteCharacter(characterId) {
@@ -501,13 +467,6 @@ class CharacterEditor {
                         </label>
                     </div>
                     
-                    <div class="mce-property-group">
-                        <label class="mce-property-label">权重</label>
-                        <div class="mce-property-slider">
-                            <input type="range" id="mce-modal-char-weight" min="0.1" max="2.0" step="0.1" value="${character.weight}">
-                            <span class="mce-property-slider-value">${character.weight.toFixed(1)}</span>
-                        </div>
-                    </div>
                     
                     <div class="mce-property-group">
                         <label class="mce-property-label">颜色</label>
@@ -614,15 +573,6 @@ class CharacterEditor {
     }
 
     bindModalEvents(characterId) {
-        // 权重滑块
-        const weightSlider = document.getElementById('mce-modal-char-weight');
-        const weightValue = document.querySelector('.mce-property-slider-value');
-
-        weightSlider.addEventListener('input', () => {
-            const weight = parseFloat(weightSlider.value);
-            weightValue.textContent = weight.toFixed(1);
-        });
-
         // 颜色同步
         const colorInput = document.getElementById('mce-modal-char-color');
         const colorHex = document.getElementById('mce-modal-char-color-hex');
@@ -643,14 +593,12 @@ class CharacterEditor {
         const name = document.getElementById('mce-modal-char-name').value;
         const prompt = document.getElementById('mce-modal-char-prompt').value;
         const enabled = document.getElementById('mce-modal-char-enabled').checked;
-        const weight = parseFloat(document.getElementById('mce-modal-char-weight').value);
         const color = document.getElementById('mce-modal-char-color').value;
 
         this.editor.dataManager.updateCharacter(characterId, {
             name,
             prompt,
             enabled,
-            weight,
             color
         });
 
@@ -736,13 +684,6 @@ class CharacterEditor {
                 </div>
                 <div class="mce-character-prompt">${character.prompt}</div>
                 <div class="mce-character-info">
-                    <div class="mce-character-weight">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <path d="M12 6v6l4 2"></path>
-                        </svg>
-                        ${character.weight.toFixed(1)}
-                    </div>
                     <div class="mce-character-position">
                         #${character.position + 1}
                     </div>
@@ -826,51 +767,436 @@ class CharacterEditor {
         });
     }
 
-    showTemplateDropdown(button) {
-        // 隐藏现有下拉菜单
-        this.hideTemplateDropdown();
+    showLibraryModal() {
+        // 防止重复创建
+        if (document.querySelector(".mce-library-modal")) return;
 
-        const dropdown = document.createElement('div');
-        dropdown.className = 'mce-template-dropdown';
+        const modal = document.createElement("div");
+        modal.className = "mce-library-modal";
 
-        if (this.templates.length === 0) {
-            dropdown.innerHTML = '<div class="mce-template-item">没有可用模板</div>';
-        } else {
-            dropdown.innerHTML = this.templates.map(template => `
-                <div class="mce-template-item" data-template-name="${template.name}">
-                    <div class="mce-template-name">${template.name}</div>
-                    ${template.description ? `<div class="mce-template-description">${template.description}</div>` : ''}
-                    <div class="mce-template-prompt">${template.prompt}</div>
+        modal.innerHTML = `
+            <div class="mce-library-content">
+                <div class="mce-library-header">
+                    <h3>从词库添加提示词</h3>
+                    <button id="mce-library-close" class="mce-button mce-button-icon">&times;</button>
                 </div>
-            `).join('');
+                <div class="mce-library-body">
+                    <div class="mce-library-left-panel">
+                        <div class="mce-category-header">
+                            <h4>分类</h4>
+                        </div>
+                        <div class="mce-category-tree">
+                            <!-- 分类树将在这里生成 -->
+                        </div>
+                    </div>
+                    <div class="mce-library-right-panel">
+                        <div class="mce-prompt-header">
+                            <h4>提示词列表</h4>
+                        </div>
+                        <div class="mce-prompt-list-container">
+                            <!-- 提示词列表将在这里生成 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
 
-            // 绑定模板选择事件
-            dropdown.querySelectorAll('.mce-template-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    const templateName = item.dataset.templateName;
-                    const template = this.templates.find(t => t.name === templateName);
-                    if (template) {
-                        this.addCharacter(template);
-                    }
-                    this.hideTemplateDropdown();
-                });
-            });
-        }
+        document.body.appendChild(modal);
 
-        // 定位下拉菜单
-        const rect = button.getBoundingClientRect();
-        dropdown.style.top = `${rect.bottom + 2}px`;
-        dropdown.style.left = `${rect.left}px`;
-        dropdown.style.width = `${rect.width}px`;
-        dropdown.style.display = 'block';
+        // 添加样式
+        this.addLibraryModalStyles();
 
-        document.body.appendChild(dropdown);
+        // 绑定关闭事件
+        const closeModal = () => modal.remove();
+        modal.querySelector("#mce-library-close").addEventListener("click", closeModal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+        // 加载词库数据并渲染
+        this.loadPromptData().then(() => {
+            this.renderCategoryTree();
+            // 默认选择第一个分类
+            if (this.promptData.categories.length > 0) {
+                this.selectedCategory = this.promptData.categories[0].name;
+                this.renderPromptList();
+            }
+        });
     }
 
-    hideTemplateDropdown() {
-        const dropdown = document.querySelector('.mce-template-dropdown');
-        if (dropdown) {
-            dropdown.remove();
+    addLibraryModalStyles() {
+        if (document.querySelector('#mce-library-modal-styles')) return;
+
+        const style = document.createElement('style');
+        style.id = 'mce-library-modal-styles';
+        style.textContent = `
+            .mce-library-modal {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.7);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+            }
+            
+            .mce-library-content {
+                width: 800px;
+                height: 600px;
+                background-color: #2a2a2a;
+                border: 1px solid #555;
+                border-radius: 8px;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+            
+            .mce-library-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 12px 16px;
+                border-bottom: 1px solid #555;
+            }
+            
+            .mce-library-header h3 {
+                margin: 0;
+                color: #E0E0E0;
+            }
+            
+            .mce-library-body {
+                display: flex;
+                flex: 1;
+                overflow: hidden;
+            }
+            
+            .mce-library-left-panel {
+                width: 30%;
+                background-color: #333;
+                border-right: 1px solid #555;
+                overflow-y: auto;
+            }
+            
+            .mce-library-right-panel {
+                width: 70%;
+                background-color: #2a2a2a;
+                overflow-y: auto;
+            }
+            
+            .mce-category-header, .mce-prompt-header {
+                padding: 12px 16px;
+                border-bottom: 1px solid #555;
+            }
+            
+            .mce-category-header h4, .mce-prompt-header h4 {
+                margin: 0;
+                color: #E0E0E0;
+            }
+            
+            .mce-category-tree {
+                padding: 8px;
+            }
+            
+            .mce-category-item {
+                padding: 8px 12px;
+                cursor: pointer;
+                border-radius: 4px;
+                color: #E0E0E0;
+                margin-bottom: 4px;
+            }
+            
+            .mce-category-item:hover {
+                background-color: #404040;
+            }
+            
+            .mce-category-item.selected {
+                background-color: #0288D1;
+            }
+            
+            .mce-prompt-list-container {
+                padding: 8px;
+            }
+            
+            .mce-prompt-item {
+                padding: 12px;
+                border-radius: 6px;
+                background-color: #333;
+                margin-bottom: 8px;
+                cursor: pointer;
+                transition: background-color 0.2s;
+            }
+            
+            .mce-prompt-item:hover {
+                background-color: #404040;
+            }
+            
+            .mce-prompt-name {
+                font-weight: bold;
+                color: #E0E0E0;
+                margin-bottom: 4px;
+            }
+            
+            .mce-prompt-text {
+                color: #B0B0B0;
+                font-size: 12px;
+                line-height: 1.4;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    renderCategoryTree() {
+        const treeContainer = document.querySelector('.mce-category-tree');
+        if (!treeContainer || !this.promptData) return;
+
+        treeContainer.innerHTML = '';
+
+        // 构建分类树结构
+        const categoryTree = this.buildCategoryTree(this.promptData.categories);
+        const treeElement = this.renderCategoryTreeElement(categoryTree, treeContainer);
+        treeContainer.appendChild(treeElement);
+    }
+
+    buildCategoryTree(categories) {
+        const tree = [];
+        const map = {};
+
+        // 为每个分类创建节点
+        categories.forEach(cat => {
+            const parts = cat.name.split('/').filter(p => p.trim() !== '');
+            let currentPath = '';
+            parts.forEach(part => {
+                const oldPath = currentPath;
+                currentPath += (currentPath ? '/' : '') + part;
+                if (!map[currentPath]) {
+                    map[currentPath] = {
+                        name: part,
+                        fullName: currentPath,
+                        children: [],
+                        parent: oldPath || null
+                    };
+                }
+            });
+        });
+
+        // 链接节点构建树
+        Object.values(map).forEach(node => {
+            if (node.parent && map[node.parent]) {
+                if (!map[node.parent].children.some(child => child.fullName === node.fullName)) {
+                    map[node.parent].children.push(node);
+                }
+            } else {
+                if (!tree.some(rootNode => rootNode.fullName === node.fullName)) {
+                    tree.push(node);
+                }
+            }
+        });
+
+        // 按字母顺序排序子节点
+        const sortNodes = (nodes) => {
+            nodes.sort((a, b) => a.name.localeCompare(b.name));
+            nodes.forEach(node => sortNodes(node.children));
+        };
+        sortNodes(tree);
+
+        return tree;
+    }
+
+    renderCategoryTreeElement(nodes, container, level = 0) {
+        const ul = document.createElement('div');
+        ul.style.marginLeft = level > 0 ? '16px' : '0';
+
+        nodes.forEach(node => {
+            const item = document.createElement('div');
+            item.className = 'mce-category-item';
+            item.style.display = 'flex';
+            item.style.alignItems = 'center';
+            item.style.padding = '4px 8px';
+            item.style.cursor = 'pointer';
+            item.style.borderRadius = '4px';
+            item.style.marginBottom = '2px';
+
+            // 添加展开/折叠图标
+            if (node.children.length > 0) {
+                const toggle = document.createElement('span');
+                toggle.textContent = '▶';
+                toggle.style.marginRight = '6px';
+                toggle.style.fontSize = '10px';
+                toggle.style.transition = 'transform 0.2s';
+                toggle.style.display = 'inline-block';
+                toggle.style.width = '10px';
+                item.appendChild(toggle);
+
+                // 点击展开/折叠
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const childrenContainer = item.nextElementSibling;
+                    if (childrenContainer && childrenContainer.classList.contains('mce-category-children')) {
+                        const isHidden = childrenContainer.style.display === 'none';
+                        childrenContainer.style.display = isHidden ? 'block' : 'none';
+                        toggle.textContent = isHidden ? '▶' : '▼';
+                        toggle.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(90deg)';
+                    }
+                });
+            } else {
+                // 为没有子节点的项目添加占位符
+                const spacer = document.createElement('span');
+                spacer.style.marginRight = '16px';
+                spacer.style.display = 'inline-block';
+                spacer.style.width = '10px';
+                item.appendChild(spacer);
+            }
+
+            const name = document.createElement('span');
+            name.textContent = node.name;
+            name.style.flex = '1';
+            item.appendChild(name);
+
+            item.dataset.category = node.fullName;
+
+            if (node.fullName === this.selectedCategory) {
+                item.style.backgroundColor = '#0288D1';
+            }
+
+            item.addEventListener('click', () => {
+                this.selectedCategory = node.fullName;
+                this.renderPromptList();
+
+                // 更新选中状态
+                document.querySelectorAll('.mce-category-item').forEach(el => {
+                    el.style.backgroundColor = '';
+                });
+                item.style.backgroundColor = '#0288D1';
+            });
+
+            item.addEventListener('mouseenter', () => {
+                if (node.fullName !== this.selectedCategory) {
+                    item.style.backgroundColor = '#404040';
+                }
+            });
+
+            item.addEventListener('mouseleave', () => {
+                if (node.fullName !== this.selectedCategory) {
+                    item.style.backgroundColor = '';
+                }
+            });
+
+            ul.appendChild(item);
+
+            // 添加子节点容器
+            if (node.children.length > 0) {
+                const childrenContainer = document.createElement('div');
+                childrenContainer.className = 'mce-category-children';
+                childrenContainer.style.marginLeft = '16px';
+                childrenContainer.style.display = 'none'; // 默认折叠
+                const childrenElement = this.renderCategoryTreeElement(node.children, container, level + 1);
+                childrenContainer.appendChild(childrenElement);
+                ul.appendChild(childrenContainer);
+            }
+        });
+
+        return ul;
+    }
+
+    renderPromptList() {
+        const listContainer = document.querySelector('.mce-prompt-list-container');
+        if (!listContainer || !this.promptData) return;
+
+        const category = this.promptData.categories.find(c => c.name === this.selectedCategory);
+        if (!category || !category.prompts) {
+            listContainer.innerHTML = '<div style="color: #888; text-align: center; padding: 20px;">此分类下没有提示词</div>';
+            return;
+        }
+
+        listContainer.innerHTML = '';
+
+        category.prompts.forEach(prompt => {
+            const item = document.createElement('div');
+            item.className = 'mce-prompt-item';
+
+            const name = document.createElement('div');
+            name.className = 'mce-prompt-name';
+            name.textContent = prompt.alias || prompt.prompt;
+
+            const text = document.createElement('div');
+            text.className = 'mce-prompt-text';
+            text.textContent = prompt.prompt;
+
+            item.appendChild(name);
+            item.appendChild(text);
+
+            item.addEventListener('click', () => {
+                this.hidePromptTooltip(); // 隐藏悬浮提示
+                this.addCharacter(prompt);
+                // 关闭模态框
+                document.querySelector('.mce-library-modal').remove();
+            });
+
+            // 添加悬浮预览功能
+            item.addEventListener('mouseenter', (e) => {
+                this.showPromptTooltip(e, prompt);
+            });
+
+            item.addEventListener('mouseleave', () => {
+                this.hidePromptTooltip();
+            });
+
+            listContainer.appendChild(item);
+        });
+    }
+
+    showPromptTooltip(event, prompt) {
+        // 隐藏现有提示框
+        this.hidePromptTooltip();
+
+        const tooltip = document.createElement('div');
+        tooltip.className = 'mce-prompt-tooltip';
+
+        let imageHTML = '';
+        if (prompt.image) {
+            imageHTML = `<img src="/prompt_selector/preview/${prompt.image}" alt="Preview" style="max-width: 150px; max-height: 150px; border-radius: 4px;">`;
+        } else {
+            imageHTML = '<div style="width: 150px; height: 150px; background-color: #444; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #888;">暂无预览</div>';
+        }
+
+        tooltip.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 10px; max-width: 300px;">
+                ${imageHTML}
+                <div>
+                    <div style="font-weight: bold; color: #E0E0E0;">${prompt.alias || prompt.prompt}</div>
+                    <div style="color: #B0B0B0; font-size: 12px; margin-top: 4px;">${prompt.prompt}</div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(tooltip);
+
+        // 定位提示框
+        const rect = event.currentTarget.getBoundingClientRect();
+        tooltip.style.position = 'fixed';
+        tooltip.style.left = `${rect.right + 10}px`;
+        tooltip.style.top = `${rect.top}px`;
+        tooltip.style.zIndex = '1001';
+        tooltip.style.backgroundColor = '#2a2a2a';
+        tooltip.style.border = '1px solid #555';
+        tooltip.style.borderRadius = '6px';
+        tooltip.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
+
+        // 确保提示框不超出屏幕
+        const tooltipRect = tooltip.getBoundingClientRect();
+        if (tooltipRect.right > window.innerWidth) {
+            tooltip.style.left = `${rect.left - tooltipRect.width - 10}px`;
+        }
+        if (tooltipRect.bottom > window.innerHeight) {
+            tooltip.style.top = `${window.innerHeight - tooltipRect.height - 10}px`;
+        }
+    }
+
+    hidePromptTooltip() {
+        const tooltip = document.querySelector('.mce-prompt-tooltip');
+        if (tooltip) {
+            tooltip.remove();
         }
     }
 

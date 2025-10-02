@@ -204,47 +204,6 @@ class MultiCharacterEditorNode:
             return (base_prompt,)
 
 
-# 默认角色模板
-DEFAULT_TEMPLATES = {
-    "templates": [
-        {
-            "name": "女孩",
-            "prompt": "1girl, solo, smile",
-            "weight": 1.0,
-            "color": "#FF6B6B"
-        },
-        {
-            "name": "男孩",
-            "prompt": "1boy, solo, smile",
-            "weight": 1.0,
-            "color": "#4ECDC4"
-        },
-        {
-            "name": "风景",
-            "prompt": "scenery, landscape",
-            "weight": 1.0,
-            "color": "#96CEB4"
-        },
-        {
-            "name": "动物",
-            "prompt": "animal, cute",
-            "weight": 1.0,
-            "color": "#FFEAA7"
-        }
-    ]
-}
-
-
-def ensure_default_templates():
-    """确保默认模板文件存在"""
-    if not os.path.exists(TEMPLATES_FILE):
-        try:
-            with open(TEMPLATES_FILE, 'w', encoding='utf-8') as f:
-                json.dump(DEFAULT_TEMPLATES, f, ensure_ascii=False, indent=2)
-            logger.info("创建默认角色模板文件")
-        except Exception as e:
-            logger.error(f"创建默认模板文件失败: {e}")
-
 
 def ensure_default_settings():
     """确保默认设置文件存在"""
@@ -276,21 +235,6 @@ def ensure_default_settings():
 
 
 # API端点
-@PromptServer.instance.routes.get("/multi_character_editor/templates")
-async def get_templates(request):
-    """获取角色模板"""
-    try:
-        ensure_default_templates()
-        
-        if os.path.exists(TEMPLATES_FILE):
-            with open(TEMPLATES_FILE, 'r', encoding='utf-8') as f:
-                templates = json.load(f)
-            return web.json_response(templates)
-        else:
-            return web.json_response(DEFAULT_TEMPLATES)
-    except Exception as e:
-        logger.error(f"获取模板失败: {e}")
-        return web.json_response({"error": str(e)}, status=500)
 
 
 @PromptServer.instance.routes.post("/multi_character_editor/save_config")
@@ -440,7 +384,6 @@ async def validate_prompt(request):
 
 # 初始化时确保默认文件存在
 try:
-    ensure_default_templates()
     ensure_default_settings()
 except Exception as e:
     logger.error(f"初始化默认文件失败: {e}")
