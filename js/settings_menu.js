@@ -1,4 +1,6 @@
 // 设置菜单组件
+import { globalToastManager } from './toast_manager.js';
+
 class SettingsMenu {
     constructor(editor) {
         this.editor = editor;
@@ -252,7 +254,7 @@ class SettingsMenu {
                 width: 100%;
                 height: 100%;
                 background: rgba(0, 0, 0, 0.7);
-                backdrop-filter: blur(4px);
+                backdrop-filter: blur(5px);
             }
             
             .mce-settings-dialog {
@@ -261,9 +263,12 @@ class SettingsMenu {
                 max-width: 800px;
                 height: 80vh;
                 max-height: 600px;
-                background: #2a2a2a;
-                border-radius: 8px;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                background: linear-gradient(135deg, #1e1e2e 0%, #2a2a3e 100%);
+                border-radius: 12px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+                            0 0 0 1px rgba(255, 255, 255, 0.05),
+                            inset 0 1px 0 rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.1);
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
@@ -273,9 +278,24 @@ class SettingsMenu {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                padding: 16px 20px;
-                border-bottom: 1px solid #555;
+                padding: 20px 24px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
                 flex-shrink: 0;
+                background: linear-gradient(135deg, rgba(42, 42, 62, 0.5) 0%, rgba(58, 58, 78, 0.5) 100%);
+                position: relative;
+            }
+            
+            .mce-settings-header::after {
+                content: '';
+                position: absolute;
+                bottom: 0;
+                left: 24px;
+                right: 24px;
+                height: 1px;
+                background: linear-gradient(90deg,
+                    transparent,
+                    rgba(255, 255, 255, 0.1),
+                    transparent);
             }
             
             .mce-settings-title {
@@ -283,24 +303,26 @@ class SettingsMenu {
                 color: #E0E0E0;
                 font-size: 16px;
                 font-weight: 600;
+                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
             }
             
             .mce-settings-close {
-                background: transparent;
-                border: none;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
                 color: #B0B0B0;
                 cursor: pointer;
-                padding: 4px;
-                border-radius: 4px;
+                padding: 8px;
+                border-radius: 6px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                transition: all 0.2s;
+                transition: all 0.2s ease;
             }
             
             .mce-settings-close:hover {
                 background: rgba(255, 255, 255, 0.1);
                 color: #E0E0E0;
+                transform: scale(1.1);
             }
             
             .mce-settings-content {
@@ -311,8 +333,8 @@ class SettingsMenu {
             
             .mce-settings-sidebar {
                 width: 200px;
-                background: #333;
-                border-right: 1px solid #555;
+                background: rgba(42, 42, 62, 0.4);
+                border-right: 1px solid rgba(255, 255, 255, 0.08);
                 padding: 16px 0;
                 flex-shrink: 0;
                 display: flex;
@@ -325,24 +347,47 @@ class SettingsMenu {
                 gap: 12px;
                 padding: 12px 20px;
                 cursor: pointer;
-                transition: all 0.2s;
-                color: #B0B0B0;
+                transition: all 0.2s ease;
+                color: rgba(224, 224, 224, 0.8);
+                position: relative;
+            }
+            
+            .mce-settings-category::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 2px;
+                background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.5), transparent);
+                opacity: 0;
+                transition: opacity 0.3s ease;
             }
             
             .mce-settings-category:hover {
                 background: rgba(255, 255, 255, 0.05);
                 color: #E0E0E0;
+                transform: translateX(2px);
+            }
+            
+            .mce-settings-category:hover::before {
+                opacity: 1;
             }
             
             .mce-settings-category.active {
-                background: var(--mce-primary-color, #03A9F4);
+                background: linear-gradient(135deg, rgba(124, 58, 237, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%);
                 color: white;
+            }
+            
+            .mce-settings-category.active::before {
+                opacity: 1;
+                background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.8), transparent);
             }
             
             .mce-settings-main {
                 flex: 1;
                 overflow-y: auto;
-                padding: 20px;
+                padding: 24px;
             }
             
             .mce-settings-panel {
@@ -358,45 +403,54 @@ class SettingsMenu {
                 color: #E0E0E0;
                 font-size: 14px;
                 font-weight: 600;
+                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
             }
             
             .mce-setting-item {
-                margin-bottom: 16px;
+                margin-bottom: 18px;
             }
             
             .mce-setting-item label {
                 display: block;
                 margin-bottom: 8px;
-                color: #B0B0B0;
+                color: rgba(224, 224, 224, 0.8);
                 font-size: 13px;
+                font-weight: 500;
             }
             
             .mce-select {
                 width: 100%;
                 padding: 8px 12px;
-                background: #404040;
-                border: 1px solid #555;
-                border-radius: 4px;
+                background: rgba(26, 26, 38, 0.6);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 color: #E0E0E0;
                 font-size: 13px;
+                transition: all 0.2s ease;
+            }
+            
+            .mce-select:hover {
+                background: rgba(26, 26, 38, 0.8);
+                border-color: rgba(255, 255, 255, 0.15);
             }
             
             .mce-select:focus {
                 outline: none;
-                border-color: var(--mce-primary-color, #03A9F4);
+                border-color: #7c3aed;
+                box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
             }
             
             .mce-color-picker {
                 display: flex;
-                gap: 8px;
+                gap: 10px;
                 align-items: center;
             }
             
             .mce-color-picker input[type="color"] {
                 width: 40px;
                 height: 32px;
-                border: 1px solid #555;
-                border-radius: 4px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 background: transparent;
                 cursor: pointer;
             }
@@ -404,15 +458,27 @@ class SettingsMenu {
             .mce-color-hex {
                 flex: 1;
                 padding: 8px 12px;
-                background: #404040;
-                border: 1px solid #555;
-                border-radius: 4px;
+                background: rgba(26, 26, 38, 0.6);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 color: #E0E0E0;
                 font-size: 13px;
+                transition: all 0.2s ease;
+            }
+            
+            .mce-color-hex:hover {
+                background: rgba(26, 26, 38, 0.8);
+                border-color: rgba(255, 255, 255, 0.15);
+            }
+            
+            .mce-color-hex:focus {
+                outline: none;
+                border-color: #7c3aed;
+                box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
             }
             
             .mce-about-content {
-                color: #B0B0B0;
+                color: rgba(224, 224, 224, 0.8);
                 line-height: 1.6;
             }
             
@@ -424,9 +490,24 @@ class SettingsMenu {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                padding: 16px 20px;
-                border-top: 1px solid #555;
+                padding: 20px 24px;
+                border-top: 1px solid rgba(255, 255, 255, 0.08);
                 flex-shrink: 0;
+                background: linear-gradient(135deg, rgba(42, 42, 62, 0.3) 0%, rgba(58, 58, 78, 0.3) 100%);
+                position: relative;
+            }
+            
+            .mce-settings-footer::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 24px;
+                right: 24px;
+                height: 1px;
+                background: linear-gradient(90deg,
+                    transparent,
+                    rgba(255, 255, 255, 0.05),
+                    transparent);
             }
             
             .mce-settings-links {
@@ -438,45 +519,75 @@ class SettingsMenu {
                 display: flex;
                 align-items: center;
                 gap: 6px;
-                color: #B0B0B0;
+                color: rgba(224, 224, 224, 0.8);
                 text-decoration: none;
                 font-size: 13px;
-                transition: color 0.2s;
+                transition: all 0.2s ease;
             }
             
             .mce-settings-link:hover {
-                color: var(--mce-primary-color, #03A9F4);
+                color: #7c3aed;
+                transform: translateY(-1px);
             }
             
             .mce-settings-actions {
                 display: flex;
-                gap: 8px;
+                gap: 12px;
             }
             
             .mce-button {
                 padding: 8px 16px;
-                background: #404040;
-                border: 1px solid #555;
-                border-radius: 4px;
+                background: linear-gradient(135deg, rgba(64, 64, 84, 0.8) 0%, rgba(74, 74, 94, 0.8) 100%);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 color: #E0E0E0;
                 cursor: pointer;
                 font-size: 13px;
-                transition: all 0.2s;
+                font-weight: 500;
+                transition: all 0.2s ease;
+                position: relative;
+                overflow: hidden;
+            }
+            
+            .mce-button::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg,
+                    transparent,
+                    rgba(255, 255, 255, 0.1),
+                    transparent);
+                transition: left 0.5s;
+            }
+            
+            .mce-button:hover::before {
+                left: 100%;
             }
             
             .mce-button:hover {
-                background: #4a4a4a;
-                border-color: var(--mce-primary-color, #03A9F4);
+                background: linear-gradient(135deg, rgba(74, 74, 94, 0.9) 0%, rgba(84, 84, 104, 0.9) 100%);
+                border-color: rgba(124, 58, 237, 0.4);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            }
+            
+            .mce-button:active {
+                transform: translateY(0);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             }
             
             .mce-button-primary {
-                background: var(--mce-primary-color, #03A9F4);
-                border-color: var(--mce-primary-color, #03A9F4);
+                background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%);
+                border-color: rgba(124, 58, 237, 0.5);
+                box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
             }
             
             .mce-button-primary:hover {
-                background: var(--mce-primary-color, #0288D1);
-                border-color: var(--mce-primary-color, #0288D1);
+                background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+                box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
             }
         `;
         document.head.appendChild(style);
@@ -673,62 +784,8 @@ class SettingsMenu {
     }
 
     showToast(message, type = 'info') {
-        // 创建toast提示
-        const toast = document.createElement('div');
-        toast.className = `mce-settings-toast ${type}`;
-        toast.textContent = message;
-
-        // 添加样式
-        if (!document.querySelector('#mce-settings-toast-styles')) {
-            const toastStyles = document.createElement('style');
-            toastStyles.id = 'mce-settings-toast-styles';
-            toastStyles.textContent = `
-                .mce-settings-toast {
-                    position: fixed;
-                    bottom: 20px;
-                    right: 20px;
-                    padding: 12px 20px;
-                    border-radius: 4px;
-                    color: white;
-                    font-size: 14px;
-                    z-index: 10001;
-                    animation: slideIn 0.3s ease-out;
-                }
-                
-                .mce-settings-toast.success {
-                    background: #4CAF50;
-                }
-                
-                .mce-settings-toast.error {
-                    background: #F44336;
-                }
-                
-                .mce-settings-toast.info {
-                    background: #2196F3;
-                }
-                
-                @keyframes slideIn {
-                    from {
-                        transform: translateX(100%);
-                        opacity: 0;
-                    }
-                    to {
-                        transform: translateX(0);
-                        opacity: 1;
-                    }
-                }
-            `;
-            document.head.appendChild(toastStyles);
-        }
-
-        document.body.appendChild(toast);
-
-        // 自动移除
-        setTimeout(() => {
-            if (toast.parentNode) {
-                toast.remove();
-            }
-        }, 3000);
+        // 使用统一的弹出提示管理系统
+        globalToastManager.showToast(message, type, 3000);
     }
 }
 

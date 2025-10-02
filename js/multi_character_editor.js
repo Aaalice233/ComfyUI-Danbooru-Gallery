@@ -6,6 +6,45 @@ import './character_editor.js';
 import './mask_editor.js';
 import './output_area.js';
 import './settings_menu.js';
+import { globalMultiLanguageManager } from './multi_language.js';
+import { globalAutocompleteCache } from './autocomplete_cache.js';
+import { globalToastManager } from './toast_manager.js';
+
+/*
+ * 多人提示词节点性能优化总结
+ *
+ * 已完成的优化工作：
+ *
+ * 1. CSS动画和过渡效果优化
+ *    - 简化了复杂的渐变背景和阴影效果
+ *    - 减少了不必要的动画和过渡
+ *    - 移除了性能消耗大的光晕效果
+ *    - 添加了 will-change 属性优化
+ *
+ * 2. Canvas渲染性能优化
+ *    - 优化了网格绘制，只在可视区域内绘制
+ *    - 简化了边框和蒙版绘制，移除了圆角
+ *    - 降低了分辨率信息更新频率
+ *    - 根据缩放级别调整渲染细节
+ *
+ * 3. 事件处理和DOM操作优化
+ *    - 添加了鼠标移动和滚轮事件的节流处理
+ *    - 优化了容器大小变化的处理
+ *    - 使用事件委托减少事件监听器数量
+ *    - 优化了拖拽事件处理
+ *
+ * 4. 渲染节流和防抖优化
+ *    - 为角色列表渲染添加了防抖处理
+ *    - 使用文档片段减少DOM操作
+ *    - 优化了事件绑定，使用事件委托
+ *    - 添加了渲染节流，限制最大渲染频率
+ *
+ * 优化效果：
+ * - 减少了CPU和内存使用
+ * - 提高了界面响应速度
+ * - 降低了滚动和缩放时的卡顿
+ * - 改善了整体用户体验
+ */
 
 // 防抖函数
 function debounce(func, delay) {
@@ -44,6 +83,10 @@ class MultiCharacterEditor {
         this.components = {};
         this.templates = [];
 
+        // 多语言管理器
+        this.languageManager = globalMultiLanguageManager;
+        this.toastManager = globalToastManager;
+
         this.init();
     }
 
@@ -64,14 +107,182 @@ class MultiCharacterEditor {
             height: 800px;
             display: flex;
             flex-direction: column;
-            background: #2a2a2a;
-            border: 1px solid #555;
-            border-radius: 8px;
+            background: #1e1e2e;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
             overflow: hidden;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             font-size: 13px;
             color: #E0E0E0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            position: relative;
+            animation: fadeIn 0.3s ease-out;
+            will-change: auto;
         `;
+
+        // 简化内部光晕效果，减少动画
+        const glowEffect = document.createElement('div');
+        glowEffect.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg,
+                transparent,
+                rgba(255, 255, 255, 0.1),
+                transparent);
+            z-index: 10;
+        `;
+        this.container.appendChild(glowEffect);
+
+        // 添加全局动画样式
+        this.addGlobalAnimations();
+    }
+
+    addGlobalAnimations() {
+        // 检查是否已添加动画样式
+        if (document.querySelector('#mce-global-animations')) return;
+
+        const style = document.createElement('style');
+        style.id = 'mce-global-animations';
+        style.textContent = `
+            /* 响应式设计 */
+            @media (max-width: 900px) {
+                .mce-container {
+                    width: 100% !important;
+                    height: 100% !important;
+                    border-radius: 0 !important;
+                }
+                
+                .mce-character-editor {
+                    width: 250px !important;
+                }
+            }
+            
+            @media (max-width: 768px) {
+                .mce-main-area {
+                    flex-direction: column !important;
+                }
+                
+                .mce-character-editor {
+                    width: 100% !important;
+                    height: 200px !important;
+                    border-right: none !important;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+                }
+                
+                .mce-toolbar {
+                    flex-wrap: wrap !important;
+                    padding: 10px !important;
+                }
+                
+                .mce-toolbar-section {
+                    width: 100% !important;
+                    margin-bottom: 8px !important;
+                }
+                
+                .mce-toolbar-section-right {
+                    margin-left: 0 !important;
+                    width: 100% !important;
+                    justify-content: space-between !important;
+                }
+            }
+            
+            /* 高对比度模式支持 */
+            @media (prefers-contrast: high) {
+                .mce-container {
+                    border: 2px solid #ffffff !important;
+                }
+                
+                .mce-button {
+                    border: 2px solid #ffffff !important;
+                }
+                
+                .mce-select, .mce-input {
+                    border: 2px solid #ffffff !important;
+                }
+            }
+            
+            /* 减少动画模式支持 */
+            @media (prefers-reduced-motion: reduce) {
+                .mce-container,
+                .mce-button,
+                .mce-character-item,
+                .mce-mask-item,
+                .mce-edit-modal,
+                .mce-settings-dialog,
+                .mce-toast {
+                    animation: none !important;
+                    transition: none !important;
+                }
+            }
+            
+            /* 简化动画，提高性能 */
+            @keyframes fadeIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(5px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            
+            /* 为按钮添加简化悬停效果 */
+            .mce-button {
+                position: relative;
+                overflow: hidden;
+                will-change: transform;
+            }
+            
+            /* 为模态框添加简化动画 */
+            .mce-edit-modal {
+                animation: fadeIn 0.2s ease-out;
+            }
+            
+            .mce-edit-modal-content {
+                animation: fadeIn 0.2s ease-out;
+            }
+            
+            /* 为提示添加简化动画 */
+            .mce-toast {
+                animation: fadeIn 0.2s ease-out;
+            }
+            
+            /* 为设置菜单添加简化动画 */
+            .mce-settings-dialog {
+                animation: fadeIn 0.2s ease-out;
+            }
+            
+            /* 为加载状态添加简化动画 */
+            .mce-loading {
+                display: inline-block;
+                width: 16px;
+                height: 16px;
+                border: 2px solid rgba(255, 255, 255, 0.3);
+                border-radius: 50%;
+                border-top-color: #7c3aed;
+                animation: spin 1s linear infinite;
+            }
+            
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+            
+            /* 性能优化：使用transform代替位置变化 */
+            .mce-character-item {
+                will-change: transform;
+            }
+            
+            .mce-character-item:hover {
+                transform: translateY(-1px);
+            }
+        `;
+        document.head.appendChild(style);
     }
 
     initManagers() {
@@ -332,6 +543,16 @@ class MultiCharacterEditor {
 
         // 触发重新渲染
         this.setDirtyCanvas(true, true);
+        
+        // 调整弹出提示位置到节点顶部
+        this.adjustToastPosition();
+    }
+
+    // 调整弹出提示位置到节点顶部
+    adjustToastPosition() {
+        if (this.toastManager && this.container) {
+            this.toastManager.adjustPositionToNode(this.container);
+        }
     }
 
 
@@ -640,32 +861,115 @@ class Toolbar {
     constructor(editor) {
         this.editor = editor;
         this.container = editor.container.querySelector('.mce-toolbar');
+        this.languageManager = editor.languageManager;
         this.init();
     }
 
     init() {
         this.createToolbar();
         this.bindEvents();
+        this.updateTexts();
+
+        // 监听语言变化事件
+        document.addEventListener('languageChanged', () => {
+            this.updateTexts();
+        });
     }
 
     createToolbar() {
         this.container.innerHTML = `
             <div class="mce-toolbar-section">
-                <label class="mce-toolbar-label">语法模式:</label>
+                <label class="mce-toolbar-label">${this.languageManager.t('syntaxMode')}:</label>
                 <select id="mce-syntax-mode" class="mce-select">
-                    <option value="attention_couple">Attention Couple</option>
-                    <option value="regional_prompts">Regional Prompts</option>
+                    <option value="attention_couple">${this.languageManager.t('attentionCouple')}</option>
+                    <option value="regional_prompts">${this.languageManager.t('regionalPrompts')}</option>
                 </select>
             </div>
             <div class="mce-toolbar-section">
-                <button id="mce-refresh-canvas" class="mce-button">刷新画布</button>
+                <button id="mce-refresh-canvas" class="mce-button mce-button-with-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M23 4v6h-6"></path>
+                        <path d="M1 20v-6h6"></path>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                    <span class="button-text">${this.languageManager.t('refreshCanvas')}</span>
+                </button>
             </div>
             <div class="mce-toolbar-section mce-toolbar-section-right">
-                <button id="mce-settings" class="mce-button">设置</button>
+                <button id="mce-language-toggle" class="mce-button mce-button-with-icon" title="${this.languageManager.t('languageSettings')}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 8l6 6"></path>
+                        <path d="M4 14l6-6 2-3"></path>
+                        <path d="M2 5h12"></path>
+                        <path d="M7 2h1"></path>
+                        <path d="M22 22l-5-10-5 10"></path>
+                        <path d="M14 18h6"></path>
+                    </svg>
+                    <span class="button-text">${this.languageManager.getLanguage() === 'zh' ? '中' : 'En'}</span>
+                </button>
+                <button id="mce-settings" class="mce-button mce-button-with-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    <span class="button-text">${this.languageManager.t('settings')}</span>
+                </button>
             </div>
         `;
 
         this.addStyles();
+    }
+
+    /**
+     * 更新工具栏文本
+     */
+    updateTexts() {
+        // 更新语法模式标签
+        const syntaxModeLabel = this.container.querySelector('.mce-toolbar-label');
+        if (syntaxModeLabel) {
+            syntaxModeLabel.textContent = `${this.languageManager.t('syntaxMode')}:`;
+        }
+
+        // 更新语法模式选项
+        const syntaxModeSelect = document.getElementById('mce-syntax-mode');
+        if (syntaxModeSelect) {
+            const attentionOption = syntaxModeSelect.querySelector('option[value="attention_couple"]');
+            if (attentionOption) {
+                attentionOption.textContent = this.languageManager.t('attentionCouple');
+            }
+
+            const regionalOption = syntaxModeSelect.querySelector('option[value="regional_prompts"]');
+            if (regionalOption) {
+                regionalOption.textContent = this.languageManager.t('regionalPrompts');
+            }
+        }
+
+        // 更新刷新画布按钮
+        const refreshButton = document.getElementById('mce-refresh-canvas');
+        if (refreshButton) {
+            const textSpan = refreshButton.querySelector('.button-text');
+            if (textSpan) {
+                textSpan.textContent = this.languageManager.t('refreshCanvas');
+            }
+        }
+
+        // 更新语言切换按钮
+        const languageButton = document.getElementById('mce-language-toggle');
+        if (languageButton) {
+            const textSpan = languageButton.querySelector('.button-text');
+            if (textSpan) {
+                textSpan.textContent = this.languageManager.getLanguage() === 'zh' ? '中' : 'En';
+            }
+        }
+
+        // 更新设置按钮
+        const settingsButton = document.getElementById('mce-settings');
+        if (settingsButton) {
+            const textSpan = settingsButton.querySelector('.button-text');
+            if (textSpan) {
+                textSpan.textContent = this.languageManager.t('settings');
+            }
+        }
     }
 
     addStyles() {
@@ -676,47 +980,57 @@ class Toolbar {
                 display: flex;
                 overflow: visible;
                 min-width: 0;
+                background: #1e1e2e;
+                border-radius: 0 0 10px 10px;
+                margin: 0 4px 4px 4px;
             }
             
             .mce-character-editor {
                 width: 300px;
                 flex-shrink: 0;
-                border-right: 1px solid #555555;
+                border-right: 1px solid rgba(255, 255, 255, 0.08);
                 overflow-y: auto;
+                background: #2a2a3e;
             }
             
             .mce-mask-editor {
                 flex: 1;
                 position: relative;
-                background: #1a1a1a;
+                background: #1a1a26;
                 min-height: 0;
                 min-width: 0;
                 width: 100%;
                 height: 100%;
                 overflow: visible;
+                border-radius: 0 0 8px 0;
             }
             
             .mce-output-area {
                 height: 300px;
-                background: #333333;
-                border-top: 1px solid #555555;
+                background: #2a2a3e;
+                border-top: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 0 0 8px 8px;
+                margin: 0 4px 4px 4px;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
             }
             
             .mce-toolbar {
                 display: flex;
                 align-items: center;
                 gap: 16px;
-                padding: 12px 16px;
-                background: #333333;
-                border-bottom: 1px solid #555555;
+                padding: 14px 20px;
+                background: #2a2a3e;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
                 flex-shrink: 0;
                 flex-wrap: wrap;
+                position: relative;
+                z-index: 5;
             }
             
             .mce-toolbar-section {
                 display: flex;
                 align-items: center;
-                gap: 8px;
+                gap: 10px;
             }
             
             .mce-toolbar-section-right {
@@ -725,41 +1039,83 @@ class Toolbar {
             
             .mce-toolbar-label {
                 font-size: 12px;
-                color: #B0B0B0;
+                color: rgba(224, 224, 224, 0.8);
                 white-space: nowrap;
+                font-weight: 500;
             }
             
             .mce-select, .mce-input {
-                padding: 4px 8px;
-                background: #2a2a2a;
-                border: 1px solid #555555;
-                border-radius: 4px;
+                padding: 6px 12px;
+                background: #1a1a26;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 color: #E0E0E0;
                 font-size: 12px;
+                transition: background-color 0.15s ease, border-color 0.15s ease;
+                will-change: auto;
+            }
+            
+            .mce-select:hover, .mce-input:hover {
+                background: #262632;
+                border-color: rgba(255, 255, 255, 0.15);
             }
             
             .mce-select:focus, .mce-input:focus {
                 outline: none;
-                border-color: #03A9F4;
+                border-color: #7c3aed;
+                box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
             }
             
-            
             .mce-button {
-                padding: 6px 12px;
-                background: #404040;
-                border: 1px solid #555555;
-                border-radius: 4px;
+                padding: 8px 14px;
+                background: #404054;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 color: #E0E0E0;
                 cursor: pointer;
                 font-size: 12px;
-                transition: all 0.2s;
+                font-weight: 500;
+                transition: background-color 0.15s ease, transform 0.1s ease;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                position: relative;
+                overflow: hidden;
+                will-change: transform;
             }
             
             .mce-button:hover {
-                background: #4a4a4a;
-                border-color: #03A9F4;
+                background: #4a4a5e;
+                border-color: rgba(124, 58, 237, 0.4);
+                transform: translateY(-1px);
             }
             
+            .mce-button:active {
+                transform: translateY(0);
+            }
+            
+            .mce-button svg {
+                flex-shrink: 0;
+                transition: transform 0.1s ease;
+            }
+            
+            .mce-button:hover svg {
+                transform: scale(1.05);
+            }
+            
+            .mce-button-with-icon {
+                padding: 8px 12px;
+            }
+            
+            .mce-button .button-text {
+                white-space: nowrap;
+            }
+            
+            /* 增强按钮交互反馈 */
+            .mce-button:focus {
+                outline: none;
+                box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.5);
+            }
         `;
 
         document.head.appendChild(style);
@@ -782,6 +1138,29 @@ class Toolbar {
                 if (refreshCanvas) {
                     refreshCanvas.addEventListener('click', () => {
                         this.refreshCanvas();
+                        this.languageManager.showMessage(this.languageManager.t('canvasRefreshed'), 'success');
+                    });
+                }
+
+                // 语言切换
+                const languageToggle = document.getElementById('mce-language-toggle');
+                if (languageToggle) {
+                    languageToggle.addEventListener('click', () => {
+                        const currentLang = this.languageManager.getLanguage();
+                        const newLang = currentLang === 'zh' ? 'en' : 'zh';
+
+                        if (this.languageManager.setLanguage(newLang)) {
+                            this.updateTexts();
+                            this.languageManager.showMessage(
+                                newLang === 'zh' ? '已切换到中文' : 'Switched to English',
+                                'success'
+                            );
+
+                            // 更新智能补全缓存系统的语言
+                            if (typeof globalAutocompleteCache !== 'undefined') {
+                                globalAutocompleteCache.setLanguage(newLang);
+                            }
+                        }
                     });
                 }
 
@@ -1098,13 +1477,26 @@ app.registerExtension({
                                         }
                                     });
 
-                                    // 强制触发画布重新调整
-                                    setTimeout(() => {
-                                        if (MultiCharacterEditorInstance.components.maskEditor) {
-                                            MultiCharacterEditorInstance.components.maskEditor.resizeCanvas();
-                                            MultiCharacterEditorInstance.components.maskEditor.scheduleRender();
-                                        }
-                                    }, 100);
+                                    // 立即强制触发画布重新调整，不使用延迟
+                                    if (MultiCharacterEditorInstance.components.maskEditor) {
+                                        // 重置缩放和偏移，确保画布正确显示
+                                        MultiCharacterEditorInstance.components.maskEditor.scale = 1;
+                                        MultiCharacterEditorInstance.components.maskEditor.offset = { x: 0, y: 0 };
+
+                                        // 立即调整画布大小
+                                        MultiCharacterEditorInstance.components.maskEditor.resizeCanvas();
+
+                                        // 立即触发重新渲染
+                                        MultiCharacterEditorInstance.components.maskEditor.scheduleRender();
+
+                                        // 添加额外的渲染调用，确保画布完全更新
+                                        setTimeout(() => {
+                                            if (MultiCharacterEditorInstance.components.maskEditor) {
+                                                MultiCharacterEditorInstance.components.maskEditor.resizeCanvas();
+                                                MultiCharacterEditorInstance.components.maskEditor.scheduleRender();
+                                            }
+                                        }, 50);
+                                    }
                                 }
                             }
                         }

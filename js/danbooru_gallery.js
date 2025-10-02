@@ -1,5 +1,6 @@
 import { app } from "../../../scripts/app.js";
 import { $el } from "../../../scripts/ui.js";
+import { globalAutocompleteCache } from "./autocomplete_cache.js";
 
 app.registerExtension({
     name: "Comfy.DanbooruGallery",
@@ -3573,12 +3574,15 @@ app.registerExtension({
                 };
 
                 // 自动补全处理函数 (已重构以支持不同输入框)
-                const handleAutocompletion = (inputElement, engSuggestionsEl, chnSuggestionsEl, onSelect) => {
+                const handleAutocompletion = async (inputElement, engSuggestionsEl, chnSuggestionsEl, onSelect) => {
                     clearTimeout(inputElement.debounceTimer);
                     clearTimeout(inputElement.chineseDebounceTimer);
 
                     const query = inputElement.value;
                     const lastWord = query.split(/[\s,]+/).pop();
+
+                    // 设置缓存系统的语言
+                    globalAutocompleteCache.setLanguage(currentLanguage);
 
                     if (currentLanguage === 'zh' && containsChinese(lastWord)) {
                         engSuggestionsEl.style.display = 'none';
@@ -3588,11 +3592,11 @@ app.registerExtension({
                                 return;
                             }
                             try {
-                                const response = await fetch(`/danbooru_gallery/search_chinese?query=${encodeURIComponent(lastWord)}&limit=10`);
-                                const data = await response.json();
+                                // 使用公共缓存系统获取中文搜索建议
+                                const suggestions = await globalAutocompleteCache.getChineseSearchSuggestions(lastWord, { limit: 10 });
                                 chnSuggestionsEl.innerHTML = '';
-                                if (data.success && data.results.length > 0) {
-                                    data.results.forEach(result => {
+                                if (suggestions.length > 0) {
+                                    suggestions.forEach(result => {
                                         const item = $el('div.danbooru-chinese-suggestion-item', {
                                             innerHTML: `<span class="danbooru-suggestion-chinese">${result.chinese}</span><span class="danbooru-suggestion-english">${result.english}</span>`
                                         });
@@ -3603,7 +3607,10 @@ app.registerExtension({
                                 } else {
                                     chnSuggestionsEl.style.display = 'none';
                                 }
-                            } catch (error) { chnSuggestionsEl.style.display = 'none'; }
+                            } catch (error) {
+                                console.error('[DanbooruGallery] 获取中文搜索建议失败:', error);
+                                chnSuggestionsEl.style.display = 'none';
+                            }
                         }, 250);
                         return;
                     } else {
@@ -3622,15 +3629,16 @@ app.registerExtension({
                         }
                         try {
                             const maxResults = uiSettings.autocomplete_max_results || 20;
-                            const apiEndpoint = currentLanguage === 'zh' ? '/danbooru_gallery/autocomplete_with_translation' : '/danbooru_gallery/autocomplete';
-                            const response = await fetch(`${apiEndpoint}?query=${encodeURIComponent(lastWord)}&limit=${maxResults}`);
-                            const suggestions = await response.json();
+
+                            // 使用公共缓存系统获取自动补全建议
+                            const suggestions = await globalAutocompleteCache.getAutocompleteSuggestions(lastWord, { limit: maxResults });
+
                             engSuggestionsEl.innerHTML = '';
                             if (suggestions.length > 0) {
                                 suggestions.slice(0, maxResults).forEach(tag => {
                                     const displayName = (currentLanguage === 'zh' && tag.translation) ? `${tag.name} [${tag.translation}]` : tag.name;
                                     const item = $el('div.danbooru-suggestion-item', {
-                                        innerHTML: `<span class="danbooru-suggestion-name">${displayName}</span><span class="danbooru-suggestion-count">${tag.post_count}</span>`
+                                        innerHTML: `<span class="danbooru-suggestion-name">${displayName}</span><span class="danbooru-suggestion-count">${tag.post_count || 0}</span>`
                                     });
                                     item.onclick = () => onSelect(tag.name, lastWord);
                                     engSuggestionsEl.appendChild(item);
@@ -3639,7 +3647,10 @@ app.registerExtension({
                             } else {
                                 engSuggestionsEl.style.display = 'none';
                             }
-                        } catch (error) { engSuggestionsEl.style.display = 'none'; }
+                        } catch (error) {
+                            console.error('[DanbooruGallery] 获取自动补全建议失败:', error);
+                            engSuggestionsEl.style.display = 'none';
+                        }
                     }, 250);
                 };
 
