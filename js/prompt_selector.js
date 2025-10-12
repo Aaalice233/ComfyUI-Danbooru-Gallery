@@ -1,5 +1,6 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
+import { toastManagerProxy } from "./toast_manager.js";
 
 // 提示词选择器节点
 app.registerExtension({
@@ -279,7 +280,7 @@ app.registerExtension({
                         this.promptData = data;
                         currentLanguage = this.promptData.settings?.language || "zh-CN";
                         this.applyTheme(); // 应用主题
-                        // console.log("提示词数据已加载:", this.promptData);
+
 
                         // 恢复上次选择的分类
                         // 优先从节点属性中读取，实现节点独立状态
@@ -412,7 +413,7 @@ app.registerExtension({
 
                 // Re-add hover preview to the main category button
                 // categoryBtn.addEventListener("mouseenter", (e) => {
-                //     // console.log("categoryBtn mouseenter triggered", e.currentTarget);
+                //     
                 //     if (this.hidePreviewTimeout) {
                 //         clearTimeout(this.hidePreviewTimeout);
                 //         this.hidePreviewTimeout = null;
@@ -475,7 +476,7 @@ app.registerExtension({
                         const text = categoryBtn.querySelector('span:not(.ps-total-count-badge)');
                         if (text) {
                             text.textContent = this.selectedCategory;
-                            // // console.log(`updateCategoryDropdown: Setting category button text to "${this.selectedCategory}"`);
+                            // 
                         }
 
                         // Remove old count badge if it exists
@@ -501,7 +502,7 @@ app.registerExtension({
 
                             // Add hover events to the badge itself
                             countBadge.addEventListener("mouseenter", (e) => {
-                                // console.log("countBadge mouseenter triggered", e.currentTarget);
+
                                 if (this.hidePreviewTimeout) {
                                     clearTimeout(this.hidePreviewTimeout);
                                     this.hidePreviewTimeout = null;
@@ -749,7 +750,7 @@ app.registerExtension({
 
                     const outputString = allSelected.join(separator);
                     outputWidget.value = outputString;
-                    // // console.log("Output updated:", outputString);
+                    // 
                     // Serialize the selectedPrompts object for saving in properties.
                     // We need to convert Sets to Arrays for JSON serialization.
                     const serializableSelections = {};
@@ -2734,50 +2735,15 @@ app.registerExtension({
                 };
 
                 this.showToast = (message, type = 'success') => {
-                    const toastId = `toast-${Date.now()}`;
-                    let toastContainer = document.querySelector("#ps-toast-container");
-                    if (!toastContainer) {
-                        toastContainer = document.createElement("div");
-                        toastContainer.id = "ps-toast-container";
-                        document.body.appendChild(toastContainer);
-                    }
-
-                    // --- Positioning Logic ---
+                    // 使用全局toast系统
                     const widget = this.widgets.find(w => w.name === "prompt_selector");
-                    if (widget && widget.element) {
-                        const nodeRect = widget.element.getBoundingClientRect();
-                        const centerX = nodeRect.left + nodeRect.width / 2;
-                        const top = nodeRect.top;
+                    const nodeContainer = widget && widget.element ? widget.element : null;
 
-                        toastContainer.style.left = `${centerX}px`;
-                        toastContainer.style.top = `${top}px`;
-                        toastContainer.style.transform = 'translateX(-50%) translateY(-110%)'; // Move it up a bit more
-                        toastContainer.style.right = 'auto';
-                    } else {
-                        // Fallback to old behavior if node element isn't found
-                        toastContainer.style.top = '20px';
-                        toastContainer.style.right = '20px';
-                        toastContainer.style.left = 'auto';
-                        toastContainer.style.transform = 'none';
-                    }
-                    // --- End Positioning Logic ---
-
-                    const toast = document.createElement("div");
-                    toast.id = toastId;
-                    toast.className = `ps-toast ps-toast-${type}`;
-                    toast.textContent = message;
-                    toastContainer.prepend(toast); // Prepend for column-reverse
-
-                    setTimeout(() => {
-                        toast.classList.add('show');
-                    }, 10);
-
-                    setTimeout(() => {
-                        toast.classList.remove('show');
-                        setTimeout(() => {
-                            toast.remove();
-                        }, 300);
-                    }, 3000);
+                    // 调用全局toast管理器
+                    toastManagerProxy.showToast(message, type, 3000, {
+                        nodeContainer: nodeContainer,
+                        closable: true
+                    });
                 };
 
                 this.showConfirmModal = (message, onConfirm) => {
@@ -2958,7 +2924,7 @@ app.registerExtension({
                 };
 
                 this.showImportModal = (file, categories) => {
-                    // console.log("[Debug] Raw categories for import:", JSON.stringify(categories, null, 2));
+
                     if (document.querySelector(".ps-import-modal")) return;
 
                     const modal = document.createElement("div");
@@ -3095,12 +3061,12 @@ app.registerExtension({
 
                 // 移除可能打开的菜单或模态框
                 const elementsToRemove = document.querySelectorAll(
-                    ".ps-category-menu, .ps-edit-modal, .ps-library-modal, .ps-context-menu, .ps-toast"
+                    ".ps-category-menu, .ps-edit-modal, .ps-library-modal, .ps-context-menu"
                 );
                 elementsToRemove.forEach(el => el.remove());
 
                 onRemoved?.apply(this, arguments);
-                // console.log("提示词选择器节点已移除，相关UI已清理。");
+
             };
 
 
@@ -3488,7 +3454,7 @@ app.registerExtension({
                         padding-left: 0;
                     }
                     .ps-category-tree ul ul {
-                        padding-left: 10px;
+                        padding-left: 5px;
                     }
                     .ps-category-tree li {
                         padding: 2px 0;
@@ -4846,42 +4812,6 @@ app.registerExtension({
                         background: #555;
                     }
 
-                    /* Toast Notification */
-                    #ps-toast-container {
-                        position: fixed;
-                        z-index: 2000;
-                        display: flex;
-                        flex-direction: column-reverse;
-                        gap: 8px;
-                        align-items: center;
-                        pointer-events: none;
-                    }
-                    .ps-toast {
-                        background-color: #333;
-                        color: white;
-                        padding: 12px 20px;
-                        border-radius: 8px;
-                        opacity: 0;
-                        transform: translateY(20px);
-                        transition: opacity 0.3s ease, transform 0.3s ease;
-                        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-                        font-size: 14px;
-                        pointer-events: auto;
-                    }
-                    .ps-toast.show {
-                        opacity: 1;
-                        transform: translateY(0);
-                    }
-                    .ps-toast.ps-toast-success {
-                        background-color: #28a745;
-                    }
-                    .ps-toast.ps-toast-error {
-                        background-color: #dc3545;
-                    }
-                    .ps-toast.ps-toast-warning {
-                        background-color: #ffc107;
-                        color: #212529;
-                    }
                     .ps-highlight-new {
                         animation: ps-highlight-new-item 2s ease-out;
                     }

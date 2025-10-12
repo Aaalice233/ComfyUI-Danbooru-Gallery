@@ -1,6 +1,7 @@
 import { app } from "../../../scripts/app.js";
 import { $el } from "../../../scripts/ui.js";
 import { globalAutocompleteCache } from "./autocomplete_cache.js";
+import { toastManagerProxy } from "./toast_manager.js";
 
 app.registerExtension({
     name: "Comfy.DanbooruGallery",
@@ -460,54 +461,28 @@ app.registerExtension({
 
                 // 显示提示消息功能
                 const showToast = (message, type = 'info', anchorElement = null) => {
-                    // 尝试使用 ComfyUI 的内置系统
-                    if (app.ui && app.ui.showToast) {
-                        app.ui.showToast(message, type);
-                        return;
-                    }
-                    if (app.ui && app.ui.notification && app.ui.notification.show) {
-                        app.ui.notification.show(message, type);
-                        return;
-                    }
-                    if (app.ui && app.ui.dialog && app.ui.dialog.showMessage) {
-                        app.ui.dialog.showMessage(message);
-                        return;
-                    }
+                    // 使用全局toast管理器，并根据类型设置对应的等级
+                    const toastLevel = getToastLevel(type);
+                    const options = anchorElement ? { targetElement: anchorElement } : {};
 
-                    // Custom fallback with stacking
-                    let toastContainer = document.querySelector("#danbooru-gallery-toast-container");
-                    if (!toastContainer) {
-                        toastContainer = $el("div#danbooru-gallery-toast-container");
-                        document.body.appendChild(toastContainer);
-                    }
+                    toastManagerProxy.showToast(message, toastLevel, 3000, options);
+                };
 
-                    const toast = $el("div.danbooru-toast", {
-                        textContent: message,
-                    });
-                    toast.classList.add(`danbooru-toast-${type}`);
-                    toastContainer.appendChild(toast);
-
-                    setTimeout(() => {
-                        toast.classList.add('show');
-                    }, 10);
-
-                    const duration = type === 'error' ? 5000 : 3000;
-                    setTimeout(() => {
-                        toast.classList.remove('show');
-                        toast.classList.add('fade-out');
-                        setTimeout(() => {
-                            toast.remove();
-                            if (toastContainer.children.length === 0) {
-                                toastContainer.remove();
-                            }
-                        }, 300);
-                    }, duration);
+                const getToastLevel = (type) => {
+                    // 将toast类型映射到全局toast管理器的等级
+                    const levelMap = {
+                        'success': 'success',
+                        'error': 'error',
+                        'warning': 'warning',
+                        'info': 'info'
+                    };
+                    return levelMap[type] || 'info';
                 };
 
                 // 收藏管理功能
                 const addToFavorites = async (postId, button = null) => {
                     if (!userAuth.has_auth) {
-                        alert(t('authRequired'));
+                        showToast(t('authRequired'), 'warning');
                         return { success: false, error: t('authRequired') };
                     }
 
@@ -580,7 +555,7 @@ app.registerExtension({
 
                 const removeFromFavorites = async (postId, button = null) => {
                     if (!userAuth.has_auth) {
-                        alert(t('authRequired'));
+                        showToast(t('authRequired'), 'warning');
                         return { success: false, error: t('authRequired') };
                     }
 
@@ -1665,7 +1640,7 @@ app.registerExtension({
                                 if (authSuccess) {
                                     await loadFavorites(); // 登录成功后重新加载收藏夹
                                 } else {
-                                    alert(authResult.error || "保存认证信息失败");
+                                    showToast(authResult.error || "保存认证信息失败", 'error');
                                     return;
                                 }
                             }
@@ -1710,7 +1685,7 @@ app.registerExtension({
                                     fetchAndRender(false);
                                 }
                             } else {
-                                alert(t('saveFailed'));
+                                showToast(t('saveFailed'), 'error');
                             }
                         }
                     });
@@ -1775,7 +1750,7 @@ app.registerExtension({
                                 dialog.remove(); // Close current dialog
                                 showSettingsDialog(currentState); // Re-open with new language and preserved state
                             } else {
-                                alert('Failed to save language setting.');
+                                showToast('Failed to save language setting.', 'error');
                             }
                         };
                     });
@@ -2392,7 +2367,7 @@ app.registerExtension({
                     const currentSelectedElement = imageGrid.querySelector('.danbooru-image-wrapper.selected');
                     if (currentSelectedElement && currentSelectedElement.dataset.postId && currentSelectedElement.dataset.postId != post.id) { // 检查 dataset.postId 是否存在
                         currentSelectedElement.classList.remove('selected');
-                        // console.log(`[DanbooruGallery] showEditPanel: Deselected previously selected post ${currentSelectedElement.dataset.postId}`);
+
                     }
                     const targetWrapper = imageGrid.querySelector(`.danbooru-image-wrapper[data-post-id="${post.id}"]`);
                     if (targetWrapper) {
@@ -2442,12 +2417,12 @@ app.registerExtension({
                             if (selectionWidget) {
                                 selectionWidget.value = JSON.stringify(selection);
                                 selectionWidget.callback();
-                                // console.log(`[DanbooruGallery] showEditPanel: selectionWidget.value updated for post ${post.id}`);
+
                             }
                         }
                     }
                     const isPostCurrentlySelected = true; // 因为我们已经强制选中了
-                    // console.log(`[DanbooruGallery] showEditPanel for post ${post.id} opened. Post was selected: ${isPostCurrentlySelected} (forced)`);
+
 
                     if (!temporaryTagEdits[post.id]) {
                         // Create a deep copy for editing if it doesn't exist
@@ -2601,12 +2576,12 @@ app.registerExtension({
                             // 重新给新元素添加选中状态
                             if (newPostElement) {
                                 newPostElement.classList.add('selected');
-                                // console.log(`[DanbooruGallery] Re-added 'selected' class to new element for post ID: ${post.id}. Has 'selected' class: ${newPostElement.classList.contains('selected')}`);
+
                             }
                         } else { // 如果打开面板时未选中，则清除所有选中的图像和提示词
-                            // console.log(`[DanbooruGallery] Post was not selected when panel opened, clearing selection.`);
+
                             imageGrid.querySelectorAll('.danbooru-image-wrapper.selected').forEach(w => {
-                                // console.log(`[DanbooruGallery] Clearing 'selected' class from post ID: ${w.dataset.postId}`);
+
                                 w.classList.remove('selected');
                             });
                             if (nodeInstance && nodeInstance.widgets) {
@@ -2614,7 +2589,7 @@ app.registerExtension({
                                 if (selectionWidget) {
                                     selectionWidget.value = JSON.stringify({});
                                     selectionWidget.callback();
-                                    // console.log(`[DanbooruGallery] selectionWidget.value cleared.`);
+
                                 }
                             }
                         }
@@ -2779,7 +2754,7 @@ app.registerExtension({
                                         if (selectionWidget) {
                                             selectionWidget.value = JSON.stringify(selection);
                                             selectionWidget.callback();
-                                            // console.log(`[DanbooruGallery] resetTagsButton: selectionWidget.value updated for post ${post.id}`);
+
                                         }
                                     }
                                 }
@@ -3087,14 +3062,14 @@ app.registerExtension({
                             imageGrid.querySelectorAll('.danbooru-image-wrapper').forEach(w => {
                                 if (w !== wrapper) {
                                     w.classList.remove('selected');
-                                    // console.log(`[DanbooruGallery-Click] Removed 'selected' from other wrapper: ${w.dataset.postId}`);
+
                                 }
                             });
 
                             // 然后，根据当前图像的选中状态进行切换
                             if (!isSelected) {
                                 wrapper.classList.add('selected');
-                                // console.log(`[DanbooruGallery-Click] Added 'selected' to wrapper: ${post.id}. Current classes: ${wrapper.classList}`);
+
 
                                 const imageUrl = post.file_url || post.large_file_url;
 
@@ -3151,18 +3126,18 @@ app.registerExtension({
                                     if (selectionWidget) {
                                         selectionWidget.value = JSON.stringify(selection);
                                         selectionWidget.callback(); // 触发回调，通知ComfyUI值已更新
-                                        // console.log(`[DanbooruGallery-Click] selectionWidget.value set to: ${selectionWidget.value}`);
+
                                     }
                                 }
                             } else {
                                 wrapper.classList.remove('selected');
-                                // console.log(`[DanbooruGallery-Click] Removed 'selected' from wrapper: ${post.id}. Current classes: ${wrapper.classList}`);
+
                                 if (nodeInstance && nodeInstance.widgets) {
                                     const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
                                     if (selectionWidget) {
                                         selectionWidget.value = JSON.stringify({});
                                         selectionWidget.callback();
-                                        // console.log(`[DanbooruGallery-Click] selectionWidget.value cleared.`);
+
                                     }
                                 }
                             }
@@ -3370,7 +3345,7 @@ app.registerExtension({
 
                             // 如果用户未登录，提示登录
                             if (!userAuth.has_auth) {
-                                alert(t('authRequired'));
+                                showToast(t('authRequired'), 'warning');
                                 return;
                             }
 
@@ -3659,7 +3634,7 @@ app.registerExtension({
                 // 收藏夹按钮点击事件
                 favoritesButton.addEventListener("click", async () => {
                     if (!userAuth.has_auth) {
-                        alert(t('authRequired'));
+                        showToast(t('authRequired'), 'warning');
                         return;
                     }
 
@@ -3870,7 +3845,7 @@ app.registerExtension({
                             filterState = { startTime: null, endTime: null, startPage: null };
                         }
 
-                        // console.log("Initializing Danbooru Gallery...");
+
                         let networkConnected = true;
 
                         // 优先检测网络连接状态
@@ -3889,10 +3864,10 @@ app.registerExtension({
 
                         // 加载语言设置
                         await loadLanguage();
-                        // console.log("Language loaded:", currentLanguage);
+
                         // 加载用户认证信息
                         await loadUserAuth();
-                        // console.log("User auth loaded:", userAuth);
+
 
                         if (networkConnected && userAuth.has_auth) {
                             await loadFavorites();
@@ -3900,19 +3875,19 @@ app.registerExtension({
 
                         // 更新界面文本
                         updateInterfaceTexts();
-                        // console.log("Interface texts updated.");
+
                         // 更新收藏夹按钮状态
                         updateFavoritesButtonState();
-                        // console.log("Favorites button state updated.");
+
                         // 加载黑名单
                         await loadBlacklist();
-                        // console.log("Blacklist loaded.");
+
                         // 加载提示词过滤设置
                         await loadFilterTags();
-                        // console.log("Filter tags loaded.");
+
                         // 加载UI设置
                         await loadUiSettings();
-                        // console.log("UI settings loaded.");
+
 
                         // 从 localStorage 加载并覆盖筛选状态
                         const savedSearch = loadFromLocalStorage('searchValue', null);
@@ -3961,7 +3936,7 @@ app.registerExtension({
 
                         // 初始化排行榜按钮状态
                         updateRankingButtonState();
-                        // console.log("Ranking button state updated.");
+
                         // 根据加载的 filterState 更新筛选按钮状态
                         if (filterState.startTime || filterState.endTime || filterState.startPage) {
                             filterButton.classList.add('active');
@@ -3971,7 +3946,7 @@ app.registerExtension({
 
                         // 页面加载时直接获取第一页的帖子
                         fetchAndRender(true);
-                        // console.log("Initial fetch triggered.");
+
                     } catch (error) {
                         console.error("Danbooru Gallery initialization failed:", error);
                         showError("图库初始化失败，请检查控制台日志。", true);

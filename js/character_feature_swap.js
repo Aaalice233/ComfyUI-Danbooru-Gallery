@@ -1,5 +1,6 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
+import { toastManagerProxy } from "./toast_manager.js";
 
 // 防抖函数，用于延迟执行，避免频繁的API调用
 function debounce(func, delay) {
@@ -195,7 +196,7 @@ app.registerExtension({
                     ui.settingsButton.removeAttribute('title');
                     // ui.presetButton.title = t('presetsTooltip');
                     // ui.helpIcon.title = t('helpTooltip');
-                    ui.addTagButton.title = t('addTagTooltip');
+                    ui.addTagButton.removeAttribute('title');
                 }
             }
 
@@ -207,40 +208,24 @@ app.registerExtension({
             }
 
             function showToast(message, type = 'success', duration = 3000) {
-                const dialog = document.querySelector(".cfs-new-settings-dialog");
-                if (!dialog) return;
+                // 使用全局toast管理器，并根据类型设置对应的等级
+                const toastLevel = getToastLevel(type);
 
-                let toastContainer = dialog.querySelector(".cfs-toast-container");
-                if (!toastContainer) {
-                    toastContainer = document.createElement("div");
-                    toastContainer.className = "cfs-toast-container";
-                    dialog.appendChild(toastContainer);
-                }
+                toastManagerProxy.showToast(message, toastLevel, duration, {
+                    // 可以在这里添加特定于character_feature_swap的选项
+                    container: ".cfs-new-settings-dialog"
+                });
+            }
 
-                const toast = document.createElement("div");
-                toast.className = `cfs-toast cfs-toast-${type}`;
-                toast.textContent = message;
-
-                toastContainer.appendChild(toast);
-
-                // Animate in
-                setTimeout(() => {
-                    toast.style.opacity = "1";
-                    toast.style.transform = "translateY(0)";
-                }, 10);
-
-                // Animate out and remove
-                setTimeout(() => {
-                    toast.style.opacity = "0";
-                    toast.style.transform = "translateY(-20px)";
-                    setTimeout(() => {
-                        toast.remove();
-                        // If container is empty, remove it
-                        if (toastContainer.children.length === 0) {
-                            toastContainer.remove();
-                        }
-                    }, 300);
-                }, duration);
+            function getToastLevel(type) {
+                // 将toast类型映射到全局toast管理器的等级
+                const levelMap = {
+                    'success': 'success',
+                    'error': 'error',
+                    'warning': 'warning',
+                    'info': 'info'
+                };
+                return levelMap[type] || 'info';
             }
 
             async function checkConnectionStatus(ui, settingsOverride = null) {
@@ -374,9 +359,9 @@ app.registerExtension({
                     });
 
                     const githubButton = dialog.querySelector("#cfs-github-button");
-                    if (githubButton) githubButton.title = t('githubTooltip');
+                    if (githubButton) githubButton.removeAttribute('title');
                     const discordButton = dialog.querySelector("#cfs-discord-button");
-                    if (discordButton) discordButton.title = t('discordTooltip');
+                    if (discordButton) discordButton.removeAttribute('title');
                 }
 
                 // Tab switching logic
@@ -991,6 +976,7 @@ Respond with only the new, modified prompt, without any explanations.
                 const wrapper = document.createElement("div");
                 wrapper.className = "cfs-widget-wrapper";
                 wrapper.style.marginBottom = "5px"; // Add some spacing
+                wrapper.removeAttribute('title');
 
                 // --- 添加帮助图标 ---
                 const helpIcon = document.createElement("div");
@@ -1045,15 +1031,25 @@ Respond with only the new, modified prompt, without any explanations.
                         tag.style.borderColor = color.border;
                         tag.style.color = color.text;
 
+                        // 确保标签没有title属性
+                        tag.removeAttribute('title');
 
                         const label = document.createElement("span");
                         label.className = "cfs-tag-label";
                         label.textContent = text;
+
+                        // 确保标签文本没有title属性
+                        label.removeAttribute('title');
+
                         tag.appendChild(label);
 
                         const removeBtn = document.createElement("span");
                         removeBtn.className = "cfs-remove-btn";
                         removeBtn.textContent = "✖";
+
+                        // 确保删除按钮没有title属性
+                        removeBtn.removeAttribute('title');
+
                         removeBtn.onclick = (e) => {
                             e.stopPropagation();
                             tag.remove();
@@ -1062,11 +1058,116 @@ Respond with only the new, modified prompt, without any explanations.
                         };
 
                         tag.appendChild(removeBtn);
+
+                        // 添加事件监听器来阻止任何可能的默认工具提示
+                        tag.addEventListener('mouseenter', (e) => {
+                            e.preventDefault();
+                            // 尝试阻止任何可能的工具提示
+                            tag.setAttribute('data-no-tooltip', 'true');
+                        });
+
+                        tag.addEventListener('mouseover', (e) => {
+                            e.preventDefault();
+                            // 尝试阻止任何可能的工具提示
+                            tag.setAttribute('data-no-tooltip', 'true');
+                        });
+
                         // 将新标签插入到 addTagButton 之前
                         wrapper.insertBefore(tag, addTagButton);
                         updateWidgetValue();
                         debouncedAutosave(); // 自动保存
+
+                        // 立即应用所有可能的修复
+                        fixTagTooltip(tag);
                     }
+                };
+
+                // 修复标签工具提示的函数
+                const fixTagTooltip = (tag) => {
+                    if (!tag) return;
+
+                    // 移除所有可能的title属性
+                    tag.removeAttribute('title');
+                    tag.setAttribute('data-no-tooltip', 'true');
+
+                    // 应用内联样式
+                    tag.style.webkitUserSelect = 'none';
+                    tag.style.mozUserSelect = 'none';
+                    tag.style.msUserSelect = 'none';
+                    tag.style.userSelect = 'none';
+                    tag.style.webkitTouchCallout = 'none';
+                    tag.style.webkitTapHighlightColor = 'transparent';
+                    tag.style.pointerEvents = 'auto';
+
+                    // 处理所有子元素
+                    const children = tag.querySelectorAll('*');
+                    children.forEach(child => {
+                        child.removeAttribute('title');
+                        child.setAttribute('data-no-tooltip', 'true');
+                        child.style.webkitUserSelect = 'none';
+                        child.style.mozUserSelect = 'none';
+                        child.style.msUserSelect = 'none';
+                        child.style.userSelect = 'none';
+                        child.style.webkitTouchCallout = 'none';
+                        child.style.webkitTapHighlightColor = 'transparent';
+                    });
+
+                    // 添加事件监听器
+                    tag.addEventListener('mouseenter', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    });
+
+                    tag.addEventListener('mouseover', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    });
+                };
+
+                // 修复整个特征区域工具提示的函数
+                const fixWidgetTooltip = () => {
+                    // 修复包装器
+                    wrapper.removeAttribute('title');
+                    wrapper.setAttribute('data-no-tooltip', 'true');
+                    wrapper.style.webkitUserSelect = 'none';
+                    wrapper.style.mozUserSelect = 'none';
+                    wrapper.style.msUserSelect = 'none';
+                    wrapper.style.userSelect = 'none';
+                    wrapper.style.webkitTouchCallout = 'none';
+                    wrapper.style.webkitTapHighlightColor = 'transparent';
+
+                    // 修复主容器
+                    mainContainer.removeAttribute('title');
+                    mainContainer.setAttribute('data-no-tooltip', 'true');
+                    mainContainer.style.webkitUserSelect = 'none';
+                    mainContainer.style.mozUserSelect = 'none';
+                    mainContainer.style.msUserSelect = 'none';
+                    mainContainer.style.userSelect = 'none';
+                    mainContainer.style.webkitTouchCallout = 'none';
+                    mainContainer.style.webkitTapHighlightColor = 'transparent';
+
+                    // 修复底部栏
+                    bottomBar.removeAttribute('title');
+                    bottomBar.setAttribute('data-no-tooltip', 'true');
+                    bottomBar.style.webkitUserSelect = 'none';
+                    bottomBar.style.mozUserSelect = 'none';
+                    bottomBar.style.msUserSelect = 'none';
+                    bottomBar.style.userSelect = 'none';
+                    bottomBar.style.webkitTouchCallout = 'none';
+                    bottomBar.style.webkitTapHighlightColor = 'transparent';
+
+                    // 添加事件监听器来阻止任何可能的默认工具提示
+                    [wrapper, mainContainer, bottomBar].forEach(element => {
+                        element.addEventListener('mouseenter', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                        });
+
+                        element.addEventListener('mouseover', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                        });
+                    });
                 };
 
                 // --- 事件监听 ---
@@ -1110,7 +1211,7 @@ Respond with only the new, modified prompt, without any explanations.
                 // --- 创建底部按钮栏 ---
                 const bottomBar = document.createElement("div");
                 bottomBar.className = "cfs-bottom-bar";
-                bottomBar.title = "";
+                bottomBar.removeAttribute('title');
 
                 const importButton = document.createElement("button");
                 importButton.innerHTML = `<i class="fas fa-upload"></i> ${t('import')}`;
@@ -1392,7 +1493,7 @@ Respond with only the new, modified prompt, without any explanations.
 
                 const mainContainer = document.createElement("div");
                 mainContainer.className = "cfs-main-container";
-                mainContainer.title = "";
+                mainContainer.removeAttribute('title');
 
                 const presetButtonContainer = document.createElement("div");
                 presetButtonContainer.className = "cfs-preset-button-container";
@@ -1439,12 +1540,12 @@ Respond with only the new, modified prompt, without any explanations.
                     const saveBtn = document.createElement("button");
                     saveBtn.className = "cfs-preset-action-btn";
                     saveBtn.innerHTML = `<i class="fas fa-save"></i>`;
-                    saveBtn.title = t('saveCurrentPreset');
+                    saveBtn.removeAttribute('title');
 
                     const saveAsBtn = document.createElement("button");
                     saveAsBtn.className = "cfs-preset-action-btn";
                     saveAsBtn.innerHTML = `<i class="fas fa-plus-square"></i>`;
-                    saveAsBtn.title = t('saveAsPreset');
+                    saveAsBtn.removeAttribute('title');
 
                     const searchContainer = document.createElement("div");
                     searchContainer.className = "cfs-search-container";
@@ -1700,6 +1801,48 @@ Respond with only the new, modified prompt, without any explanations.
                         if (presetButtonText) {
                             presetButtonText.textContent = activePresetName;
                         }
+
+                        // 在DOM更新后，确保所有标签都没有工具提示
+                        setTimeout(() => {
+                            // 修复整个特征区域的工具提示
+                            fixWidgetTooltip();
+
+                            const allTags = wrapper.querySelectorAll(".cfs-tag");
+                            allTags.forEach(tag => {
+                                fixTagTooltip(tag);
+                            });
+
+                            // 创建MutationObserver来监控DOM变化
+                            const observer = new MutationObserver((mutations) => {
+                                mutations.forEach((mutation) => {
+                                    if (mutation.type === 'childList') {
+                                        mutation.addedNodes.forEach((node) => {
+                                            if (node.nodeType === Node.ELEMENT_NODE) {
+                                                // 检查新添加的节点是否是标签或包含标签
+                                                if (node.classList && node.classList.contains('cfs-tag')) {
+                                                    fixTagTooltip(node);
+                                                } else {
+                                                    // 检查新添加的节点是否包含标签
+                                                    const tags = node.querySelectorAll && node.querySelectorAll('.cfs-tag');
+                                                    if (tags) {
+                                                        tags.forEach(tag => fixTagTooltip(tag));
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    }
+                                });
+                            });
+
+                            // 开始观察wrapper的变化
+                            observer.observe(wrapper, {
+                                childList: true,
+                                subtree: true
+                            });
+
+                            // 将observer保存到节点上，以便后续清理
+                            this.cfs_tagObserver = observer;
+                        }, 100);
                     })
                     .catch(error => {
                         // 如果加载失败，则使用小部件的默认值
@@ -2354,6 +2497,17 @@ Respond with only the new, modified prompt, without any explanations.
                             flex-grow: 1; /* Allow this area to grow */
                             overflow-y: auto; /* Allow scrolling */
                             min-height: 120px; /* 为标签区域设置一个最小高度 */
+                            /* 禁用任何可能的工具提示 */
+                            -webkit-user-select: none;
+                            -moz-user-select: none;
+                            -ms-user-select: none;
+                            user-select: none;
+                            -webkit-touch-callout: none;
+                            -webkit-tap-highlight-color: transparent;
+                            /* 禁用标题显示 */
+                            &[title] {
+                                display: none !important;
+                            }
                         }
 
                         /* Help Icon */
@@ -2395,10 +2549,51 @@ Respond with only the new, modified prompt, without any explanations.
                             transition: all 0.2s ease-in-out;
                             height: 26px;
                             line-height: 18px;
-                            cursor: default;
+                            /* 将cursor改为pointer，避免default光标可能带来的提示 */
+                            cursor: pointer;
+                            /* 确保没有工具提示 */
+                            -webkit-user-select: none;
+                            -moz-user-select: none;
+                            -ms-user-select: none;
+                            user-select: none;
+                            /* 禁用任何可能的工具提示 */
+                            pointer-events: auto;
+                            /* 尝试禁用浏览器默认的工具提示 */
+                            -webkit-touch-callout: none;
+                            -webkit-tap-highlight-color: transparent;
+                            /* 完全禁用工具提示 */
+                            -webkit-tooltip: none;
+                            -moz-tooltip: none;
+                            -ms-tooltip: none;
+                            tooltip: none;
+                            /* 禁用所有可能的标题显示 */
+                            &[title] {
+                                display: none;
+                            }
                         }
                         .cfs-tag:hover {
                            /* No hover effect to keep it clean */
+                           /* 确保悬浮时没有额外的视觉效果 */
+                           background-color: inherit;
+                           border-color: inherit;
+                           color: inherit;
+                           box-shadow: none;
+                           transform: none;
+                           /* 确保悬浮时光标保持一致 */
+                           cursor: pointer;
+                        }
+                        /* 尝试禁用所有可能的工具提示 */
+                        .cfs-tag *, .cfs-tag *:before, .cfs-tag *:after {
+                            -webkit-touch-callout: none;
+                            -webkit-tap-highlight-color: transparent;
+                            -webkit-tooltip: none;
+                            -moz-tooltip: none;
+                            -ms-tooltip: none;
+                            tooltip: none;
+                        }
+                        /* 全局禁用标签的工具提示 */
+                        .cfs-tag[title], .cfs-tag-label[title], .cfs-remove-btn[title] {
+                            display: none !important;
                         }
 
                         /* Remove button for tags */
@@ -2615,6 +2810,12 @@ Respond with only the new, modified prompt, without any explanations.
             const onNodeRemoved_orig = nodeType.prototype.onNodeRemoved;
             nodeType.prototype.onNodeRemoved = function () {
                 nodeUIs.delete(this);
+
+                // 清理MutationObserver
+                if (this.cfs_tagObserver) {
+                    this.cfs_tagObserver.disconnect();
+                    this.cfs_tagObserver = null;
+                }
 
                 // 清理所有由该节点创建的、附加到 document.body 的UI元素
                 const elementsToRemove = document.querySelectorAll(
