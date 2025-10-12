@@ -1,14 +1,16 @@
 // 角色编辑器组件
 import { globalAutocompleteCache } from "./autocomplete_cache.js";
-import { globalToastManager } from "./toast_manager.js";
+import { globalToastManager as toastManagerProxy } from "./toast_manager.js";
+import { globalMultiLanguageManager } from "./multi_language.js";
 
 class CharacterEditor {
     constructor(editor) {
         this.editor = editor;
         this.container = editor.container.querySelector('.mce-character-editor');
         this.characters = [];
-        this.templates = [];
         this.draggedElement = null;
+        this.selectedCharacterId = null; // 🔧 新增：记录当前选中的角色ID
+        this.toastManager = toastManagerProxy; // 🔧 添加toast管理器引用
         this.init();
     }
 
@@ -19,21 +21,30 @@ class CharacterEditor {
 
         // 设置全局引用
         window.characterEditor = this;
+
+        // 监听语言变化事件
+        document.addEventListener('languageChanged', (e) => {
+            if (e.detail.component === 'characterEditor' || !e.detail.component) {
+                this.updateTexts();
+            }
+        });
     }
 
     createLayout() {
+        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+
         this.container.innerHTML = `
             <div class="mce-character-header">
-                <h3 class="mce-character-title">${this.editor.languageManager ? this.editor.languageManager.t('characterEditor') : '角色编辑'}</h3>
+                <h3 class="mce-character-title">${t('characterEditor')}</h3>
                 <div class="mce-character-actions">
-                    <button id="mce-add-character" class="mce-button mce-button-primary">
+                    <button id="mce-add-character" class="mce-button mce-button-primary" title="${t('addCharacter')}">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="12" y1="5" x2="12" y2="19"></line>
                             <line x1="5" y1="12" x2="19" y2="12"></line>
                         </svg>
-                        ${this.editor.languageManager ? this.editor.languageManager.t('addCharacter') : '添加角色'}
+                        <span class="mce-button-text">${t('buttonTexts.addCharacter')}</span>
                     </button>
-                    <button id="mce-library-button" class="mce-button">
+                    <button id="mce-library-button" class="mce-button" title="${t('selectFromLibrary')}">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
                             <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
@@ -41,7 +52,7 @@ class CharacterEditor {
                             <line x1="8" y1="10" x2="16" y2="10"></line>
                             <line x1="8" y1="14" x2="13" y2="14"></line>
                         </svg>
-                        ${this.editor.languageManager ? this.editor.languageManager.t('selectFromLibrary') : '从词库添加'}
+                        <span class="mce-button-text">${t('buttonTexts.selectFromLibrary')}</span>
                     </button>
                 </div>
             </div>
@@ -51,13 +62,17 @@ class CharacterEditor {
         `;
 
         this.addStyles();
+        this.listElement = this.container.querySelector('#mce-character-list');
     }
 
     addStyles() {
         const style = document.createElement('style');
         style.textContent = `
             .mce-character-editor {
-                width: 400px;
+                width: 420px;
+                min-width: 420px;
+                max-width: 500px;
+                flex: 0 0 auto;
                 background: rgba(42, 42, 62, 0.3);
                 border-right: 1px solid rgba(255, 255, 255, 0.08);
                 display: flex;
@@ -66,14 +81,16 @@ class CharacterEditor {
             }
             
             .mce-character-header {
-                padding: 16px 20px;
+                padding: 14px 20px;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.08);
                 display: flex;
-                justify-content: space-between;
                 align-items: center;
+                gap: 8px;
                 flex-shrink: 0;
+                flex-wrap: nowrap;
                 background: linear-gradient(135deg, rgba(42, 42, 62, 0.5) 0%, rgba(58, 58, 78, 0.5) 100%);
                 position: relative;
+                min-height: 56px;
             }
             
             .mce-character-header::after {
@@ -91,19 +108,23 @@ class CharacterEditor {
             
             .mce-character-title {
                 margin: 0;
-                font-size: 15px;
+                font-size: 14px;
                 font-weight: 600;
                 color: #E0E0E0;
                 text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+                flex-shrink: 0;
             }
             
             .mce-character-actions {
                 display: flex;
-                gap: 10px;
+                gap: 8px;
+                flex-shrink: 0;
+                flex-wrap: nowrap;
+                margin-left: auto;
             }
             
             .mce-button {
-                padding: 8px 14px;
+                padding: 8px 12px;
                 background: linear-gradient(135deg, rgba(64, 64, 84, 0.8) 0%, rgba(74, 74, 94, 0.8) 100%);
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 6px;
@@ -118,6 +139,8 @@ class CharacterEditor {
                 box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
                 position: relative;
                 overflow: hidden;
+                white-space: nowrap;
+                flex-shrink: 0;
             }
             
             .mce-button::before {
@@ -161,10 +184,18 @@ class CharacterEditor {
                 box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
             }
             
+            .mce-button svg {
+                flex-shrink: 0;
+            }
+            
+            .mce-button-text {
+                display: inline-block;
+            }
+            
             .mce-character-list {
                 flex: 1;
                 overflow-y: auto;
-                padding: 12px;
+                padding: 12px 20px;
                 min-height: 200px;
             }
             
@@ -173,7 +204,7 @@ class CharacterEditor {
                 border: 1px solid rgba(255, 255, 255, 0.08);
                 border-radius: 8px;
                 margin-bottom: 10px;
-                padding: 14px;
+                padding: 12px 14px;
                 cursor: pointer;
                 transition: all 0.3s ease;
                 position: relative;
@@ -237,6 +268,8 @@ class CharacterEditor {
                 display: flex;
                 align-items: center;
                 gap: 10px;
+                flex: 1;
+                min-width: 0;
                 text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
             }
             
@@ -259,7 +292,7 @@ class CharacterEditor {
             }
             
             .mce-character-control {
-                width: 28px;
+                min-width: 28px;
                 height: 28px;
                 border: none;
                 background: rgba(255, 255, 255, 0.05);
@@ -269,7 +302,14 @@ class CharacterEditor {
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                gap: 4px;
+                padding: 0 6px;
                 transition: all 0.2s ease;
+                font-size: 10px;
+            }
+            
+            .mce-character-control span {
+                white-space: nowrap;
             }
             
             .mce-character-control:hover {
@@ -286,8 +326,9 @@ class CharacterEditor {
                 overflow: hidden;
                 text-overflow: ellipsis;
                 display: -webkit-box;
-                -webkit-line-clamp: 2;
+                -webkit-line-clamp: 3;
                 -webkit-box-orient: vertical;
+                word-break: break-word;
             }
             
             .mce-character-info {
@@ -412,6 +453,18 @@ class CharacterEditor {
     }
 
     bindEvents() {
+        // 监听角色删除事件，更新角色列表
+        if (this.editor.eventBus) {
+            this.editor.eventBus.on('character:deleted', (characterId) => {
+                this.renderCharacterList();
+                // 如果删除的是当前选中的角色，清除属性面板
+                if (this.selectedCharacterId === characterId) {
+                    this.clearProperties();
+                    this.selectedCharacterId = null;
+                }
+            });
+        }
+
         // 使用setTimeout确保DOM元素已经创建
         setTimeout(() => {
             try {
@@ -471,12 +524,61 @@ class CharacterEditor {
 
             const character = this.editor.dataManager.addCharacter(characterData);
 
-            this.renderCharacterList();
+            // 立即刷新角色列表，不使用防抖
+            this.doRenderCharacterList();
 
             this.selectCharacter(character.id);
 
+            // 🔧 关键修复：确保角色数据立即保存到节点状态
+            if (this.editor.saveToNodeState) {
+                const config = this.editor.dataManager.getConfig();
+
+                this.editor.saveToNodeState(config);
+            }
+
         } catch (error) {
             console.error("addCharacter() 发生错误:", error);
+        }
+    }
+
+    // 🔧 新增：直接添加角色到UI，不触发事件
+    addCharacterToUI(characterData, triggerEvent = true) {
+        try {
+            console.log('[CharacterEditor] addCharacterToUI: 添加角色到UI', {
+                id: characterData?.id,
+                name: characterData?.name,
+                triggerEvent
+            });
+
+            if (!characterData) {
+                console.error('[CharacterEditor] addCharacterToUI: 角色数据为空');
+                return;
+            }
+
+            // 直接添加到characters数组，不触发事件
+            this.characters.push(characterData);
+
+            // 立即刷新角色列表
+            this.doRenderCharacterList();
+
+            // 选择角色
+            this.selectCharacter(characterData.id);
+
+
+        } catch (error) {
+            console.error('[CharacterEditor] addCharacterToUI: 添加角色失败:', error);
+        }
+    }
+
+    // 🔧 新增：清空所有角色
+    clearAllCharacters() {
+        try {
+
+            this.characters = [];
+            this.doRenderCharacterList();
+
+        } catch (error) {
+            console.error('[CharacterEditor] clearAllCharacters: 清空角色失败:', error);
         }
     }
 
@@ -490,20 +592,94 @@ class CharacterEditor {
     }
 
     deleteCharacter(characterId) {
-        if (confirm(this.editor.languageManager ? this.editor.languageManager.t('deleteConfirm') || '确定要删除这个角色吗？' : '确定要删除这个角色吗？')) {
-            // 先删除对应的蒙版
+        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+
+        // 创建自定义确认对话框
+        const modal = document.createElement('div');
+        modal.className = 'mce-confirm-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+
+        const modalContent = document.createElement('div');
+        modalContent.className = 'mce-confirm-content';
+        modalContent.style.cssText = `
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 400px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        `;
+
+        modalContent.innerHTML = `
+            <h3 style="margin: 0 0 12px 0; color: #E0E0E0; font-size: 18px;">${t('deleteConfirm')}</h3>
+            <p style="margin: 0 0 20px 0; color: #B0B0B0; font-size: 14px;">${t('deleteCharacterWarning')}</p>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button id="mce-cancel-delete" style="
+                    padding: 8px 16px;
+                    background: #454545;
+                    border: 1px solid #555;
+                    border-radius: 4px;
+                    color: #E0E0E0;
+                    cursor: pointer;
+                    font-size: 14px;
+                ">
+                    ${t('buttonTexts.cancel')}
+                </button>
+                <button id="mce-confirm-delete" style="
+                    padding: 8px 16px;
+                    background: #f44336;
+                    border: 1px solid #f44336;
+                    border-radius: 4px;
+                    color: white;
+                    cursor: pointer;
+                    font-size: 14px;
+                    font-weight: 500;
+                ">
+                    ${t('buttonTexts.delete')}
+                </button>
+            </div>
+        `;
+
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        // 关闭对话框的函数
+        const closeModal = () => {
+            if (modal.parentNode) {
+                document.body.removeChild(modal);
+            }
+            document.removeEventListener('keydown', handleEscape);
+        };
+
+        // 确认删除的处理函数
+        const handleConfirm = () => {
+            // 🔧 优化：删除角色前先检查是否是当前选中的蒙版
             if (this.editor.components.maskEditor) {
-                this.editor.components.maskEditor.deleteMask(characterId);
+                const selectedMask = this.editor.components.maskEditor.selectedMask;
+                if (selectedMask && selectedMask.characterId === characterId) {
+                    // 清除选中状态
+                    this.editor.components.maskEditor.selectedMask = null;
+                }
             }
 
-            // 然后删除角色
+            // 删除角色（会自动删除角色的提示词和蒙版数据）
             this.editor.dataManager.deleteCharacter(characterId);
             this.renderCharacterList();
             this.clearProperties();
 
             // 强制重新渲染蒙版编辑器，确保画布立即刷新
             if (this.editor.components.maskEditor) {
-                // 立即同步蒙版数据
+                // 立即同步蒙版数据（从角色列表重新构建蒙版列表）
                 this.editor.components.maskEditor.syncMasksFromCharacters();
                 // 强制重新渲染
                 this.editor.components.maskEditor.scheduleRender();
@@ -513,7 +689,39 @@ class CharacterEditor {
                     this.editor.components.maskEditor.scheduleRender();
                 }, 50);
             }
-        }
+
+            closeModal();
+        };
+
+        // ESC键关闭功能
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        };
+
+        // 绑定事件 - 使用setTimeout确保按钮已添加到DOM
+        setTimeout(() => {
+            const confirmBtn = document.getElementById('mce-confirm-delete');
+            const cancelBtn = document.getElementById('mce-cancel-delete');
+
+            if (confirmBtn) {
+                confirmBtn.addEventListener('click', handleConfirm);
+            }
+
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', closeModal);
+            }
+
+            // 点击背景关闭
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeModal();
+                }
+            });
+
+            document.addEventListener('keydown', handleEscape);
+        }, 0);
     }
 
     toggleCharacterEnabled(characterId) {
@@ -550,10 +758,12 @@ class CharacterEditor {
         // 创建模态对话框
         const modal = document.createElement('div');
         modal.className = 'mce-edit-modal';
+        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+
         modal.innerHTML = `
             <div class="mce-edit-modal-content">
                 <div class="mce-edit-modal-header">
-                    <h3>${this.editor.languageManager ? this.editor.languageManager.t('characterEditor') : '编辑角色'}</h3>
+                    <h3>${t('editCharacter')}</h3>
                     <button class="mce-modal-close" onclick="this.closest('.mce-edit-modal').remove()">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -563,14 +773,14 @@ class CharacterEditor {
                 </div>
                 <div class="mce-edit-modal-body">
                     <div class="mce-property-group">
-                        <label class="mce-property-label">${this.editor.languageManager ? this.editor.languageManager.t('characterName') : '角色名称'}</label>
+                        <label class="mce-property-label">${t('characterName')}</label>
                         <input type="text" class="mce-property-input" id="mce-modal-char-name" value="${character.name}">
                     </div>
                    
                     <div class="mce-property-group mce-prompt-input-group">
-                        <label class="mce-property-label">${this.editor.languageManager ? this.editor.languageManager.t('characterPrompt') : '提示词'}</label>
+                        <label class="mce-property-label">${t('characterPrompt')}</label>
                         <div class="mce-prompt-input-container">
-                            <textarea class="mce-property-input mce-property-textarea mce-autocomplete-input" id="mce-modal-char-prompt" placeholder="${this.editor.languageManager ? this.editor.languageManager.t('autocomplete') : '输入提示词...'}">${character.prompt}</textarea>
+                            <textarea class="mce-property-input mce-property-textarea mce-autocomplete-input" id="mce-modal-char-prompt" placeholder="${t('autocomplete')}">${character.prompt}</textarea>
                             <div class="mce-autocomplete-suggestions"></div>
                         </div>
                     </div>
@@ -578,13 +788,13 @@ class CharacterEditor {
                     <div class="mce-property-group">
                         <label class="mce-property-checkbox">
                             <input type="checkbox" id="mce-modal-char-enabled" ${character.enabled ? 'checked' : ''}>
-                            ${this.editor.languageManager ? this.editor.languageManager.t('enabled') : '启用角色'}
+                            ${t('enabledCharacter')}
                         </label>
                     </div>
                    
                    
                     <div class="mce-property-group">
-                        <label class="mce-property-label">${this.editor.languageManager ? this.editor.languageManager.t('characterWeight') : '权重'}</label>
+                        <label class="mce-property-label">${t('characterWeight')}</label>
                         <div class="mce-property-slider">
                             <input type="range" min="0.1" max="2.0" step="0.1" value="${character.weight}" id="mce-modal-char-weight">
                             <span class="mce-property-slider-value">${character.weight}</span>
@@ -592,7 +802,7 @@ class CharacterEditor {
                     </div>
                    
                     <div class="mce-property-group">
-                        <label class="mce-property-label">${this.editor.languageManager ? this.editor.languageManager.t('color') : '颜色'}</label>
+                        <label class="mce-property-label">${t('color')}</label>
                         <div class="mce-property-color">
                             <input type="color" id="mce-modal-char-color" value="${character.color}">
                             <input type="text" class="mce-property-input mce-property-color-hex" id="mce-modal-char-color-hex" value="${character.color}">
@@ -600,8 +810,19 @@ class CharacterEditor {
                     </div>
                 </div>
                 <div class="mce-edit-modal-footer">
-                    <button class="mce-button" onclick="this.closest('.mce-edit-modal').remove()">${this.editor.languageManager ? this.editor.languageManager.t('delete') : '取消'}</button>
-                    <button class="mce-button mce-button-primary" id="mce-modal-save">${this.editor.languageManager ? this.editor.languageManager.t('settingsSaved') : '保存'}</button>
+                    <button class="mce-button" onclick="this.closest('.mce-edit-modal').remove()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                        <span>${t('buttonTexts.cancel')}</span>
+                    </button>
+                    <button class="mce-button mce-button-primary" id="mce-modal-save">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20,6 9,17 4,12"></polyline>
+                        </svg>
+                        <span>${t('buttonTexts.save')}</span>
+                    </button>
                 </div>
             </div>
         `;
@@ -815,62 +1036,62 @@ class CharacterEditor {
                 colorInput.value = color;
             }
         });
-        
+
         // 权重滑块同步
         const weightSlider = document.getElementById('mce-modal-char-weight');
         const weightValue = document.querySelector('.mce-property-slider-value');
-        
+
         weightSlider.addEventListener('input', () => {
             weightValue.textContent = weightSlider.value;
         });
-        
+
         // 智能补全功能
         this.setupAutocomplete(characterId);
     }
-    
+
     /**
      * 设置智能补全功能
      */
     setupAutocomplete(characterId) {
         const promptInput = document.getElementById('mce-modal-char-prompt');
         const suggestionsContainer = document.querySelector('.mce-autocomplete-suggestions');
-        
+
         if (!promptInput || !suggestionsContainer) return;
-        
+
         // 获取当前语言
         const currentLang = this.editor.languageManager ? this.editor.languageManager.getLanguage() : 'zh';
-        
+
         // 设置缓存系统的语言
         if (typeof globalAutocompleteCache !== 'undefined') {
             globalAutocompleteCache.setLanguage(currentLang);
         }
-        
+
         let debounceTimer;
         let selectedSuggestionIndex = -1;
-        
+
         // 输入事件处理
         promptInput.addEventListener('input', async () => {
             clearTimeout(debounceTimer);
-            
+
             const query = promptInput.value.trim();
             const lastWord = query.split(/[\s,]+/).pop();
-            
+
             if (lastWord.length < 2) {
                 suggestionsContainer.style.display = 'none';
                 return;
             }
-            
+
             debounceTimer = setTimeout(async () => {
                 try {
                     // 检测是否包含中文字符
                     const containsChinese = /[\u4e00-\u9fff]/.test(lastWord);
-                    
+
                     let suggestions = [];
-                    
+
                     if (containsChinese && typeof globalAutocompleteCache !== 'undefined') {
                         // 中文搜索
                         suggestions = await globalAutocompleteCache.getChineseSearchSuggestions(lastWord, { limit: 10 });
-                        
+
                         suggestionsContainer.innerHTML = '';
                         if (suggestions.length > 0) {
                             suggestions.forEach((result, index) => {
@@ -880,7 +1101,7 @@ class CharacterEditor {
                                     <span class="mce-suggestion-name">${result.chinese}</span>
                                     <span class="mce-suggestion-name">[${result.english}]</span>
                                 `;
-                                
+
                                 item.addEventListener('click', () => {
                                     // 替换最后一个词
                                     const words = promptInput.value.split(/[\s,]+/);
@@ -889,7 +1110,7 @@ class CharacterEditor {
                                     suggestionsContainer.style.display = 'none';
                                     promptInput.focus();
                                 });
-                                
+
                                 suggestionsContainer.appendChild(item);
                             });
                             suggestionsContainer.style.display = 'block';
@@ -899,7 +1120,7 @@ class CharacterEditor {
                     } else if (typeof globalAutocompleteCache !== 'undefined') {
                         // 英文自动补全
                         suggestions = await globalAutocompleteCache.getAutocompleteSuggestions(lastWord, { limit: 10 });
-                        
+
                         suggestionsContainer.innerHTML = '';
                         if (suggestions.length > 0) {
                             suggestions.forEach((tag, index) => {
@@ -909,7 +1130,7 @@ class CharacterEditor {
                                     <span class="mce-suggestion-name">${tag.name}</span>
                                     ${tag.post_count ? `<span class="mce-suggestion-count">${tag.post_count}</span>` : ''}
                                 `;
-                                
+
                                 item.addEventListener('click', () => {
                                     // 替换最后一个词
                                     const words = promptInput.value.split(/[\s,]+/);
@@ -918,7 +1139,7 @@ class CharacterEditor {
                                     suggestionsContainer.style.display = 'none';
                                     promptInput.focus();
                                 });
-                                
+
                                 suggestionsContainer.appendChild(item);
                             });
                             suggestionsContainer.style.display = 'block';
@@ -926,20 +1147,20 @@ class CharacterEditor {
                             suggestionsContainer.style.display = 'none';
                         }
                     }
-                    
+
                     selectedSuggestionIndex = -1;
-                    
+
                 } catch (error) {
                     console.error('[CharacterEditor] 获取智能补全建议失败:', error);
                     suggestionsContainer.style.display = 'none';
                 }
             }, 250);
         });
-        
+
         // 键盘事件处理
         promptInput.addEventListener('keydown', (e) => {
             const items = suggestionsContainer.querySelectorAll('.mce-suggestion-item');
-            
+
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
                 if (items.length > 0) {
@@ -962,7 +1183,7 @@ class CharacterEditor {
                 selectedSuggestionIndex = -1;
             }
         });
-        
+
         // 点击外部隐藏建议
         document.addEventListener('click', (e) => {
             if (!promptInput.contains(e.target) && !suggestionsContainer.contains(e.target)) {
@@ -970,7 +1191,7 @@ class CharacterEditor {
                 selectedSuggestionIndex = -1;
             }
         });
-        
+
         // 更新选中建议的函数
         function updateSelectedSuggestion(items, selectedIndex) {
             items.forEach((item, index) => {
@@ -1043,13 +1264,19 @@ class CharacterEditor {
     // 实际执行角色列表渲染的方法
     doRenderCharacterList() {
         const listContainer = document.getElementById('mce-character-list');
+        // 卫兵语句：如果容器不存在，则中止执行以防止错误
+        if (!listContainer) {
+            console.warn("[CharacterEditor] doRenderCharacterList: 列表容器 'mce-character-list' 不存在，渲染中止。");
+            return;
+        }
         const characters = this.editor.dataManager.getCharacters();
+        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
 
         if (characters.length === 0) {
-            listContainer.innerHTML = `
+            this.listElement.innerHTML = `
                 <div class="mce-empty-state">
-                    <p>${this.editor.languageManager ? this.editor.languageManager.t('noCharacters') || '还没有角色' : '还没有角色'}</p>
-                    <p>${this.editor.languageManager ? this.editor.languageManager.t('clickToAddCharacter') || '点击"添加角色"开始创建' : '点击"添加角色"开始创建'}</p>
+                    <p>${t('noCharacters')}</p>
+                    <p>${t('clickToAddCharacter')}</p>
                 </div>
             `;
             return;
@@ -1072,29 +1299,26 @@ class CharacterEditor {
                         <span>${character.name}</span>
                     </div>
                     <div class="mce-character-controls">
-                        <button class="mce-character-control" data-action="toggle" data-character-id="${character.id}" title="${character.enabled ? (this.editor.languageManager ? this.editor.languageManager.t('disable') || '禁用' : '禁用') : (this.editor.languageManager ? this.editor.languageManager.t('enable') || '启用' : '启用')}">
-                            ${character.enabled ?
-                `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                    <circle cx="12" cy="12" r="3"></circle>
-                                </svg>` :
-                `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                                    <line x1="1" y1="1" x2="23" y2="23"></line>
-                                </svg>`
-            }
+                        <button class="mce-character-control" data-action="toggle" data-character-id="${character.id}" title="${character.enabled ? t('disable') : t('enable')}">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                            <span>${character.enabled ? t('buttonTexts.disable') : t('buttonTexts.enable')}</span>
                         </button>
-                        <button class="mce-character-control" data-action="edit" data-character-id="${character.id}" title="${this.editor.languageManager ? this.editor.languageManager.t('edit') || '编辑' : '编辑'}">
+                        <button class="mce-character-control" data-action="edit" data-character-id="${character.id}" title="${t('edit')}">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                             </svg>
+                            <span>${t('buttonTexts.edit')}</span>
                         </button>
-                        <button class="mce-character-control" data-action="delete" data-character-id="${character.id}" title="${this.editor.languageManager ? this.editor.languageManager.t('delete') || '删除' : '删除'}">
+                        <button class="mce-character-control" data-action="delete" data-character-id="${character.id}" title="${t('delete')}">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="3,6 5,6 21,6"></polyline>
                                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                             </svg>
+                            <span>${t('buttonTexts.delete')}</span>
                         </button>
                     </div>
                 </div>
@@ -1110,8 +1334,8 @@ class CharacterEditor {
         });
 
         // 一次性添加所有角色项，减少DOM操作
-        listContainer.innerHTML = '';
-        listContainer.appendChild(fragment);
+        this.listElement.innerHTML = '';
+        this.listElement.appendChild(fragment);
 
         // 使用事件委托处理所有角色项事件，提高性能
         this.setupCharacterItemEvents(listContainer, characters);
@@ -1125,11 +1349,11 @@ class CharacterEditor {
 
             const characterId = characterItem.dataset.characterId;
             const actionButton = e.target.closest('.mce-character-control');
-            
+
             if (actionButton) {
                 const action = actionButton.dataset.action;
                 const buttonCharacterId = actionButton.dataset.characterId;
-                
+
                 if (action === 'toggle') {
                     this.toggleCharacterEnabled(buttonCharacterId);
                 } else if (action === 'edit') {
@@ -1138,6 +1362,7 @@ class CharacterEditor {
                     this.deleteCharacter(buttonCharacterId);
                 }
             } else if (!e.target.closest('.mce-character-controls')) {
+                // 🔧 修复：点击角色时选择它
                 this.selectCharacter(characterId);
             }
         });
@@ -1157,7 +1382,7 @@ class CharacterEditor {
 
             const characterId = characterItem.dataset.characterId;
             draggedIndex = characters.findIndex(c => c.id === characterId);
-            
+
             draggedElement = characterItem;
             characterItem.classList.add('dragging');
             e.dataTransfer.effectAllowed = 'move';
@@ -1234,16 +1459,25 @@ class CharacterEditor {
         const modal = document.createElement("div");
         modal.className = "mce-library-modal";
 
+        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+
         modal.innerHTML = `
             <div class="mce-library-content">
                 <div class="mce-library-header">
-                    <h3>${this.editor.languageManager ? this.editor.languageManager.t('selectFromLibrary') : '从词库添加提示词'}</h3>
-                    <button id="mce-library-close" class="mce-button mce-button-icon">&times;</button>
+                    <h3>${t('selectFromLibrary')}</h3>
+                    <div style="display: flex; gap: 8px;">
+                        <button id="mce-library-refresh" class="mce-button mce-button-icon" title="${t('refresh') || '刷新'}">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                            </svg>
+                        </button>
+                        <button id="mce-library-close" class="mce-button mce-button-icon" title="${t('close') || '关闭'}">&times;</button>
+                    </div>
                 </div>
                 <div class="mce-library-body">
                     <div class="mce-library-left-panel">
                         <div class="mce-category-header">
-                            <h4>${this.editor.languageManager ? this.editor.languageManager.t('category') || '分类' : '分类'}</h4>
+                            <h4>${t('category')}</h4>
                         </div>
                         <div class="mce-category-tree">
                             <!-- 分类树将在这里生成 -->
@@ -1251,7 +1485,7 @@ class CharacterEditor {
                     </div>
                     <div class="mce-library-right-panel">
                         <div class="mce-prompt-header">
-                            <h4>${this.editor.languageManager ? this.editor.languageManager.t('promptList') || '提示词列表' : '提示词列表'}</h4>
+                            <h4>${t('promptList')}</h4>
                         </div>
                         <div class="mce-prompt-list-container">
                             <!-- 提示词列表将在这里生成 -->
@@ -1271,15 +1505,70 @@ class CharacterEditor {
         modal.querySelector("#mce-library-close").addEventListener("click", closeModal);
         modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 
-        // 加载词库数据并渲染
-        this.loadPromptData().then(() => {
+        // 绑定刷新按钮事件
+        const refreshBtn = modal.querySelector("#mce-library-refresh");
+        if (refreshBtn) {
+            refreshBtn.addEventListener("click", () => {
+                // 显示刷新动画
+                refreshBtn.style.animation = 'spin 0.5s linear';
+                refreshBtn.disabled = true;
+
+                // 显示加载提示
+                const listContainer = modal.querySelector('.mce-prompt-list-container');
+                if (listContainer) {
+                    listContainer.innerHTML = `<div style="color: #888; text-align: center; padding: 20px;">${t('loading') || '加载中...'}</div>`;
+                }
+
+                // 强制重新加载数据
+                this.loadPromptData().then(() => {
+                    renderContent();
+                    // 恢复按钮状态
+                    refreshBtn.style.animation = '';
+                    refreshBtn.disabled = false;
+                    // 显示刷新成功提示
+                    this.showToast(t('refreshed') || '已刷新', 'success', 2000);
+                }).catch((error) => {
+                    console.error('刷新词库数据失败:', error);
+                    if (listContainer) {
+                        listContainer.innerHTML = `<div style="color: #f44336; text-align: center; padding: 20px;">${t('loadFailed') || '加载失败'}</div>`;
+                    }
+                    // 恢复按钮状态
+                    refreshBtn.style.animation = '';
+                    refreshBtn.disabled = false;
+                });
+            });
+        }
+
+        // 🔧 优化：检查数据是否已加载，避免重复加载导致延迟
+        const renderContent = () => {
             this.renderCategoryTree();
             // 默认选择第一个分类
-            if (this.promptData.categories.length > 0) {
+            if (this.promptData && this.promptData.categories && this.promptData.categories.length > 0) {
                 this.selectedCategory = this.promptData.categories[0].name;
                 this.renderPromptList();
             }
-        });
+        };
+
+        // 如果数据已加载，直接渲染；否则先加载数据
+        if (this.promptData && this.promptData.categories && this.promptData.categories.length > 0) {
+            // 数据已加载，立即渲染
+            renderContent();
+        } else {
+            // 数据未加载，显示加载提示
+            const listContainer = modal.querySelector('.mce-prompt-list-container');
+            if (listContainer) {
+                listContainer.innerHTML = `<div style="color: #888; text-align: center; padding: 20px;">${t('loading') || '加载中...'}</div>`;
+            }
+            // 加载数据后渲染
+            this.loadPromptData().then(() => {
+                renderContent();
+            }).catch((error) => {
+                console.error('加载词库数据失败:', error);
+                if (listContainer) {
+                    listContainer.innerHTML = `<div style="color: #f44336; text-align: center; padding: 20px;">${t('loadFailed') || '加载失败'}</div>`;
+                }
+            });
+        }
     }
 
     addLibraryModalStyles() {
@@ -1344,6 +1633,34 @@ class CharacterEditor {
                 color: #E0E0E0;
                 font-weight: 600;
                 text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            }
+            
+            /* 刷新按钮样式 */
+            #mce-library-refresh {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 6px;
+                background: rgba(124, 58, 237, 0.2);
+                border: 1px solid rgba(124, 58, 237, 0.3);
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+            }
+            
+            #mce-library-refresh:hover:not(:disabled) {
+                background: rgba(124, 58, 237, 0.3);
+                border-color: rgba(124, 58, 237, 0.5);
+                transform: translateY(-1px);
+            }
+            
+            #mce-library-refresh:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+            
+            #mce-library-refresh svg {
+                display: block;
             }
             
             .mce-library-body {
@@ -1442,10 +1759,10 @@ class CharacterEditor {
             }
             
             .mce-prompt-item {
-                padding: 14px;
+                padding: 12px 14px;
                 border-radius: 8px;
                 background: rgba(42, 42, 62, 0.6);
-                margin-bottom: 10px;
+                margin-bottom: 8px;
                 cursor: pointer;
                 transition: all 0.3s ease;
                 position: relative;
@@ -1480,7 +1797,8 @@ class CharacterEditor {
             .mce-prompt-name {
                 font-weight: 600;
                 color: #E0E0E0;
-                margin-bottom: 6px;
+                margin-bottom: 4px;
+                font-size: 13px;
                 text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
             }
             
@@ -1488,6 +1806,12 @@ class CharacterEditor {
                 color: rgba(224, 224, 224, 0.8);
                 font-size: 12px;
                 line-height: 1.5;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                display: -webkit-box;
+                -webkit-line-clamp: 2;
+                -webkit-box-orient: vertical;
+                word-break: break-word;
             }
         `;
         document.head.appendChild(style);
@@ -1652,7 +1976,9 @@ class CharacterEditor {
 
         const category = this.promptData.categories.find(c => c.name === this.selectedCategory);
         if (!category || !category.prompts) {
-            listContainer.innerHTML = `<div style="color: #888; text-align: center; padding: 20px;">${this.editor.languageManager ? this.editor.languageManager.t('noPromptsInCategory') : '此分类下没有提示词'}</div>`;
+            const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+
+            listContainer.innerHTML = `<div style="color: #888; text-align: center; padding: 20px;">${t('noPromptsInCategory')}</div>`;
             return;
         }
 
@@ -1704,7 +2030,9 @@ class CharacterEditor {
         if (prompt.image) {
             imageHTML = `<img src="/prompt_selector/preview/${prompt.image}" alt="Preview" style="max-width: 150px; max-height: 150px; border-radius: 4px;">`;
         } else {
-            imageHTML = `<div style="width: 150px; height: 150px; background-color: #444; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #888;">${this.editor.languageManager ? this.editor.languageManager.t('noPreview') : '暂无预览'}</div>`;
+            const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+
+            imageHTML = `<div style="width: 150px; height: 150px; background-color: #444; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #888;">${t('noPreview')}</div>`;
         }
 
         tooltip.innerHTML = `
@@ -1749,6 +2077,116 @@ class CharacterEditor {
 
     updateUI() {
         this.renderCharacterList();
+    }
+
+    /**
+     * 更新所有文本
+     */
+    updateTexts() {
+        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+
+        // 更新角色编辑器标题
+        const characterTitle = this.container.querySelector('.mce-character-title');
+        if (characterTitle) {
+            characterTitle.textContent = t('characterEditor');
+        }
+
+        // 更新添加角色按钮的提示文本和文本
+        const addCharacterBtn = this.container.querySelector('#mce-add-character');
+        if (addCharacterBtn) {
+            addCharacterBtn.title = t('addCharacter');
+            const span = addCharacterBtn.querySelector('span');
+            if (span) {
+                span.textContent = t('buttonTexts.addCharacter');
+            }
+        }
+
+        // 更新词库按钮的提示文本和文本
+        const libraryBtn = this.container.querySelector('#mce-library-button');
+        if (libraryBtn) {
+            libraryBtn.title = t('selectFromLibrary');
+            const span = libraryBtn.querySelector('span');
+            if (span) {
+                span.textContent = t('buttonTexts.selectFromLibrary');
+            }
+        }
+
+        // 更新空状态文本
+        const emptyState = this.container.querySelector('.mce-empty-state p');
+        if (emptyState) {
+            emptyState.textContent = t('noCharacters');
+        }
+
+        // 重新渲染角色列表
+        this.renderCharacterList();
+    }
+
+    /**
+     * 显示弹出提示
+     * @param {string} message - 提示消息
+     * @param {string} type - 提示类型 (success, error, warning, info)
+     * @param {number} duration - 显示时长（毫秒）
+     */
+    showToast(message, type = 'info', duration = 3000) {
+        // 使用统一的弹出提示管理系统
+        const nodeContainer = this.editor.container;
+
+        try {
+            this.toastManager.showToast(message, type, duration, { nodeContainer });
+        } catch (error) {
+            console.error('[CharacterEditor] 显示提示失败:', error);
+            // 回退到不传递节点容器的方式
+            try {
+                this.toastManager.showToast(message, type, duration, {});
+            } catch (fallbackError) {
+                console.error('[CharacterEditor] 回退方式也失败:', fallbackError);
+                // 最后的保险措施：使用浏览器原生alert
+                alert(`${type.toUpperCase()}: ${message}`);
+            }
+        }
+    }
+
+    // 🔧 新增：选择角色
+    selectCharacter(characterId) {
+        // 如果点击的是当前选中的角色，取消选择
+        if (this.selectedCharacterId === characterId) {
+            this.deselectCharacter();
+            return;
+        }
+
+        this.selectedCharacterId = characterId;
+        this.updateCharacterSelection();
+
+        // 通知编辑器，以便同步选择蒙版
+        if (this.editor.eventBus) {
+            this.editor.eventBus.emit('character:selected', characterId);
+        }
+    }
+
+    // 🔧 新增：取消选择角色
+    deselectCharacter() {
+        this.selectedCharacterId = null;
+        this.updateCharacterSelection();
+
+        // 通知编辑器
+        if (this.editor.eventBus) {
+            this.editor.eventBus.emit('character:deselected');
+        }
+    }
+
+    // 🔧 新增：更新角色选择状态的视觉效果
+    updateCharacterSelection() {
+        const allItems = this.listElement.querySelectorAll('.mce-character-item');
+        allItems.forEach(item => {
+            const characterId = item.dataset.characterId;
+            if (characterId === this.selectedCharacterId) {
+                item.style.border = '2px solid #8D6E63';
+                item.style.background = 'rgba(141, 110, 99, 0.2)';
+            } else {
+                item.style.border = '1px solid rgba(255, 255, 255, 0.08)';
+                item.style.background = 'rgba(42, 42, 62, 0.6)';
+            }
+        });
     }
 }
 

@@ -1,5 +1,6 @@
 // 设置菜单组件
-import { globalToastManager } from './toast_manager.js';
+import { globalToastManager as toastManagerProxy } from './toast_manager.js';
+import { globalMultiLanguageManager } from './multi_language.js';
 
 class SettingsMenu {
     constructor(editor) {
@@ -95,6 +96,13 @@ class SettingsMenu {
         this.loadSettings();
         this.createMenu();
         this.bindEvents();
+
+        // 监听语言变化事件
+        document.addEventListener('languageChanged', (e) => {
+            if (e.detail.component === 'settingsMenu' || !e.detail.component) {
+                this.updateMenuContent();
+            }
+        });
     }
 
     createMenu() {
@@ -761,15 +769,17 @@ class SettingsMenu {
             }
 
             // 显示保存成功提示
-            this.showToast('设置已保存', 'success');
+            this.showToast(this.editor.languageManager ? this.editor.languageManager.t('settingsSaved') : '设置已保存', 'success');
         } catch (error) {
             console.error('保存设置失败:', error);
-            this.showToast('保存设置失败', 'error');
+            this.showToast(this.editor.languageManager ? this.editor.languageManager.t('saveSettingsFailed') : '保存设置失败', 'error');
         }
     }
 
     resetSettings() {
-        if (confirm('确定要重置所有设置吗？')) {
+        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+
+        if (confirm(t('resetSettingsConfirm'))) {
             this.settings = {
                 language: 'zh-CN',
                 theme: {
@@ -779,13 +789,26 @@ class SettingsMenu {
                 }
             };
             this.loadSettingsToUI();
-            this.showToast('设置已重置', 'info');
+            this.showToast(t('settingsReset'), 'info');
         }
     }
 
     showToast(message, type = 'info') {
         // 使用统一的弹出提示管理系统
-        globalToastManager.showToast(message, type, 3000);
+        // 传递节点容器，以便调整提示位置
+        const nodeContainer = this.editor && this.editor.container ? this.editor.container : null;
+
+        if (!nodeContainer) {
+            console.warn('[SettingsMenu] 编辑器容器不存在，使用默认提示位置');
+        }
+
+        try {
+            toastManagerProxy.showToast(message, type, 3000, { nodeContainer });
+        } catch (error) {
+            console.error('[SettingsMenu] 显示提示失败:', error);
+            // 回退到不传递节点容器的方式
+            toastManagerProxy.showToast(message, type, 3000, {});
+        }
     }
 }
 
