@@ -119,9 +119,12 @@ class PromptGenerator:
         if not masks:
             # 合并 base_prompt 和 global_prompt
             final_base_prompt = self._merge_prompts(base_prompt, global_prompt)
-            # 如果全局开启了FILL，添加FILL()
-            if use_fill and final_base_prompt:
-                final_base_prompt += ' FILL()'
+            # 🔧 修复：如果全局开启了FILL，无条件添加FILL()
+            if use_fill:
+                if final_base_prompt:
+                    final_base_prompt += ' FILL()'
+                else:
+                    final_base_prompt = 'FILL()'
             return final_base_prompt
         
         mask_strings = []
@@ -173,6 +176,9 @@ class PromptGenerator:
                 result_parts.append(final_base_prompt + " FILL()")
             else:
                 result_parts.append(final_base_prompt)
+        elif use_fill:
+            # 🔧 修复：即使没有基础提示词，如果全局开启了FILL也要添加
+            result_parts.append("FILL()")
         
         # 添加角色提示词
         if mask_strings:
