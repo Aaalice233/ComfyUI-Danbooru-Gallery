@@ -616,11 +616,15 @@ class MultiCharacterEditor {
 
     addDefaultCharacter() {
         // 🔧 使用默认值创建角色
+        const currentSyntaxMode = this.dataManager.config.syntax_mode || 'attention_couple';
+        const defaultSyntaxType = currentSyntaxMode === 'regional_prompts' ? 'REGION' : 'COUPLE';
+
         const defaultCharacter = {
             name: '角色1',
             prompt: '1girl, solo',
             weight: 1.0,
-            color: '#FF6B6B'
+            color: '#FF6B6B',
+            syntax_type: defaultSyntaxType  // 🔧 根据当前语法模式设置
         };
 
         const newCharacter = this.dataManager.addCharacter({
@@ -628,7 +632,8 @@ class MultiCharacterEditor {
             prompt: defaultCharacter.prompt || '',
             weight: defaultCharacter.weight || 1.0,
             color: defaultCharacter.color || '#FF6B6B',
-            enabled: true
+            enabled: true,
+            syntax_type: defaultCharacter.syntax_type  // 🔧 传递语法类型
         });
 
 
@@ -918,9 +923,24 @@ class MultiCharacterEditor {
                 settings: config.settings || { language: 'zh-CN' }
             };
 
-            // 验证并修复角色数据
+            // 🔧 修复：验证并修复角色数据，包含语法类型迁移
             if (config.characters && Array.isArray(config.characters)) {
+                const syntaxMode = fixedConfig.syntax_mode;
                 fixedConfig.characters = config.characters.map((char, index) => {
+                    // 🔧 语法类型迁移逻辑
+                    let syntaxType = char.syntax_type;
+                    if (!syntaxType) {
+                        // 旧数据迁移：根据语法模式和 use_mask_syntax 推断语法类型
+                        if (syntaxMode === 'attention_couple') {
+                            syntaxType = 'COUPLE';
+                        } else if (syntaxMode === 'regional_prompts') {
+                            // 如果有旧的 use_mask_syntax 字段，使用它来判断
+                            syntaxType = (char.use_mask_syntax !== false) ? 'MASK' : 'REGION';
+                        } else {
+                            syntaxType = 'COUPLE'; // 默认值
+                        }
+                    }
+
                     return {
                         id: char.id || `char_${Date.now()}_${index}`,
                         name: char.name || `角色${index + 1}`,
@@ -929,7 +949,9 @@ class MultiCharacterEditor {
                         color: char.color || this.generateColor(),
                         enabled: char.enabled !== false,
                         position: char.position || index,
-                        mask: char.mask || null
+                        mask: char.mask || null,
+                        syntax_type: syntaxType,  // 🔧 设置语法类型
+                        use_mask_syntax: char.use_mask_syntax !== false  // 🔧 保持向后兼容
                     };
                 });
             }
@@ -1289,7 +1311,8 @@ class MultiCharacterEditor {
                 y2: y + height,
                 feather: char.mask.feather || 0,
                 blend_mode: char.mask.blend_mode || 'normal',
-                use_fill: char.use_fill || false  // 添加角色的FILL状态
+                use_fill: char.use_fill || false,  // 添加角色的FILL状态
+                syntax_type: char.syntax_type || 'REGION'  // 🔧 修复：传递语法类型
             });
         }
         return masks;
@@ -1412,12 +1435,13 @@ class MultiCharacterEditor {
                 y2 = Math.min(1.0, y1 + 0.1);
             }
 
-            // 使用完整格式：MASK(x1 x2, y1 y2, weight)
-            // 始终包含权重参数，确保语法完整
+            // 🔧 修复：根据角色的语法类型生成 MASK 或 AREA 语法
             const weight = mask.weight || 1.0;
             let maskParams = `${x1.toFixed(2)} ${x2.toFixed(2)}, ${y1.toFixed(2)} ${y2.toFixed(2)}, ${weight.toFixed(2)}`;
 
-            let maskStr = `${mask.prompt} MASK(${maskParams})`;
+            // 根据 syntax_type 决定使用 MASK 还是 AREA
+            const syntaxKeyword = (mask.syntax_type === 'MASK') ? 'MASK' : 'AREA';
+            let maskStr = `${mask.prompt} ${syntaxKeyword}(${maskParams})`;
 
             // 添加羽化（简化语法，一个值表示所有边缘）
             // 羽化值为像素值，0表示不使用羽化
@@ -1885,6 +1909,10 @@ class DataManager {
                 characterId = `char_backup_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
             }
 
+            // 🔧 修复：根据当前语法模式设置正确的语法类型
+            const currentSyntaxMode = this.config.syntax_mode || 'attention_couple';
+            const defaultSyntaxType = currentSyntaxMode === 'regional_prompts' ? 'REGION' : 'COUPLE';
+
             const character = {
                 id: characterId,
                 name: safeData.name || `角色${this.config.characters.length + 1}`,
@@ -1894,7 +1922,9 @@ class DataManager {
                 color: safeData.color || this.generateColor(),
                 position: safeData.position || this.config.characters.length,
                 mask: safeData.mask || null,
-                template: safeData.template || ''
+                template: safeData.template || '',
+                syntax_type: safeData.syntax_type || defaultSyntaxType,  // 🔧 新增：设置语法类型
+                use_mask_syntax: safeData.use_mask_syntax !== false  // 🔧 向后兼容字段
             };
 
             this.config.characters.push(character);

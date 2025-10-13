@@ -310,9 +310,9 @@ class PresetManager {
         const syntaxMode = preset.syntax_mode || 'attention_couple';
         const isRegionalMode = syntaxMode === 'regional_prompts';
 
-        // 获取角色语法类型，默认为MASK
-        const syntaxType = character.syntax_type || (isRegionalMode ? 'REGION' : 'MASK');
-        const useMaskSyntax = character.use_mask_syntax !== false; // 默认使用MASK语法
+        // 🔧 修复：根据语法模式设置正确的默认语法类型
+        const syntaxType = character.syntax_type || (isRegionalMode ? 'REGION' : 'COUPLE');
+        const useMaskSyntax = character.use_mask_syntax !== false; // 🔧 向后兼容字段
 
         return `
             <div class="mce-edit-preset-form">
@@ -488,7 +488,8 @@ class PresetManager {
                 y2: y + height,
                 feather: char.mask.feather || 0,
                 blend_mode: char.mask.blend_mode || 'normal',
-                use_fill: char.use_fill || false  // 添加角色的FILL状态
+                use_fill: char.use_fill || false,  // 添加角色的FILL状态
+                syntax_type: char.syntax_type || 'REGION'  // 🔧 修复：传递语法类型
             });
         }
         return masks;
@@ -596,7 +597,7 @@ class PresetManager {
             return result || '';
         }
 
-        const regionStrings = [];
+        const maskStrings = [];
         for (const mask of masks) {
             if (!mask.prompt || !mask.prompt.trim()) continue;
 
@@ -614,21 +615,21 @@ class PresetManager {
                 y2 = Math.min(1.0, y1 + 0.1);
             }
 
-            // 使用REGION语法
+            // 🔧 修复：根据角色的语法类型生成 MASK 或 AREA 语法
             const weight = mask.weight || 1.0;
-            let regionParams = `${x1.toFixed(2)},${y1.toFixed(2)},${x2.toFixed(2)},${y2.toFixed(2)}`;
+            let maskParams = `${x1.toFixed(2)} ${x2.toFixed(2)}, ${y1.toFixed(2)} ${y2.toFixed(2)}, ${weight.toFixed(2)}`;
 
-            let regionStr = `<region:${regionParams}:${weight.toFixed(2)}>`;
-            regionStr += mask.prompt;
-            regionStr += `</region>`;
+            // 根据 syntax_type 决定使用 MASK 还是 AREA
+            const syntaxKeyword = (mask.syntax_type === 'MASK') ? 'MASK' : 'AREA';
+            let maskStr = `${mask.prompt} ${syntaxKeyword}(${maskParams})`;
 
             // 添加羽化
             const featherValue = parseInt(mask.feather) || 0;
             if (featherValue > 0) {
-                regionStr += ` <feather:${featherValue}>`;
+                maskStr += ` FEATHER(${featherValue})`;
             }
 
-            regionStrings.push(regionStr);
+            maskStrings.push(maskStr);
         }
 
         // 合并基础提示词和全局提示词
@@ -653,11 +654,11 @@ class PresetManager {
         }
 
         // 添加所有区域提示词
-        if (regionStrings.length > 0) {
-            resultParts.push(...regionStrings);
+        if (maskStrings.length > 0) {
+            resultParts.push(...maskStrings);
         }
 
-        return resultParts.join('\n');
+        return resultParts.join(' AND ');
     }
 
     /**
@@ -1475,9 +1476,11 @@ class PresetManager {
         if (noteInput) noteInput.value = character.name || ''; // 备注显示角色名称
         if (promptInput) promptInput.value = character.prompt || '';
 
-        // 更新语法类型
+        // 更新语法类型 - 根据语法模式设置正确的默认值
         if (syntaxTypeSelect) {
-            syntaxTypeSelect.value = character.syntax_type || 'COUPLE';
+            const syntaxMode = preset.syntax_mode || 'attention_couple';
+            const defaultSyntaxType = syntaxMode === 'regional_prompts' ? 'REGION' : 'COUPLE';
+            syntaxTypeSelect.value = character.syntax_type || defaultSyntaxType;
         }
 
         // 🔧 修复：同时更新全局提示词
@@ -1523,6 +1526,9 @@ class PresetManager {
                 }
             });
         }
+
+        // 🔧 新增：绑定语法类型事件
+        this.bindSyntaxTypeEvents(presetId, characterIndex);
     }
 
 
@@ -1868,11 +1874,12 @@ class PresetManager {
             }
         });
 
-        // 更新配置
+        // 更新配置，包括语法模式
         this.editor.dataManager.updateConfig({
             characters: preset.characters,
             global_prompt: preset.global_prompt,
-            global_note: ''
+            global_note: '',
+            syntax_mode: preset.syntax_mode || 'attention_couple'  // 🔧 修复：应用预设的语法模式
         });
 
         // 🔧 修复：强制刷新角色列表显示
@@ -3091,11 +3098,49 @@ class PresetManager {
                             this.bindPresetCharacterEditEvents(presetId, activeIndex);
                             // 更新表单内容
                             this.updateEditForm(preset, activeIndex);
+                            // 🔧 新增：绑定语法类型事件
+                            this.bindSyntaxTypeEvents(presetId, activeIndex);
                         }
                     }
 
                     // 立即保存语法模式更改到本地存储
                     this.savePresetToLocalStorage(preset);
+                }
+            });
+        }
+    }
+
+    /**
+     * 绑定语法类型事件
+     */
+    bindSyntaxTypeEvents(presetId, characterIndex) {
+        const syntaxTypeSelect = document.getElementById('edit-character-syntax-type');
+        if (syntaxTypeSelect) {
+            syntaxTypeSelect.addEventListener('change', (e) => {
+                const newSyntaxType = e.target.value;
+                const preset = this.presets.find(p => p.id === presetId);
+
+                if (preset && preset.characters && preset.characters[characterIndex]) {
+                    // 立即保存语法类型到角色数据
+                    preset.characters[characterIndex].syntax_type = newSyntaxType;
+
+                    // 保存到本地存储
+                    this.savePresetToLocalStorage(preset);
+
+                    // 🔧 关键修复：立即更新预设列表显示
+                    const listContainer = document.getElementById('preset-list-container');
+                    if (listContainer) {
+                        listContainer.innerHTML = this.renderPresetList();
+                        this.bindPresetManagementEvents();
+                    }
+
+                    // 🔧 关键修复：立即更新提示词预览
+                    if (this.editor.components.outputArea && this.editor.components.outputArea.updatePromptPreview) {
+                        this.editor.components.outputArea.updatePromptPreview();
+                    }
+
+                    // 显示保存提示
+                    this.toastManager.showToast('语法类型已更新', 'success');
                 }
             });
         }
@@ -3171,7 +3216,10 @@ class PresetManager {
                     const preview = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
                     const weight = char.weight || 1.0;
                     const feather = char.feather || 0;
-                    const syntaxType = char.syntax_type || 'MASK';
+                    // 🔧 修复：根据预设的语法模式设置正确的默认语法类型
+                    const syntaxMode = preset.syntax_mode || 'attention_couple';
+                    const defaultSyntaxType = syntaxMode === 'regional_prompts' ? 'REGION' : 'COUPLE';
+                    const syntaxType = char.syntax_type || defaultSyntaxType;
 
                     return `
                         <div class="mce-preset-content-item mce-character-item">

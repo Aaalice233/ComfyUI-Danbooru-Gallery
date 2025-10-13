@@ -2033,7 +2033,7 @@ class CharacterEditor {
         const config = this.editor.dataManager.getConfig();
         const syntaxMode = config ? config.syntax_mode : 'attention_couple';
         const isRegionalMode = syntaxMode === 'regional_prompts';
-        const useMaskSyntax = character.use_mask_syntax !== false; // 默认使用MASK语法
+        const useMaskSyntax = character.use_mask_syntax !== false; // 🔧 向后兼容字段
 
         modal.innerHTML = `
             <div class="mce-edit-modal-content">
@@ -2330,9 +2330,34 @@ class CharacterEditor {
         const color = document.getElementById('mce-modal-char-color').value;
         const feather = parseInt(document.getElementById('mce-modal-char-feather').value) || 0;
 
-        // 获取语法模式（如果存在）
-        const syntaxMaskBtn = document.getElementById('mce-syntax-mask');
-        const useMaskSyntax = syntaxMaskBtn ? syntaxMaskBtn.classList.contains('active') : true;
+        // 🔧 修复：正确设置语法类型
+        const config = this.editor.dataManager.getConfig();
+        const syntaxMode = config.syntax_mode || 'attention_couple';
+
+        let syntaxType;
+        let useMaskSyntax = true; // 保持向后兼容
+
+        if (syntaxMode === 'attention_couple') {
+            // 注意力耦合模式：固定使用 COUPLE
+            syntaxType = 'COUPLE';
+            useMaskSyntax = true;
+        } else if (syntaxMode === 'regional_prompts') {
+            // 区域提示词模式：根据用户选择设置 REGION 或 MASK
+            const syntaxMaskBtn = document.getElementById('mce-syntax-mask');
+            const syntaxAreaBtn = document.getElementById('mce-syntax-area');
+
+            if (syntaxMaskBtn && syntaxMaskBtn.classList.contains('active')) {
+                syntaxType = 'MASK';
+                useMaskSyntax = true;
+            } else if (syntaxAreaBtn && syntaxAreaBtn.classList.contains('active')) {
+                syntaxType = 'REGION'; // AREA 对应 REGION
+                useMaskSyntax = false;
+            } else {
+                // 默认值
+                syntaxType = 'REGION';
+                useMaskSyntax = false;
+            }
+        }
 
         this.editor.dataManager.updateCharacter(characterId, {
             name,
@@ -2341,7 +2366,8 @@ class CharacterEditor {
             weight,
             color,
             feather,
-            use_mask_syntax: useMaskSyntax
+            use_mask_syntax: useMaskSyntax, // 保持向后兼容
+            syntax_type: syntaxType  // 🔧 新增：设置正确的语法类型
         });
 
         this.renderCharacterList();
@@ -3449,13 +3475,15 @@ class CharacterEditor {
     getSyntaxBadge(character) {
         const config = this.editor.dataManager.getConfig();
         const syntaxMode = config.syntax_mode || 'attention_couple';
-        const useMaskSyntax = character.use_mask_syntax !== false; // 默认为true
 
         let syntaxText = '';
         if (syntaxMode === 'attention_couple') {
-            syntaxText = 'COUPLE MASK';
+            // 注意力耦合模式：固定显示 COUPLE
+            syntaxText = 'COUPLE';
         } else if (syntaxMode === 'regional_prompts') {
-            syntaxText = 'MASK';
+            // 区域提示词模式：根据角色的语法类型显示 AREA 或 MASK
+            const syntaxType = character.syntax_type || 'REGION';
+            syntaxText = syntaxType === 'MASK' ? 'MASK' : 'AREA'; // 显示为 AREA 保持界面一致性
         }
 
         return `<span class="mce-syntax-tag">${syntaxText}</span>`;
