@@ -556,7 +556,8 @@ class PresetManager {
             if (data.success) {
                 this.toastManager.showToast(t('presetSaved'), 'success', 3000);
                 await this.loadPresets();
-                // 不关闭模态框，让用户可以继续编辑
+                // 🔧 修复：保存成功后关闭模态框
+                this.closeModal();
             } else {
                 this.toastManager.showToast(data.error || t('error'), 'error', 3000);
             }
@@ -670,13 +671,19 @@ class PresetManager {
             saveBtn.addEventListener('click', async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+
+                // 🔧 修复：在最终保存前，先临时保存当前编辑的内容
+                this.saveCurrentEditTemporarily(presetId);
+
                 const activeCharItem = document.querySelector('.mce-edit-preset-char-item.active');
                 if (activeCharItem) {
                     const activeIndex = parseInt(activeCharItem.dataset.characterId);
                     this.savePresetCharacter(presetId, activeIndex);
                 }
                 await this.updatePreset(presetId);
-                // 不关闭模态框，让用户可以继续编辑
+
+                // 🔧 修复：保存成功后关闭模态框
+                this.closeModal();
             });
         }
 
@@ -820,7 +827,8 @@ class PresetManager {
                 // 更新文本区域的值，确保显示最新内容
                 globalPromptInput.value = globalPrompt;
 
-                // 不关闭模态框，让用户可以继续编辑
+                // 🔧 修复：保存成功后关闭模态框
+                this.closeModal();
                 this.toastManager.showToast(t('globalPromptSaved') || '全局提示词已保存', 'success');
             }
         });
@@ -895,6 +903,9 @@ class PresetManager {
         const preset = this.presets.find(p => p.id === presetId);
         if (!preset || !preset.characters || !preset.characters[characterIndex]) return;
 
+        // 🔧 修复：在切换角色前，先临时保存当前编辑的内容
+        this.saveCurrentEditTemporarily(presetId);
+
         // 更新角色列表的激活状态
         this.updateCharacterListActiveState(characterIndex);
 
@@ -912,6 +923,38 @@ class PresetManager {
 
         // 设置智能补全
         this.setupPresetCharacterAutocomplete();
+    }
+
+    /**
+     * 🔧 新增：临时保存当前编辑的内容
+     */
+    saveCurrentEditTemporarily(presetId) {
+        const preset = this.presets.find(p => p.id === presetId);
+        if (!preset) return;
+
+        // 获取当前激活的角色索引
+        const activeCharItem = document.querySelector('.mce-edit-preset-char-item.active');
+        if (!activeCharItem) return;
+
+        const currentCharacterIndex = parseInt(activeCharItem.dataset.characterId);
+        if (isNaN(currentCharacterIndex) || !preset.characters[currentCharacterIndex]) return;
+
+        // 获取表单中的当前值
+        const noteInput = document.getElementById('edit-character-note');
+        const promptInput = document.getElementById('edit-character-prompt');
+        const globalPromptInput = document.getElementById('edit-global-prompt');
+
+        if (noteInput || promptInput) {
+            // 临时保存到预设数据中（不触发保存到服务器）
+            const character = preset.characters[currentCharacterIndex];
+            if (noteInput) character.name = noteInput.value.trim();
+            if (promptInput) character.prompt = promptInput.value.trim();
+        }
+
+        // 同时保存全局提示词
+        if (globalPromptInput) {
+            preset.global_prompt = globalPromptInput.value.trim();
+        }
     }
 
     /**
@@ -939,9 +982,15 @@ class PresetManager {
         // 填充编辑表单
         const noteInput = document.getElementById('edit-character-note');
         const promptInput = document.getElementById('edit-character-prompt');
+        const globalPromptInput = document.getElementById('edit-global-prompt');
 
         if (noteInput) noteInput.value = character.name || ''; // 备注显示角色名称
         if (promptInput) promptInput.value = character.prompt || '';
+
+        // 🔧 修复：同时更新全局提示词
+        if (globalPromptInput) {
+            globalPromptInput.value = preset.global_prompt || '';
+        }
     }
 
     /**
@@ -1264,13 +1313,44 @@ class PresetManager {
             global_note: ''
         });
 
+        // 🔧 修复：强制刷新角色列表显示
+        if (this.editor.components.characterEditor) {
+            this.editor.components.characterEditor.renderCharacterList();
+        }
+
+        // 🔧 关键修复：同步蒙版数据并刷新显示
+        if (this.editor.components.maskEditor) {
+            // 从角色数据同步蒙版（统一使用这个方法）
+            this.editor.components.maskEditor.syncMasksFromCharacters();
+            // 强制重新渲染蒙版编辑器
+            this.editor.components.maskEditor.scheduleRender();
+
+            // 添加额外延迟渲染，确保在DOM更新后再次渲染
+            setTimeout(() => {
+                if (this.editor.components.maskEditor) {
+                    this.editor.components.maskEditor.scheduleRender();
+                }
+            }, 200);
+        }
+
         // 更新输出
-        if (this.editor.components.outputArea) {
-            this.editor.components.outputArea.updateOutput();
+        if (this.editor.components.outputArea && this.editor.components.outputArea.updatePromptPreview) {
+            this.editor.components.outputArea.updatePromptPreview();
+        }
+
+        // 🔧 关键修复：保存到节点状态，确保数据持久化
+        if (this.editor.saveToNodeState) {
+            const config = this.editor.dataManager.getConfig();
+            this.editor.saveToNodeState(config);
         }
 
         this.toastManager.showToast(t('presetApplied'), 'success', 3000);
-        // 不关闭模态框，让用户可以继续操作
+
+        // 🔧 修复：应用预设后自动关闭面板
+        // 使用setTimeout确保所有异步操作完成后再关闭
+        setTimeout(() => {
+            this.closeModal();
+        }, 100);
     }
 
     /**

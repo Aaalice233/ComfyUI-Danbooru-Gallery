@@ -545,6 +545,11 @@ class MultiCharacterEditor {
                     } else {
                         console.error('[MultiCharacterEditor] loadInitialData: maskEditor组件不存在，无法初始化画布');
                     }
+
+                    // 🔧 修复：即使没有角色数据，也要渲染角色列表以显示全局提示词
+                    if (this.components.characterEditor) {
+                        this.components.characterEditor.updateUI();
+                    }
                 }, 200);
             }
 
@@ -1811,6 +1816,7 @@ class DataManager {
             version: '1.0.0',
             syntax_mode: 'attention_couple',
             base_prompt: '',
+            global_prompt: '2girls',  // 🔧 修复：添加默认全局提示词
             canvas: {
                 width: 1024,
                 height: 1024
@@ -2620,16 +2626,27 @@ class Toolbar {
                 }
             });
 
-            // 重置缩放和偏移
+            // 重置缩放和居中偏移
             if (this.editor.components.maskEditor) {
-                this.editor.components.maskEditor.scale = 1;
-                this.editor.components.maskEditor.offset = { x: 0, y: 0 };
+                const maskEditor = this.editor.components.maskEditor;
+                const config = this.editor.dataManager.getConfig();
 
-                // 强制触发画布重新调整
-                setTimeout(() => {
-                    this.editor.components.maskEditor.resizeCanvas();
-                    this.editor.components.maskEditor.scheduleRender();
-                }, 100);
+                if (config && config.canvas) {
+                    const { width: canvasWidth, height: canvasHeight } = config.canvas;
+                    const containerWidth = maskEditor.canvas.clientWidth || maskEditor.container.clientWidth || canvasWidth;
+                    const containerHeight = maskEditor.canvas.clientHeight || maskEditor.container.clientHeight || canvasHeight;
+
+                    // 设置缩放为1并计算居中偏移
+                    maskEditor.scale = 1;
+                    maskEditor.offset.x = (containerWidth - canvasWidth) / 2;
+                    maskEditor.offset.y = (containerHeight - canvasHeight) / 2;
+
+                    // 强制触发画布重新调整
+                    setTimeout(() => {
+                        maskEditor.resizeCanvas();
+                        maskEditor.scheduleRender();
+                    }, 100);
+                }
             }
 
             // 额外刷新一次画布大小，确保从节点缓存的数据中获取最新的引脚值
@@ -3215,9 +3232,19 @@ app.registerExtension({
 
                                     // 立即强制触发画布重新调整，不使用延迟
                                     if (MultiCharacterEditorInstance.components.maskEditor) {
-                                        // 重置缩放和偏移，确保画布正确显示
-                                        MultiCharacterEditorInstance.components.maskEditor.scale = 1;
-                                        MultiCharacterEditorInstance.components.maskEditor.offset = { x: 0, y: 0 };
+                                        const maskEditor = MultiCharacterEditorInstance.components.maskEditor;
+                                        const config = MultiCharacterEditorInstance.dataManager.getConfig();
+
+                                        if (config && config.canvas) {
+                                            const { width: canvasWidth, height: canvasHeight } = config.canvas;
+                                            const containerWidth = maskEditor.canvas.clientWidth || maskEditor.container.clientWidth || canvasWidth;
+                                            const containerHeight = maskEditor.canvas.clientHeight || maskEditor.container.clientHeight || canvasHeight;
+
+                                            // 重置缩放并设置居中偏移
+                                            maskEditor.scale = 1;
+                                            maskEditor.offset.x = (containerWidth - canvasWidth) / 2;
+                                            maskEditor.offset.y = (containerHeight - canvasHeight) / 2;
+                                        }
 
                                         // 立即调整画布大小
                                         MultiCharacterEditorInstance.components.maskEditor.resizeCanvas();
@@ -3374,11 +3401,11 @@ app.registerExtension({
                                                 '使用': `${containerWidth}x${containerHeight}`
                                             });
 
-                                            // 🔧 关键修复：强制重新计算 scale，但 offset 设为 0
-                                            // 让画布始终从左上角开始，避免因 offset 变化导致蒙版错位
+                                            // 计算缩放比例并设置居中偏移
                                             maskEditor.scale = Math.min(containerWidth / canvasWidth, containerHeight / canvasHeight);
-                                            maskEditor.offset.x = 0;
-                                            maskEditor.offset.y = 0;
+                                            // 计算居中位置的偏移量
+                                            maskEditor.offset.x = (containerWidth - canvasWidth * maskEditor.scale) / 2;
+                                            maskEditor.offset.y = (containerHeight - canvasHeight * maskEditor.scale) / 2;
 
                                             // 更新记录的容器尺寸
                                             maskEditor.lastContainerSize.width = containerWidth;

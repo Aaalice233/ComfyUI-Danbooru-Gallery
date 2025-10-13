@@ -25,6 +25,9 @@ class CharacterEditor {
         // 🔧 一次性绑定角色列表的事件委托
         this.bindCharacterListEvents();
 
+        // 🔧 修复：初始化时渲染角色列表，确保全局提示词显示
+        this.updateUI();
+
         // 设置全局引用
         window.characterEditor = this;
 
@@ -1384,7 +1387,8 @@ class CharacterEditor {
             // 更新文本区域的值，确保显示最新内容
             textarea.value = newGlobalPrompt;
 
-            // 不关闭模态框，让用户可以继续编辑
+            // 🔧 修复：保存成功后关闭模态框
+            closeModal();
             this.showToast(t('globalPromptSaved') || '全局提示词已保存', 'success');
         });
 
@@ -2173,7 +2177,8 @@ class CharacterEditor {
         const saveBtn = modal.querySelector('#mce-modal-save');
         saveBtn.addEventListener('click', () => {
             this.saveCharacterFromModal(characterId);
-            // 不关闭模态框，让用户可以继续编辑
+            // 🔧 修复：保存成功后关闭模态框
+            closeModal();
         });
 
         // 🔧 添加：点击模态框外部关闭
