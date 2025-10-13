@@ -206,11 +206,11 @@ class MaskEditor {
             Math.abs(currentHeight - this.lastContainerSize.height) > 1;
 
         if (sizeChanged) {
-            // 🔧 关键修复：容器尺寸变化了，重新计算适配缩放
-            // 但 offset 始终为 0，避免因居中导致的坐标不一致
+            // 容器尺寸变化了，重新计算适配缩放并居中显示
             this.scale = Math.min(currentWidth / canvasWidth, currentHeight / canvasHeight);
-            this.offset.x = 0;
-            this.offset.y = 0;
+            // 计算居中位置的偏移量
+            this.offset.x = (currentWidth - canvasWidth * this.scale) / 2;
+            this.offset.y = (currentHeight - canvasHeight * this.scale) / 2;
 
             // 更新记录的尺寸
             this.lastContainerSize.width = currentWidth;
