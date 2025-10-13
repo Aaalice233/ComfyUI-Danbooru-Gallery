@@ -25,12 +25,39 @@ class PresetManager {
         }
         this.toastManager = toastManagerProxy;
         this.presets = [];
+        this.filteredPresets = [];
+        this.searchQuery = '';
 
         this.init();
     }
 
     init() {
         this.loadPresets();
+
+        // 添加全局事件监听器，确保在窗口滚动或调整大小时隐藏悬浮提示
+        this.setupGlobalTooltipListeners();
+    }
+
+    /**
+     * 设置全局悬浮提示监听器
+     */
+    setupGlobalTooltipListeners() {
+        // 窗口滚动时隐藏悬浮提示
+        window.addEventListener('scroll', () => {
+            this.hidePresetTooltipImmediate();
+        }, true);
+
+        // 窗口大小改变时隐藏悬浮提示
+        window.addEventListener('resize', () => {
+            this.hidePresetTooltipImmediate();
+        });
+
+        // 键盘按下时隐藏悬浮提示（特别是ESC键）
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.hidePresetTooltipImmediate();
+            }
+        });
     }
 
     /**
@@ -43,6 +70,7 @@ class PresetManager {
 
             if (data.success) {
                 this.presets = data.presets;
+                this.filteredPresets = [...this.presets];
             } else {
                 console.error('加载预设失败:', data.error);
             }
@@ -72,6 +100,18 @@ class PresetManager {
                         </button>
                     </div>
                     <div class="mce-preset-modal-body">
+                        <div class="mce-preset-search-container">
+                            <div class="mce-preset-search-box">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <path d="M21 21l-4.35-4.35"></path>
+                                </svg>
+                                <input type="text" 
+                                       id="preset-search-input" 
+                                       class="mce-preset-search-input" 
+                                       placeholder="${t('searchPresets')}" />
+                            </div>
+                        </div>
                         <div class="mce-preset-list" id="preset-list-container">
                             ${this.renderPresetList()}
                         </div>
@@ -86,13 +126,13 @@ class PresetManager {
 
         // 关闭按钮事件
         document.getElementById('preset-modal-close').addEventListener('click', () => {
-            this.closeModal();
+            this.closeModal('management');
         });
 
         // 点击遮罩关闭
         document.getElementById('preset-modal-overlay').addEventListener('click', (e) => {
             if (e.target.id === 'preset-modal-overlay') {
-                this.closeModal();
+                this.closeModal('management');
             }
         });
     }
@@ -103,40 +143,43 @@ class PresetManager {
     renderPresetList() {
         const t = this.languageManager.t;
 
-        if (this.presets.length === 0) {
-            return `
-                <div class="mce-preset-empty">
-                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
-                        <rect x="3" y="3" width="7" height="7"></rect>
-                        <rect x="14" y="3" width="7" height="7"></rect>
-                        <rect x="14" y="14" width="7" height="7"></rect>
-                        <rect x="3" y="14" width="7" height="7"></rect>
-                    </svg>
-                    <p>${t('noPresets')}</p>
-                    <span class="mce-preset-empty-hint">${t('clickToAddPreset')}</span>
-                </div>
-            `;
+        if (this.filteredPresets.length === 0) {
+            if (this.searchQuery) {
+                return `
+                    <div class="mce-preset-empty">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <path d="M21 21l-4.35-4.35"></path>
+                        </svg>
+                        <p>${t('noSearchResults')}</p>
+                        <span class="mce-preset-empty-hint">${t('tryDifferentKeywords')}</span>
+                    </div>
+                `;
+            } else {
+                return `
+                    <div class="mce-preset-empty">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg>
+                        <p>${t('noPresets')}</p>
+                        <span class="mce-preset-empty-hint">${t('clickToAddPreset')}</span>
+                    </div>
+                `;
+            }
         }
 
-        return this.presets.map(preset => `
+        return this.filteredPresets.map(preset => `
             <div class="mce-preset-item" data-preset-id="${preset.id}">
-                <div class="mce-preset-item-preview">
-                    ${preset.preview_image
-                ? `<img src="${preset.preview_image}" alt="${preset.name}" class="mce-preset-preview-img" />`
-                : `<div class="mce-preset-no-preview">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                                <polyline points="21 15 16 10 5 21"></polyline>
-                            </svg>
-                        </div>`
-            }
-                </div>
                 <div class="mce-preset-item-info">
-                    <h3 class="mce-preset-item-name">${this.escapeHtml(preset.name)}</h3>
-                    <p class="mce-preset-item-chars">${preset.characters.length} ${t('characterEditor')}</p>
-                    <div class="mce-preset-item-prompt" title="${this.getPresetPromptPreview(preset)}">
-                        ${this.getPresetPromptPreview(preset)}
+                    <div class="mce-preset-item-header">
+                        <h3 class="mce-preset-item-name">${this.escapeHtml(preset.name)}</h3>
+                        <span class="mce-preset-syntax-mode">${this.getSyntaxModeDisplay(preset.syntax_mode)}</span>
+                    </div>
+                    <div class="mce-preset-item-content">
+                        ${this.renderPresetContentPreview(preset)}
                     </div>
                 </div>
                 <div class="mce-preset-item-actions">
@@ -263,6 +306,14 @@ class PresetManager {
         const character = preset.characters[characterIndex];
         const t = this.languageManager.t;
 
+        // 获取当前语法模式
+        const syntaxMode = preset.syntax_mode || 'attention_couple';
+        const isRegionalMode = syntaxMode === 'regional_prompts';
+
+        // 获取角色语法类型，默认为MASK
+        const syntaxType = character.syntax_type || (isRegionalMode ? 'REGION' : 'MASK');
+        const useMaskSyntax = character.use_mask_syntax !== false; // 默认使用MASK语法
+
         return `
             <div class="mce-edit-preset-form">
                 <div class="mce-form-group">
@@ -279,7 +330,62 @@ class PresetManager {
                         id="edit-character-prompt"
                         class="mce-form-input mce-edit-character-textarea mce-autocomplete-input"
                         placeholder="${t('buttonTexts.promptPlaceholder') || '输入提示词...'}"
-                        rows="13">${character.prompt || ''}</textarea>
+                        rows="8">${character.prompt || ''}</textarea>
+                </div>
+                
+                <!-- 参数设置区域 -->
+                <div class="mce-preset-params-section">
+                    <h4 class="mce-params-section-title">${t('parameters') || '参数设置'}</h4>
+                    
+                    <!-- 权重 -->
+                    <div class="mce-param-item">
+                        <label class="mce-param-label">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                            </svg>
+                            ${t('weight') || '权重'}
+                        </label>
+                        <div class="mce-param-control">
+                            <input type="range" min="0.1" max="2.0" step="0.01" value="${character.weight || 1.0}" id="edit-character-weight">
+                            <input type="number" min="0.1" max="2.0" step="0.01" value="${character.weight || 1.0}" id="edit-character-weight-input" class="mce-param-number">
+                        </div>
+                    </div>
+                    
+                    <!-- 羽化 -->
+                    <div class="mce-param-item">
+                        <label class="mce-param-label">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M12 1v6m0 6v6m4.22-13.22l4.24 4.24M1.54 1.54l4.24 4.24M20.46 20.46l-4.24-4.24M1.54 20.46l4.24-4.24"></path>
+                            </svg>
+                            ${t('feather') || '羽化'} (px)
+                        </label>
+                        <div class="mce-param-control">
+                            <input type="range" min="0" max="50" step="1" value="${character.feather || 0}" id="edit-character-feather">
+                            <input type="number" min="0" max="50" step="1" value="${character.feather || 0}" id="edit-character-feather-input" class="mce-param-number">
+                        </div>
+                    </div>
+                    
+                    <!-- 语法类型 -->
+                    ${isRegionalMode ? `
+                    <div class="mce-param-item">
+                        <label class="mce-param-label">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="4 7 4 4 20 4 20 7"></polyline>
+                                <line x1="9" y1="20" x2="15" y2="20"></line>
+                                <line x1="12" y1="4" x2="12" y2="20"></line>
+                            </svg>
+                            ${t('syntaxType') || '语法类型'}
+                        </label>
+                        <div class="mce-param-control">
+                            <select id="edit-character-syntax-type" class="mce-param-select">
+                                <option value="REGION" ${syntaxType === 'REGION' ? 'selected' : ''}>REGION</option>
+                                <option value="MASK" ${syntaxType === 'MASK' ? 'selected' : ''}>MASK</option>
+                            </select>
+                        </div>
+                    </div>` : `
+                    <!-- 注意力耦合模式下隐藏语法类型选项，固定使用COUPLE -->
+                    <input type="hidden" id="edit-character-syntax-type" value="COUPLE">`}
                 </div>
             </div>
         `;
@@ -320,15 +426,312 @@ class PresetManager {
     }
 
     /**
+     * 获取预设完整提示词（用于在预览区域显示）
+     */
+    getPresetFullPrompt(preset) {
+        if (!preset) return this.languageManager.t('promptEmpty');
+
+        // 构建配置对象，与主编辑器保持一致
+        const config = {
+            base_prompt: '', // 预设中没有基础提示词
+            global_prompt: preset.global_prompt || '',
+            global_use_fill: preset.global_use_fill || false,
+            syntax_mode: preset.syntax_mode || 'attention_couple', // 默认使用attention_couple
+            characters: preset.characters || []
+        };
+
+        // 如果没有角色，直接返回全局提示词
+        if (!config.characters || config.characters.length === 0) {
+            return config.global_prompt || this.languageManager.t('promptEmpty');
+        }
+
+        // 过滤启用的角色
+        const enabledCharacters = config.characters.filter(char => char.enabled !== false);
+        if (!enabledCharacters || enabledCharacters.length === 0) {
+            return config.global_prompt || this.languageManager.t('promptEmpty');
+        }
+
+        // 生成蒙版数据
+        const masks = this.generateMasks(enabledCharacters);
+
+        // 根据语法模式生成提示词
+        if (config.syntax_mode === "attention_couple") {
+            return this.generateAttentionCouple('', config.global_prompt, masks, config.global_use_fill, enabledCharacters);
+        } else if (config.syntax_mode === "regional_prompts") {
+            return this.generateRegionalPrompts('', config.global_prompt, masks);
+        } else {
+            // 默认使用attention_couple
+            return this.generateAttentionCouple('', config.global_prompt, masks, config.global_use_fill, enabledCharacters);
+        }
+    }
+
+    /**
+     * 生成蒙版数据（从主编辑器复制）
+     */
+    generateMasks(characters) {
+        const masks = [];
+        for (const char of characters) {
+            if (!char.mask) continue;
+
+            // 确保坐标值有效
+            const x = Math.max(0.0, Math.min(1.0, char.mask.x || 0.0));
+            const y = Math.max(0.0, Math.min(1.0, char.mask.y || 0.0));
+            const width = Math.max(0.01, Math.min(1.0 - x, char.mask.width || 0.5));
+            const height = Math.max(0.01, Math.min(1.0 - y, char.mask.height || 0.5));
+
+            masks.push({
+                prompt: char.prompt || '',
+                weight: char.weight || 1.0,
+                x1: x,
+                y1: y,
+                x2: x + width,
+                y2: y + height,
+                feather: char.mask.feather || 0,
+                blend_mode: char.mask.blend_mode || 'normal',
+                use_fill: char.use_fill || false  // 添加角色的FILL状态
+            });
+        }
+        return masks;
+    }
+
+    /**
+     * 生成Attention Couple语法（从主编辑器复制）
+     */
+    generateAttentionCouple(basePrompt, globalPrompt, masks, globalUseFill, enabledCharacters) {
+        if (!masks || masks.length === 0) {
+            // 没有角色时，合并基础提示词和全局提示词
+            let result = basePrompt;
+            if (globalPrompt) {
+                result = result ? `${result} ${globalPrompt}` : globalPrompt;
+            }
+            // 如果全局开启了FILL，添加FILL()
+            if (globalUseFill && result) {
+                result += ' FILL()';
+            }
+            return result || '';
+        }
+
+        const maskStrings = [];
+        for (const mask of masks) {
+            if (!mask.prompt || !mask.prompt.trim()) continue;
+
+            // 确保坐标在有效范围内
+            let x1 = Math.max(0.0, Math.min(1.0, mask.x1));
+            let x2 = Math.max(0.0, Math.min(1.0, mask.x2));
+            let y1 = Math.max(0.0, Math.min(1.0, mask.y1));
+            let y2 = Math.max(0.0, Math.min(1.0, mask.y2));
+
+            // 确保x2 > x1且y2 > y1
+            if (x2 <= x1) {
+                x2 = Math.min(1.0, x1 + 0.1);
+            }
+            if (y2 <= y1) {
+                y2 = Math.min(1.0, y1 + 0.1);
+            }
+
+            // 使用完整格式：MASK(x1 x2, y1 y2, weight)
+            const weight = mask.weight || 1.0;
+            let maskParams = `${x1.toFixed(2)} ${x2.toFixed(2)}, ${y1.toFixed(2)} ${y2.toFixed(2)}, ${weight.toFixed(2)}`;
+
+            let maskStr = `COUPLE MASK(${maskParams}) ${mask.prompt}`;
+
+            // 如果该角色开启了FILL，在该角色提示词后添加FILL()
+            if (mask.use_fill) {
+                maskStr += ' FILL()';
+            }
+
+            // 添加羽化（简化语法，一个值表示所有边缘）
+            // 羽化值为像素值，0表示不使用羽化
+            const featherValue = parseInt(mask.feather) || 0;
+            if (featherValue > 0) {
+                maskStr += ` FEATHER(${featherValue})`;
+            }
+
+            maskStrings.push(maskStr);
+        }
+
+        // 合并基础提示词和全局提示词
+        let finalBasePrompt = '';
+        if (basePrompt && basePrompt.trim()) {
+            finalBasePrompt = basePrompt.trim();
+        }
+        if (globalPrompt && globalPrompt.trim()) {
+            if (finalBasePrompt) {
+                finalBasePrompt = finalBasePrompt + ' ' + globalPrompt.trim();
+            } else {
+                finalBasePrompt = globalPrompt.trim();
+            }
+        }
+
+        // 构建结果
+        const resultParts = [];
+
+        // 添加基础提示词，如果全局开启了FILL则添加FILL()
+        if (finalBasePrompt) {
+            if (globalUseFill) {
+                resultParts.push(finalBasePrompt + ' FILL()');
+            } else {
+                resultParts.push(finalBasePrompt);
+            }
+        }
+
+        // 添加所有角色提示词
+        if (maskStrings.length > 0) {
+            resultParts.push(...maskStrings);
+        }
+
+        return resultParts.join('\n');
+    }
+
+    /**
+     * 生成Regional Prompts语法（从主编辑器复制）
+     */
+    generateRegionalPrompts(basePrompt, globalPrompt, masks) {
+        if (!masks || masks.length === 0) {
+            // 没有角色时，合并基础提示词和全局提示词
+            let result = basePrompt;
+            if (globalPrompt) {
+                result = result ? `${result} ${globalPrompt}` : globalPrompt;
+            }
+            return result || '';
+        }
+
+        const regionStrings = [];
+        for (const mask of masks) {
+            if (!mask.prompt || !mask.prompt.trim()) continue;
+
+            // 确保坐标在有效范围内
+            let x1 = Math.max(0.0, Math.min(1.0, mask.x1));
+            let x2 = Math.max(0.0, Math.min(1.0, mask.x2));
+            let y1 = Math.max(0.0, Math.min(1.0, mask.y1));
+            let y2 = Math.max(0.0, Math.min(1.0, mask.y2));
+
+            // 确保x2 > x1且y2 > y1
+            if (x2 <= x1) {
+                x2 = Math.min(1.0, x1 + 0.1);
+            }
+            if (y2 <= y1) {
+                y2 = Math.min(1.0, y1 + 0.1);
+            }
+
+            // 使用REGION语法
+            const weight = mask.weight || 1.0;
+            let regionParams = `${x1.toFixed(2)},${y1.toFixed(2)},${x2.toFixed(2)},${y2.toFixed(2)}`;
+
+            let regionStr = `<region:${regionParams}:${weight.toFixed(2)}>`;
+            regionStr += mask.prompt;
+            regionStr += `</region>`;
+
+            // 添加羽化
+            const featherValue = parseInt(mask.feather) || 0;
+            if (featherValue > 0) {
+                regionStr += ` <feather:${featherValue}>`;
+            }
+
+            regionStrings.push(regionStr);
+        }
+
+        // 合并基础提示词和全局提示词
+        let finalBasePrompt = '';
+        if (basePrompt && basePrompt.trim()) {
+            finalBasePrompt = basePrompt.trim();
+        }
+        if (globalPrompt && globalPrompt.trim()) {
+            if (finalBasePrompt) {
+                finalBasePrompt = finalBasePrompt + ' ' + globalPrompt.trim();
+            } else {
+                finalBasePrompt = globalPrompt.trim();
+            }
+        }
+
+        // 构建结果
+        const resultParts = [];
+
+        // 添加基础提示词
+        if (finalBasePrompt) {
+            resultParts.push(finalBasePrompt);
+        }
+
+        // 添加所有区域提示词
+        if (regionStrings.length > 0) {
+            resultParts.push(...regionStrings);
+        }
+
+        return resultParts.join('\n');
+    }
+
+    /**
+     * 搜索预设
+     */
+    searchPresets(query) {
+        this.searchQuery = query.toLowerCase().trim();
+
+        if (!this.searchQuery) {
+            this.filteredPresets = [...this.presets];
+        } else {
+            this.filteredPresets = this.presets.filter(preset => {
+                // 搜索预设名称
+                if (preset.name && preset.name.toLowerCase().includes(this.searchQuery)) {
+                    return true;
+                }
+
+                // 搜索角色名称/备注名称
+                if (preset.characters && preset.characters.some(char => {
+                    const name = char.name || '';
+                    return name.toLowerCase().includes(this.searchQuery);
+                })) {
+                    return true;
+                }
+
+                // 搜索提示词内容
+                if (preset.characters && preset.characters.some(char => {
+                    const prompt = char.prompt || '';
+                    return prompt.toLowerCase().includes(this.searchQuery);
+                })) {
+                    return true;
+                }
+
+                // 搜索全局提示词
+                if (preset.global_prompt && preset.global_prompt.toLowerCase().includes(this.searchQuery)) {
+                    return true;
+                }
+
+                return false;
+            });
+        }
+
+        // 更新显示
+        const listContainer = document.getElementById('preset-list-container');
+        if (listContainer) {
+            listContainer.innerHTML = this.renderPresetList();
+            this.bindPresetManagementEvents();
+        }
+    }
+
+    /**
      * 绑定预设管理面板事件
      */
     bindPresetManagementEvents() {
+        // 搜索框事件
+        const searchInput = document.getElementById('preset-search-input');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.searchPresets(e.target.value);
+            });
+        }
+
         // 编辑按钮
         document.querySelectorAll('.mce-preset-edit-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                this.hidePresetTooltip(); // 点击按钮时隐藏悬浮提示
                 const presetId = btn.dataset.presetId;
                 this.showEditPresetPanel(presetId);
+            });
+
+            // 添加鼠标进入事件，防止悬浮提示干扰按钮交互
+            btn.addEventListener('mouseenter', () => {
+                this.hidePresetTooltip();
             });
         });
 
@@ -336,8 +739,14 @@ class PresetManager {
         document.querySelectorAll('.mce-preset-delete-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
+                this.hidePresetTooltip(); // 点击按钮时隐藏悬浮提示
                 const presetId = btn.dataset.presetId;
                 await this.deletePreset(presetId);
+            });
+
+            // 添加鼠标进入事件，防止悬浮提示干扰按钮交互
+            btn.addEventListener('mouseenter', () => {
+                this.hidePresetTooltip();
             });
         });
 
@@ -345,22 +754,43 @@ class PresetManager {
         document.querySelectorAll('.mce-preset-apply-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                this.hidePresetTooltip(); // 点击按钮时隐藏悬浮提示
                 const presetId = btn.dataset.presetId;
                 this.applyPreset(presetId);
+            });
+
+            // 添加鼠标进入事件，防止悬浮提示干扰按钮交互
+            btn.addEventListener('mouseenter', () => {
+                this.hidePresetTooltip();
             });
         });
 
         // 预设项悬浮效果
         document.querySelectorAll('.mce-preset-item').forEach(item => {
-            item.addEventListener('mouseenter', () => {
+            item.addEventListener('mouseenter', (e) => {
+                // 如果鼠标在按钮上，不显示悬浮提示
+                if (e.target.closest('.mce-preset-action-btn')) {
+                    return;
+                }
+
                 const presetId = item.dataset.presetId;
                 const preset = this.presets.find(p => p.id === presetId);
                 if (preset) {
-                    this.showPresetTooltip(item, preset);
+                    this.showPresetTooltip(e, preset);
                 }
             });
 
-            item.addEventListener('mouseleave', () => {
+            item.addEventListener('mouseleave', (e) => {
+                // 如果鼠标移到了按钮上，不隐藏悬浮提示
+                if (e.relatedTarget && e.relatedTarget.closest('.mce-preset-action-btn')) {
+                    return;
+                }
+
+                // 如果鼠标移到了悬浮提示上，不隐藏悬浮提示
+                if (e.relatedTarget && e.relatedTarget.closest('.mce-preset-tooltip')) {
+                    return;
+                }
+
                 this.hidePresetTooltip();
             });
         });
@@ -444,12 +874,12 @@ class PresetManager {
 
         // 关闭按钮
         document.getElementById('save-preset-modal-close').addEventListener('click', () => {
-            this.closeModal();
+            this.closeModal('save');
         });
 
         // 取消按钮
         document.getElementById('save-preset-cancel').addEventListener('click', () => {
-            this.closeModal();
+            this.closeModal('save');
         });
 
         // 保存按钮
@@ -460,7 +890,7 @@ class PresetManager {
         // 点击遮罩关闭
         document.getElementById('save-preset-modal-overlay').addEventListener('click', (e) => {
             if (e.target.id === 'save-preset-modal-overlay') {
-                this.closeModal();
+                this.closeModal('save');
             }
         });
 
@@ -536,6 +966,14 @@ class PresetManager {
         const config = this.editor.dataManager.getConfig();
         const imageData = imagePreview.dataset.imageData || null;
 
+        // 确保角色数据包含语法类型
+        const characters = config.characters ? config.characters.map(char => ({
+            ...char,
+            syntax_type: char.syntax_type || (config.syntax_mode === 'regional_prompts' ? 'REGION' : 'COUPLE'),
+            weight: char.weight || 1.0,
+            feather: char.feather || 0
+        })) : [];
+
         try {
             const response = await fetch('/multi_character_editor/presets/save', {
                 method: 'POST',
@@ -544,8 +982,10 @@ class PresetManager {
                 },
                 body: JSON.stringify({
                     name: presetName,
-                    characters: config.characters,
+                    characters: characters,
                     global_prompt: config.global_prompt,
+                    global_use_fill: config.global_use_fill || false,
+                    syntax_mode: config.syntax_mode || 'attention_couple',
                     global_note: '',
                     preview_image: imageData
                 })
@@ -557,7 +997,7 @@ class PresetManager {
                 this.toastManager.showToast(t('presetSaved'), 'success', 3000);
                 await this.loadPresets();
                 // 🔧 修复：保存成功后关闭模态框
-                this.closeModal();
+                this.closeModal('save');
             } else {
                 this.toastManager.showToast(data.error || t('error'), 'error', 3000);
             }
@@ -577,6 +1017,9 @@ class PresetManager {
         const modal = this.createModal();
         const t = this.languageManager.t;
 
+        // 获取当前语法模式
+        const syntaxMode = preset.syntax_mode || 'attention_couple';
+
         modal.innerHTML = `
             <div class="mce-preset-modal-overlay" id="edit-preset-modal-overlay">
                 <div class="mce-preset-modal-container mce-edit-preset-container">
@@ -592,6 +1035,27 @@ class PresetManager {
                     <div class="mce-preset-modal-body mce-edit-preset-body">
                         <div class="mce-edit-preset-content">
                             <div class="mce-edit-preset-list" id="edit-preset-character-list">
+                                <!-- 预设设置区域 -->
+                                <div class="mce-preset-settings-section">
+                                    <!-- 语法模式 -->
+                                    <div class="mce-setting-item">
+                                        <label class="mce-setting-label">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <polyline points="4 7 4 4 20 4 20 7"></polyline>
+                                                <line x1="9" y1="20" x2="15" y2="20"></line>
+                                                <line x1="12" y1="4" x2="12" y2="20"></line>
+                                            </svg>
+                                            ${t('syntaxMode') || '语法模式'}
+                                        </label>
+                                        <div class="mce-setting-control">
+                                            <select id="edit-preset-syntax-mode" class="mce-setting-select">
+                                                <option value="attention_couple" ${syntaxMode === 'attention_couple' ? 'selected' : ''}>Attention Couple</option>
+                                                <option value="regional_prompts" ${syntaxMode === 'regional_prompts' ? 'selected' : ''}>Regional Prompts</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                                
                                 <!-- 全局提示词固定在顶端 -->
                                 <div class="mce-global-prompt-item" data-character-id="__global__">
                                     <div class="mce-character-item-header">
@@ -600,16 +1064,16 @@ class PresetManager {
                                                 <circle cx="12" cy="12" r="10"></circle>
                                                 <path d="M12 8v8m-4-4h8"></path>
                                             </svg>
-                            </div>
+                                        </div>
                                         <span class="mce-global-title">${t('globalPrompt') || '全局提示词'}</span>
-                                </div>
+                                    </div>
                                     <div class="mce-global-prompt-input-container">
                                         <textarea
                                             id="edit-global-prompt"
                                             class="mce-form-input mce-global-prompt-textarea mce-autocomplete-input"
                                             placeholder="${t('globalPromptPlaceholder') || '输入全局提示词，例如：2girls'}"
                                             rows="5">${this.editor.dataManager.config.global_prompt || preset.global_prompt || ''}</textarea>
-                            </div>
+                                    </div>
                                 </div>
 
                                 <!-- 分隔线 -->
@@ -649,7 +1113,7 @@ class PresetManager {
             closeBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                this.closeModal();
+                this.closeModal('edit');
             });
         }
 
@@ -660,7 +1124,7 @@ class PresetManager {
             cancelBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                this.closeModal();
+                this.closeModal('edit');
             });
         }
 
@@ -683,7 +1147,7 @@ class PresetManager {
                 await this.updatePreset(presetId);
 
                 // 🔧 修复：保存成功后关闭模态框
-                this.closeModal();
+                this.closeModal('edit');
             });
         }
 
@@ -695,7 +1159,7 @@ class PresetManager {
                 if (e.target.id === 'edit-preset-modal-overlay') {
                     e.preventDefault();
                     e.stopPropagation();
-                    this.closeModal();
+                    this.closeModal('edit');
                 }
             });
         }
@@ -703,6 +1167,9 @@ class PresetManager {
         // 绑定角色列表和全局提示词点击事件
         this.bindPresetCharacterListEvents(presetId);
         this.bindGlobalPromptEvents(presetId);
+
+        // 绑定语法模式变化事件
+        this.bindSyntaxModeEvents(presetId);
 
         // 延迟设置智能补全，确保DOM完全渲染
         setTimeout(() => {
@@ -790,12 +1257,12 @@ class PresetManager {
 
         // 关闭按钮
         document.getElementById('global-prompt-modal-close').addEventListener('click', () => {
-            this.closeModal();
+            this.closeModal('global');
         });
 
         // 取消按钮
         document.getElementById('global-prompt-cancel').addEventListener('click', () => {
-            this.closeModal();
+            this.closeModal('global');
         });
 
         // 保存按钮
@@ -828,7 +1295,7 @@ class PresetManager {
                 globalPromptInput.value = globalPrompt;
 
                 // 🔧 修复：保存成功后关闭模态框
-                this.closeModal();
+                this.closeModal('global');
                 this.toastManager.showToast(t('globalPromptSaved') || '全局提示词已保存', 'success');
             }
         });
@@ -836,7 +1303,7 @@ class PresetManager {
         // 点击遮罩关闭
         document.getElementById('global-prompt-modal-overlay').addEventListener('click', (e) => {
             if (e.target.id === 'global-prompt-modal-overlay') {
-                this.closeModal();
+                this.closeModal('global');
             }
         });
 
@@ -943,17 +1410,37 @@ class PresetManager {
         const noteInput = document.getElementById('edit-character-note');
         const promptInput = document.getElementById('edit-character-prompt');
         const globalPromptInput = document.getElementById('edit-global-prompt');
+        const weightInput = document.getElementById('edit-character-weight-input');
+        const featherInput = document.getElementById('edit-character-feather-input');
+        const syntaxTypeSelect = document.getElementById('edit-character-syntax-type');
+        const syntaxModeSelect = document.getElementById('edit-preset-syntax-mode');
 
         if (noteInput || promptInput) {
             // 临时保存到预设数据中（不触发保存到服务器）
             const character = preset.characters[currentCharacterIndex];
             if (noteInput) character.name = noteInput.value.trim();
             if (promptInput) character.prompt = promptInput.value.trim();
+
+            // 保存权重、羽化和语法类型
+            if (weightInput) character.weight = parseFloat(weightInput.value) || 1.0;
+            if (featherInput) character.feather = parseInt(featherInput.value) || 0;
+            // 根据语法模式设置语法类型
+            const syntaxMode = preset.syntax_mode || 'attention_couple';
+            if (syntaxMode === 'attention_couple') {
+                character.syntax_type = 'COUPLE';
+            } else if (syntaxTypeSelect) {
+                character.syntax_type = syntaxTypeSelect.value;
+            }
         }
 
         // 同时保存全局提示词
         if (globalPromptInput) {
             preset.global_prompt = globalPromptInput.value.trim();
+        }
+
+        // 保存语法模式
+        if (syntaxModeSelect) {
+            preset.syntax_mode = syntaxModeSelect.value;
         }
     }
 
@@ -983,9 +1470,15 @@ class PresetManager {
         const noteInput = document.getElementById('edit-character-note');
         const promptInput = document.getElementById('edit-character-prompt');
         const globalPromptInput = document.getElementById('edit-global-prompt');
+        const syntaxTypeSelect = document.getElementById('edit-character-syntax-type');
 
         if (noteInput) noteInput.value = character.name || ''; // 备注显示角色名称
         if (promptInput) promptInput.value = character.prompt || '';
+
+        // 更新语法类型
+        if (syntaxTypeSelect) {
+            syntaxTypeSelect.value = character.syntax_type || 'COUPLE';
+        }
 
         // 🔧 修复：同时更新全局提示词
         if (globalPromptInput) {
@@ -997,8 +1490,39 @@ class PresetManager {
      * 绑定预设角色编辑面板事件
      */
     bindPresetCharacterEditEvents(presetId, characterIndex) {
-        // 这里不再需要绑定单个角色的保存取消按钮
-        // 统一由底部的按钮管理整个表单
+        // 权重滑块和输入框同步
+        const weightSlider = document.getElementById('edit-character-weight');
+        const weightInput = document.getElementById('edit-character-weight-input');
+
+        if (weightSlider && weightInput) {
+            weightSlider.addEventListener('input', () => {
+                weightInput.value = weightSlider.value;
+            });
+
+            weightInput.addEventListener('input', () => {
+                const value = parseFloat(weightInput.value);
+                if (!isNaN(value) && value >= 0.1 && value <= 2.0) {
+                    weightSlider.value = value;
+                }
+            });
+        }
+
+        // 羽化滑块和输入框同步
+        const featherSlider = document.getElementById('edit-character-feather');
+        const featherInput = document.getElementById('edit-character-feather-input');
+
+        if (featherSlider && featherInput) {
+            featherSlider.addEventListener('input', () => {
+                featherInput.value = featherSlider.value;
+            });
+
+            featherInput.addEventListener('input', () => {
+                const value = parseFloat(featherInput.value);
+                if (!isNaN(value) && value >= 0 && value <= 50) {
+                    featherSlider.value = value;
+                }
+            });
+        }
     }
 
 
@@ -1008,6 +1532,9 @@ class PresetManager {
     savePresetCharacter(presetId, characterIndex) {
         const noteInput = document.getElementById('edit-character-note');
         const promptInput = document.getElementById('edit-character-prompt');
+        const weightInput = document.getElementById('edit-character-weight-input');
+        const featherInput = document.getElementById('edit-character-feather-input');
+        const syntaxTypeSelect = document.getElementById('edit-character-syntax-type');
 
         if (!noteInput || !promptInput) return;
 
@@ -1019,14 +1546,32 @@ class PresetManager {
         character.note = noteInput.value.trim(); // 同时保存到note字段以保持兼容性
         character.prompt = promptInput.value.trim();
 
+        // 保存权重、羽化和语法类型
+        if (weightInput) character.weight = parseFloat(weightInput.value) || 1.0;
+        if (featherInput) character.feather = parseInt(featherInput.value) || 0;
+
+        // 根据语法模式设置语法类型
+        const syntaxMode = preset.syntax_mode || 'attention_couple';
+        if (syntaxMode === 'attention_couple') {
+            character.syntax_type = 'COUPLE';
+        } else if (syntaxTypeSelect) {
+            character.syntax_type = syntaxTypeSelect.value;
+        }
+
         // 同时保存全局提示词到预设
         const globalPromptInput = document.getElementById('edit-global-prompt');
         if (globalPromptInput) {
             preset.global_prompt = globalPromptInput.value.trim();
         }
 
-        // 刷新角色列表和编辑表单
-        this.refreshCharacterListAndForm(preset, characterIndex, presetId);
+        // 保存语法模式
+        const syntaxModeSelect = document.getElementById('edit-preset-syntax-mode');
+        if (syntaxModeSelect) {
+            preset.syntax_mode = syntaxModeSelect.value;
+        }
+
+        // 保存到本地存储
+        this.savePresetToLocalStorage(preset);
 
         this.toastManager.showToast('角色已保存', 'success');
     }
@@ -1195,8 +1740,20 @@ class PresetManager {
 
         // 获取全局提示词的值
         const globalPromptInput = document.getElementById('edit-global-prompt');
-
         const globalPrompt = globalPromptInput ? globalPromptInput.value.trim() : (preset.global_prompt || '');
+
+        // 获取当前编辑器的配置，以确保保存语法模式和全局FILL状态
+        const editorConfig = this.editor.dataManager.getConfig();
+        const globalUseFill = editorConfig.global_use_fill || false;
+        const syntaxMode = preset.syntax_mode || editorConfig.syntax_mode || 'attention_couple';
+
+        // 确保角色数据包含语法类型
+        const characters = preset.characters ? preset.characters.map(char => ({
+            ...char,
+            syntax_type: char.syntax_type || (syntaxMode === 'regional_prompts' ? 'REGION' : 'COUPLE'),
+            weight: char.weight || 1.0,
+            feather: char.feather || 0
+        })) : [];
 
         // 同时更新编辑器配置中的全局提示词
         if (globalPromptInput) {
@@ -1219,8 +1776,10 @@ class PresetManager {
                 body: JSON.stringify({
                     id: presetId,
                     name: presetName,
-                    characters: preset.characters,
+                    characters: characters,
                     global_prompt: globalPrompt,
+                    global_use_fill: globalUseFill,
+                    syntax_mode: syntaxMode,
                     global_note: '',
                     preview_image: imageData
                 })
@@ -1269,6 +1828,9 @@ class PresetManager {
             if (data.success) {
                 this.toastManager.showToast(t('presetDeleted'), 'success', 3000);
                 await this.loadPresets();
+
+                // 重新应用搜索过滤
+                this.searchPresets(this.searchQuery);
 
                 // 刷新预设列表
                 const listContainer = document.getElementById('preset-list-container');
@@ -1349,25 +1911,98 @@ class PresetManager {
         // 🔧 修复：应用预设后自动关闭面板
         // 使用setTimeout确保所有异步操作完成后再关闭
         setTimeout(() => {
-            this.closeModal();
+            this.closeModal('management');
         }, 100);
     }
 
     /**
      * 显示预设工具提示
      */
-    showPresetTooltip(element, preset) {
-        // TODO: 实现工具提示显示完整提示词和预览图
+    showPresetTooltip(e, preset) {
+        // 立即隐藏所有现有的悬浮提示，防止多个同时出现
+        this.hidePresetTooltipImmediate();
+
+        // 清除可能存在的隐藏定时器
+        if (this.tooltipHideTimer) {
+            clearTimeout(this.tooltipHideTimer);
+            this.tooltipHideTimer = null;
+        }
+
+        const tooltip = document.createElement('div');
+        tooltip.className = 'mce-preset-tooltip';
+        tooltip.id = 'mce-preset-tooltip';
+
+        let imageHTML = '';
+        if (preset.preview_image) {
+            imageHTML = `<img src="${preset.preview_image}" alt="Preview" class="mce-tooltip-image" />`;
+        } else {
+            imageHTML = `<div class="mce-tooltip-no-preview"><span>暂无预览</span></div>`;
+        }
+
+        // 只显示预览图，不显示提示词
+        tooltip.innerHTML = `
+            <div class="mce-tooltip-content">
+                <div class="mce-tooltip-image-container">${imageHTML}</div>
+            </div>
+        `;
+
+        document.body.appendChild(tooltip);
+
+        // 定位工具提示
+        const rect = e.currentTarget.getBoundingClientRect();
+        tooltip.style.left = `${e.clientX + 15}px`;
+        tooltip.style.top = `${e.clientY + 15}px`;
+
+        // 调整位置，避免超出屏幕
+        const tooltipRect = tooltip.getBoundingClientRect();
+        if (tooltipRect.right > window.innerWidth) {
+            tooltip.style.left = `${window.innerWidth - tooltipRect.width - 10}px`;
+        }
+        if (tooltipRect.bottom > window.innerHeight) {
+            tooltip.style.top = `${window.innerHeight - tooltipRect.height - 10}px`;
+        }
+
+        // 添加鼠标进入工具提示的事件，防止鼠标移入工具提示时它消失
+        tooltip.addEventListener('mouseenter', () => {
+            if (this.tooltipHideTimer) {
+                clearTimeout(this.tooltipHideTimer);
+                this.tooltipHideTimer = null;
+            }
+        });
+
+        // 添加鼠标离开工具提示的事件
+        tooltip.addEventListener('mouseleave', () => {
+            this.hidePresetTooltip();
+        });
+    }
+
+    /**
+     * 立即隐藏所有悬浮提示
+     */
+    hidePresetTooltipImmediate() {
+        // 清除可能存在的隐藏定时器
+        if (this.tooltipHideTimer) {
+            clearTimeout(this.tooltipHideTimer);
+            this.tooltipHideTimer = null;
+        }
+
+        // 移除所有悬浮提示，而不仅仅是通过ID查找的那个
+        const tooltips = document.querySelectorAll('.mce-preset-tooltip');
+        tooltips.forEach(tooltip => tooltip.remove());
     }
 
     /**
      * 隐藏预设工具提示
      */
     hidePresetTooltip() {
-        const tooltip = document.getElementById('mce-preset-tooltip');
-        if (tooltip) {
-            tooltip.remove();
+        // 使用定时器延迟隐藏，这样可以防止鼠标快速移动时工具提示闪烁
+        if (this.tooltipHideTimer) {
+            clearTimeout(this.tooltipHideTimer);
         }
+
+        this.tooltipHideTimer = setTimeout(() => {
+            this.hidePresetTooltipImmediate();
+        }, 50); // 50ms延迟，足够短不会让用户感觉到延迟，但足够长防止闪烁
     }
 
     /**
@@ -1393,8 +2028,12 @@ class PresetManager {
 
     /**
      * 关闭模态框
+     * @param {string} modalType - 要关闭的模态框类型: 'all'(默认), 'management', 'edit', 'save', 'global'
      */
-    closeModal() {
+    closeModal(modalType = 'all') {
+        // 立即隐藏悬浮提示
+        this.hidePresetTooltipImmediate();
+
         // 销毁智能补全实例
         if (this.presetAutocompleteInstance) {
             this.presetAutocompleteInstance.destroy();
@@ -1417,10 +2056,33 @@ class PresetManager {
             delete button.dataset.bound;
         });
 
-        // 移除所有预设相关模态框
-        const modals = document.querySelectorAll('.mce-preset-modal-wrapper, .mce-preset-modal-overlay, .mce-edit-preset-container, .mce-save-preset-container');
-        modals.forEach(modal => {
-            modal.remove();
+        // 根据modalType选择要关闭的模态框
+        let selectors = [];
+        switch (modalType) {
+            case 'management':
+                selectors = ['#preset-modal-overlay'];
+                break;
+            case 'edit':
+                selectors = ['#edit-preset-modal-overlay'];
+                break;
+            case 'save':
+                selectors = ['#save-preset-modal-overlay'];
+                break;
+            case 'global':
+                selectors = ['#global-prompt-modal-overlay'];
+                break;
+            case 'all':
+            default:
+                selectors = ['.mce-preset-modal-wrapper', '.mce-preset-modal-overlay', '.mce-edit-preset-container', '.mce-save-preset-container'];
+                break;
+        }
+
+        // 移除指定的模态框
+        selectors.forEach(selector => {
+            const modals = document.querySelectorAll(selector);
+            modals.forEach(modal => {
+                modal.remove();
+            });
         });
     }
 
@@ -1529,6 +2191,46 @@ class PresetManager {
                 flex: 1;
             }
 
+            .mce-preset-search-container {
+                margin-bottom: 16px;
+            }
+
+            .mce-preset-search-box {
+                position: relative;
+                display: flex;
+                align-items: center;
+                background: rgba(26, 26, 38, 0.8);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 8px;
+                padding: 8px 12px;
+                transition: all 0.2s ease;
+            }
+
+            .mce-preset-search-box:focus-within {
+                border-color: #7c3aed;
+                box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
+            }
+
+            .mce-preset-search-box svg {
+                color: rgba(224, 224, 224, 0.5);
+                margin-right: 8px;
+                flex-shrink: 0;
+            }
+
+            .mce-preset-search-input {
+                background: none;
+                border: none;
+                outline: none;
+                color: #E0E0E0;
+                font-size: 14px;
+                flex: 1;
+                padding: 0;
+            }
+
+            .mce-preset-search-input::placeholder {
+                color: rgba(224, 224, 224, 0.4);
+            }
+
             .mce-global-prompt-item {
                 background: rgba(124, 58, 237, 0.15);
                 border: 2px solid rgba(124, 58, 237, 0.3);
@@ -1599,6 +2301,7 @@ class PresetManager {
                 overflow: hidden;
                 transition: all 0.2s ease;
                 cursor: pointer;
+                margin-bottom: 8px; /* 减小上下间距 */
             }
 
             .mce-preset-item:hover {
@@ -1607,50 +2310,29 @@ class PresetManager {
                 transform: translateY(-2px);
             }
 
-            .mce-preset-item-preview {
-                width: 100%;
-                height: 160px;
-                background: #1a1a26;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                overflow: hidden;
-            }
-
-            .mce-preset-preview-img {
-                width: 100%;
-                height: 100%;
-                object-fit: cover;
-            }
-
-            .mce-preset-no-preview {
-                color: rgba(224, 224, 224, 0.3);
-            }
-
             .mce-preset-item-info {
-                padding: 12px;
+                padding: 10px; /* 减小内边距 */
+                display: flex;
+                flex-direction: column;
+                gap: 6px; /* 减小元素间距 */
             }
 
             .mce-preset-item-name {
-                margin: 0 0 6px 0;
+                margin: 0;
                 font-size: 14px;
                 font-weight: 600;
                 color: #E0E0E0;
             }
 
-            .mce-preset-item-chars {
-                margin: 0 0 8px 0;
-                font-size: 12px;
-                color: rgba(224, 224, 224, 0.6);
-            }
-
             .mce-preset-item-prompt {
                 font-size: 12px;
-                color: rgba(224, 224, 224, 0.5);
-                white-space: nowrap;
+                color: rgba(224, 224, 224, 0.7);
+                line-height: 1.4;
+                word-break: break-word;
                 overflow: hidden;
-                text-overflow: ellipsis;
-                font-style: italic;
+                display: -webkit-box;
+                -webkit-line-clamp: 3;
+                -webkit-box-orient: vertical;
             }
 
             .mce-preset-item-actions {
@@ -2054,9 +2736,498 @@ class PresetManager {
                 background: #6d28d9;
                 border-color: #6d28d9;
             }
+
+            /* 工具提示样式 */
+            .mce-preset-tooltip {
+                position: fixed;
+                background-color: #181818;
+                border: 1px solid #555;
+                color: #eee;
+                padding: 0;
+                border-radius: 8px;
+                z-index: 10010;
+                font-size: 13px;
+                max-width: 200px; /* 减小最大宽度，使预览图更窄更高 */
+                word-wrap: break-word;
+                pointer-events: none;
+                animation: mce-tooltip-fade-in 0.15s ease-out;
+                box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+                display: flex;
+            }
+
+            .mce-tooltip-content {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 5px; /* 减小内边距 */
+                gap: 0; /* 减小间隙 */
+            }
+
+            .mce-tooltip-image-container {
+                width: 190px; /* 设置固定宽度 */
+                height: 280px; /* 设置固定高度，形成竖着的长方形 */
+                max-width: 190px;
+                max-height: 280px;
+                overflow: hidden;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: rgba(26, 26, 38, 0.6);
+                border-radius: 6px;
+            }
+
+            .mce-tooltip-image {
+                width: 100%;
+                height: 100%;
+                object-fit: cover; /* 使用cover填满整个容器 */
+                border-radius: 6px;
+            }
+
+            .mce-tooltip-no-preview {
+                color: rgba(224, 224, 224, 0.4);
+                text-align: center;
+                padding: 20px;
+                height: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            @keyframes mce-tooltip-fade-in {
+                from {
+                    opacity: 0;
+                    transform: translateY(10px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            
+            /* 预设设置区域样式 */
+            .mce-preset-settings-section {
+                background: rgba(58, 58, 78, 0.4);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                padding: 12px;
+                margin-bottom: 16px;
+            }
+            
+            .mce-settings-section-title {
+                margin: 0 0 12px 0;
+                font-size: 14px;
+                font-weight: 600;
+                color: #b794f4;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            
+            .mce-setting-item {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 8px;
+            }
+            
+            .mce-setting-label {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 13px;
+                color: rgba(224, 224, 224, 0.8);
+                min-width: 100px;
+            }
+            
+            .mce-setting-control {
+                flex: 1;
+            }
+            
+            .mce-setting-select {
+                width: 100%;
+                padding: 6px 10px;
+                background: rgba(26, 26, 38, 0.8);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 6px;
+                color: #E0E0E0;
+                font-size: 13px;
+            }
+            
+            .mce-setting-select:focus {
+                outline: none;
+                border-color: #7c3aed;
+                box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
+            }
+            
+            /* 参数设置区域样式 */
+            .mce-preset-params-section {
+                background: rgba(58, 58, 78, 0.3);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                padding: 12px;
+                margin-top: 16px;
+            }
+            
+            .mce-params-section-title {
+                margin: 0 0 12px 0;
+                font-size: 14px;
+                font-weight: 600;
+                color: #b794f4;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            
+            .mce-param-item {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 10px; /* 减小间距 */
+            }
+            
+            .mce-param-label {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 13px;
+                color: rgba(224, 224, 224, 0.8);
+                min-width: 80px;
+                justify-content: flex-start; /* 确保文本左对齐 */
+            }
+            
+            .mce-param-control {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            
+            .mce-param-number {
+                width: 70px;
+                padding: 4px 8px;
+                background: rgba(26, 26, 38, 0.8);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 4px;
+                color: #E0E0E0;
+                font-size: 12px;
+                text-align: center;
+            }
+            
+            .mce-param-number:focus {
+                outline: none;
+                border-color: #7c3aed;
+            }
+            
+            .mce-param-select {
+                flex: 1;
+                padding: 4px 8px;
+                background: rgba(26, 26, 38, 0.8);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 4px;
+                color: #E0E0E0;
+                font-size: 12px;
+            }
+            
+            .mce-param-select:focus {
+                outline: none;
+                border-color: #7c3aed;
+            }
+            
+            /* 滑块样式 */
+            input[type="range"] {
+                flex: 1;
+                height: 4px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 2px;
+                outline: none;
+                -webkit-appearance: none;
+            }
+            
+            input[type="range"]::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 16px;
+                height: 16px;
+                background: #7c3aed;
+                border-radius: 50%;
+                cursor: pointer;
+            }
+            
+            input[type="range"]::-moz-range-thumb {
+                width: 16px;
+                height: 16px;
+                background: #7c3aed;
+                border-radius: 50%;
+                cursor: pointer;
+                border: none;
+            }
+            
+            /* 预设项新样式 */
+            .mce-preset-item-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 8px;
+            }
+            
+            .mce-preset-syntax-mode {
+                font-size: 11px;
+                padding: 2px 6px;
+                background: rgba(124, 58, 237, 0.2);
+                border: 1px solid rgba(124, 58, 237, 0.3);
+                border-radius: 4px;
+                color: #b794f4;
+                font-weight: 500;
+            }
+            
+            .mce-preset-item-content {
+                margin-top: 8px;
+            }
+            
+            .mce-preset-content-list {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+            
+            .mce-preset-content-item {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                padding: 6px 8px;
+                background: rgba(26, 26, 38, 0.4);
+                border-radius: 6px;
+                border-left: 3px solid transparent;
+            }
+            
+            .mce-preset-content-item.mce-global-item {
+                border-left-color: #7c3aed;
+            }
+            
+            .mce-preset-content-item.mce-character-item {
+                border-left-color: #10b981;
+            }
+            
+            .mce-preset-item-label {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 12px;
+                font-weight: 600;
+                color: rgba(224, 224, 224, 0.9);
+            }
+            
+            .mce-preset-item-details {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                margin-left: 18px;
+            }
+            
+            .mce-preset-item-text {
+                font-size: 11px;
+                color: rgba(224, 224, 224, 0.7);
+                line-height: 1.3;
+                word-break: break-word;
+            }
+            
+            .mce-preset-item-params {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 4px;
+                margin-top: 2px;
+            }
+            
+            .mce-param-tag {
+                font-size: 10px;
+                padding: 1px 4px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 3px;
+                color: rgba(224, 224, 224, 0.8);
+            }
+            
+            .mce-preset-content-separator {
+                height: 1px;
+                background: rgba(255, 255, 255, 0.1);
+                margin: 4px 0;
+            }
+            
+            .mce-preset-empty-content {
+                font-size: 12px;
+                color: rgba(224, 224, 224, 0.5);
+                font-style: italic;
+                text-align: center;
+                padding: 8px;
+            }
         `;
 
         document.head.appendChild(style);
+    }
+
+    /**
+     * 绑定语法模式事件
+     */
+    bindSyntaxModeEvents(presetId) {
+        const syntaxModeSelect = document.getElementById('edit-preset-syntax-mode');
+        if (syntaxModeSelect) {
+            syntaxModeSelect.addEventListener('change', (e) => {
+                const newSyntaxMode = e.target.value;
+                const preset = this.presets.find(p => p.id === presetId);
+                if (preset) {
+                    preset.syntax_mode = newSyntaxMode;
+
+                    // 如果语法模式改变，需要更新所有角色的语法类型选项
+                    this.updateCharacterSyntaxTypeOptions(preset, newSyntaxMode);
+
+                    // 重新渲染编辑表单以显示/隐藏语法类型选项
+                    const activeCharItem = document.querySelector('.mce-edit-preset-char-item.active');
+                    if (activeCharItem) {
+                        const activeIndex = parseInt(activeCharItem.dataset.characterId);
+                        // 重新渲染编辑面板
+                        const editPanel = document.getElementById('edit-preset-edit-panel');
+                        if (editPanel) {
+                            editPanel.innerHTML = this.renderPresetCharacterEditForm(preset, activeIndex);
+                            // 重新绑定编辑面板事件
+                            this.bindPresetCharacterEditEvents(presetId, activeIndex);
+                            // 更新表单内容
+                            this.updateEditForm(preset, activeIndex);
+                        }
+                    }
+
+                    // 立即保存语法模式更改到本地存储
+                    this.savePresetToLocalStorage(preset);
+                }
+            });
+        }
+    }
+
+    /**
+     * 更新角色语法类型选项
+     */
+    updateCharacterSyntaxTypeOptions(preset, syntaxMode) {
+        const isRegionalMode = syntaxMode === 'regional_prompts';
+
+        // 更新所有角色的语法类型
+        if (preset.characters) {
+            preset.characters.forEach(character => {
+                // 如果切换到Regional模式且当前语法类型不是REGION或MASK，则设置为REGION
+                if (isRegionalMode && character.syntax_type !== 'REGION' && character.syntax_type !== 'MASK') {
+                    character.syntax_type = 'REGION';
+                }
+                // 如果切换到Attention模式，固定使用COUPLE
+                else if (!isRegionalMode) {
+                    character.syntax_type = 'COUPLE';
+                }
+            });
+        }
+    }
+
+    /**
+     * 获取语法模式显示文本
+     */
+    getSyntaxModeDisplay(syntaxMode) {
+        const mode = syntaxMode || 'attention_couple';
+        switch (mode) {
+            case 'attention_couple':
+                return 'Attention Couple';
+            case 'regional_prompts':
+                return 'Regional Prompts';
+            default:
+                return 'Attention Couple';
+        }
+    }
+
+    /**
+     * 渲染预设内容预览
+     */
+    renderPresetContentPreview(preset) {
+        let content = '';
+
+        // 显示全局提示词（如果有）
+        if (preset.global_prompt) {
+            const globalPreview = preset.global_prompt.length > 50 ?
+                preset.global_prompt.substring(0, 50) + '...' :
+                preset.global_prompt;
+            content += `
+                <div class="mce-preset-content-item mce-global-item">
+                    <div class="mce-preset-item-label">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M12 8v8m-4-4h8"></path>
+                        </svg>
+                        ${this.languageManager.t('globalPrompt') || '全局提示词'}
+                    </div>
+                    <div class="mce-preset-item-text">${this.escapeHtml(globalPreview)}</div>
+                </div>
+            `;
+        }
+
+        // 显示角色列表（如果有）
+        if (preset.characters && preset.characters.length > 0) {
+            const charList = preset.characters
+                .map((char, index) => {
+                    const name = char.name || `角色 ${index + 1}`;
+                    const prompt = char.prompt || '';
+                    const preview = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+                    const weight = char.weight || 1.0;
+                    const feather = char.feather || 0;
+                    const syntaxType = char.syntax_type || 'MASK';
+
+                    return `
+                        <div class="mce-preset-content-item mce-character-item">
+                            <div class="mce-preset-item-label">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                    <circle cx="12" cy="7" r="4"></circle>
+                                </svg>
+                                ${this.escapeHtml(name)}
+                            </div>
+                            <div class="mce-preset-item-details">
+                                <div class="mce-preset-item-text">${this.escapeHtml(preview) || '(无提示词)'}</div>
+                                <div class="mce-preset-item-params">
+                                    <span class="mce-param-tag">${syntaxType}</span>
+                                    <span class="mce-param-tag">权重: ${weight.toFixed(1)}</span>
+                                    ${feather > 0 ? `<span class="mce-param-tag">羽化: ${feather}px</span>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                })
+                .join('');
+
+            if (content) content += '<div class="mce-preset-content-separator"></div>';
+            content += charList;
+        }
+
+        return `
+            <div class="mce-preset-content-list">
+                ${content || '<div class="mce-preset-empty-content">无内容</div>'}
+            </div>
+        `;
+    }
+
+    /**
+     * 保存预设到本地存储
+     */
+    savePresetToLocalStorage(preset) {
+        try {
+            // 获取当前存储的预设列表
+            const storedPresets = localStorage.getItem('mce_presets');
+            let presets = storedPresets ? JSON.parse(storedPresets) : [];
+
+            // 找到并更新对应的预设
+            const index = presets.findIndex(p => p.id === preset.id);
+            if (index !== -1) {
+                presets[index] = preset;
+            } else {
+                presets.push(preset);
+            }
+
+            // 保存回本地存储
+            localStorage.setItem('mce_presets', JSON.stringify(presets));
+        } catch (error) {
+            console.error('保存预设到本地存储失败:', error);
+        }
     }
 }
 

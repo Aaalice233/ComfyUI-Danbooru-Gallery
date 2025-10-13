@@ -232,6 +232,8 @@ export const mceTranslations = {
         saveAsPreset: "另存为预设",
         presetName: "预设名称",
         presetList: "预设列表",
+        presetSettings: "预设设置",
+        syntaxType: "语法类型",
         noPresets: "还没有预设",
         clickToAddPreset: "点击\"另存为预设\"开始创建",
         presetNamePlaceholder: "输入预设名称",
@@ -249,7 +251,10 @@ export const mceTranslations = {
         editPreset: "编辑预设",
         createPreset: "创建预设",
         previewImage: "预览图",
-        noPreviewImage: "无预览图"
+        noPreviewImage: "无预览图",
+        searchPresets: "搜索预设...",
+        noSearchResults: "未找到匹配的预设",
+        tryDifferentKeywords: "尝试使用不同的关键词"
     },
     en: {
         // Toolbar
@@ -487,6 +492,8 @@ export const mceTranslations = {
         saveAsPreset: "Save as Preset",
         presetName: "Preset Name",
         presetList: "Preset List",
+        presetSettings: "Preset Settings",
+        syntaxType: "Syntax Type",
         noPresets: "No presets yet",
         clickToAddPreset: "Click 'Save as Preset' to start creating",
         presetNamePlaceholder: "Enter preset name",
@@ -504,7 +511,10 @@ export const mceTranslations = {
         editPreset: "Edit Preset",
         createPreset: "Create Preset",
         previewImage: "Preview Image",
-        noPreviewImage: "No preview image"
+        noPreviewImage: "No preview image",
+        searchPresets: "Search presets...",
+        noSearchResults: "No matching presets found",
+        tryDifferentKeywords: "Try different keywords"
     }
 };
 
