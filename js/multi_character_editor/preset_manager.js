@@ -581,7 +581,7 @@ class PresetManager {
             resultParts.push(...maskStrings);
         }
 
-        return resultParts.join('\n');
+        return resultParts.join(' ').trim();
     }
 
     /**

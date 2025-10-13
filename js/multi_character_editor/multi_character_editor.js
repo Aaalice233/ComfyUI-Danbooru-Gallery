@@ -752,7 +752,11 @@ class MultiCharacterEditor {
                         weight: char.weight || 1.0,
                         color: char.color || '#FF6B6B',
                         enabled: char.enabled !== false,
-                        position: char.position || 0
+                        position: char.position || 0,
+                        // 🔧 关键修复：保存FILL相关状态
+                        use_fill: char.use_fill || false,
+                        syntax_type: char.syntax_type || 'COUPLE',
+                        use_mask_syntax: char.use_mask_syntax || false
                     };
 
                     // 深度复制蒙版数据
@@ -798,6 +802,7 @@ class MultiCharacterEditor {
                     syntax_mode: enhancedConfig.syntax_mode || 'attention_couple',
                     base_prompt: enhancedConfig.base_prompt || '',
                     global_prompt: enhancedConfig.global_prompt || '2girls',  // 🔧 保留全局提示词
+                    global_use_fill: enhancedConfig.global_use_fill || false,  // 🔧 保留全局FILL状态
                     use_fill: enhancedConfig.use_fill !== undefined ? enhancedConfig.use_fill : false,  // 🔧 保留FILL状态
                     canvas: enhancedConfig.canvas || { width: 1024, height: 1024 },
                     characters: enhancedConfig.characters || [],
@@ -917,7 +922,8 @@ class MultiCharacterEditor {
                 syntax_mode: config.syntax_mode || 'attention_couple',
                 base_prompt: config.base_prompt || '',
                 global_prompt: config.global_prompt || '2girls',  // 🔧 保留全局提示词
-                use_fill: config.use_fill !== undefined ? config.use_fill : false,  // 🔧 保留FILL状态
+                use_fill: config.use_fill !== undefined ? config.use_fill : false,  // 🔧 保留FILL状态（后端兼容）
+                global_use_fill: config.global_use_fill !== undefined ? config.global_use_fill : false,  // 🔧 关键修复：保留全局FILL状态
                 canvas: canvasConfig,
                 characters: [],
                 settings: config.settings || { language: 'zh-CN' }
@@ -951,7 +957,8 @@ class MultiCharacterEditor {
                         position: char.position || index,
                         mask: char.mask || null,
                         syntax_type: syntaxType,  // 🔧 设置语法类型
-                        use_mask_syntax: char.use_mask_syntax !== false  // 🔧 保持向后兼容
+                        use_mask_syntax: char.use_mask_syntax !== false,  // 🔧 保持向后兼容
+                        use_fill: char.use_fill || false  // 🔧 保存FILL状态
                     };
                 });
             }
@@ -971,7 +978,8 @@ class MultiCharacterEditor {
             syntax_mode: 'attention_couple',
             base_prompt: '',
             global_prompt: '2girls',  // 🔧 新增：全局提示词
-            use_fill: false,  // 🔧 FILL默认关闭
+            use_fill: false,  // 🔧 FILL默认关闭（后端兼容）
+            global_use_fill: false,  // 🔧 关键修复：全局FILL状态
             canvas: { width: 1024, height: 1024 },
             characters: [],
             settings: { language: 'zh-CN' }
@@ -1226,10 +1234,75 @@ class MultiCharacterEditor {
 
     updateOutput() {
         try {
-            // 🔧 改为调用outputArea的自动更新方法
-            if (this.components && this.components.outputArea && this.components.outputArea.updatePromptPreview) {
-                this.components.outputArea.updatePromptPreview();
+            // 🔧 关键修复：同时更新预览和节点输出值
+            const config = this.dataManager.getConfig();
+            const generatedPrompt = this.generatePrompt(config);
+
+            // 更新预览显示
+            if (this.components && this.components.outputArea && this.components.outputArea.updatePrompt) {
+                this.components.outputArea.updatePrompt(generatedPrompt);
             }
+
+            // 🔧 关键修复：更新节点的实际输出值，确保输出引脚获取到正确的值
+            if (this.node) {
+                // 方法1：更新所有相关的widget
+                if (this.node.widgets) {
+                    // 查找输出相关的widget
+                    const promptWidget = this.node.widgets.find(w =>
+                        w.name === 'generated_prompt' ||
+                        w.name === 'prompt' ||
+                        w.name === 'output_prompt' ||
+                        w.type === 'text' && w.name.includes('prompt')
+                    );
+
+                    if (promptWidget) {
+                        promptWidget.value = generatedPrompt;
+                        console.log('[MultiCharacterEditor] 已更新节点输出widget:', promptWidget.name, '值:', generatedPrompt.slice(0, 100) + '...');
+                    }
+                }
+
+                // 基本缓存更新
+
+                // 🔧 关键修复：强制更新所有输出相关的属性
+                if (this.node.widgets) {
+                    this.node.widgets.forEach(widget => {
+                        if (widget.name === 'generated_prompt' ||
+                            widget.name === 'prompt' ||
+                            widget.name === 'output_prompt' ||
+                            (widget.type === 'text' && widget.name.includes('prompt'))) {
+                            widget.value = generatedPrompt;
+                            // 触发widget值更新事件
+                            if (widget.callback) {
+                                widget.callback(generatedPrompt);
+                            }
+                        }
+
+                        // 🔧 关键修复：更新use_fill参数（后端期望的全局FILL参数名）
+                        if (widget.name === 'use_fill') {
+                            const globalUseFill = config.global_use_fill || false;
+                            widget.value = globalUseFill;
+                        }
+
+                        // 🔧 关键修复：更新mce_config，包含完整配置
+                        if (widget.name === 'mce_config') {
+                            // 确保配置中包含后端需要的所有字段
+                            const backendConfig = {
+                                ...config,
+                                use_fill: config.global_use_fill || false,  // 后端期望的全局FILL参数
+                                characters: config.characters?.map(char => ({
+                                    ...char,
+                                    use_fill: char.use_fill || false  // 确保角色级别的use_fill传递到后端
+                                })) || []
+                            };
+
+                            widget.value = JSON.stringify(backendConfig, null, 2);
+                        }
+                    });
+                }
+
+                // 基本的节点状态更新完成
+            }
+
         } catch (error) {
             console.warn('[MultiCharacterEditor] updateOutput 失败:', error);
         }
@@ -1257,11 +1330,15 @@ class MultiCharacterEditor {
         const globalUseFill = config.global_use_fill || false;
         const characters = config.characters || [];
 
-        // 如果没有角色，直接返回基础提示词 + 全局提示词
+        // 如果没有角色，直接返回基础提示词 + 全局提示词（包括FILL处理）
         if (!characters || characters.length === 0) {
             let result = basePrompt;
             if (globalPrompt) {
                 result = result ? `${result} ${globalPrompt}` : globalPrompt;
+            }
+            // 🔧 修复：没有角色时也要考虑全局FILL标记
+            if (globalUseFill) {
+                result = result ? `${result} FILL()` : 'FILL()';
             }
             return result;
         }
@@ -1272,6 +1349,10 @@ class MultiCharacterEditor {
             let result = basePrompt;
             if (globalPrompt) {
                 result = result ? `${result} ${globalPrompt}` : globalPrompt;
+            }
+            // 🔧 修复：没有启用角色时也要考虑全局FILL标记
+            if (globalUseFill) {
+                result = result ? `${result} FILL()` : 'FILL()';
             }
             return result;
         }
@@ -1327,8 +1408,8 @@ class MultiCharacterEditor {
                 result = result ? `${result} ${globalPrompt}` : globalPrompt;
             }
             // 如果全局开启了FILL，添加FILL()
-            if (globalUseFill && result) {
-                result += ' FILL()';
+            if (globalUseFill) {
+                result = result ? `${result} FILL()` : 'FILL()';
             }
             return result || '';
         }
@@ -1395,6 +1476,9 @@ class MultiCharacterEditor {
             } else {
                 resultParts.push(finalBasePrompt);
             }
+        } else if (globalUseFill) {
+            // 🔧 修复：即使没有基础提示词，如果全局开启了FILL也要添加
+            resultParts.push('FILL()');
         }
 
         // 添加角色提示词
@@ -1924,7 +2008,8 @@ class DataManager {
                 mask: safeData.mask || null,
                 template: safeData.template || '',
                 syntax_type: safeData.syntax_type || defaultSyntaxType,  // 🔧 新增：设置语法类型
-                use_mask_syntax: safeData.use_mask_syntax !== false  // 🔧 向后兼容字段
+                use_mask_syntax: safeData.use_mask_syntax !== false,  // 🔧 向后兼容字段
+                use_fill: safeData.use_fill || false  // 🔧 保存FILL状态
             };
 
             this.config.characters.push(character);
@@ -2011,11 +2096,22 @@ class DataManager {
     updateCharacter(characterId, updates) {
         const index = this.config.characters.findIndex(c => c.id === characterId);
         if (index !== -1) {
+            // 🔧 调试FILL更新
+            if (updates.hasOwnProperty('use_fill')) {
+                console.log(`[DataManager] 更新角色FILL状态: ${this.config.characters[index].name} (${characterId})`, {
+                    旧状态: this.config.characters[index].use_fill,
+                    新状态: updates.use_fill
+                });
+            }
+
             this.config.characters[index] = { ...this.config.characters[index], ...updates };
             const character = this.config.characters[index];
+
+            console.log(`[DataManager] 角色已更新: ${character.name}`, updates);
             this.editor.eventBus.emit('character:updated', character);
             return character;
         }
+        console.error(`[DataManager] 未找到角色: ${characterId}`);
         return null;
     }
 
@@ -2053,7 +2149,16 @@ class DataManager {
     }
 
     updateConfig(updates) {
+        // 🔧 调试全局FILL更新
+        if (updates.hasOwnProperty('global_use_fill')) {
+            console.log(`[DataManager] 更新全局FILL状态:`, {
+                旧状态: this.config.global_use_fill,
+                新状态: updates.global_use_fill
+            });
+        }
+
         this.config = { ...this.config, ...updates };
+        console.log('[DataManager] 配置已更新:', updates);
         this.editor.eventBus.emit('config:changed', this.config);
     }
 
@@ -3182,6 +3287,8 @@ app.registerExtension({
                 // 存储原始的onExecute方法
                 const originalOnExecute = this.onExecuted;
 
+                // 基本的节点创建完成，后端会处理输出
+
                 // 重写onExecuted方法以在节点执行后刷新画布和更新输出
                 this.onExecuted = function (output) {
                     // 调用原始方法
@@ -3189,12 +3296,15 @@ app.registerExtension({
                         originalOnExecute.apply(this, arguments);
                     }
 
-                    // 节点执行后更新输出区域
-                    if (MultiCharacterEditorInstance && output && output.generated_prompt) {
+                    // 节点执行后刷新画布和更新预览
+                    if (MultiCharacterEditorInstance) {
                         setTimeout(() => {
-                            // 更新输出区域的提示词
+                            // 强制使用前端生成的提示词更新预览
+                            MultiCharacterEditorInstance.updateOutput();
+
+                            // 额外确保预览也更新
                             if (MultiCharacterEditorInstance.components.outputArea) {
-                                MultiCharacterEditorInstance.components.outputArea.updatePrompt(output.generated_prompt);
+                                MultiCharacterEditorInstance.components.outputArea.updatePromptPreview();
                             }
                         }, 100);
                     }

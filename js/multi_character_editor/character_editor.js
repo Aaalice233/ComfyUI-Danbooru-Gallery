@@ -1042,35 +1042,46 @@ class CharacterEditor {
 
     // 🔧 新增：切换FILL模式（单选）
     toggleFillMode(characterId) {
+        console.log('[CharacterEditor] toggleFillMode 被调用，characterId:', characterId);
+
         if (characterId === '__global__') {
             // 切换全局提示词的FILL状态
             const config = this.editor.dataManager.getConfig();
             const currentState = config.global_use_fill || false;
+            console.log('[CharacterEditor] 全局FILL当前状态:', currentState, '即将切换为:', !currentState);
 
             // 关闭所有角色的FILL
             const characters = this.editor.dataManager.getCharacters();
             characters.forEach(char => {
                 if (char.use_fill) {
+                    console.log('[CharacterEditor] 关闭角色FILL:', char.id, char.name);
                     this.editor.dataManager.updateCharacter(char.id, { use_fill: false });
                 }
             });
 
             // 切换全局的FILL状态
             this.editor.dataManager.updateConfig({ global_use_fill: !currentState });
+            console.log('[CharacterEditor] 全局FILL已更新为:', !currentState);
         } else {
             // 切换角色的FILL状态
             const character = this.editor.dataManager.getCharacter(characterId);
-            if (!character) return;
+            if (!character) {
+                console.error('[CharacterEditor] 角色不存在:', characterId);
+                return;
+            }
 
             const currentState = character.use_fill || false;
+            console.log('[CharacterEditor] 角色FILL当前状态:', character.name, currentState, '即将切换为:', !currentState);
 
             if (!currentState) {
                 // 如果要开启，先关闭全局和其他所有角色的FILL
+                console.log('[CharacterEditor] 开启角色FILL前，先关闭全局FILL');
                 this.editor.dataManager.updateConfig({ global_use_fill: false });
 
                 const characters = this.editor.dataManager.getCharacters();
                 characters.forEach(char => {
                     if (char.id !== characterId && char.use_fill) {
+                        console.log('[CharacterEditor] 关闭其他角色FILL:', char.id, char.name);
                         this.editor.dataManager.updateCharacter(char.id, { use_fill: false });
                     }
                 });
@@ -1078,12 +1089,25 @@ class CharacterEditor {
 
             // 切换当前角色的FILL状态
             this.editor.dataManager.updateCharacter(characterId, { use_fill: !currentState });
+            console.log('[CharacterEditor] 角色FILL已更新:', character.name, 'use_fill:', !currentState);
         }
 
         // 重新渲染列表
         this.renderCharacterList();
-        // 更新输出
+        // 🔧 修复：立即更新输出，确保FILL状态变化立即生效
         this.editor.updateOutput();
+
+        // 额外触发一次保存，确保数据持久化
+        setTimeout(() => {
+            if (this.editor.saveToNodeState) {
+                const config = this.editor.dataManager.getConfig();
+                console.log('[CharacterEditor] 保存FILL状态到节点:', {
+                    global_use_fill: config.global_use_fill,
+                    characters_with_fill: config.characters?.filter(c => c.use_fill)?.length || 0
+                });
+                this.editor.saveToNodeState(config);
+            }
+        }, 50);
     }
 
     editCharacter(characterId) {
