@@ -1909,9 +1909,9 @@ class DataManager {
                 characterId = `char_backup_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
             }
 
-            // 🔧 修复：根据当前语法模式设置正确的语法类型
+            // 🔧 修复：根据当前语法模式设置正确的语法类型（切换到区域提示词时默认使用MASK）
             const currentSyntaxMode = this.config.syntax_mode || 'attention_couple';
-            const defaultSyntaxType = currentSyntaxMode === 'regional_prompts' ? 'REGION' : 'COUPLE';
+            const defaultSyntaxType = currentSyntaxMode === 'regional_prompts' ? 'MASK' : 'COUPLE';
 
             const character = {
                 id: characterId,
@@ -2560,7 +2560,27 @@ class Toolbar {
                 const syntaxMode = document.getElementById('mce-syntax-mode');
                 if (syntaxMode) {
                     syntaxMode.addEventListener('change', (e) => {
-                        this.editor.dataManager.updateConfig({ syntax_mode: e.target.value });
+                        const newSyntaxMode = e.target.value;
+
+                        // 更新配置
+                        this.editor.dataManager.updateConfig({ syntax_mode: newSyntaxMode });
+
+                        // 立即刷新角色列表的语法类型
+                        this.updateAllCharactersSyntaxType(newSyntaxMode);
+
+                        // 刷新角色列表UI显示
+                        if (this.editor.components.characterEditor) {
+                            this.editor.components.characterEditor.renderCharacterList();
+                        }
+
+                        // 刷新提示词预览
+                        if (this.editor.components.outputArea) {
+                            this.editor.components.outputArea.updatePromptPreview();
+                        }
+
+                        // 显示切换成功提示
+                        const modeName = newSyntaxMode === 'regional_prompts' ? '区域提示词' : '注意力耦合';
+                        this.editor.languageManager.showMessage(`已切换到${modeName}模式`, 'success');
                     });
                 }
 
@@ -3067,6 +3087,52 @@ class Toolbar {
             syntaxModeElement.value = config.syntax_mode || 'attention_couple';
         }
 
+    }
+
+    /**
+     * 更新所有角色的语法类型
+     * @param {string} syntaxMode - 新的语法模式 ('attention_couple' 或 'regional_prompts')
+     */
+    updateAllCharactersSyntaxType(syntaxMode) {
+        try {
+            const config = this.editor.dataManager.getConfig();
+            if (!config || !config.characters || !Array.isArray(config.characters)) {
+                console.warn('[Toolbar] updateAllCharactersSyntaxType: 没有角色数据需要更新');
+                return;
+            }
+
+            const isRegionalMode = syntaxMode === 'regional_prompts';
+            let updatedCount = 0;
+
+            // 更新所有角色的语法类型
+            config.characters.forEach(character => {
+                if (isRegionalMode) {
+                    // 切换到区域提示词模式时，默认使用MASK（符合用户要求）
+                    if (character.syntax_type !== 'REGION' && character.syntax_type !== 'MASK') {
+                        character.syntax_type = 'MASK';  // 用户要求默认使用MASK
+                        character.use_mask_syntax = true;
+                        updatedCount++;
+                    }
+                } else {
+                    // 切换到注意力耦合模式时，固定使用COUPLE
+                    if (character.syntax_type !== 'COUPLE') {
+                        character.syntax_type = 'COUPLE';
+                        character.use_mask_syntax = true;
+                        updatedCount++;
+                    }
+                }
+            });
+
+            // 保存更新后的配置
+            if (updatedCount > 0) {
+                this.editor.dataManager.updateConfig(config);
+                console.log(`[Toolbar] updateAllCharactersSyntaxType: 已更新 ${updatedCount} 个角色的语法类型`);
+            }
+
+        } catch (error) {
+            console.error('[Toolbar] updateAllCharactersSyntaxType 出错:', error);
+            this.editor.languageManager.showMessage('更新角色语法类型时出错', 'error');
+        }
     }
 }
 

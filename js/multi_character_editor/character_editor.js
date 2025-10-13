@@ -2353,9 +2353,9 @@ class CharacterEditor {
                 syntaxType = 'REGION'; // AREA 对应 REGION
                 useMaskSyntax = false;
             } else {
-                // 默认值
-                syntaxType = 'REGION';
-                useMaskSyntax = false;
+                // 默认值：切换到区域提示词时默认使用MASK（符合用户要求）
+                syntaxType = 'MASK';
+                useMaskSyntax = true;
             }
         }
 
