@@ -753,10 +753,11 @@ class MultiCharacterEditor {
                         color: char.color || '#FF6B6B',
                         enabled: char.enabled !== false,
                         position: char.position || 0,
-                        // 🔧 关键修复：保存FILL相关状态
+                        // 🔧 关键修复：保存FILL和羽化相关状态
                         use_fill: char.use_fill || false,
                         syntax_type: char.syntax_type || 'COUPLE',
-                        use_mask_syntax: char.use_mask_syntax || false
+                        use_mask_syntax: char.use_mask_syntax || false,
+                        feather: char.feather || 0  // 🔧 修复：保存羽化值
                     };
 
                     // 深度复制蒙版数据
@@ -958,7 +959,8 @@ class MultiCharacterEditor {
                         mask: char.mask || null,
                         syntax_type: syntaxType,  // 🔧 设置语法类型
                         use_mask_syntax: char.use_mask_syntax !== false,  // 🔧 保持向后兼容
-                        use_fill: char.use_fill || false  // 🔧 保存FILL状态
+                        use_fill: char.use_fill || false,  // 🔧 保存FILL状态
+                        feather: char.feather || 0  // 🔧 修复：保存羽化值
                     };
                 });
             }
@@ -1390,7 +1392,7 @@ class MultiCharacterEditor {
                 y1: y,
                 x2: x + width,
                 y2: y + height,
-                feather: char.mask.feather || 0,
+                feather: char.feather || char.mask.feather || 0,  // 🔧 修复：从char.feather获取羽化值
                 blend_mode: char.mask.blend_mode || 'normal',
                 use_fill: char.use_fill || false,  // 添加角色的FILL状态
                 syntax_type: char.syntax_type || 'REGION'  // 🔧 修复：传递语法类型
@@ -2009,7 +2011,8 @@ class DataManager {
                 template: safeData.template || '',
                 syntax_type: safeData.syntax_type || defaultSyntaxType,  // 🔧 新增：设置语法类型
                 use_mask_syntax: safeData.use_mask_syntax !== false,  // 🔧 向后兼容字段
-                use_fill: safeData.use_fill || false  // 🔧 保存FILL状态
+                use_fill: safeData.use_fill || false,  // 🔧 保存FILL状态
+                feather: safeData.feather || 0  // 🔧 修复：保存羽化值
             };
 
             this.config.characters.push(character);
