@@ -3155,13 +3155,15 @@ class PresetManager {
         // 更新所有角色的语法类型
         if (preset.characters) {
             preset.characters.forEach(character => {
-                // 如果切换到Regional模式且当前语法类型不是REGION或MASK，则设置为REGION
+                // 如果切换到Regional模式且当前语法类型不是REGION或MASK，则默认设置为MASK（符合用户要求）
                 if (isRegionalMode && character.syntax_type !== 'REGION' && character.syntax_type !== 'MASK') {
-                    character.syntax_type = 'REGION';
+                    character.syntax_type = 'MASK';  // 用户要求：切换到区域提示词时默认使用MASK
+                    character.use_mask_syntax = true;
                 }
                 // 如果切换到Attention模式，固定使用COUPLE
                 else if (!isRegionalMode) {
                     character.syntax_type = 'COUPLE';
+                    character.use_mask_syntax = true;
                 }
             });
         }
@@ -3216,9 +3218,9 @@ class PresetManager {
                     const preview = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
                     const weight = char.weight || 1.0;
                     const feather = char.feather || 0;
-                    // 🔧 修复：根据预设的语法模式设置正确的默认语法类型
+                    // 🔧 修复：根据预设的语法模式设置正确的默认语法类型（区域提示词默认使用MASK）
                     const syntaxMode = preset.syntax_mode || 'attention_couple';
-                    const defaultSyntaxType = syntaxMode === 'regional_prompts' ? 'REGION' : 'COUPLE';
+                    const defaultSyntaxType = syntaxMode === 'regional_prompts' ? 'MASK' : 'COUPLE';
                     const syntaxType = char.syntax_type || defaultSyntaxType;
 
                     return `
