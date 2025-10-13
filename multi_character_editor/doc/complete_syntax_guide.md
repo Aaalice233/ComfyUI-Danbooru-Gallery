@@ -1,5 +1,22 @@
 # 多人角色提示词完整语法指南
 
+## ⚠️ 重要说明
+
+<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; margin: 20px 0; border-left: 6px solid #f59e0b;">
+<h3 style="color: #fff; font-size: 1.5em; margin-top: 0;">🔗 依赖节点</h3>
+<p style="color: #fff; font-size: 1.2em; line-height: 1.6;">
+本节点需要配合 <strong><a href="https://github.com/asagi4/comfyui-prompt-control" style="color: #fbbf24; text-decoration: underline;">comfyui-prompt-control</a></strong> 节点使用才能发挥完整效果。
+</p>
+<p style="color: #fff; font-size: 1.1em; line-height: 1.6;">
+⚡ <strong>单独使用本节点效果有限</strong>，因为 ComfyUI 原生不支持这些高级语法（MASK、FEATHER、AND 等）。
+</p>
+<p style="color: #fff; font-size: 1.1em; line-height: 1.6;">
+📦 请先安装 comfyui-prompt-control 插件，然后将本节点的输出连接到 comfyui-prompt-control 的输入端，才能正常使用区域提示词功能。
+</p>
+</div>
+
+---
+
 本指南整合了 Attention Couple 和 Regional Prompts 两种语法，为多人角色提示词编辑器提供完整的语法参考。
 
 ## 概述
@@ -87,37 +104,52 @@ base_prompt COUPLE(x1 x2, y1 y2, weight, op) coupled_prompt
 3. **权重处理**：如果基础提示词权重设置为零（即末尾有 `:0`），则第一个非零权重的耦合提示词成为基础提示词
 4. **负提示词支持**：可以在负提示词中使用 `COUPLE`，它会正确工作
 
+### 完整语法格式
+
+多人角色编辑器默认生成**完整参数格式**的语法，确保所有参数明确指定：
+
+```
+base_prompt COUPLE MASK(x1 x2, y1 y2, weight) character_prompt
+```
+
+**注意**：
+- 所有坐标参数（x1, x2, y1, y2）始终包含
+- **权重参数（weight）始终包含**，即使是默认值 1.0
+- 操作模式（op）为可选参数，默认为 `multiply`
+
 ### 使用示例
 
-#### 基本示例
+#### 基本示例（完整格式）
 ```
-dog COUPLE(0 0.5, 0 1) cat
+dog COUPLE MASK(0.00 0.50, 0.00 1.00, 1.00) cat
 ```
-在左半部分生成猫，右半部分生成狗。
+在左半部分生成猫，右半部分生成狗，权重为 1.0。
 
-#### 多角色示例
+#### 多角色示例（完整格式）
 ```
-landscape COUPLE(0 0.33, 0 1) girl with red hair COUPLE(0.33 0.66, 0 1) boy with blue hair COUPLE(0.66 1, 0 1) old man
+landscape COUPLE MASK(0.00 0.33, 0.00 1.00, 1.00) girl with red hair COUPLE MASK(0.33 0.66, 0.00 1.00, 1.00) boy with blue hair COUPLE MASK(0.66 1.00, 0.00 1.00, 1.00) old man
 ```
-创建三个角色：左侧红发女孩，中间蓝发男孩，右侧老人。
+创建三个角色：左侧红发女孩，中间蓝发男孩，右侧老人，所有权重均为 1.0。
 
-#### 使用权重
+#### 使用自定义权重
 ```
-landscape COUPLE(0 0.5, 0 1, 0.8) beautiful castle COUPLE(0.5 1, 0 1, 1.2) dragon
+landscape COUPLE MASK(0.00 0.50, 0.00 1.00, 0.80) beautiful castle COUPLE MASK(0.50 1.00, 0.00 1.00, 1.20) dragon
 ```
 城堡权重为0.8，龙权重为1.2。
 
-#### 使用 FILL()
+#### 使用 FILL()（默认关闭，需手动开启）
 ```
-background FILL() COUPLE(0 0.3, 0 1) character1 COUPLE(0.7 1, 0 1) character2
+background FILL() COUPLE MASK(0.00 0.30, 0.00 1.00, 1.00) character1 COUPLE MASK(0.70 1.00, 0.00 1.00, 1.00) character2
 ```
-背景自动填充未被角色占据的区域。
+背景自动填充未被角色占据的区域（中间 0.30-0.70 的部分）。
+
+**注意**：FILL() 功能默认是**关闭**的，需要在节点设置中手动开启 `use_fill` 选项。
 
 #### 使用羽化
 ```
-landscape COUPLE(0 0.5, 0 1) mountain FEATHER(10) COUPLE(0.5 1, 0 1) lake FEATHER(15)
+landscape COUPLE MASK(0.00 0.50, 0.00 1.00, 1.00) mountain FEATHER(10) COUPLE MASK(0.50 1.00, 0.00 1.00, 1.00) lake FEATHER(15)
 ```
-山脉和湖泊之间有羽化过渡。
+山脉羽化10像素，湖泊羽化15像素，创建柔和的过渡效果。
 
 ---
 
@@ -150,13 +182,23 @@ prompt1 AREA(x1 x2, y1 y2) MASK(x1 x2, y1 y2) AND prompt2 MASK(x1 x2, y1 y2)
 2. **区域行为**：使用 AREA 时，ComfyUI 使用区域指定的潜在部分生成单独的模型输出，然后合成到完整潜在中
 3. **组合使用**：可以同时使用 AREA 和 MASK，遮罩应用于 AREA 指定的潜在
 
+### 完整语法格式
+
+Regional Prompts 同样使用**完整参数格式**，确保所有参数明确：
+
+```
+prompt1 MASK(x1 x2, y1 y2, weight) AND prompt2 MASK(x1 x2, y1 y2, weight)
+```
+
+**注意**：权重参数始终包含，即使是默认值 1.0。
+
 ### 使用示例
 
-#### 基本示例
+#### 基本示例（完整格式）
 ```
-cat MASK(0 0.5, 0 1) AND dog MASK(0.5 1, 0 1)
+cat MASK(0.00 0.50, 0.00 1.00, 1.00) AND dog MASK(0.50 1.00, 0.00 1.00, 1.00)
 ```
-左半部分生成猫，右半部分生成狗。
+左半部分生成猫，右半部分生成狗，权重均为 1.0。
 
 #### 使用 AREA
 ```
@@ -164,17 +206,17 @@ cat AREA(0 0.5, 0 1) AND dog AREA(0.5 1, 0 1)
 ```
 生成两个完全独立的输出（512x1024），然后合成到1024x1024的潜在中。
 
-#### 多角色示例
+#### 多角色示例（完整格式）
 ```
-girl with red hair MASK(0 0.33, 0 1) AND boy with blue hair MASK(0.33 0.66, 0 1) AND old man MASK(0.66 1, 0 1)
+girl with red hair MASK(0.00 0.33, 0.00 1.00, 1.00) AND boy with blue hair MASK(0.33 0.66, 0.00 1.00, 1.00) AND old man MASK(0.66 1.00, 0.00 1.00, 1.00)
 ```
-创建三个角色：左侧红发女孩，中间蓝发男孩，右侧老人。
+创建三个角色：左侧红发女孩，中间蓝发男孩，右侧老人，所有权重均为 1.0。
 
-#### 使用权重和羽化
+#### 使用自定义权重和羽化
 ```
-mountain MASK(0 0.5, 0 1, 0.8) FEATHER(10) AND lake MASK(0.5 1, 0 1, 1.2) FEATHER(15)
+mountain MASK(0.00 0.50, 0.00 1.00, 0.80) FEATHER(10) AND lake MASK(0.50 1.00, 0.00 1.00, 1.20) FEATHER(15)
 ```
-山脉权重为0.8，湖泊权重为1.2，两者都有羽化效果。
+山脉权重为0.8羽化10像素，湖泊权重为1.2羽化15像素。
 
 ---
 
@@ -237,42 +279,43 @@ MASK_SIZE(1024, 1024) MASK(0 512, 0 1024)
 
 ---
 
-## 实际应用示例
+## 实际应用示例（完整格式）
 
 ### 示例1：双人肖像
 
-#### Attention Couple 语法
+#### Attention Couple 语法（完整格式）
 ```
-portrait COUPLE(0 0.5, 0 1) beautiful woman with blonde hair, blue eyes COUPLE(0.5 1, 0 1) handsome man with brown hair, green eyes
+portrait COUPLE MASK(0.00 0.50, 0.00 1.00, 1.00) beautiful woman with blonde hair, blue eyes COUPLE MASK(0.50 1.00, 0.00 1.00, 1.00) handsome man with brown hair, green eyes
 ```
 
-#### Regional Prompts 语法
+#### Regional Prompts 语法（完整格式）
 ```
-beautiful woman with blonde hair, blue eyes MASK(0 0.5, 0 1) AND handsome man with brown hair, green eyes MASK(0.5 1, 0 1)
+beautiful woman with blonde hair, blue eyes MASK(0.00 0.50, 0.00 1.00, 1.00) AND handsome man with brown hair, green eyes MASK(0.50 1.00, 0.00 1.00, 1.00)
 ```
 
 ### 示例2：风景与人物
 
-#### Attention Couple 语法
+#### Attention Couple 语法（完整格式，使用 FILL）
 ```
-landscape FILL() COUPLE(0.2 0.8, 0.3 0.9) girl standing on hill FEATHER(20)
+landscape FILL() COUPLE MASK(0.20 0.80, 0.30 0.90, 1.00) girl standing on hill FEATHER(20)
 ```
+**注意**：需要手动开启 `use_fill` 选项才能使用 FILL() 功能。
 
-#### Regional Prompts 语法
+#### Regional Prompts 语法（完整格式）
 ```
-landscape MASK(0 0.2, 0 1) MASK(0.8 1, 0 1) MASK(0 1, 0 0.3) MASK(0 1, 0.9 1) AND girl standing on hill MASK(0.2 0.8, 0.3 0.9) FEATHER(20)
+landscape MASK(0.00 0.20, 0.00 1.00, 1.00) MASK(0.80 1.00, 0.00 1.00, 1.00) MASK(0.00 1.00, 0.00 0.30, 1.00) MASK(0.00 1.00, 0.90 1.00, 1.00) AND girl standing on hill MASK(0.20 0.80, 0.30 0.90, 1.00) FEATHER(20)
 ```
 
 ### 示例3：多角色复杂场景
 
-#### Attention Couple 语法
+#### Attention Couple 语法（完整格式）
 ```
-fantasy forest COUPLE(0 0.25, 0 1) elf archer COUPLE(0.25 0.5, 0 1) dwarf warrior COUPLE(0.5 0.75, 0 1) wizard COUPLE(0.75 1, 0 1) dragon
+fantasy forest COUPLE MASK(0.00 0.25, 0.00 1.00, 1.00) elf archer COUPLE MASK(0.25 0.50, 0.00 1.00, 1.00) dwarf warrior COUPLE MASK(0.50 0.75, 0.00 1.00, 1.00) wizard COUPLE MASK(0.75 1.00, 0.00 1.00, 1.00) dragon
 ```
 
-#### Regional Prompts 语法
+#### Regional Prompts 语法（完整格式）
 ```
-elf archer MASK(0 0.25, 0 1) AND dwarf warrior MASK(0.25 0.5, 0 1) AND wizard MASK(0.5 0.75, 0 1) AND dragon MASK(0.75 1, 0 1) AND fantasy forest
+elf archer MASK(0.00 0.25, 0.00 1.00, 1.00) AND dwarf warrior MASK(0.25 0.50, 0.00 1.00, 1.00) AND wizard MASK(0.50 0.75, 0.00 1.00, 1.00) AND dragon MASK(0.75 1.00, 0.00 1.00, 1.00) AND fantasy forest
 ```
 
 ---

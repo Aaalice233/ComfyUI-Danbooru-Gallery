@@ -577,9 +577,7 @@ class CharacterFeatureSwapNode:
         # 在执行开始时立即检查中断状态
         model_management.throw_exception_if_processing_interrupted()
             
-        logger.info(f"[CharacterFeatureSwapNode] Received original_prompt (raw): {original_prompt}")
         original_prompt = _parse_prompt_input(original_prompt)
-        logger.info(f"[CharacterFeatureSwapNode] Received original_prompt (parsed): {original_prompt}")
         character_prompt = _parse_prompt_input(character_prompt)
 
         # 在处理输入后再次检查中断状态
@@ -666,7 +664,6 @@ class CharacterFeatureSwapNode:
         if api_channel == "gemini_cli":
             model_management.throw_exception_if_processing_interrupted()
             
-            logger.info("[Execute Gemini CLI] Starting async execution via stdin.")
             if not model:
                 logger.error("[Execute Gemini CLI] Error: Model not selected for Gemini CLI channel.")
                 return ("错误: Gemini CLI 渠道未选择模型。",)
@@ -678,7 +675,6 @@ class CharacterFeatureSwapNode:
                 
                 cli_env = os.environ.copy()
                 cli_env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
-                logger.info(f"[Execute Gemini CLI] Executing command: {' '.join(command)}")
 
                 process = await asyncio.create_subprocess_exec(
                     *command,
@@ -823,7 +819,7 @@ class CharacterFeatureSwapNode:
                         try:
                             await request_task
                         except asyncio.CancelledError:
-                            logger.info("[Execute HTTP] HTTP request successfully cancelled.")
+                            pass
                         raise  # 重新抛出异常，让ComfyUI处理
                     
                     try:
@@ -844,9 +840,6 @@ class CharacterFeatureSwapNode:
                 model_management.throw_exception_if_processing_interrupted()
                 
                 result = await response.json()
-
-                # 增加日志记录完整的API响应
-                logger.info(f"[Execute HTTP - Gemini Raw Response] {json.dumps(result, indent=2)}")
 
                 # 解析响应后最后检查一次中断状态
                 model_management.throw_exception_if_processing_interrupted()

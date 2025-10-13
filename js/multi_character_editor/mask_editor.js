@@ -1,6 +1,6 @@
 // Canvas蒙版编辑器组件 - 版本 2025.10.12.0352
-import { globalMultiLanguageManager } from './multi_language.js';
-import { globalToastManager as toastManagerProxy } from './toast_manager.js';
+import { globalMultiLanguageManager } from '../global/multi_language.js';
+import { globalToastManager as toastManagerProxy } from '../global/toast_manager.js';
 
 // 🔧 强制刷新标记 - 版本: 2025-10-12-23:50
 console.log('[mask_editor.js] 文件已加载 - 版本: 2025-10-12-23:50');
@@ -64,21 +64,16 @@ class MaskEditor {
     }
 
     createCanvas() {
-        console.log('[DEBUG] MaskEditor.createCanvas: 开始创建画布');
         this.canvas = document.createElement('canvas');
         this.canvas.className = 'mce-canvas';
         this.ctx = this.canvas.getContext('2d');
-        console.log('[DEBUG] MaskEditor.createCanvas: 画布创建完成', {
-            hasCanvas: !!this.canvas,
-            hasCtx: !!this.ctx
-        });
 
         // 设置Canvas样式
         this.canvas.style.cssText = `
             width: 100%;
             height: 100%;
             cursor: crosshair;
-            background: linear-gradient(135deg, #1a1a2e 0%, #262638 100%);
+            background: #252525;
             display: block;
             visibility: visible;
             position: absolute;
@@ -88,7 +83,7 @@ class MaskEditor {
             bottom: 0;
             z-index: 1;
             border-radius: 0;
-            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.2);
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
             object-fit: cover;
             margin: 0;
             padding: 0;
@@ -101,17 +96,13 @@ class MaskEditor {
             display: block;
             width: 100%;
             height: 100%;
-            background: linear-gradient(135deg, rgba(26, 26, 38, 0.4) 0%, rgba(38, 38, 56, 0.4) 100%);
+            background: #1a1a1a;
             margin: 0;
             padding: 0;
             border: none;
         `;
 
         this.container.appendChild(this.canvas);
-        console.log('[DEBUG] MaskEditor.createCanvas: 画布已添加到容器', {
-            containerHasCanvas: this.container.contains(this.canvas),
-            canvasParent: !!this.canvas.parentElement
-        });
 
         // 监听容器大小变化（使用节流）
         this.resizeObserver = new ResizeObserver((entries) => {
@@ -149,22 +140,9 @@ class MaskEditor {
             this.resizeCanvas();
             this.scheduleRender();
         }, 1000);
-
-        console.log('[DEBUG] MaskEditor.constructor: 初始化完成', {
-            hasCanvas: !!this.canvas,
-            hasCtx: !!this.ctx,
-            hasContainer: !!this.container
-        });
     }
 
     resize(width, height) {
-        console.log('[DEBUG] MaskEditor.resize: 开始调整画布大小', {
-            width: width,
-            height: height,
-            canvasExists: !!this.canvas,
-            ctxExists: !!this.ctx
-        });
-
         if (!this.canvas || !this.ctx) {
 
             return;
@@ -192,13 +170,6 @@ class MaskEditor {
         const displayWidth = containerRect.width;
         const displayHeight = containerRect.height;
 
-        console.log('[DEBUG] MaskEditor.resize: 画布尺寸信息', {
-            传入尺寸: { width: width, height: height }, // 传入的width和height是容器的逻辑尺寸
-            容器尺寸: { displayWidth: displayWidth, displayHeight: displayHeight },
-            像素尺寸: { pixelWidth: this.canvas.width, pixelHeight: this.canvas.height },
-            设备像素比: dpr
-        });
-
         // 🔧 强制设置画布显示尺寸与容器完全一致，使用!important确保样式优先级
         this.canvas.style.setProperty('width', `${displayWidth}px`, 'important');
         this.canvas.style.setProperty('height', `${displayHeight}px`, 'important');
@@ -215,13 +186,6 @@ class MaskEditor {
 
         // 🔧 强制触发重新渲染，确保画布立即更新
         this.scheduleRender();
-
-        console.log('[DEBUG] MaskEditor.resize: 画布像素尺寸已设置', {
-            canvasWidth: this.canvas.width,
-            canvasHeight: this.canvas.height,
-            canvasStyleWidth: this.canvas.style.width,
-            canvasStyleHeight: this.canvas.style.height
-        });
 
         const config = this.editor.dataManager.getConfig();
         if (!config || !config.canvas) {
@@ -251,22 +215,6 @@ class MaskEditor {
             // 更新记录的尺寸
             this.lastContainerSize.width = currentWidth;
             this.lastContainerSize.height = currentHeight;
-
-            console.log('[DEBUG] MaskEditor.resize: 容器尺寸变化，重新计算缩放', {
-                容器尺寸: { currentWidth, currentHeight },
-                画布逻辑尺寸: { canvasWidth, canvasHeight },
-                计算结果: {
-                    scale: this.scale,
-                    offsetX: this.offset.x,
-                    offsetY: this.offset.y
-                },
-                修复说明: 'offset 始终为 0，画布从左上角开始'
-            });
-        } else {
-            console.log('[DEBUG] MaskEditor.resize: 容器尺寸未变化，保持当前缩放', {
-                当前scale: this.scale,
-                当前offset: this.offset
-            });
         }
 
 
@@ -275,21 +223,11 @@ class MaskEditor {
 
     // 🔧 新增：带重试机制的画布调整方法
     resizeCanvasWithRetry(retryCount = 0, maxRetries = 5) {
-        console.log('[DEBUG] resizeCanvasWithRetry: 方法被调用!', {
-            retryCount,
-            maxRetries,
-            hasContainer: !!this.container,
-            containerType: this.container ? this.container.constructor.name : 'N/A'
-        });
-
         if (!this.container) {
-            console.warn('[DEBUG] resizeCanvasWithRetry: 容器不存在，直接返回');
             return;
         }
 
-        console.log('[DEBUG] resizeCanvasWithRetry: 容器存在，准备获取getBoundingClientRect');
         const rect = this.container.getBoundingClientRect();
-        console.log('[DEBUG] resizeCanvasWithRetry: getBoundingClientRect结果', { width: rect.width, height: rect.height });
 
         // 检查容器尺寸是否有效
         if (rect.width <= 0 || rect.height <= 0) {
@@ -311,32 +249,18 @@ class MaskEditor {
     }
 
     resizeCanvas(preserveTransform = false) {
-        console.log('[DEBUG] resizeCanvas: 方法被调用', { hasContainer: !!this.container, preserveTransform });
-
         if (!this.container) {
-            console.warn('[DEBUG] resizeCanvas: container不存在，直接返回');
             return;
         }
 
         // 使用requestAnimationFrame确保DOM更新完成
         requestAnimationFrame(() => {
-            console.log('[DEBUG] resizeCanvas: requestAnimationFrame回调执行');
             const rect = this.container.getBoundingClientRect();
 
             // 添加更严格的尺寸检查
             if (rect.width <= 0 || rect.height <= 0) {
-                console.warn('[MaskEditor] 容器尺寸无效，跳过resizeCanvas', { width: rect.width, height: rect.height });
                 return;
             }
-
-            console.log('[DEBUG] MaskEditor.resizeCanvas: 容器尺寸信息', {
-                containerWidth: rect.width,
-                containerHeight: rect.height,
-                canvasWidth: this.canvas ? this.canvas.width : 'N/A',
-                canvasHeight: this.canvas ? this.canvas.height : 'N/A',
-                canvasClientWidth: this.canvas ? this.canvas.clientWidth : 'N/A',
-                canvasClientHeight: this.canvas ? this.canvas.clientHeight : 'N/A'
-            });
 
             // 🔧 关键修复：强制布局重新计算
             this.forceLayoutRecalculation();
@@ -346,7 +270,7 @@ class MaskEditor {
                 width: 100% !important;
                 height: 100% !important;
                 cursor: crosshair !important;
-                background: linear-gradient(135deg, #1a1a2e 0%, #262638 100%) !important;
+                background: #252525 !important;
                 display: block !important;
                 visibility: visible !important;
                 position: absolute !important;
@@ -356,7 +280,7 @@ class MaskEditor {
                 bottom: 0 !important;
                 z-index: 1 !important;
                 border-radius: 0 !important;
-                box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.2) !important;
+                box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5) !important;
                 object-fit: cover !important;
                 margin: 0 !important;
                 padding: 0 !important;
@@ -370,7 +294,7 @@ class MaskEditor {
                 display: block !important;
                 width: 100% !important;
                 height: 100% !important;
-                background: linear-gradient(135deg, rgba(26, 26, 38, 0.4) 0%, rgba(38, 38, 56, 0.4) 100%) !important;
+                background: #1a1a1a !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 border: none !important;
@@ -413,10 +337,8 @@ class MaskEditor {
                 parentElement.offsetHeight;
                 parentElement.style.display = parentDisplay || '';
             }
-
-            console.log('[DEBUG] forceLayoutRecalculation: 布局重新计算完成');
         } catch (error) {
-            console.error('[DEBUG] forceLayoutRecalculation: 布局重新计算失败', error);
+            console.error('[MaskEditor] forceLayoutRecalculation: 布局重新计算失败', error);
         }
     }
 
@@ -468,7 +390,7 @@ class MaskEditor {
 
             // 输出诊断结果
             if (issues.length > 0) {
-                console.warn('[DEBUG] diagnoseLayoutIssues: 发现布局问题', {
+                console.warn('[MaskEditor] diagnoseLayoutIssues: 发现布局问题', {
                     issues: issues,
                     containerRect: containerRect,
                     canvasRect: canvasRect,
@@ -483,25 +405,21 @@ class MaskEditor {
 
                 // 尝试自动修复
                 this.attemptLayoutFix(issues);
-            } else {
-                console.log('[DEBUG] diagnoseLayoutIssues: 布局正常');
             }
         } catch (error) {
-            console.error('[DEBUG] diagnoseLayoutIssues: 诊断失败', error);
+            console.error('[MaskEditor] diagnoseLayoutIssues: 诊断失败', error);
         }
     }
 
     // 🔧 新增：尝试自动修复布局问题
     attemptLayoutFix(issues) {
         try {
-            console.log('[DEBUG] attemptLayoutFix: 尝试修复布局问题', issues);
-
             // 强制重新设置样式
             this.canvas.style.cssText = `
                 width: 100% !important;
                 height: 100% !important;
                 cursor: crosshair !important;
-                background: linear-gradient(135deg, #1a1a2e 0%, #262638 100%) !important;
+                background: #252525 !important;
                 display: block !important;
                 visibility: visible !important;
                 position: absolute !important;
@@ -511,7 +429,7 @@ class MaskEditor {
                 bottom: 0 !important;
                 z-index: 1 !important;
                 border-radius: 0 !important;
-                box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.2) !important;
+                box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5) !important;
                 object-fit: cover !important;
                 margin: 0 !important;
                 padding: 0 !important;
@@ -525,7 +443,7 @@ class MaskEditor {
                 display: block !important;
                 width: 100% !important;
                 height: 100% !important;
-                background: linear-gradient(135deg, rgba(26, 26, 38, 0.4) 0%, rgba(38, 38, 56, 0.4) 100%) !important;
+                background: #1a1a1a !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 border: none !important;
@@ -543,7 +461,7 @@ class MaskEditor {
             }, 100);
 
         } catch (error) {
-            console.error('[DEBUG] attemptLayoutFix: 修复失败', error);
+            console.error('[MaskEditor] attemptLayoutFix: 修复失败', error);
         }
     }
     bindCanvasEvents() {
@@ -551,7 +469,8 @@ class MaskEditor {
         this.canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
         this.canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
         this.canvas.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
-        this.canvas.addEventListener('contextmenu', this.onContextMenu.bind(this));
+        // 🔧 已移除：右键菜单功能已移动到角色列表中
+        // this.canvas.addEventListener('contextmenu', this.onContextMenu.bind(this));
         this.canvas.addEventListener('touchstart', this.onTouchStart.bind(this));
         this.canvas.addEventListener('touchmove', this.onTouchMove.bind(this));
         this.canvas.addEventListener('touchend', this.onTouchEnd.bind(this));
@@ -712,10 +631,6 @@ class MaskEditor {
 
             if (Math.abs(finalX - this.selectedMask.x) > 0.001 ||
                 Math.abs(finalY - this.selectedMask.y) > 0.001) {
-                console.log('[坐标追踪] 拖动中，更新蒙版坐标:', {
-                    from: { x: this.selectedMask.x, y: this.selectedMask.y },
-                    to: { x: finalX, y: finalY }
-                });
                 this.updateMask(this.selectedMask.characterId, {
                     ...this.selectedMask,
                     x: finalX,
@@ -742,31 +657,11 @@ class MaskEditor {
 
     onMouseUp(e) {
         if (this.isDragging) {
-            // 🔧 输出拖动完成时的蒙版坐标
-            if (this.selectedMask) {
-                console.log('[坐标追踪] 拖动完成，当前蒙版坐标:', {
-                    characterId: this.selectedMask.characterId,
-                    x: this.selectedMask.x,
-                    y: this.selectedMask.y,
-                    width: this.selectedMask.width,
-                    height: this.selectedMask.height
-                });
-            }
             this.dragStart = null;
             this.initialMaskPosition = null;
             this.dragLogShown = false; // 🔧 重置调试日志标志
         }
         if (this.isResizing) {
-            // 🔧 输出调整大小完成时的蒙版坐标
-            if (this.selectedMask) {
-                console.log('[坐标追踪] 调整大小完成，当前蒙版坐标:', {
-                    characterId: this.selectedMask.characterId,
-                    x: this.selectedMask.x,
-                    y: this.selectedMask.y,
-                    width: this.selectedMask.width,
-                    height: this.selectedMask.height
-                });
-            }
             this.resizeHandle = null;
             this.initialMaskState = null;
             if (this.resizeObserver && this.container) {
@@ -820,17 +715,8 @@ class MaskEditor {
         this.scheduleRender();
     }
 
-    onContextMenu(e) {
-        e.preventDefault();
-        const rect = this.canvas.getBoundingClientRect();
-        // 🔧 关键修复：使用容器的clientWidth/clientHeight作为坐标基准
-        const x = (e.clientX - rect.left) * (this.container.clientWidth / rect.width);
-        const y = (e.clientY - rect.top) * (this.container.clientHeight / rect.height);
-        const mask = this.getMaskAtPosition(x, y);
-        if (mask) {
-            this.showContextMenu(mask, e.clientX, e.clientY);
-        }
-    }
+    // 🔧 已移除：右键菜单功能已移动到角色列表中
+    // onContextMenu(e) { ... }
 
     onTouchStart(e) {
         const touch = e.touches[0];
@@ -992,135 +878,9 @@ class MaskEditor {
         this.scheduleRender();
     }
 
-    showContextMenu(mask, x, y) {
-        const existingMenu = document.querySelector('.mce-context-menu');
-        if (existingMenu) {
-            existingMenu.remove();
-        }
-        const menu = document.createElement('div');
-        menu.className = 'mce-context-menu';
-        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
-        const config = this.editor.dataManager.getConfig();
-        const syntaxMode = config ? config.syntax_mode : 'attention_couple';
-
-        // 语法模式标题
-        const modeName = syntaxMode === 'attention_couple' ? 'Attention Couple' : 'Regional Prompts';
-
-        let menuItems = `
-            <div class="mce-context-menu-header">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                </svg>
-                <span style="font-size: 11px; opacity: 0.7;">${modeName}</span>
-            </div>
-            <div class="mce-context-menu-separator"></div>
-            <div class="mce-context-menu-item" data-action="delete">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3,6 5,6 21,6"></polyline>
-                    <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2v2"></path>
-                </svg>
-                <span>${t('delete')}</span>
-            </div>
-            <div class="mce-context-menu-separator"></div>
-            <div class="mce-context-menu-item" data-action="weight">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"></path>
-                </svg>
-                <span>${t('weightSettings')}</span>
-            </div>
-            <div class="mce-context-menu-item" data-action="feather">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M12 1v6m0 6v6m4.22-13.22l4.24 4.24M1.54 1.54l4.24 4.24M20.46 20.46l-4.24-4.24M1.54 20.46l4.24-4.24"></path>
-                </svg>
-                <span>${t('featherSettings')}</span>
-            </div>
-            <div class="mce-context-menu-item" data-action="operation">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="18" cy="5" r="3"></circle>
-                    <circle cx="6" cy="12" r="3"></circle>
-                    <circle cx="18" cy="19" r="3"></circle>
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-                </svg>
-                <span>操作模式 (Operation)</span>
-            </div>
-        `;
-        menu.innerHTML = menuItems;
-        menu.style.cssText = `
-            position: fixed;
-            left: ${x}px;
-            top: ${y}px;
-            background: #2a2a2a;
-            border: 1px solid #555;
-            border-radius: 6px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            min-width: 150px;
-            padding: 4px 0;
-        `;
-        const style = document.createElement('style');
-        style.textContent = `
-            .mce-context-menu-header {
-                padding: 6px 16px;
-                font-size: 11px;
-                color: #999;
-                display: flex;
-                align-items: center;
-                gap: 6px;
-                background: rgba(124, 58, 237, 0.1);
-                border-bottom: 1px solid rgba(124, 58, 237, 0.2);
-            }
-            .mce-context-menu-item {
-                padding: 8px 16px;
-                cursor: pointer;
-                font-size: 12px;
-                color: #E0E0E0;
-                transition: background 0.2s;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }
-            .mce-context-menu-item:hover { background: #404040; }
-            .mce-context-menu-item svg { flex-shrink: 0; }
-            .mce-context-menu-item span { white-space: nowrap; }
-            .mce-context-menu-separator { height: 1px; background: #555; margin: 4px 0; }
-        `;
-        document.head.appendChild(style);
-        menu.querySelectorAll('.mce-context-menu-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const action = item.dataset.action;
-                this.handleContextMenuAction(mask, action);
-                menu.remove();
-            });
-        });
-        document.body.appendChild(menu);
-        setTimeout(() => {
-            document.addEventListener('click', () => {
-                if (menu.parentNode) {
-                    menu.remove();
-                }
-            }, { once: true });
-        }, 100);
-    }
-
-    handleContextMenuAction(mask, action) {
-        switch (action) {
-            case 'delete':
-                this.deleteMask(mask.characterId);
-                break;
-            case 'weight':
-                this.showWeightDialog(mask);
-                break;
-            case 'feather':
-                this.showFeatherDialog(mask);
-                break;
-            case 'operation':
-                this.showOperationDialog(mask);
-                break;
-        }
-    }
+    // 🔧 已移除：右键菜单相关功能已移动到角色列表中
+    // showContextMenu(mask, x, y) { ... }
+    // handleContextMenuAction(mask, action) { ... }
 
     showWeightDialog(mask) {
         const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
@@ -1132,58 +892,33 @@ class MaskEditor {
         const currentWeight = character ? (character.weight || 1.0) : 1.0;
         const dialog = document.createElement('div');
         dialog.className = 'mce-weight-dialog';
-        dialog.innerHTML = `...`; // Content omitted for brevity
-        // ... (rest of the function is complex UI creation, assumed correct)
-    }
-
-    showFeatherDialog(mask) {
-        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
-        const existingDialog = document.querySelector('.mce-feather-dialog');
-        if (existingDialog) {
-            existingDialog.remove();
-        }
-        const dialog = document.createElement('div');
-        dialog.className = 'mce-feather-dialog';
-        const currentValue = mask.feather || 0;
-        dialog.innerHTML = `...`; // Content omitted for brevity
-        // ... (rest of the function is complex UI creation, assumed correct)
-    }
-
-    showOperationDialog(mask) {
-        const existingDialog = document.querySelector('.mce-operation-dialog');
-        if (existingDialog) {
-            existingDialog.remove();
-        }
-
-        const character = this.editor.dataManager.getCharacter(mask.characterId);
-        const currentOperation = (character && character.mask && character.mask.operation) || 'multiply';
-
-        const dialog = document.createElement('div');
-        dialog.className = 'mce-operation-dialog';
         dialog.innerHTML = `
-            <div style="padding: 16px; background: #2a2a2a; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); min-width: 250px;">
-                <h3 style="margin: 0 0 12px 0; color: #E0E0E0; font-size: 14px;">操作模式 (Operation)</h3>
+            <div style="padding: 16px; background: #2a2a2a; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); min-width: 280px;">
+                <h3 style="margin: 0 0 12px 0; color: #E0E0E0; font-size: 14px;">${t('setWeight') || '设置权重'}</h3>
                 <div style="margin-bottom: 12px;">
-                    <label style="display: block; margin-bottom: 4px; color: #999; font-size: 12px;">
-                        MASK 混合操作:
+                    <label style="display: block; margin-bottom: 8px; color: #999; font-size: 12px;">
+                        ${t('weightValue') || '权重值'} (0 - 1.0):
                     </label>
-                    <select id="operation-select" style="width: 100%; padding: 6px; background: #1a1a1a; color: #E0E0E0; border: 1px solid #555; border-radius: 4px; font-size: 12px;">
-                        <option value="multiply" ${currentOperation === 'multiply' ? 'selected' : ''}>multiply (默认)</option>
-                        <option value="add" ${currentOperation === 'add' ? 'selected' : ''}>add (叠加)</option>
-                        <option value="subtract" ${currentOperation === 'subtract' ? 'selected' : ''}>subtract (减去)</option>
-                        <option value="difference" ${currentOperation === 'difference' ? 'selected' : ''}>difference (差异)</option>
-                    </select>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <input type="range" id="weight-slider" min="0" max="1.0" step="0.01" value="${currentWeight}" 
+                            style="flex: 1; height: 4px; background: #555; border-radius: 2px; outline: none; -webkit-appearance: none;">
+                        <input type="number" id="weight-input" min="0" max="1.0" step="0.01" value="${currentWeight}"
+                            style="width: 60px; padding: 4px 8px; background: #1a1a1a; color: #E0E0E0; border: 1px solid #555; border-radius: 4px; font-size: 12px; text-align: center;">
+                    </div>
                 </div>
                 <div style="font-size: 11px; color: #888; margin-bottom: 12px; line-height: 1.4;">
-                    <strong>说明:</strong> 当使用多个MASK时的组合方式<br>
-                    • multiply: 相乘（默认）<br>
-                    • add: 相加<br>
-                    • subtract: 相减<br>
-                    • difference: 取差值
+                    <strong>${t('note') || '说明'}:</strong> ${t('weightDescription') || '权重值越大，该角色在生成时的影响力越强'}<br>
+                    • 1.0: ${t('defaultWeight') || '最高权重'}<br>
+                    • 0.5: 中等权重<br>
+                    • 0: 最低权重
                 </div>
                 <div style="display: flex; gap: 8px; justify-content: flex-end;">
-                    <button id="operation-cancel" style="padding: 6px 16px; background: #555; color: #E0E0E0; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">取消</button>
-                    <button id="operation-ok" style="padding: 6px 16px; background: #7c3aed; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">确定</button>
+                    <button id="weight-cancel" style="padding: 6px 16px; background: #555; color: #E0E0E0; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                        ${t('buttonTexts.cancel') || '取消'}
+                    </button>
+                    <button id="weight-ok" style="padding: 6px 16px; background: #7c3aed; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                        ${t('buttonTexts.ok') || '确定'}
+                    </button>
                 </div>
             </div>
         `;
@@ -1199,20 +934,30 @@ class MaskEditor {
 
         document.body.appendChild(dialog);
 
-        const selectEl = document.getElementById('operation-select');
-        const okBtn = document.getElementById('operation-ok');
-        const cancelBtn = document.getElementById('operation-cancel');
+        const slider = document.getElementById('weight-slider');
+        const input = document.getElementById('weight-input');
+        const okBtn = document.getElementById('weight-ok');
+        const cancelBtn = document.getElementById('weight-cancel');
+
+        // 同步滑块和输入框
+        slider.addEventListener('input', () => {
+            input.value = slider.value;
+        });
+
+        input.addEventListener('input', () => {
+            let value = parseFloat(input.value);
+            if (value < 0.1) value = 0.1;
+            if (value > 2.0) value = 2.0;
+            slider.value = value;
+            input.value = value;
+        });
 
         okBtn.addEventListener('click', () => {
-            const operation = selectEl.value;
-            const updates = {
-                ...mask,
-                operation: operation
-            };
-            this.editor.dataManager.updateCharacterMask(mask.characterId, updates);
+            const weight = parseFloat(input.value);
+            this.editor.dataManager.updateCharacter(mask.characterId, { weight });
             this.scheduleRender();
             dialog.remove();
-            this.showToast(`操作模式已设置为: ${operation}`, 'success');
+            this.showToast(`${t('weightSetTo') || '权重已设置为'}: ${weight.toFixed(1)}`, 'success');
         });
 
         cancelBtn.addEventListener('click', () => {
@@ -1229,6 +974,19 @@ class MaskEditor {
         }, 100);
     }
 
+    showFeatherDialog(mask) {
+        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+        const existingDialog = document.querySelector('.mce-feather-dialog');
+        if (existingDialog) {
+            existingDialog.remove();
+        }
+        const dialog = document.createElement('div');
+        dialog.className = 'mce-feather-dialog';
+        const currentValue = mask.feather || 0;
+        dialog.innerHTML = `...`; // Content omitted for brevity
+        // ... (rest of the function is complex UI creation, assumed correct)
+    }
+
     addMask(character) {
         if (!this.masks) {
             this.masks = [];
@@ -1243,7 +1001,6 @@ class MaskEditor {
                 height: 0.3,
                 feather: 0,
                 blend_mode: 'normal',
-                operation: 'multiply',
                 zIndex: this.masks.length
             };
             this.masks.push(mask);
@@ -1292,24 +1049,12 @@ class MaskEditor {
             if (hasChanged) {
                 this.masks[index] = mask;
                 this.selectedMask = mask;
-                console.log(`[坐标追踪] 保存蒙版坐标 (${characterId}):`, {
-                    x: mask.x,
-                    y: mask.y,
-                    width: mask.width,
-                    height: mask.height
-                });
                 this.editor.dataManager.updateCharacterMask(characterId, mask);
                 this.scheduleRender();
             }
         } else if (index === -1 && mask) {
             this.masks.push(mask);
             this.selectedMask = mask;
-            console.log(`[坐标追踪] 新增蒙版坐标 (${characterId}):`, {
-                x: mask.x,
-                y: mask.y,
-                width: mask.width,
-                height: mask.height
-            });
             this.editor.dataManager.updateCharacterMask(characterId, mask);
             this.scheduleRender();
         }
@@ -1352,16 +1097,6 @@ class MaskEditor {
         }
         this.renderFrameId = requestAnimationFrame(() => {
             this.render();
-
-            // 🔧 输出一次布局诊断，最多记录前10次，便于快速定位间距问题
-            if (!this._diagCount) {
-                this._diagCount = 0;
-            }
-            if (this._diagCount < 10) {
-                this.logLayoutDiagnostics(`scheduleRender-${this._diagCount + 1}`);
-                this._diagCount += 1;
-            }
-
             this.renderFrameId = null;
         });
         if (this.renderTimeout) {
@@ -1421,7 +1156,7 @@ class MaskEditor {
         this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);  // 设置DPR
         this.ctx.translate(this.offset.x, this.offset.y);
         this.ctx.scale(this.scale, this.scale);
-        this.ctx.fillStyle = '#1a1a1a';
+        this.ctx.fillStyle = '#1e1e1e';
         this.ctx.fillRect(0, 0, width, height);
         this.drawGridOptimized(width, height);
         this.drawCanvasBorderOptimized(width, height);
@@ -1517,54 +1252,28 @@ class MaskEditor {
 
     syncMasksFromCharacters() {
         try {
-            // 🔧 关键修复：添加调试日志，查看是否因为拖动状态而提前返回
-            console.log('[坐标追踪] syncMasksFromCharacters 内部开始执行');
-            console.log('[DEBUG] syncMasksFromCharacters: 方法被调用，当前状态:', {
-                isDragging: this.isDragging,
-                isResizing: this.isResizing,
-                isPanning: this.isPanning
-            });
-
             if (this.isDragging || this.isResizing || this.isPanning) {
-                console.warn('[DEBUG] syncMasksFromCharacters: 因为正在操作，跳过同步');
                 return;
             }
             const characters = this.editor.dataManager.getCharacters();
-
-            console.log('[DEBUG] syncMasksFromCharacters: 开始同步蒙版，当前坐标系统状态:', {
-                scale: this.scale,
-                offset: this.offset,
-                lastContainerSize: this.lastContainerSize,
-                charactersCount: characters.length
-            });
 
             const newMasks = characters
                 .filter(char => char.mask && char.enabled)
                 .map(char => {
                     const mask = char.mask;
-                    console.log(`[坐标追踪] 恢复蒙版 ${char.name} (${char.id})，原始坐标:`, {
-                        x: mask.x,
-                        y: mask.y,
-                        width: mask.width,
-                        height: mask.height
-                    });
-                    // 🔧 临时移除验证，测试是否是验证逻辑导致的错位
-                    // const validatedMask = this.validateMaskCoordinates(mask, char.id);
                     return { ...mask, characterId: char.id };
                 })
                 .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
             if (newMasks.length !== this.masks.length ||
                 JSON.stringify(newMasks) !== JSON.stringify(this.masks)) {
                 this.masks = newMasks;
-                console.log('[DEBUG] syncMasksFromCharacters: 蒙版列表已更新，新蒙版数量:', this.masks.length);
             }
             if (this.masks.length > 50) {
                 console.warn('[MaskEditor] 蒙版数量过多，限制为50个');
                 this.masks = this.masks.slice(0, 50);
             }
         } catch (error) {
-            console.error('[坐标追踪] syncMasksFromCharacters 执行出错:', error);
-            console.error('[坐标追踪] 错误堆栈:', error.stack);
+            console.error('[MaskEditor] syncMasksFromCharacters 执行出错:', error);
         }
     }
 
@@ -1574,10 +1283,6 @@ class MaskEditor {
 
         let needsFix = false;
         const fixed = { ...mask };
-
-        console.log(`[坐标追踪] validateMaskCoordinates 开始验证 (${characterId}):`, {
-            输入: { x: mask.x, y: mask.y, width: mask.width, height: mask.height }
-        });
 
         // 🔧 关键修复：给边界检查增加容差，避免因浮点数舍入误差导致错位
         const TOLERANCE = 0.001; // 容差范围
@@ -1647,47 +1352,81 @@ class MaskEditor {
 
         // 如果修复了坐标且不跳过保存，则保存修正后的数据
         if (needsFix) {
-            console.log(`[坐标追踪] 蒙版 ${characterId} 坐标被修复:`, {
-                原始: { x: mask.x, y: mask.y, width: mask.width, height: mask.height },
-                修复后: { x: fixed.x, y: fixed.y, width: fixed.width, height: fixed.height }
-            });
             // 只有在从配置恢复时才直接保存，其他情况由调用方处理保存
             if (!skipSave) {
                 this.editor.dataManager.updateCharacterMask(characterId, fixed);
             }
         }
 
-        console.log(`[坐标追踪] validateMaskCoordinates 验证完成 (${characterId}):`, {
-            输出: { x: fixed.x, y: fixed.y, width: fixed.width, height: fixed.height },
-            是否修复: needsFix
-        });
-
         return fixed;
     }
 
     drawGridOptimized(width, height) {
-        if (this.scale < 0.5) {
-            return;
-        }
+        // 网格线样式，即使缩小也保持可见
         const gridSize = 32;
-        const dotSize = Math.max(1, 2 / this.scale);
-        const dotColor = 'rgba(124, 58, 237, 0.2)';
-        this.ctx.fillStyle = dotColor;
-        const viewportLeft = -this.offset.x / this.scale;
-        const viewportTop = -this.offset.y / this.scale;
-        const viewportRight = viewportLeft + this.canvas.width / this.scale;
-        const viewportBottom = viewportTop + this.canvas.height / this.scale;
-        const startX = Math.max(gridSize, Math.floor(viewportLeft / gridSize) * gridSize);
-        const endX = Math.min(width - gridSize, Math.ceil(viewportRight / gridSize) * gridSize);
-        const startY = Math.max(gridSize, Math.floor(viewportTop / gridSize) * gridSize);
-        const endY = Math.min(height - gridSize, Math.ceil(viewportBottom / gridSize) * gridSize);
+
+        // 根据缩放比例调整线条粗细和透明度
+        let lineWidth = 1 / this.scale;
+        let opacity = 0.3;
+
+        // 缩放小于0.3时，使用更粗的线条和更高的不透明度
+        if (this.scale < 0.3) {
+            lineWidth = 2 / this.scale;
+            opacity = 0.5;
+        } else if (this.scale < 0.5) {
+            lineWidth = 1.5 / this.scale;
+            opacity = 0.4;
+        }
+
+        this.ctx.strokeStyle = `rgba(124, 58, 237, ${opacity})`;
+        this.ctx.lineWidth = lineWidth;
+
+        // 计算可视区域
+        const viewportLeft = Math.max(0, -this.offset.x / this.scale);
+        const viewportTop = Math.max(0, -this.offset.y / this.scale);
+        const viewportRight = Math.min(width, viewportLeft + this.canvas.width / this.scale);
+        const viewportBottom = Math.min(height, viewportTop + this.canvas.height / this.scale);
+
+        const startX = Math.floor(viewportLeft / gridSize) * gridSize;
+        const endX = Math.ceil(viewportRight / gridSize) * gridSize;
+        const startY = Math.floor(viewportTop / gridSize) * gridSize;
+        const endY = Math.ceil(viewportBottom / gridSize) * gridSize;
+
+        // 绘制垂直网格线
+        this.ctx.beginPath();
         for (let x = startX; x <= endX; x += gridSize) {
-            for (let y = startY; y <= endY; y += gridSize) {
-                this.ctx.beginPath();
-                this.ctx.arc(x, y, dotSize, 0, 2 * Math.PI);
-                this.ctx.fill();
+            if (x >= 0 && x <= width) {
+                this.ctx.moveTo(x, Math.max(0, viewportTop));
+                this.ctx.lineTo(x, Math.min(height, viewportBottom));
             }
         }
+
+        // 绘制水平网格线
+        for (let y = startY; y <= endY; y += gridSize) {
+            if (y >= 0 && y <= height) {
+                this.ctx.moveTo(Math.max(0, viewportLeft), y);
+                this.ctx.lineTo(Math.min(width, viewportRight), y);
+            }
+        }
+
+        this.ctx.stroke();
+
+        // 🔧 已移除：网格交叉点的小圆点（避免密集恐惧症）
+        // if (this.scale >= 0.3) {
+        //     const dotSize = Math.max(2, 3 / this.scale);
+        //     const dotColor = `rgba(124, 58, 237, ${Math.min(0.6, opacity + 0.2)})`;
+        //     this.ctx.fillStyle = dotColor;
+        //
+        //     for (let x = startX; x <= endX; x += gridSize) {
+        //         for (let y = startY; y <= endY; y += gridSize) {
+        //             if (x >= 0 && x <= width && y >= 0 && y <= height) {
+        //                 this.ctx.beginPath();
+        //                 this.ctx.arc(x, y, dotSize, 0, 2 * Math.PI);
+        //                 this.ctx.fill();
+        //             }
+        //         }
+        //     }
+        // }
     }
 
     drawCanvasBorderOptimized(width, height) {
@@ -1718,15 +1457,6 @@ class MaskEditor {
         const w = mask.width * width;
         const h = mask.height * height;
 
-        // 🔧 添加绘制调试日志（只在第一次绘制时输出）
-        if (!this.drawLogShown) {
-            console.log(`[DEBUG] drawMaskOptimized: 绘制蒙版 ${character.name}:`, {
-                画布尺寸: { width, height },
-                蒙版比例坐标: { x: mask.x, y: mask.y, w: mask.width, h: mask.height },
-                蒙版像素坐标: { x, y, w, h },
-                当前变换: { scale: this.scale, offsetX: this.offset.x, offsetY: this.offset.y }
-            });
-        }
         this.ctx.globalAlpha = 1;
         const fillColor = character.color + '40';
         this.ctx.fillStyle = fillColor;
@@ -1746,49 +1476,8 @@ class MaskEditor {
     }
 
     drawMaskInfo(mask, x, y, w, h) {
-        const config = this.editor.dataManager.getConfig();
-        const syntaxMode = config ? config.syntax_mode : 'attention_couple';
-        const character = this.editor.dataManager.getCharacter(mask.characterId);
-        const weight = character ? (character.weight || 1.0) : 1.0;
-        const infoItems = [];
-        if (weight !== 1.0) {
-            infoItems.push({ text: `W:${weight.toFixed(1)}`, color: '#FFB86C' });
-        }
-        if (mask.feather && mask.feather > 0) {
-            infoItems.push({ text: `F:${mask.feather}`, color: '#8BE9FD' });
-        }
-        if (infoItems.length > 0) {
-            const fontSize = Math.max(9, 11 / this.scale);
-            this.ctx.font = `bold ${fontSize}px sans-serif`;
-            this.ctx.textAlign = 'right';
-            this.ctx.textBaseline = 'top';
-            const padding = 4 / this.scale;
-            const itemSpacing = 6 / this.scale;
-            let totalWidth = 0;
-            let totalHeight = fontSize + padding * 2;
-            infoItems.forEach(item => {
-                const metrics = this.ctx.measureText(item.text);
-                item.width = metrics.width;
-                totalWidth += item.width + (item !== infoItems[0] ? itemSpacing : 0);
-            });
-            const infoX = x + w - padding;
-            const infoY = y + padding;
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-            this.roundRect(
-                infoX - totalWidth - padding,
-                infoY - padding,
-                totalWidth + padding * 2,
-                totalHeight,
-                4 / this.scale
-            );
-            this.ctx.fill();
-            let currentX = infoX;
-            infoItems.forEach(item => {
-                this.ctx.fillStyle = item.color;
-                this.ctx.fillText(item.text, currentX, infoY);
-                currentX -= (item.width + itemSpacing);
-            });
-        }
+        // 蒙版信息显示已简化，不再显示羽化等参数
+        // 保留此方法以防未来需要显示其他信息
     }
 
     roundRect(x, y, width, height, radius) {
@@ -1918,124 +1607,16 @@ class MaskEditor {
             this.container.style.setProperty('opacity', '1', 'important');
             this.resizeCanvas();
             this.scheduleRender();
-            // 可见性检查后立即记录布局诊断
-            this.logLayoutDiagnostics('ensureCanvasVisible-immediate');
             setTimeout(() => {
                 this.scheduleRender();
-                this.logLayoutDiagnostics('ensureCanvasVisible-post-timeout');
             }, 100);
         } catch (error) {
-            console.error('[DEBUG] MaskEditor - 确保画布可见失败:', error);
+            console.error('[MaskEditor] 确保画布可见失败:', error);
         }
     }
 
     logLayoutDiagnostics(reason) {
-        if (!this.canvas || !this.container) {
-            console.warn('[DEBUG] MaskEditor.logLayoutDiagnostics: 缺少画布或容器', { reason });
-            return;
-        }
-
-        try {
-            const canvasRect = this.canvas.getBoundingClientRect();
-            const containerRect = this.container.getBoundingClientRect();
-            const computedCanvas = window.getComputedStyle(this.canvas);
-            const computedContainer = window.getComputedStyle(this.container);
-
-            // 如果可用，获取主区域及父容器的尺寸，用于排查 flex 布局间隔
-            const mainArea = this.editor.container?.querySelector?.('.mce-main-area');
-            const mainAreaRect = mainArea ? mainArea.getBoundingClientRect() : null;
-            const computedMainArea = mainArea ? window.getComputedStyle(mainArea) : null;
-
-            const characterEditor = this.editor.container?.querySelector?.('.mce-character-editor');
-            const characterEditorRect = characterEditor ? characterEditor.getBoundingClientRect() : null;
-            const computedCharacterEditor = characterEditor ? window.getComputedStyle(characterEditor) : null;
-
-            const maskEditorRect = this.container ? this.container.getBoundingClientRect() : null;
-            const computedMaskEditor = this.container ? window.getComputedStyle(this.container) : null;
-
-            const horizontalGap = Number((containerRect.width - canvasRect.width).toFixed(2));
-            const verticalGap = Number((containerRect.height - canvasRect.height).toFixed(2));
-
-            const diagSummary = {
-                reason,
-                timestamp: new Date().toISOString(),
-                gaps: {
-                    horizontal: horizontalGap,
-                    vertical: verticalGap
-                },
-                containerRect: {
-                    width: Number(containerRect.width.toFixed(2)),
-                    height: Number(containerRect.height.toFixed(2)),
-                    top: Number(containerRect.top.toFixed(2)),
-                    left: Number(containerRect.left.toFixed(2)),
-                    paddingTop: computedContainer?.paddingTop,
-                    paddingBottom: computedContainer?.paddingBottom,
-                    marginTop: computedContainer?.marginTop,
-                    marginBottom: computedContainer?.marginBottom,
-                    borderTopWidth: computedContainer?.borderTopWidth,
-                    borderBottomWidth: computedContainer?.borderBottomWidth
-                },
-                canvasRect: {
-                    width: Number(canvasRect.width.toFixed(2)),
-                    height: Number(canvasRect.height.toFixed(2)),
-                    top: Number(canvasRect.top.toFixed(2)),
-                    left: Number(canvasRect.left.toFixed(2)),
-                    paddingTop: computedCanvas?.paddingTop,
-                    paddingBottom: computedCanvas?.paddingBottom,
-                    marginTop: computedCanvas?.marginTop,
-                    marginBottom: computedCanvas?.marginBottom,
-                    borderTopWidth: computedCanvas?.borderTopWidth,
-                    borderBottomWidth: computedCanvas?.borderBottomWidth
-                },
-                maskEditorRect: maskEditorRect ? {
-                    width: Number(maskEditorRect.width.toFixed(2)),
-                    height: Number(maskEditorRect.height.toFixed(2)),
-                    paddingTop: computedMaskEditor?.paddingTop,
-                    paddingBottom: computedMaskEditor?.paddingBottom,
-                    marginTop: computedMaskEditor?.marginTop,
-                    marginBottom: computedMaskEditor?.marginBottom,
-                    borderTopWidth: computedMaskEditor?.borderTopWidth,
-                    borderBottomWidth: computedMaskEditor?.borderBottomWidth
-                } : null,
-                characterEditorRect: characterEditorRect ? {
-                    width: Number(characterEditorRect.width.toFixed(2)),
-                    height: Number(characterEditorRect.height.toFixed(2)),
-                    paddingTop: computedCharacterEditor?.paddingTop,
-                    paddingBottom: computedCharacterEditor?.paddingBottom,
-                    marginTop: computedCharacterEditor?.marginTop,
-                    marginBottom: computedCharacterEditor?.marginBottom,
-                    borderRightWidth: computedCharacterEditor?.borderRightWidth
-                } : null,
-                mainAreaRect: mainAreaRect ? {
-                    width: Number(mainAreaRect.width.toFixed(2)),
-                    height: Number(mainAreaRect.height.toFixed(2)),
-                    gap: computedMainArea?.gap,
-                    paddingTop: computedMainArea?.paddingTop,
-                    paddingBottom: computedMainArea?.paddingBottom,
-                    alignItems: computedMainArea?.alignItems,
-                    justifyContent: computedMainArea?.justifyContent
-                } : null
-            };
-
-            const diagLabel = `[DIAG] reason=${reason} hGap=${horizontalGap}px vGap=${verticalGap}px`;
-
-            // 额外输出简化日志，避免浏览器过滤导致查找不到
-            console.log('[DIAG_SIMPLE]', {
-                reason,
-                horizontalGap,
-                verticalGap,
-                containerWidth: diagSummary.containerRect.width,
-                containerHeight: diagSummary.containerRect.height
-            });
-
-            if (Math.abs(horizontalGap) > 0.5 || Math.abs(verticalGap) > 0.5) {
-                console.warn(`${diagLabel} (gap detected)`, diagSummary);
-            } else {
-
-            }
-        } catch (diagError) {
-            console.error('[DEBUG] MaskEditor.logLayoutDiagnostics: 记录布局诊断失败', diagError);
-        }
+        // 已移除诊断日志输出
     }
 }
 

@@ -1,5 +1,22 @@
 # Multi-Character Prompt Complete Syntax Guide
 
+## ⚠️ Important Notice
+
+<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; margin: 20px 0; border-left: 6px solid #f59e0b;">
+<h3 style="color: #fff; font-size: 1.5em; margin-top: 0;">🔗 Required Dependency</h3>
+<p style="color: #fff; font-size: 1.2em; line-height: 1.6;">
+This node requires <strong><a href="https://github.com/asagi4/comfyui-prompt-control" style="color: #fbbf24; text-decoration: underline;">comfyui-prompt-control</a></strong> to work properly and achieve its full functionality.
+</p>
+<p style="color: #fff; font-size: 1.1em; line-height: 1.6;">
+⚡ <strong>Using this node alone has limited effect</strong>, as ComfyUI does not natively support these advanced syntaxes (MASK, FEATHER, AND, etc.).
+</p>
+<p style="color: #fff; font-size: 1.1em; line-height: 1.6;">
+📦 Please install the comfyui-prompt-control extension first, then connect this node's output to comfyui-prompt-control's input to properly use regional prompt features.
+</p>
+</div>
+
+---
+
 This guide integrates Attention Couple and Regional Prompts syntaxes, providing a complete syntax reference for the Multi-Character Prompt Editor.
 
 ## Overview
