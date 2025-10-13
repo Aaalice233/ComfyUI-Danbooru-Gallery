@@ -17,9 +17,12 @@ logger = logging.getLogger("MultiCharacterEditor")
 # 插件目录和设置文件路径
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_FILE = os.path.join(PLUGIN_DIR, "settings", "editor_settings.json")
+PRESETS_FILE = os.path.join(PLUGIN_DIR, "settings", "presets.json")
+PRESET_IMAGES_DIR = os.path.join(PLUGIN_DIR, "settings", "preset_images")
 
 # 确保目录存在
 os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
+os.makedirs(PRESET_IMAGES_DIR, exist_ok=True)
 
 
 class PromptGenerator:
@@ -34,32 +37,52 @@ class PromptGenerator:
             # 确保base_prompt不为None
             if base_prompt is None:
                 base_prompt = ""
+            
+            # 获取全局提示词
+            global_prompt = config.get('global_prompt', '')
                 
             characters = config.get('characters', [])
             use_fill = config.get('use_fill', False)
             
             if not characters:
-                return base_prompt
+                # 如果没有角色，返回合并后的提示词
+                return self._merge_prompts(base_prompt, global_prompt)
             
             # 过滤启用的角色
             enabled_characters = [char for char in characters if char.get('enabled', True)]
             if not enabled_characters:
-                return base_prompt
+                # 如果没有启用的角色，返回合并后的提示词
+                return self._merge_prompts(base_prompt, global_prompt)
             
             # 生成蒙版数据
             masks = self._generate_masks(enabled_characters)
             
             if self.syntax_mode == "attention_couple":
-                return self._generate_attention_couple(base_prompt, masks, use_fill)
+                return self._generate_attention_couple(base_prompt, masks, use_fill, global_prompt)
             elif self.syntax_mode == "regional_prompts":
-                return self._generate_regional_prompts(base_prompt, masks)
+                return self._generate_regional_prompts(base_prompt, masks, global_prompt)
             else:
                 logger.warning(f"未知的语法模式: {self.syntax_mode}")
-                return base_prompt
+                return self._merge_prompts(base_prompt, global_prompt)
                 
         except Exception as e:
             logger.error(f"生成提示词失败: {e}")
             return base_prompt
+    
+    def _merge_prompts(self, base_prompt, global_prompt):
+        """合并基础提示词和全局提示词"""
+        final_prompt = ''
+        
+        if base_prompt and base_prompt.strip():
+            final_prompt = base_prompt.strip()
+        
+        if global_prompt and global_prompt.strip():
+            if final_prompt:
+                final_prompt = final_prompt + ' ' + global_prompt.strip()
+            else:
+                final_prompt = global_prompt.strip()
+        
+        return final_prompt
     
     def _generate_masks(self, characters):
         """生成蒙版数据"""
@@ -75,6 +98,9 @@ class PromptGenerator:
             width = max(0.01, min(1.0 - x, mask.get('width', 0.5)))
             height = max(0.01, min(1.0 - y, mask.get('height', 0.5)))
             
+            # 获取羽化值，优先从角色对象读取，然后从mask读取
+            feather = char.get('feather', mask.get('feather', 0))
+            
             masks.append({
                 'prompt': char.get('prompt', ''),
                 'weight': char.get('weight', 1.0),
@@ -82,23 +108,28 @@ class PromptGenerator:
                 'y1': y,
                 'x2': x + width,
                 'y2': y + height,
-                'feather': mask.get('feather', 0),
+                'feather': feather,
                 'blend_mode': mask.get('blend_mode', 'normal'),
-                'operation': mask.get('operation', 'multiply')
+                'use_fill': char.get('use_fill', False)  # 添加角色的FILL状态
             })
         return masks
     
-    def _generate_attention_couple(self, base_prompt, masks, use_fill=False):
+    def _generate_attention_couple(self, base_prompt, masks, use_fill=False, global_prompt=''):
         """生成Attention Couple语法"""
         if not masks:
-            return base_prompt
+            # 合并 base_prompt 和 global_prompt
+            final_base_prompt = self._merge_prompts(base_prompt, global_prompt)
+            # 如果全局开启了FILL，添加FILL()
+            if use_fill and final_base_prompt:
+                final_base_prompt += ' FILL()'
+            return final_base_prompt
         
         mask_strings = []
         for mask in masks:
             if not mask['prompt'].strip():
                 continue
             
-            # 根据文档，使用完整的MASK格式：MASK(x1 x2, y1 y2, weight, op)
+            # 使用完整的MASK格式：MASK(x1 x2, y1 y2, weight)
             # 确保坐标在有效范围内
             x1 = max(0.0, min(1.0, mask['x1']))
             x2 = max(0.0, min(1.0, mask['x2']))
@@ -111,35 +142,37 @@ class PromptGenerator:
             if y2 <= y1:
                 y2 = min(1.0, y1 + 0.1)
             
-            mask_params = f"{x1:.2f} {x2:.2f}, {y1:.2f} {y2:.2f}"
-            
-            # 添加权重作为MASK的第3个参数
-            if mask['weight'] != 1.0:
-                mask_params += f", {mask['weight']:.2f}"
-            
-            # 添加操作模式（如果有）
-            if mask.get('operation', 'multiply') != 'multiply':
-                mask_params += f", {mask['operation']}"
+            # 始终包含权重参数，确保语法完整
+            weight = mask.get('weight', 1.0)
+            mask_params = f"{x1:.2f} {x2:.2f}, {y1:.2f} {y2:.2f}, {weight:.2f}"
             
             # 确保MASK和提示词之间有空格
             mask_str = f"COUPLE MASK({mask_params}) {mask['prompt']}"
             
+            # 🔧 如果该角色开启了FILL，在该角色提示词后添加FILL()
+            if mask.get('use_fill', False):
+                mask_str += ' FILL()'
+            
             # 添加羽化 - 使用简化语法（所有边缘相同值）
-            if mask['feather'] > 0:
-                mask_str += f" FEATHER({mask['feather']})"
+            # 羽化值为像素值，0表示不使用羽化
+            feather_value = int(mask.get('feather', 0))
+            if feather_value > 0:
+                mask_str += f" FEATHER({feather_value})"
             
             mask_strings.append(mask_str)
+        
+        # 合并基础提示词和全局提示词
+        final_base_prompt = self._merge_prompts(base_prompt, global_prompt)
         
         # 构建结果
         result_parts = []
         
-        # 添加基础提示词
-        if base_prompt and base_prompt.strip():
-            # 如果使用FILL语法，在基础提示词后添加FILL()
-            if use_fill and mask_strings:
-                result_parts.append(base_prompt.strip() + " FILL()")
+        # 🔧 添加基础提示词，如果全局开启了FILL则添加FILL()
+        if final_base_prompt:
+            if use_fill:
+                result_parts.append(final_base_prompt + " FILL()")
             else:
-                result_parts.append(base_prompt.strip())
+                result_parts.append(final_base_prompt)
         
         # 添加角色提示词
         if mask_strings:
@@ -147,10 +180,12 @@ class PromptGenerator:
         
         return " ".join(result_parts).strip()
     
-    def _generate_regional_prompts(self, base_prompt, masks):
+    def _generate_regional_prompts(self, base_prompt, masks, global_prompt=''):
         """生成Regional Prompts语法"""
         if not masks:
-            return base_prompt
+            # 合并 base_prompt 和 global_prompt
+            final_base_prompt = self._merge_prompts(base_prompt, global_prompt)
+            return final_base_prompt
         
         mask_strings = []
         for mask in masks:
@@ -170,30 +205,30 @@ class PromptGenerator:
             if y2 <= y1:
                 y2 = min(1.0, y1 + 0.1)
             
-            mask_params = f"{x1:.2f} {x2:.2f}, {y1:.2f} {y2:.2f}"
-            
-            # 添加权重作为MASK的第3个参数
-            if mask['weight'] != 1.0:
-                mask_params += f", {mask['weight']:.2f}"
-            
-            # 添加操作模式（如果有）
-            if mask.get('operation', 'multiply') != 'multiply':
-                mask_params += f", {mask['operation']}"
+            # 使用完整的MASK格式：MASK(x1 x2, y1 y2, weight)
+            # 始终包含权重参数，确保语法完整
+            weight = mask.get('weight', 1.0)
+            mask_params = f"{x1:.2f} {x2:.2f}, {y1:.2f} {y2:.2f}, {weight:.2f}"
             
             mask_str = f"{mask['prompt']} MASK({mask_params})"
             
             # 添加羽化 - 使用简化语法（所有边缘相同值）
-            if mask['feather'] > 0:
-                mask_str += f" FEATHER({mask['feather']})"
+            # 羽化值为像素值，0表示不使用羽化
+            feather_value = int(mask.get('feather', 0))
+            if feather_value > 0:
+                mask_str += f" FEATHER({feather_value})"
             
             mask_strings.append(mask_str)
+        
+        # 合并基础提示词和全局提示词
+        final_base_prompt = self._merge_prompts(base_prompt, global_prompt)
         
         # 构建结果
         result_parts = []
         
-        # 添加基础提示词（如果有）
-        if base_prompt and base_prompt.strip():
-            result_parts.append(base_prompt.strip())
+        # 添加合并后的基础提示词（如果有）
+        if final_base_prompt:
+            result_parts.append(final_base_prompt)
         
         # 添加角色提示词
         if mask_strings:
@@ -210,7 +245,6 @@ class MultiCharacterEditorNode:
     
     @classmethod
     def INPUT_TYPES(cls):
-        logger.info("[MCE] MultiCharacterEditorNode.INPUT_TYPES called")
         input_types = {
             "required": {
                 "syntax_mode": (["attention_couple", "regional_prompts"], {"default": "attention_couple"}),
@@ -223,7 +257,6 @@ class MultiCharacterEditorNode:
                 "canvas_height": ("INT", {"default": 1024, "min": 256, "max": 2048}),
             }
         }
-        logger.info(f"[MCE] MultiCharacterEditorNode INPUT_TYPES defined: {json.dumps(input_types, indent=2)}")
         return input_types
     
     RETURN_TYPES = ("STRING",)
@@ -232,14 +265,11 @@ class MultiCharacterEditorNode:
     CATEGORY = "Danbooru"
     
     def __init__(self):
-        logger.info("[MCE] MultiCharacterEditorNode instance created")
+        pass
     
     def generate_prompt(self, syntax_mode, use_fill, mce_config, base_prompt="", canvas_width=1024, canvas_height=1024):
         """生成提示词"""
         try:
-            logger.info(f"[MCE] generate_prompt called with syntax_mode={syntax_mode}, use_fill={use_fill}")
-            logger.info(f"[MCE] mce_config (first 200 chars): {mce_config[:200]}...")
-
             config = {}
             if mce_config and mce_config.strip():
                 try:
@@ -259,14 +289,10 @@ class MultiCharacterEditorNode:
             config['canvas']['height'] = canvas_height if canvas_height is not None else 1024
             if 'characters' not in config:
                 config['characters'] = []
-
-            logger.info(f"[MCE] Using config with {len(config.get('characters', []))} characters for generation.")
             
             # 生成提示词
             generator = PromptGenerator(config.get('syntax_mode', 'attention_couple'))
             generated_prompt = generator.generate(config.get('base_prompt', ''), config)
-            
-            logger.info(f"[MCE] Generated prompt (first 100 chars): {generated_prompt[:100]}...")
             
             # 返回结果
             return (generated_prompt,)
@@ -302,7 +328,6 @@ def ensure_default_settings():
             
             with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(default_config, f, ensure_ascii=False, indent=2)
-            logger.info("[MCE] Default settings file created at: " + SETTINGS_FILE)
         except Exception as e:
             logger.error(f"[MCE] Failed to create default settings file: {e}")
 
@@ -314,9 +339,7 @@ def ensure_default_settings():
 async def save_config(request):
     """保存编辑器配置"""
     try:
-        logger.info("[API][POST /save_config] Received request to save config.")
         data = await request.json()
-        logger.info(f"[API][POST /save_config] Received config data (preview): {json.dumps(data, ensure_ascii=False, indent=2)[:500]}...")
         
         # 验证配置数据
         if not isinstance(data, dict):
@@ -333,8 +356,6 @@ async def save_config(request):
         with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
-        logger.info(f"[API][POST /save_config] Config successfully saved to: {SETTINGS_FILE}")
-        logger.info(f"[API][POST /save_config] Number of characters saved: {len(data.get('characters', []))}")
         return web.json_response({"success": True, "message": "Config saved successfully to server file and node data."})
         
     except Exception as e:
@@ -347,16 +368,12 @@ async def save_config(request):
 async def load_config(request):
     """加载编辑器配置"""
     try:
-        logger.info("[API][GET /load_config] Received request to load config.")
         # 确保默认设置文件存在
         ensure_default_settings()
         
         if os.path.exists(SETTINGS_FILE):
             with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-            logger.info(f"[API][GET /load_config] Config loaded from file: {SETTINGS_FILE}")
-            logger.info(f"[API][GET /load_config] Number of characters loaded: {len(config.get('characters', []))}")
-            logger.info(f"[API][GET /load_config] Config content preview: {json.dumps(config, ensure_ascii=False, indent=2)[:300]}...")
             return web.json_response(config)
         else:
             # 如果文件仍然不存在，返回默认配置
@@ -630,6 +647,198 @@ async def get_syntax_docs_en(request):
     except Exception as e:
         logger.error(f"加载英文语法文档失败: {e}")
         return web.Response(text="# Loading Failed\n\nUnable to load syntax documentation.", status=500, content_type='text/markdown')
+
+
+# 预设管理API端点
+
+def load_presets():
+    """加载预设列表"""
+    try:
+        if os.path.exists(PRESETS_FILE):
+            with open(PRESETS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return []
+    except Exception as e:
+        logger.error(f"加载预设失败: {e}")
+        return []
+
+
+def save_presets(presets):
+    """保存预设列表"""
+    try:
+        with open(PRESETS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(presets, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        logger.error(f"保存预设失败: {e}")
+        return False
+
+
+@PromptServer.instance.routes.get("/multi_character_editor/presets/list")
+async def get_presets_list(request):
+    """获取预设列表"""
+    try:
+        presets = load_presets()
+        return web.json_response({"success": True, "presets": presets})
+    except Exception as e:
+        logger.error(f"获取预设列表失败: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.post("/multi_character_editor/presets/save")
+async def save_preset(request):
+    """保存新预设或更新现有预设"""
+    try:
+        data = await request.json()
+        preset_id = data.get('id')
+        preset_name = data.get('name')
+        characters = data.get('characters', [])
+        global_prompt = data.get('global_prompt', '')
+        global_note = ''  # 清空备注
+        preview_image = data.get('preview_image')  # base64编码的图片
+        
+        if not preset_name:
+            return web.json_response({"error": "预设名称不能为空"}, status=400)
+        
+        # 加载现有预设
+        presets = load_presets()
+        
+        # 如果有预设ID，则更新现有预设；否则创建新预设
+        if preset_id:
+            # 更新现有预设
+            preset_found = False
+            for preset in presets:
+                if preset.get('id') == preset_id:
+                    preset['name'] = preset_name
+                    preset['characters'] = characters
+                    preset['global_prompt'] = global_prompt
+                    preset['global_note'] = ''  # 清空备注
+                    preset['updated_at'] = time.time()
+
+                    # 保存预览图
+                    if preview_image:
+                        image_path = os.path.join(PRESET_IMAGES_DIR, f"{preset_id}.png")
+                        try:
+                            import base64
+                            # 移除data URI前缀
+                            if ',' in preview_image:
+                                preview_image = preview_image.split(',', 1)[1]
+                            image_data = base64.b64decode(preview_image)
+                            with open(image_path, 'wb') as f:
+                                f.write(image_data)
+                            preset['preview_image'] = f"/multi_character_editor/presets/image/{preset_id}"
+                        except Exception as e:
+                            logger.error(f"保存预览图失败: {e}")
+
+                    preset_found = True
+                    break
+            
+            if not preset_found:
+                return web.json_response({"error": "预设不存在"}, status=404)
+        else:
+            # 创建新预设
+            import uuid
+            preset_id = str(uuid.uuid4())
+            
+            new_preset = {
+                'id': preset_id,
+                'name': preset_name,
+                'characters': characters,
+                'global_prompt': global_prompt,
+                'global_note': '',  # 清空备注
+                'created_at': time.time(),
+                'updated_at': time.time()
+            }
+            
+            # 保存预览图
+            if preview_image:
+                image_path = os.path.join(PRESET_IMAGES_DIR, f"{preset_id}.png")
+                try:
+                    import base64
+                    # 移除data URI前缀
+                    if ',' in preview_image:
+                        preview_image = preview_image.split(',', 1)[1]
+                    image_data = base64.b64decode(preview_image)
+                    with open(image_path, 'wb') as f:
+                        f.write(image_data)
+                    new_preset['preview_image'] = f"/multi_character_editor/presets/image/{preset_id}"
+                except Exception as e:
+                    logger.error(f"保存预览图失败: {e}")
+            
+            presets.append(new_preset)
+        
+        # 保存预设列表
+        if save_presets(presets):
+            return web.json_response({"success": True, "id": preset_id, "message": "预设保存成功"})
+        else:
+            return web.json_response({"error": "保存预设失败"}, status=500)
+            
+    except Exception as e:
+        logger.error(f"保存预设失败: {e}")
+        logger.error(traceback.format_exc())
+        return web.json_response({"error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.delete("/multi_character_editor/presets/delete")
+async def delete_preset(request):
+    """删除预设"""
+    try:
+        data = await request.json()
+        preset_id = data.get('id')
+        
+        if not preset_id:
+            return web.json_response({"error": "预设ID不能为空"}, status=400)
+        
+        # 加载现有预设
+        presets = load_presets()
+        
+        # 查找并删除预设
+        preset_found = False
+        for i, preset in enumerate(presets):
+            if preset.get('id') == preset_id:
+                presets.pop(i)
+                preset_found = True
+                
+                # 删除预览图
+                image_path = os.path.join(PRESET_IMAGES_DIR, f"{preset_id}.png")
+                if os.path.exists(image_path):
+                    try:
+                        os.remove(image_path)
+                    except Exception as e:
+                        logger.error(f"删除预览图失败: {e}")
+                
+                break
+        
+        if not preset_found:
+            return web.json_response({"error": "预设不存在"}, status=404)
+        
+        # 保存预设列表
+        if save_presets(presets):
+            return web.json_response({"success": True, "message": "预设删除成功"})
+        else:
+            return web.json_response({"error": "删除预设失败"}, status=500)
+            
+    except Exception as e:
+        logger.error(f"删除预设失败: {e}")
+        logger.error(traceback.format_exc())
+        return web.json_response({"error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.get("/multi_character_editor/presets/image/{preset_id}")
+async def get_preset_image(request):
+    """获取预设预览图"""
+    try:
+        preset_id = request.match_info.get('preset_id')
+        image_path = os.path.join(PRESET_IMAGES_DIR, f"{preset_id}.png")
+        
+        if os.path.exists(image_path):
+            return web.FileResponse(image_path)
+        else:
+            return web.Response(status=404)
+            
+    except Exception as e:
+        logger.error(f"获取预设预览图失败: {e}")
+        return web.Response(status=500)
 
 
 

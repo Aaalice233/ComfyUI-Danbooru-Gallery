@@ -1,6 +1,6 @@
 // 设置菜单组件
-import { globalToastManager as toastManagerProxy } from './toast_manager.js';
-import { globalMultiLanguageManager } from './multi_language.js';
+import { globalToastManager as toastManagerProxy } from '../global/toast_manager.js';
+import { globalMultiLanguageManager } from '../global/multi_language.js';
 
 class SettingsMenu {
     constructor(editor) {
@@ -100,7 +100,10 @@ class SettingsMenu {
         // 监听语言变化事件
         document.addEventListener('languageChanged', (e) => {
             if (e.detail.component === 'settingsMenu' || !e.detail.component) {
-                this.updateMenuContent();
+                // 只有在菜单可见时才更新内容
+                if (this.isVisible) {
+                    this.updateMenuContent();
+                }
             }
         });
     }
@@ -119,6 +122,9 @@ class SettingsMenu {
 
     updateMenuContent() {
         const t = this.translations[this.settings.language];
+
+        // 保存当前显示状态
+        const currentDisplay = this.container.style.display;
 
         this.container.innerHTML = `
             <div class="mce-settings-overlay"></div>
@@ -238,21 +244,29 @@ class SettingsMenu {
                 </div>
             </div>
         `;
+
+        // 恢复显示状态
+        this.container.style.display = currentDisplay;
+
+        // 重新绑定事件（如果不是第一次初始化）
+        if (currentDisplay !== undefined) {
+            this.bindEvents();
+        }
     }
 
     addStyles() {
         const style = document.createElement('style');
         style.textContent = `
             .mce-settings-menu {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                z-index: 10000;
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                z-index: 99999 !important;
                 display: flex;
-                align-items: center;
-                justify-content: center;
+                align-items: center !important;
+                justify-content: center !important;
             }
             
             .mce-settings-overlay {
@@ -266,7 +280,7 @@ class SettingsMenu {
             }
             
             .mce-settings-dialog {
-                position: relative;
+                position: relative !important;
                 width: 90%;
                 max-width: 800px;
                 height: 80vh;
@@ -280,6 +294,7 @@ class SettingsMenu {
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
+                margin: auto;
             }
             
             .mce-settings-header {

@@ -84,14 +84,11 @@ async def get_data(request):
 async def save_data(request):
     try:
         data = await request.json()
-        # print(f"[PromptSelector] Attempting to save data: {json.dumps(data, indent=2)}") # 添加日志
         with open(DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
         
-        print("[PromptSelector] Data saved successfully.") # 添加日志
         return web.json_response({"success": True})
     except Exception as e:
-        print(f"[PromptSelector] Error saving data: {e}") # 添加日志
         return web.json_response({"error": str(e)}, status=500)
 
 @PromptServer.instance.routes.get("/prompt_selector/preview/{filename}")

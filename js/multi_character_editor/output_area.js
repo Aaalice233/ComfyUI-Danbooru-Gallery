@@ -1,7 +1,7 @@
 // 输出区域组件
 import { api } from "/scripts/api.js";
-import { globalToastManager as toastManagerProxy } from './toast_manager.js';
-import { globalMultiLanguageManager } from './multi_language.js';
+import { globalToastManager as toastManagerProxy } from '../global/toast_manager.js';
+import { globalMultiLanguageManager } from '../global/multi_language.js';
 
 class OutputArea {
     constructor(editor) {
@@ -308,11 +308,25 @@ class OutputArea {
     // 🔧 新增：自动更新提示词预览
     updatePromptPreview() {
         try {
+            // 确保编辑器和数据管理器已初始化
+            if (!this.editor || !this.editor.dataManager) {
+                console.warn('[OutputArea] 编辑器或数据管理器未初始化，跳过提示词预览更新');
+                return;
+            }
+
             const config = this.editor.dataManager.getConfig();
+            if (!config) {
+                console.warn('[OutputArea] 配置为空，跳过提示词预览更新');
+                return;
+            }
+
             const generatedPrompt = this.editor.generatePrompt(config);
-            this.updatePrompt(generatedPrompt);
+            if (generatedPrompt !== null && generatedPrompt !== undefined) {
+                this.updatePrompt(generatedPrompt);
+            }
         } catch (error) {
-            console.error('更新提示词预览失败:', error);
+            console.error('[OutputArea] 更新提示词预览失败:', error);
+            console.error('[OutputArea] 错误堆栈:', error.stack);
         }
     }
 

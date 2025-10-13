@@ -27,13 +27,14 @@ class ToastManager {
         this.toastContainer.style.cssText = `
             position: fixed;
             top: 20px;
-            right: 20px;
+            left: 50%;
+            transform: translateX(-50%);
             z-index: 99999;
             display: flex;
             flex-direction: column-reverse; /* 垂直排列，最新的toast在最上面 */
             gap: 0px; /* 使用margin-bottom代替gap */
             pointer-events: none;
-            align-items: flex-end; /* 右对齐 */
+            align-items: center; /* 居中对齐 */
             max-width: 400px;
             width: auto;
             height: auto;
@@ -89,13 +90,14 @@ class ToastManager {
             #mce-toast-container.mce-toast-container {
                 position: fixed !important;
                 top: 20px !important;
-                right: 20px !important;
+                left: 50% !important;
+                transform: translateX(-50%) !important;
                 z-index: 99999 !important;
                 display: flex !important;
                 flex-direction: column-reverse !important; /* 垂直排列，最新的toast在最上面 */
                 gap: 0px !important; /* 使用margin-bottom代替gap */
                 pointer-events: none !important;
-                align-items: flex-end !important; /* 右对齐 */
+                align-items: center !important; /* 居中对齐 */
                 max-width: 400px !important;
                 width: auto !important;
                 height: auto !important;
@@ -233,16 +235,17 @@ class ToastManager {
             @media (max-width: 768px) {
                 .mce-toast-container {
                     top: 10px;
-                    right: 10px;
+                    left: 50% !important;
+                    transform: translateX(-50%) !important;
                     max-width: calc(100vw - 20px);
                 }
-                  
+
                 .mce-toast {
                     max-width: calc(100vw - 40px);
                     min-width: 150px;
                     width: auto;
                 }
-                
+
                 .mce-toast.multi-line {
                     max-width: calc(100vw - 40px);
                     width: calc(100vw - 40px);
@@ -461,23 +464,11 @@ class ToastManager {
             // 确保容器可见
             this.toastContainer.style.display = 'flex';
 
-            // 如果有节点容器，尝试将toast定位到屏幕中心顶部
+            // 默认情况下toast已经定位到屏幕中心顶部
+            // 如果有节点容器，可以在这里添加特殊定位逻辑
             if (nodeContainer) {
-                // 将toast容器定位到屏幕中心顶部
-                this.toastContainer.style.top = '20px';
-                this.toastContainer.style.left = '50%';
-                this.toastContainer.style.right = 'auto';
-                this.toastContainer.style.transform = 'translateX(-50%)';
-                this.toastContainer.style.alignItems = 'center'; /* 居中对齐 */
-                this.toastContainer.style.flexDirection = 'column-reverse'; /* 新toast在上，旧toast在下 */
-            } else {
-                // 默认右上角位置
-                this.toastContainer.style.top = '20px';
-                this.toastContainer.style.right = '20px';
-                this.toastContainer.style.left = 'auto';
-                this.toastContainer.style.transform = 'none';
-                this.toastContainer.style.alignItems = 'flex-end'; /* 右对齐 */
-                this.toastContainer.style.flexDirection = 'column-reverse'; /* 新toast在上，旧toast在下 */
+                // 可以在这里添加基于特定节点的定位逻辑
+                // 目前保持默认的居中定位
             }
 
             this.ensureCorrectPosition();
