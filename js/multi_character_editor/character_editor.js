@@ -3511,45 +3511,47 @@ class CharacterEditor {
                 global_use_fill: parsed.global_use_fill || false
             });
 
-            // 4. 添加解析的角色
+            // 4. 添加解析的角色并创建蒙版
             parsed.characters.forEach((char, index) => {
+                // 先创建蒙版对象（蒙版编辑器格式：x, y, width, height）
+                const maskForEditor = {
+                    id: this.editor.dataManager.generateId('mask'),
+                    characterId: null,  // 先设置为null，添加角色后会更新
+                    x: char.x1,  // 左上角x（百分比）
+                    y: char.y1,  // 左上角y（百分比）
+                    width: char.x2 - char.x1,  // 宽度（百分比）
+                    height: char.y2 - char.y1,  // 高度（百分比）
+                    feather: char.feather || 0,
+                    blend_mode: 'normal',
+                    zIndex: index
+                };
+
+                // 添加角色（将蒙版对象传递给角色）
                 const newChar = this.editor.dataManager.addCharacter({
                     name: char.name,
                     prompt: char.prompt,
-                    mask: {
-                        x1: char.x1,
-                        y1: char.y1,
-                        x2: char.x2,
-                        y2: char.y2
-                    },
+                    mask: maskForEditor,  // 直接使用蒙版编辑器格式
                     feather: char.feather || 0,
                     use_fill: char.use_fill || false,
                     weight: char.weight || 1.0
                 });
 
-                // 5. 同步添加蒙版到蒙版编辑器
-                // 蒙版编辑器需要的格式：{x, y, width, height}（百分比坐标0-1）
-                if (this.editor.components.maskEditor && newChar.mask) {
-                    const maskForEditor = {
-                        id: this.editor.dataManager.generateId('mask'),
-                        characterId: newChar.id,
-                        x: newChar.mask.x1,  // 左上角x（百分比）
-                        y: newChar.mask.y1,  // 左上角y（百分比）
-                        width: newChar.mask.x2 - newChar.mask.x1,  // 宽度（百分比）
-                        height: newChar.mask.y2 - newChar.mask.y1,  // 高度（百分比）
-                        feather: newChar.feather || 0,
-                        blend_mode: 'normal',
-                        zIndex: index
-                    };
+                // 更新蒙版的 characterId
+                maskForEditor.characterId = newChar.id;
 
-                    // 将蒙版添加到编辑器
+                // 5. 同步添加蒙版到蒙版编辑器
+                if (this.editor.components.maskEditor) {
                     if (!this.editor.components.maskEditor.masks) {
                         this.editor.components.maskEditor.masks = [];
                     }
                     this.editor.components.maskEditor.masks.push(maskForEditor);
-                    this.editor.components.maskEditor.scheduleRender();
                 }
             });
+
+            // 触发蒙版编辑器重新渲染
+            if (this.editor.components.maskEditor) {
+                this.editor.components.maskEditor.scheduleRender();
+            }
 
             // 6. 刷新角色列表
             this.renderCharacterList();
