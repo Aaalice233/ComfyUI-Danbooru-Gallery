@@ -3034,8 +3034,6 @@ class CharacterEditor {
             }
 
             this.applyParsedPrompt(parsed);
-            this.showToast(t('promptApplied') || '提示词已应用', 'success', 2000);
-            closeModal();
         });
     }
 
