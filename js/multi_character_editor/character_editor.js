@@ -74,6 +74,16 @@ class CharacterEditor {
                 </div>
             </div>
             <div class="mce-character-footer">
+                <button id="mce-parse-prompt" class="mce-button mce-parse-prompt-btn" title="${t('parsePrompt')}">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    <span class="mce-button-text">${t('parsePrompt')}</span>
+                </button>
                 <button id="mce-save-as-preset" class="mce-button mce-button-primary mce-save-preset-btn" title="${t('saveAsPreset')}">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
@@ -244,16 +254,17 @@ class CharacterEditor {
                 background: linear-gradient(135deg, rgba(42, 42, 62, 0.5) 0%, rgba(58, 58, 78, 0.5) 100%);
                 flex-shrink: 0;
                 min-height: 60px;
+                gap: 8px;
             }
             
             .mce-save-preset-btn {
-                width: 100%;
-                max-width: 360px;
+                flex: 1;
+                max-width: 200px;
                 justify-content: center;
                 gap: 8px;
                 font-size: 14px;
                 font-weight: 600;
-                padding: 12px 20px;
+                padding: 12px 16px;
             }
             
             .mce-save-preset-btn:hover {
@@ -262,6 +273,34 @@ class CharacterEditor {
             
             .mce-save-preset-btn svg {
                 filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+            }
+
+            .mce-parse-prompt-btn {
+                flex: 1;
+                max-width: 200px;
+                background: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                color: rgba(255, 255, 255, 0.8);
+                font-size: 12px;
+                padding: 12px 16px;
+                opacity: 0.7;
+                transition: all 0.2s ease;
+                white-space: nowrap;
+                justify-content: center;
+                gap: 6px;
+                font-weight: 500;
+            }
+
+            .mce-parse-prompt-btn:hover {
+                opacity: 1;
+                background: rgba(255, 255, 255, 0.15);
+                border-color: rgba(255, 255, 255, 0.3);
+                color: rgba(255, 255, 255, 0.9);
+            }
+
+            .mce-parse-prompt-btn svg {
+                width: 12px;
+                height: 12px;
             }
             
             .mce-character-item {
@@ -760,6 +799,16 @@ class CharacterEditor {
                 if (libraryBtn) {
                     libraryBtn.addEventListener('click', (e) => {
                         this.showLibraryModal();
+                    });
+                }
+
+                // 解析提示词按钮
+                const parsePromptBtn = document.getElementById('mce-parse-prompt');
+                if (parsePromptBtn) {
+                    parsePromptBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.showParsePromptModal();
                     });
                 }
 
@@ -2870,6 +2919,852 @@ class CharacterEditor {
         }
     }
 
+    showParsePromptModal() {
+        // 防止重复创建
+        if (document.querySelector(".mce-parse-prompt-modal")) return;
+
+        const modal = document.createElement("div");
+        modal.className = "mce-parse-prompt-modal";
+
+        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+
+        modal.innerHTML = `
+            <div class="mce-parse-prompt-content">
+                <div class="mce-parse-prompt-header">
+                    <h3>${t('parsePrompt') || '解析提示词'}</h3>
+                    <button id="mce-parse-prompt-close" class="mce-button mce-button-icon" title="${t('close') || '关闭'}">&times;</button>
+                </div>
+                <div class="mce-parse-prompt-body">
+                    <div class="mce-parse-prompt-description">
+                        <p>${t('parsePromptDescription') || '请粘贴包含区域提示词语法的提示词，支持COUPLE、MASK、AND、FEATHER、FILL()、AREA等语法，支持完整和简写格式，系统将自动解析并应用到当前节点。'}</p>
+                    </div>
+                    <div class="mce-parse-prompt-input-container">
+                        <label for="mce-parse-prompt-textarea">${t('promptText') || '提示词内容：'}</label>
+                        <textarea 
+                            id="mce-parse-prompt-textarea" 
+                            class="mce-parse-prompt-textarea"
+                            placeholder="${t('parsePromptPlaceholder') || '请粘贴提示词内容...'}"
+                            rows="10"
+                        ></textarea>
+                    </div>
+                    <div class="mce-parse-prompt-preview" id="mce-parse-prompt-preview" style="display: none;">
+                        <h4>${t('parsePreview') || '解析预览：'}</h4>
+                        <div class="mce-parse-preview-content" id="mce-parse-preview-content"></div>
+                    </div>
+                </div>
+                <div class="mce-parse-prompt-footer">
+                    <button id="mce-parse-prompt-cancel" class="mce-button">${t('cancel') || '取消'}</button>
+                    <button id="mce-parse-prompt-parse" class="mce-button mce-button-primary">${t('parseAndApply') || '解析并应用'}</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // 添加样式
+        this.addParsePromptModalStyles();
+
+        // 绑定事件
+        this.bindParsePromptModalEvents(modal);
+    }
+
+    bindParsePromptModalEvents(modal) {
+        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+
+        // 关闭按钮
+        const closeModal = () => modal.remove();
+        modal.querySelector("#mce-parse-prompt-close").addEventListener("click", closeModal);
+        modal.querySelector("#mce-parse-prompt-cancel").addEventListener("click", closeModal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+        // 解析按钮
+        const parseBtn = modal.querySelector("#mce-parse-prompt-parse");
+        const textarea = modal.querySelector("#mce-parse-prompt-textarea");
+        const preview = modal.querySelector("#mce-parse-prompt-preview");
+        const previewContent = modal.querySelector("#mce-parse-preview-content");
+
+        // 实时预览
+        textarea.addEventListener('input', () => {
+            const text = textarea.value.trim();
+            if (text) {
+                const parsed = this.parsePromptText(text);
+                if (parsed.characters.length > 0) {
+                    this.showParsePreview(parsed, previewContent);
+                    preview.style.display = 'block';
+                } else {
+                    preview.style.display = 'none';
+                }
+            } else {
+                preview.style.display = 'none';
+            }
+        });
+
+        // 解析并应用
+        parseBtn.addEventListener('click', () => {
+            const text = textarea.value.trim();
+            if (!text) {
+                this.showToast(t('pleaseEnterPrompt') || '请输入提示词', 'warning', 2000);
+                return;
+            }
+
+            const parsed = this.parsePromptText(text);
+            if (parsed.characters.length === 0) {
+                this.showToast(t('noValidCharacters') || '未找到有效的角色数据', 'warning', 2000);
+                return;
+            }
+
+            this.applyParsedPrompt(parsed);
+            this.showToast(t('promptApplied') || '提示词已应用', 'success', 2000);
+            closeModal();
+        });
+    }
+
+    parsePromptText(text) {
+        const result = {
+            global_prompt: '',
+            characters: [],
+            syntax_mode: 'attention_couple', // 默认使用attention_couple
+            use_fill: false
+        };
+
+        // 检测语法模式
+        if (text.includes(' AND ')) {
+            result.syntax_mode = 'regional_prompts';
+        }
+
+        // 检测FILL()使用
+        if (text.includes('FILL()')) {
+            result.use_fill = true;
+        }
+
+        if (result.syntax_mode === 'attention_couple') {
+            return this.parseAttentionCoupleSyntax(text, result);
+        } else {
+            return this.parseRegionalPromptsSyntax(text, result);
+        }
+    }
+
+    parseAttentionCoupleSyntax(text, result) {
+        // 先补齐所有COUPLE参数到完整格式
+        const normalizedText = this.normalizeCoupleSyntax(text);
+
+        // 提取全局提示词（找到第一个区域语法关键字之前的内容）
+        // 区域语法关键字包括：COUPLE、FILL()
+        const firstRegionMatch = normalizedText.match(/\b(COUPLE|FILL\(\))/);
+
+        if (firstRegionMatch) {
+            const firstRegionIndex = firstRegionMatch.index;
+            if (firstRegionIndex > 0) {
+                result.global_prompt = normalizedText.substring(0, firstRegionIndex).trim();
+            } else {
+                result.global_prompt = '';
+            }
+
+            // 检查全局FILL：如果FILL()出现在第一个COUPLE之前
+            const firstCoupleMatch = normalizedText.match(/\bCOUPLE/);
+            if (firstRegionMatch[0] === 'FILL()' && firstCoupleMatch && firstRegionMatch.index < firstCoupleMatch.index) {
+                result.global_use_fill = true;
+            }
+        } else {
+            // 如果没有区域语法，整个文本都是全局提示词
+            result.global_prompt = normalizedText.trim();
+        }
+
+        // 解析COUPLE参数（现在都是完整格式）
+        const coupleMatches = normalizedText.match(/COUPLE\s*MASK\([^)]+\)/g) || [];
+        coupleMatches.forEach((coupleMatch, index) => {
+            const maskMatch = coupleMatch.match(/COUPLE\s*MASK\(([^)]+)\)/);
+            if (!maskMatch) return;
+
+            const maskParams = maskMatch[1].split(',').map(p => p.trim());
+            let x1, y1, x2, y2, weight = 1.0;
+
+            // 解析x坐标
+            if (maskParams[0]) {
+                const xCoords = maskParams[0].split(/\s+/).map(parseFloat);
+                if (xCoords.length === 2) [x1, x2] = xCoords;
+            }
+
+            // 解析y坐标
+            if (maskParams[1]) {
+                const yCoords = maskParams[1].split(/\s+/).map(parseFloat);
+                if (yCoords.length === 2) [y1, y2] = yCoords;
+            }
+
+            // 解析权重
+            if (maskParams[2]) {
+                weight = parseFloat(maskParams[2]) || 1.0;
+            }
+
+            if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) return;
+
+            // 提取该COUPLE对应的提示词
+            const coupleIndex = normalizedText.indexOf(coupleMatch);
+            let coupleText = '';
+
+            // 查找下一个COUPLE或文本结尾
+            const nextCoupleIndex = normalizedText.indexOf('COUPLE', coupleIndex + coupleMatch.length);
+            if (nextCoupleIndex !== -1) {
+                coupleText = normalizedText.substring(coupleIndex + coupleMatch.length, nextCoupleIndex).trim();
+            } else {
+                coupleText = normalizedText.substring(coupleIndex + coupleMatch.length).trim();
+            }
+
+            // 检查是否有FEATHER
+            let feather = 0;
+            const featherMatch = coupleText.match(/FEATHER\(([^)]*)\)/);
+            if (featherMatch) {
+                const featherParams = featherMatch[1].split(/\s+/).map(f => parseFloat(f) || 0);
+                feather = featherParams.length === 1 ? featherParams[0] : featherParams[0];
+                coupleText = coupleText.replace(/FEATHER\([^)]*\)/, '').trim();
+            }
+
+            // 检查角色是否有FILL()
+            let charUseFill = false;
+            if (coupleText.includes('FILL()')) {
+                charUseFill = true;
+                coupleText = coupleText.replace(/FILL\(\)/g, '').trim();
+            }
+
+            // 清理提示词
+            coupleText = coupleText.replace(/^,\s*/, '').replace(/,\s*$/, '').trim();
+
+            // 只有当提示词不为空时才添加角色
+            if (coupleText) {
+                result.characters.push({
+                    name: `角色 ${index + 1}`,
+                    prompt: coupleText,
+                    x1: x1,
+                    y1: y1,
+                    x2: x2,
+                    y2: y2,
+                    feather: feather,
+                    use_fill: charUseFill,
+                    weight: weight
+                });
+            }
+        });
+
+        return result;
+    }
+
+    normalizeCoupleSyntax(text) {
+        let normalized = text;
+
+        // 先处理 COUPLE MASK(...) 格式
+        normalized = normalized.replace(/COUPLE\s*MASK\(([^)]*)\)/g, (match, params) => {
+            if (!params.trim()) {
+                // COUPLE MASK() -> COUPLE MASK(0 1, 0 1, 1)
+                return 'COUPLE MASK(0 1, 0 1, 1)';
+            }
+
+            const parts = params.split(',').map(p => p.trim());
+
+            if (parts.length === 1) {
+                // COUPLE MASK(x1 x2) -> COUPLE MASK(x1 x2, 0 1, 1)
+                // COUPLE MASK(x1) -> COUPLE MASK(x1 1, 0 1, 1)
+                const coords = parts[0].split(/\s+/);
+                if (coords.length === 1) {
+                    return `COUPLE MASK(${parts[0]} 1, 0 1, 1)`;
+                } else if (coords.length === 2) {
+                    return `COUPLE MASK(${parts[0]}, 0 1, 1)`;
+                }
+            } else if (parts.length === 2) {
+                const xCoords = parts[0].split(/\s+/);
+                const yCoords = parts[1].split(/\s+/);
+
+                // COUPLE MASK(x1 x2, y1 y2) -> COUPLE MASK(x1 x2, y1 y2, 1)
+                // COUPLE MASK(x1 x2, y1) -> COUPLE MASK(x1 x2, y1 1, 1)
+                // COUPLE MASK(x1, y1) -> COUPLE MASK(x1 1, y1 1, 1)
+                let x = xCoords.length === 1 ? `${parts[0]} 1` : parts[0];
+                let y = yCoords.length === 1 ? `${parts[1]} 1` : parts[1];
+                return `COUPLE MASK(${x}, ${y}, 1)`;
+            } else if (parts.length === 3) {
+                const xCoords = parts[0].split(/\s+/);
+                const yCoords = parts[1].split(/\s+/);
+
+                // COUPLE MASK(x1 x2, y1 y2, weight) -> COUPLE MASK(x1 x2, y1 y2, weight)
+                // COUPLE MASK(x1, y1, weight) -> COUPLE MASK(x1 1, y1 1, weight)
+                let x = xCoords.length === 1 ? `${parts[0]} 1` : parts[0];
+                let y = yCoords.length === 1 ? `${parts[1]} 1` : parts[1];
+                return `COUPLE MASK(${x}, ${y}, ${parts[2]})`;
+            }
+
+            return match;
+        });
+
+        // 处理 COUPLE(...) 简化格式，转换为 COUPLE MASK(...)
+        normalized = normalized.replace(/\bCOUPLE\(([^)]*)\)/g, (match, params) => {
+            if (!params.trim()) {
+                // COUPLE() -> COUPLE MASK(0 1, 0 1, 1)
+                return 'COUPLE MASK(0 1, 0 1, 1)';
+            }
+
+            const parts = params.split(',').map(p => p.trim());
+
+            if (parts.length === 1) {
+                // COUPLE(x1 x2) -> COUPLE MASK(x1 x2, 0 1, 1)
+                // COUPLE(x1) -> COUPLE MASK(x1 1, 0 1, 1)
+                const coords = parts[0].split(/\s+/);
+                if (coords.length === 1) {
+                    return `COUPLE MASK(${parts[0]} 1, 0 1, 1)`;
+                } else if (coords.length === 2) {
+                    return `COUPLE MASK(${parts[0]}, 0 1, 1)`;
+                }
+            } else if (parts.length === 2) {
+                const xCoords = parts[0].split(/\s+/);
+                const yCoords = parts[1].split(/\s+/);
+
+                // COUPLE(x1 x2, y1 y2) -> COUPLE MASK(x1 x2, y1 y2, 1)
+                // COUPLE(x1 x2, y1) -> COUPLE MASK(x1 x2, y1 1, 1)
+                // COUPLE(x1, y1) -> COUPLE MASK(x1 1, y1 1, 1)
+                let x = xCoords.length === 1 ? `${parts[0]} 1` : parts[0];
+                let y = yCoords.length === 1 ? `${parts[1]} 1` : parts[1];
+                return `COUPLE MASK(${x}, ${y}, 1)`;
+            } else if (parts.length === 3) {
+                const xCoords = parts[0].split(/\s+/);
+                const yCoords = parts[1].split(/\s+/);
+
+                // COUPLE(x1 x2, y1 y2, weight) -> COUPLE MASK(x1 x2, y1 y2, weight)
+                // COUPLE(x1, y1, weight) -> COUPLE MASK(x1 1, y1 1, weight)
+                let x = xCoords.length === 1 ? `${parts[0]} 1` : parts[0];
+                let y = yCoords.length === 1 ? `${parts[1]} 1` : parts[1];
+                return `COUPLE MASK(${x}, ${y}, ${parts[2]})`;
+            }
+
+            return match;
+        });
+
+        // 处理 COUPLE (无参数，隐式MASK) -> COUPLE MASK(0 1, 0 1, 1)
+        normalized = normalized.replace(/\bCOUPLE\b(?!\s*(?:MASK|\())/g, 'COUPLE MASK(0 1, 0 1, 1)');
+
+        return normalized;
+    }
+
+    parseRegionalPromptsSyntax(text, result) {
+        // 先补齐所有MASK和AREA参数到完整格式
+        const normalizedText = this.normalizeRegionalPromptsSyntax(text);
+
+        // 提取全局提示词（找到第一个区域语法关键字之前的内容）
+        // 区域语法关键字包括：MASK(、AREA(、AND（作为分隔符）
+        const maskMatch = normalizedText.match(/\b(MASK|AREA)\s*\(/);
+        const andMatch = normalizedText.match(/\s+AND\s+/);
+
+        let firstRegionIndex = -1;
+
+        if (maskMatch && andMatch) {
+            // 两者都存在，取最早出现的
+            firstRegionIndex = Math.min(maskMatch.index, andMatch.index);
+        } else if (maskMatch) {
+            firstRegionIndex = maskMatch.index;
+        } else if (andMatch) {
+            firstRegionIndex = andMatch.index;
+        }
+
+        if (firstRegionIndex > 0) {
+            result.global_prompt = normalizedText.substring(0, firstRegionIndex).trim();
+        } else if (firstRegionIndex === 0) {
+            result.global_prompt = '';
+        } else {
+            // 如果没有区域语法，整个文本都是全局提示词
+            result.global_prompt = normalizedText.trim();
+            return result;
+        }
+
+        // 按AND分割
+        const parts = normalizedText.split(/\s+AND\s+/);
+
+        parts.forEach((part, index) => {
+            part = part.trim();
+            if (!part) return;
+
+            let x1, y1, x2, y2, weight = 1.0, feather = 0;
+            let prompt = part;
+
+            // 解析MASK格式（现在都是完整格式）
+            let maskMatch = part.match(/MASK\(([^)]+)\)/);
+            if (maskMatch) {
+                const maskParams = maskMatch[1].split(',').map(p => p.trim());
+
+                if (maskParams[0]) {
+                    const xCoords = maskParams[0].split(/\s+/).map(parseFloat);
+                    if (xCoords.length === 2) [x1, x2] = xCoords;
+                }
+
+                if (maskParams[1]) {
+                    const yCoords = maskParams[1].split(/\s+/).map(parseFloat);
+                    if (yCoords.length === 2) [y1, y2] = yCoords;
+                }
+
+                if (maskParams[2]) {
+                    weight = parseFloat(maskParams[2]) || 1.0;
+                }
+
+                // 提取提示词
+                prompt = part.replace(/MASK\([^)]+\)/, '').trim();
+            }
+            // 解析AREA格式
+            else if (part.includes('AREA(')) {
+                const areaMatch = part.match(/AREA\(([^)]+)\)/);
+                if (areaMatch) {
+                    const areaParams = areaMatch[1].split(',').map(p => p.trim());
+
+                    if (areaParams[0]) {
+                        const xCoords = areaParams[0].split(/\s+/).map(parseFloat);
+                        if (xCoords.length === 2) [x1, x2] = xCoords;
+                    }
+
+                    if (areaParams[1]) {
+                        const yCoords = areaParams[1].split(/\s+/).map(parseFloat);
+                        if (yCoords.length === 2) [y1, y2] = yCoords;
+                    }
+
+                    // 提取提示词
+                    prompt = part.replace(/AREA\([^)]+\)/, '').trim();
+                }
+            }
+
+            // 检查FEATHER
+            const featherMatch = prompt.match(/FEATHER\(([^)]*)\)/);
+            if (featherMatch) {
+                const featherParams = featherMatch[1].split(/\s+/).map(f => parseFloat(f) || 0);
+                feather = featherParams.length === 1 ? featherParams[0] : featherParams[0];
+                prompt = prompt.replace(/FEATHER\([^)]*\)/, '').trim();
+            }
+
+            // 清理提示词
+            prompt = prompt.replace(/^,\s*/, '').replace(/,\s*$/, '').trim();
+
+            // 如果有有效的坐标，添加角色
+            if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2)) {
+                result.characters.push({
+                    name: `角色 ${index + 1}`,
+                    prompt: prompt,
+                    x1: x1,
+                    y1: y1,
+                    x2: x2,
+                    y2: y2,
+                    feather: feather,
+                    use_fill: false,
+                    weight: weight
+                });
+            }
+        });
+
+        return result;
+    }
+
+    normalizeRegionalPromptsSyntax(text) {
+        let normalized = text;
+
+        // 处理 MASK(...) 格式
+        normalized = normalized.replace(/\bMASK\(([^)]*)\)/g, (match, params) => {
+            if (!params.trim()) {
+                // MASK() -> MASK(0 1, 0 1, 1)
+                return 'MASK(0 1, 0 1, 1)';
+            }
+
+            const parts = params.split(',').map(p => p.trim());
+
+            if (parts.length === 1) {
+                // MASK(x1 x2) -> MASK(x1 x2, 0 1, 1)
+                // MASK(x1) -> MASK(x1 1, 0 1, 1)
+                const coords = parts[0].split(/\s+/);
+                if (coords.length === 1) {
+                    return `MASK(${parts[0]} 1, 0 1, 1)`;
+                } else if (coords.length === 2) {
+                    return `MASK(${parts[0]}, 0 1, 1)`;
+                }
+            } else if (parts.length === 2) {
+                const xCoords = parts[0].split(/\s+/);
+                const yCoords = parts[1].split(/\s+/);
+
+                // MASK(x1 x2, y1 y2) -> MASK(x1 x2, y1 y2, 1)
+                // MASK(x1 x2, y1) -> MASK(x1 x2, y1 1, 1)
+                // MASK(x1, y1) -> MASK(x1 1, y1 1, 1)
+                let x = xCoords.length === 1 ? `${parts[0]} 1` : parts[0];
+                let y = yCoords.length === 1 ? `${parts[1]} 1` : parts[1];
+                return `MASK(${x}, ${y}, 1)`;
+            } else if (parts.length === 3) {
+                const xCoords = parts[0].split(/\s+/);
+                const yCoords = parts[1].split(/\s+/);
+
+                // MASK(x1 x2, y1 y2, weight) -> MASK(x1 x2, y1 y2, weight)
+                // MASK(x1, y1, weight) -> MASK(x1 1, y1 1, weight)
+                let x = xCoords.length === 1 ? `${parts[0]} 1` : parts[0];
+                let y = yCoords.length === 1 ? `${parts[1]} 1` : parts[1];
+                return `MASK(${x}, ${y}, ${parts[2]})`;
+            }
+
+            return match;
+        });
+
+        // 处理 AREA(...) 格式
+        normalized = normalized.replace(/\bAREA\(([^)]*)\)/g, (match, params) => {
+            if (!params.trim()) {
+                // AREA() -> AREA(0 1, 0 1)
+                return 'AREA(0 1, 0 1)';
+            }
+
+            const parts = params.split(',').map(p => p.trim());
+
+            if (parts.length === 1) {
+                // AREA(x1 x2) -> AREA(x1 x2, 0 1)
+                // AREA(x1) -> AREA(x1 1, 0 1)
+                const coords = parts[0].split(/\s+/);
+                if (coords.length === 1) {
+                    return `AREA(${parts[0]} 1, 0 1)`;
+                } else if (coords.length === 2) {
+                    return `AREA(${parts[0]}, 0 1)`;
+                }
+            } else if (parts.length === 2) {
+                const xCoords = parts[0].split(/\s+/);
+                const yCoords = parts[1].split(/\s+/);
+
+                // AREA(x1 x2, y1 y2) -> AREA(x1 x2, y1 y2)
+                // AREA(x1 x2, y1) -> AREA(x1 x2, y1 1)
+                // AREA(x1, y1) -> AREA(x1 1, y1 1)
+                let x = xCoords.length === 1 ? `${parts[0]} 1` : parts[0];
+                let y = yCoords.length === 1 ? `${parts[1]} 1` : parts[1];
+                return `AREA(${x}, ${y})`;
+            }
+
+            return match;
+        });
+
+        return normalized;
+    }
+
+    showParsePreview(parsed, container) {
+        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+
+        let html = '';
+
+        // 显示语法模式
+        html += `<div class="mce-parse-preview-section">
+            <h5>${t('syntaxMode') || '语法模式'}:</h5>
+            <div class="mce-parse-preview-text">${parsed.syntax_mode === 'attention_couple' ? 'Attention Couple' : 'Regional Prompts'}</div>
+        </div>`;
+
+        // 检查是全局FILL还是角色FILL
+        const hasGlobalFill = parsed.global_use_fill || false;
+        const charactersWithFill = parsed.characters.filter(c => c.use_fill);
+
+        if (parsed.global_prompt) {
+            const globalTitle = hasGlobalFill ? `${t('globalPrompt') || '全局提示词'} (FILL已启用)` : (t('globalPrompt') || '全局提示词');
+            html += `<div class="mce-parse-preview-section">
+                <h5>${globalTitle}:</h5>
+                <div class="mce-parse-preview-text">${parsed.global_prompt}</div>
+            </div>`;
+        }
+
+        if (parsed.characters.length > 0) {
+            html += `<div class="mce-parse-preview-section">
+                <h5>${t('characters') || '角色'}:</h5>
+                <div class="mce-parse-preview-characters">`;
+
+            parsed.characters.forEach((char, index) => {
+                const charTitle = char.use_fill ? `${char.name} (FILL已启用)` : char.name;
+                html += `<div class="mce-parse-preview-character">
+                    <div class="mce-parse-preview-char-header">
+                        <strong>${charTitle}</strong>
+                        <span class="mce-parse-preview-coords">(${char.x1}, ${char.y1}) - (${char.x2}, ${char.y2})</span>
+                    </div>
+                    <div class="mce-parse-preview-char-details">
+                        <span class="mce-parse-preview-weight">权重: ${char.weight}</span>
+                        ${char.feather > 0 ? `<span class="mce-parse-preview-feather">羽化: ${char.feather}</span>` : ''}
+                    </div>
+                    <div class="mce-parse-preview-char-prompt">${char.prompt}</div>
+                </div>`;
+            });
+
+            html += `</div></div>`;
+        }
+
+        container.innerHTML = html;
+    }
+
+    applyParsedPrompt(parsed) {
+
+        const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
+
+        try {
+            // 1. 先清除蒙版编辑器中的所有蒙版
+            if (this.editor.components.maskEditor) {
+                const existingCharacters = this.editor.dataManager.getCharacters();
+                existingCharacters.forEach(char => {
+                    this.editor.components.maskEditor.removeMask(char.id);
+                });
+            }
+
+            // 2. 清除现有角色
+            const existingCharacters = this.editor.dataManager.getCharacters();
+            const characterIds = existingCharacters.map(char => char.id);
+            characterIds.forEach(id => {
+                this.editor.dataManager.deleteCharacter(id);
+            });
+
+            // 3. 更新语法模式和全局提示词
+            this.editor.dataManager.updateConfig({
+                syntax_mode: parsed.syntax_mode,
+                global_prompt: parsed.global_prompt || '',
+                global_use_fill: parsed.global_use_fill || false
+            });
+
+            // 4. 添加解析的角色
+            parsed.characters.forEach((char, index) => {
+                const newChar = this.editor.dataManager.addCharacter({
+                    name: char.name,
+                    prompt: char.prompt,
+                    mask: {
+                        x1: char.x1,
+                        y1: char.y1,
+                        x2: char.x2,
+                        y2: char.y2
+                    },
+                    feather: char.feather || 0,
+                    use_fill: char.use_fill || false,
+                    weight: char.weight || 1.0
+                });
+
+                // 5. 同步添加蒙版到蒙版编辑器
+                // 坐标需要从百分比转换为像素坐标
+                if (this.editor.components.maskEditor && newChar.mask) {
+                    const canvas = this.editor.components.maskEditor.canvas;
+                    if (canvas) {
+                        this.editor.components.maskEditor.addMask({
+                            id: newChar.id,
+                            name: newChar.name,
+                            color: newChar.color,
+                            x1: newChar.mask.x1 * canvas.width,
+                            y1: newChar.mask.y1 * canvas.height,
+                            x2: newChar.mask.x2 * canvas.width,
+                            y2: newChar.mask.y2 * canvas.height
+                        });
+                    }
+                }
+            });
+
+            // 6. 刷新角色列表
+            this.renderCharacterList();
+
+            // 7. 关闭弹窗
+            const modal = document.getElementById('mce-parse-prompt-modal');
+            if (modal) {
+                modal.remove();
+            }
+
+            // 8. 显示成功提示
+            if (this.editor.toastManager) {
+                this.editor.toastManager.showToast(t('promptApplied'), 'success', 3000);
+            }
+        } catch (error) {
+            console.error('[CharacterEditor] 应用解析提示词失败:', error);
+            if (this.editor.toastManager) {
+                this.editor.toastManager.showToast(t('promptApplied') + ': ' + error.message, 'error', 5000);
+            }
+        }
+    }
+
+    addParsePromptModalStyles() {
+        if (document.querySelector('#mce-parse-prompt-modal-styles')) return;
+
+        const style = document.createElement('style');
+        style.id = 'mce-parse-prompt-modal-styles';
+        style.textContent = `
+            .mce-parse-prompt-modal {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.7);
+                backdrop-filter: blur(5px);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+            }
+            
+            .mce-parse-prompt-content {
+                width: 600px;
+                max-height: 80vh;
+                background: linear-gradient(135deg, #1e1e2e 0%, #2a2a3e 100%);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            }
+
+            .mce-parse-prompt-header {
+                padding: 20px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .mce-parse-prompt-header h3 {
+                margin: 0;
+                color: #fff;
+                font-size: 18px;
+                font-weight: 600;
+            }
+
+            .mce-parse-prompt-body {
+                padding: 20px;
+                flex: 1;
+                overflow-y: auto;
+            }
+
+            .mce-parse-prompt-description {
+                margin-bottom: 20px;
+                padding: 12px;
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 8px;
+                border-left: 3px solid #667eea;
+            }
+
+            .mce-parse-prompt-description p {
+                margin: 0;
+                color: rgba(255, 255, 255, 0.8);
+                font-size: 14px;
+                line-height: 1.5;
+            }
+
+            .mce-parse-prompt-input-container label {
+                display: block;
+                margin-bottom: 8px;
+                color: #fff;
+                font-weight: 500;
+            }
+
+            .mce-parse-prompt-textarea {
+                width: 100%;
+                min-height: 200px;
+                padding: 12px;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                color: #fff;
+                font-family: 'Courier New', monospace;
+                font-size: 13px;
+                line-height: 1.4;
+                resize: vertical;
+                box-sizing: border-box;
+            }
+
+            .mce-parse-prompt-textarea:focus {
+                outline: none;
+                border-color: #667eea;
+                box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+            }
+
+            .mce-parse-prompt-preview {
+                margin-top: 20px;
+                padding: 16px;
+                background: rgba(255, 255, 255, 0.03);
+                border-radius: 8px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+            }
+
+            .mce-parse-prompt-preview h4 {
+                margin: 0 0 12px 0;
+                color: #fff;
+                font-size: 14px;
+                font-weight: 600;
+            }
+
+            .mce-parse-preview-section {
+                margin-bottom: 16px;
+            }
+
+            .mce-parse-preview-section h5 {
+                margin: 0 0 8px 0;
+                color: #667eea;
+                font-size: 13px;
+                font-weight: 600;
+            }
+
+            .mce-parse-preview-text {
+                padding: 8px 12px;
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 6px;
+                color: rgba(255, 255, 255, 0.9);
+                font-size: 12px;
+                line-height: 1.4;
+                word-break: break-word;
+            }
+
+            .mce-parse-preview-characters {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .mce-parse-preview-character {
+                padding: 10px;
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 6px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+            }
+
+            .mce-parse-preview-char-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 6px;
+            }
+
+            .mce-parse-preview-char-header strong {
+                color: #fff;
+                font-size: 13px;
+            }
+
+            .mce-parse-preview-coords {
+                color: #667eea;
+                font-size: 11px;
+                font-family: 'Courier New', monospace;
+            }
+
+            .mce-parse-preview-char-details {
+                display: flex;
+                gap: 12px;
+                margin-bottom: 6px;
+                font-size: 11px;
+            }
+
+            .mce-parse-preview-weight {
+                color: #667eea;
+                font-weight: 500;
+            }
+
+            .mce-parse-preview-feather {
+                color: #f59e0b;
+                font-weight: 500;
+            }
+
+            .mce-parse-preview-char-prompt {
+                color: rgba(255, 255, 255, 0.8);
+                font-size: 12px;
+                line-height: 1.3;
+                word-break: break-word;
+            }
+
+            .mce-parse-prompt-footer {
+                padding: 20px;
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
+                display: flex;
+                justify-content: flex-end;
+                gap: 12px;
+            }
+        `;
+
+        document.head.appendChild(style);
+    }
+
     addLibraryModalStyles() {
         if (document.querySelector('#mce-library-modal-styles')) return;
 
@@ -3377,6 +4272,16 @@ class CharacterEditor {
         const emptyState = this.container.querySelector('.mce-empty-state p');
         if (emptyState) {
             emptyState.textContent = t('noCharacters');
+        }
+
+        // 更新解析提示词按钮的提示文本和文本
+        const parsePromptBtn = this.container.querySelector('#mce-parse-prompt');
+        if (parsePromptBtn) {
+            parsePromptBtn.title = t('parsePrompt');
+            const span = parsePromptBtn.querySelector('span');
+            if (span) {
+                span.textContent = t('parsePrompt');
+            }
         }
 
         // 更新另存为预设按钮的提示文本和文本
