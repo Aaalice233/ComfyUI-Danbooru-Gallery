@@ -2229,7 +2229,7 @@ class DataManager {
             this.editor.eventBus.emit('character:updated', character);
             return character;
         }
-        console.error(`[DataManager] 未找到角色: ${characterId}`);
+        console.warn(`[DataManager] 未找到角色: ${characterId} (可能已被删除)`);
         return null;
     }
 
