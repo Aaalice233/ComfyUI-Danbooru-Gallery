@@ -11,6 +11,7 @@ import { globalAutocompleteCache } from '../global/autocomplete_cache.js';
 import { AutocompleteUI } from '../global/autocomplete_ui.js';
 import { globalToastManager as toastManagerProxy } from '../global/toast_manager.js';
 import { PresetManager } from './preset_manager.js';
+import '../global/color_manager.js';
 
 /*
  * 多人提示词节点性能优化总结
@@ -464,11 +465,15 @@ class MultiCharacterEditor {
                         this.components.maskEditor.clearAllMasks();
                     }
 
+                    // 🔧 新增：修复颜色冲突
+                    this.fixColorConflicts(config.characters);
+
                     config.characters.forEach((charData, index) => {
                         console.log(`[DEBUG] loadInitialData: 恢复角色 ${index + 1}/${config.characters.length}`, {
                             id: charData.id,
                             name: charData.name,
-                            hasMask: !!charData.mask
+                            hasMask: !!charData.mask,
+                            color: charData.color
                         });
 
                         // 直接将角色数据添加到UI组件，不重复触发事件
@@ -563,6 +568,66 @@ class MultiCharacterEditor {
 
         } catch (error) {
             console.error('[MultiCharacterEditor] loadInitialData: 加载初始数据失败:', error);
+        }
+    }
+
+    // 🔧 新增：修复颜色冲突
+    fixColorConflicts(characters) {
+        if (!characters || !Array.isArray(characters)) {
+            return;
+        }
+
+        try {
+            // 重置颜色管理器以确保从干净状态开始
+            if (window.MCE_ColorManager) {
+                window.MCE_ColorManager.reset();
+            }
+
+            // 检查颜色冲突
+            const usedColors = new Set();
+            const conflictCharacters = [];
+
+            characters.forEach(char => {
+                if (!char.color || usedColors.has(char.color)) {
+                    conflictCharacters.push(char);
+                } else {
+                    usedColors.add(char.color);
+                    // 为有效颜色的角色注册颜色
+                    if (window.MCE_ColorManager) {
+                        window.MCE_ColorManager.getColorForId(char.id, true); // 强制分配颜色
+                    }
+                }
+            });
+
+            // 为冲突的角色分配新颜色
+            if (conflictCharacters.length > 0) {
+                console.log(`[MultiCharacterEditor] 发现 ${conflictCharacters.length} 个角色颜色冲突，正在修复...`);
+
+                conflictCharacters.forEach(char => {
+                    if (window.MCE_ColorManager) {
+                        const newColor = window.MCE_ColorManager.getColorForId(char.id, true);
+                        char.color = newColor;
+                        console.log(`[MultiCharacterEditor] 已为角色 "${char.name}" (${char.id}) 分配新颜色: ${newColor}`);
+                    } else {
+                        // 回退方案：使用默认颜色
+                        char.color = '#FF6B6B';
+                        console.warn(`[MultiCharacterEditor] ColorManager 未加载，为角色 "${char.name}" 使用默认颜色`);
+                    }
+                });
+
+                // 保存修复后的配置
+                if (this.dataManager) {
+                    this.dataManager.config.characters = characters;
+                    // 异步保存，避免阻塞UI
+                    setTimeout(() => {
+                        this.saveToNodeState(this.dataManager.getConfig());
+                    }, 100);
+                }
+            } else {
+                console.log('[MultiCharacterEditor] 所有角色颜色正常，无需修复');
+            }
+        } catch (error) {
+            console.error('[MultiCharacterEditor] 修复颜色冲突失败:', error);
         }
     }
 
@@ -988,10 +1053,21 @@ class MultiCharacterEditor {
         };
     }
 
-    // 🔧 新增：生成颜色（从DataManager移动过来）
-    generateColor() {
-        const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#FF9FF3', '#54A0FF'];
-        return colors[Math.floor(Math.random() * colors.length)];
+    // 🔧 新增：生成颜色（使用颜色管理器确保唯一性）
+    generateColor(id = null) {
+        if (!window.MCE_ColorManager) {
+            // 如果颜色管理器未加载，返回默认颜色
+            console.warn('[MCE] ColorManager not loaded, using fallback color');
+            return '#FF6B6B';
+        }
+
+        if (id) {
+            // 为指定ID分配颜色
+            return window.MCE_ColorManager.getColorForId(id);
+        } else {
+            // 获取下一个唯一颜色
+            return window.MCE_ColorManager.getNextUniqueColor();
+        }
     }
 
     // 🔧 新增：确保配置完整性
@@ -2044,7 +2120,7 @@ class DataManager {
                 prompt: safeData.prompt || '',
                 enabled: safeData.enabled !== undefined ? safeData.enabled : true,
                 weight: safeData.weight || 1.0,
-                color: safeData.color || this.generateColor(),
+                color: safeData.color || this.generateColor(characterId),
                 position: safeData.position || this.config.characters.length,
                 mask: safeData.mask || null,
                 template: safeData.template || '',
@@ -2161,6 +2237,13 @@ class DataManager {
         const index = this.config.characters.findIndex(c => c.id === characterId);
         if (index !== -1) {
             const character = this.config.characters[index];
+
+            // 🔧 释放角色的颜色
+            if (window.MCE_ColorManager) {
+                window.MCE_ColorManager.releaseColor(characterId);
+                console.log(`[DataManager] 已释放角色 ${characterId} 的颜色: ${character.color}`);
+            }
+
             this.config.characters.splice(index, 1);
             // 重新排序
             this.config.characters.forEach((char, idx) => {
@@ -2221,11 +2304,22 @@ class DataManager {
         }
     }
 
-    generateColor() {
+    generateColor(id = null) {
         try {
-            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#FF9FF3', '#54A0FF'];
-            return colors[Math.floor(Math.random() * colors.length)];
+            if (!window.MCE_ColorManager) {
+                console.warn('[MCE] ColorManager not loaded, using fallback color');
+                return '#FF6B6B';
+            }
+
+            if (id) {
+                // 为指定ID分配颜色
+                return window.MCE_ColorManager.getColorForId(id);
+            } else {
+                // 获取下一个唯一颜色
+                return window.MCE_ColorManager.getNextUniqueColor();
+            }
         } catch (error) {
+            console.error('[MCE] Error generating color:', error);
             return '#FF6B6B'; // 默认颜色
         }
     }

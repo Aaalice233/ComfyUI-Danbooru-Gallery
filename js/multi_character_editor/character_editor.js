@@ -848,12 +848,16 @@ class CharacterEditor {
 
     addCharacter(promptData = null) {
         try {
+            // 先生成角色ID
+            const characterId = this.editor.dataManager.generateId('character');
+
             const characterData = promptData ? {
+                id: characterId,
                 name: promptData.alias || promptData.prompt,
                 prompt: promptData.prompt,
                 weight: 1.0,
-                color: this.getRandomColor(),
-            } : null;
+                color: this.getRandomColor(characterId), // 传递角色ID确保颜色唯一
+            } : { id: characterId };
 
             if (!this.editor || !this.editor.dataManager) {
                 console.error('编辑器或数据管理器不存在');
@@ -920,13 +924,29 @@ class CharacterEditor {
         }
     }
 
-    getRandomColor() {
-        const colors = [
-            "#FF6B6B", "#4ECDC4", "#FF9FF3", "#54A0FF",
-            "#FFA502", "#96CEB4", "#786FA6", "#FFEAA7",
-            "#FD79A8", "#A29BFE", "#6C5CE7", "#FDCB6E"
-        ];
-        return colors[Math.floor(Math.random() * colors.length)];
+    getRandomColor(characterId = null) {
+        try {
+            if (!window.MCE_ColorManager) {
+                console.warn('[CharacterEditor] ColorManager not loaded, using fallback color');
+                const fallbackColors = [
+                    "#FF6B6B", "#4ECDC4", "#FF9FF3", "#54A0FF",
+                    "#FFA502", "#96CEB4", "#786FA6", "#FFEAA7",
+                    "#FD79A8", "#A29BFE", "#6C5CE7", "#FDCB6E"
+                ];
+                return fallbackColors[Math.floor(Math.random() * fallbackColors.length)];
+            }
+
+            if (characterId) {
+                // 为特定角色分配颜色
+                return window.MCE_ColorManager.getColorForId(characterId);
+            } else {
+                // 获取下一个唯一颜色
+                return window.MCE_ColorManager.getNextUniqueColor();
+            }
+        } catch (error) {
+            console.error('[CharacterEditor] Error generating color:', error);
+            return '#FF6B6B';
+        }
     }
 
     deleteCharacter(characterId) {
