@@ -1077,7 +1077,10 @@ class MaskEditor {
         if (this.selectedMask && this.selectedMask.characterId === characterId) {
             this.selectedMask = null;
         }
-        this.editor.dataManager.updateCharacterMask(characterId, null);
+        // 🔧 修复：检查角色是否存在，避免"未找到角色"错误
+        if (this.editor.dataManager.getCharacter(characterId)) {
+            this.editor.dataManager.updateCharacterMask(characterId, null);
+        }
         this.scheduleRender();
     }
 
