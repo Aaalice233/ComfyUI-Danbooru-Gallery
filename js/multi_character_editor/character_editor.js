@@ -3528,20 +3528,26 @@ class CharacterEditor {
                 });
 
                 // 5. 同步添加蒙版到蒙版编辑器
-                // 坐标需要从百分比转换为像素坐标
+                // 蒙版编辑器需要的格式：{x, y, width, height}（百分比坐标0-1）
                 if (this.editor.components.maskEditor && newChar.mask) {
-                    const canvas = this.editor.components.maskEditor.canvas;
-                    if (canvas) {
-                        this.editor.components.maskEditor.addMask({
-                            id: newChar.id,
-                            name: newChar.name,
-                            color: newChar.color,
-                            x1: newChar.mask.x1 * canvas.width,
-                            y1: newChar.mask.y1 * canvas.height,
-                            x2: newChar.mask.x2 * canvas.width,
-                            y2: newChar.mask.y2 * canvas.height
-                        });
+                    const maskForEditor = {
+                        id: this.editor.dataManager.generateId('mask'),
+                        characterId: newChar.id,
+                        x: newChar.mask.x1,  // 左上角x（百分比）
+                        y: newChar.mask.y1,  // 左上角y（百分比）
+                        width: newChar.mask.x2 - newChar.mask.x1,  // 宽度（百分比）
+                        height: newChar.mask.y2 - newChar.mask.y1,  // 高度（百分比）
+                        feather: newChar.feather || 0,
+                        blend_mode: 'normal',
+                        zIndex: index
+                    };
+
+                    // 将蒙版添加到编辑器
+                    if (!this.editor.components.maskEditor.masks) {
+                        this.editor.components.maskEditor.masks = [];
                     }
+                    this.editor.components.maskEditor.masks.push(maskForEditor);
+                    this.editor.components.maskEditor.scheduleRender();
                 }
             });
 
