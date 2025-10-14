@@ -6,6 +6,7 @@
 import { globalMultiLanguageManager } from '../global/multi_language.js';
 import { globalToastManager as toastManagerProxy } from '../global/toast_manager.js';
 import { AutocompleteUI } from '../global/autocomplete_ui.js';
+import '../global/color_manager.js';
 
 class PresetManager {
     constructor(editor) {
