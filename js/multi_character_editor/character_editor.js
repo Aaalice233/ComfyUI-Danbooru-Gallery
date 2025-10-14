@@ -2945,6 +2945,7 @@ class CharacterEditor {
 
         const modal = document.createElement("div");
         modal.className = "mce-parse-prompt-modal";
+        modal.id = "mce-parse-prompt-modal";
 
         const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
 
@@ -3574,13 +3575,7 @@ class CharacterEditor {
             // 6. 刷新角色列表
             this.renderCharacterList();
 
-            // 7. 关闭弹窗
-            const modal = document.getElementById('mce-parse-prompt-modal');
-            if (modal) {
-                modal.remove();
-            }
-
-            // 8. 显示成功提示
+            // 7. 显示成功提示
             if (this.editor.toastManager) {
                 this.editor.toastManager.showToast(t('promptApplied'), 'success', 3000);
             }
@@ -3588,6 +3583,12 @@ class CharacterEditor {
             console.error('[CharacterEditor] 应用解析提示词失败:', error);
             if (this.editor.toastManager) {
                 this.editor.toastManager.showToast(t('promptApplied') + ': ' + error.message, 'error', 5000);
+            }
+        } finally {
+            // 8. 无论成功还是失败都关闭弹窗
+            const modal = document.getElementById('mce-parse-prompt-modal');
+            if (modal) {
+                modal.remove();
             }
         }
     }
