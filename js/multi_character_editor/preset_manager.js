@@ -184,21 +184,21 @@ class PresetManager {
                 </div>
                 <div class="mce-preset-item-actions">
                     <button class="mce-preset-action-btn mce-preset-edit-btn" data-preset-id="${preset.id}" title="${t('edit')}">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                         </svg>
                         ${t('edit')}
                     </button>
                     <button class="mce-preset-action-btn mce-preset-delete-btn" data-preset-id="${preset.id}" title="${t('delete')}">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="3 6 5 6 21 6"></polyline>
                             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                         </svg>
                         ${t('delete')}
                     </button>
                     <button class="mce-preset-action-btn mce-preset-apply-btn" data-preset-id="${preset.id}" title="${t('apply')}">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="12" y1="5" x2="12" y2="19"></line>
                             <polyline points="19 12 12 19 5 12"></polyline>
                         </svg>
@@ -263,10 +263,12 @@ class PresetManager {
     /**
      * 渲染预设角色列表
      */
-    renderPresetCharacterList(preset) {
+    renderPresetCharacterList(preset, activeCharacterIndex = 0) {
         if (!preset.characters || preset.characters.length === 0) {
             return `<div class="mce-preset-empty">${this.languageManager.t('noCharacters')}</div>`;
         }
+
+        const t = this.languageManager.t;
 
         const charList = preset.characters
             .map((char, index) => {
@@ -275,12 +277,30 @@ class PresetManager {
                 const preview = prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt;
                 const status = char.enabled ? '✓' : '✗';
                 const statusClass = char.enabled ? '' : 'status-disabled';
-                const isActive = index === 0 ? 'active' : ''; // 默认第一个角色激活
+                const isActive = index === activeCharacterIndex ? 'active' : ''; // 使用传入的激活索引
+                const fillChecked = char.use_fill ? 'checked' : '';
+                const fillClass = char.use_fill ? 'active' : '';
+
+                // 添加日志
+                console.log(`[FILL渲染] 角色 ${index} "${name}": use_fill=${char.use_fill}, fillClass="${fillClass}", isActive="${isActive}"`);
+
                 return `
                     <div class="mce-edit-preset-char-item ${isActive}" data-character-id="${index}">
                         <div class="mce-edit-preset-char-header">
                             <span class="mce-edit-preset-char-status ${statusClass}">${status}</span>
                             <span class="mce-edit-preset-char-name">${name}</span>
+                            <label class="mce-char-fill-toggle ${fillClass}" title="${t('useFill') || 'FILL语法'}">
+                                <input type="checkbox" ${fillChecked} data-character-index="${index}">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                                    <polyline points="7.5 4.21 12 6.81 16.5 4.21"></polyline>
+                                    <polyline points="7.5 19.79 7.5 14.6 3 12"></polyline>
+                                    <polyline points="21 12 16.5 14.6 16.5 19.79"></polyline>
+                                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                                </svg>
+                                <span>FILL</span>
+                            </label>
                         </div>
                         <div class="mce-edit-preset-char-prompt">${preview || '(无提示词)'}</div>
                     </div>
@@ -299,19 +319,29 @@ class PresetManager {
      * 渲染预设角色编辑表单
      */
     renderPresetCharacterEditForm(preset, characterIndex) {
+        console.log(`[预设管理器] 开始渲染编辑表单 - presetId: ${preset.id}, characterIndex: ${characterIndex}`);
+
         if (!preset.characters || !preset.characters[characterIndex]) {
+            console.warn(`[预设管理器] 角色数据不存在 - presetId: ${preset.id}, characterIndex: ${characterIndex}`);
             return '';
         }
 
         const character = preset.characters[characterIndex];
         const t = this.languageManager.t;
 
+        console.log(`[预设管理器] 角色数据:`, {
+            name: character.name,
+            weight: character.weight,
+            feather: character.feather,
+            syntax_type: character.syntax_type
+        });
+
         // 获取当前语法模式
         const syntaxMode = preset.syntax_mode || 'attention_couple';
         const isRegionalMode = syntaxMode === 'regional_prompts';
 
         // 🔧 修复：根据语法模式设置正确的默认语法类型
-        const syntaxType = character.syntax_type || (isRegionalMode ? 'REGION' : 'COUPLE');
+        const syntaxType = character.syntax_type || (isRegionalMode ? 'AREA' : 'COUPLE');
         const useMaskSyntax = character.use_mask_syntax !== false; // 🔧 向后兼容字段
 
         return `
@@ -346,8 +376,8 @@ class PresetManager {
                             ${t('weight') || '权重'}
                         </label>
                         <div class="mce-param-control">
-                            <input type="range" min="0.1" max="2.0" step="0.01" value="${character.weight || 1.0}" id="edit-character-weight">
-                            <input type="number" min="0.1" max="2.0" step="0.01" value="${character.weight || 1.0}" id="edit-character-weight-input" class="mce-param-number">
+                            <input type="range" min="0" max="1" step="0.1" value="${character.weight !== undefined ? character.weight : 1.0}" id="edit-character-weight" data-debug="weight-slider">
+                            <input type="number" min="0" max="1" step="0.1" value="${character.weight !== undefined ? character.weight : 1.0}" id="edit-character-weight-input" class="mce-param-number" data-debug="weight-input">
                         </div>
                     </div>
                     
@@ -361,8 +391,8 @@ class PresetManager {
                             ${t('feather') || '羽化'} (px)
                         </label>
                         <div class="mce-param-control">
-                            <input type="range" min="0" max="50" step="1" value="${character.feather || 0}" id="edit-character-feather">
-                            <input type="number" min="0" max="50" step="1" value="${character.feather || 0}" id="edit-character-feather-input" class="mce-param-number">
+                            <input type="range" min="0" max="50" step="1" value="${character.feather || 0}" id="edit-character-feather" data-debug="feather-slider">
+                            <input type="number" min="0" max="50" step="1" value="${character.feather || 0}" id="edit-character-feather-input" class="mce-param-number" data-debug="feather-input">
                         </div>
                     </div>
                     
@@ -379,7 +409,7 @@ class PresetManager {
                         </label>
                         <div class="mce-param-control">
                             <select id="edit-character-syntax-type" class="mce-param-select">
-                                <option value="REGION" ${syntaxType === 'REGION' ? 'selected' : ''}>REGION</option>
+                                <option value="AREA" ${syntaxType === 'AREA' ? 'selected' : ''}>AREA</option>
                                 <option value="MASK" ${syntaxType === 'MASK' ? 'selected' : ''}>MASK</option>
                             </select>
                         </div>
@@ -389,6 +419,13 @@ class PresetManager {
                 </div>
             </div>
         `;
+
+        console.log(`[预设管理器] HTML模板生成完成，包含滑条元素:`, {
+            weightSlider: 'edit-character-weight',
+            weightInput: 'edit-character-weight-input',
+            featherSlider: 'edit-character-feather',
+            featherInput: 'edit-character-feather-input'
+        });
     }
 
     /**
@@ -489,7 +526,7 @@ class PresetManager {
                 feather: char.mask.feather || 0,
                 blend_mode: char.mask.blend_mode || 'normal',
                 use_fill: char.use_fill || false,  // 添加角色的FILL状态
-                syntax_type: char.syntax_type || 'REGION'  // 🔧 修复：传递语法类型
+                syntax_type: char.syntax_type || 'AREA'  // 🔧 修复：传递语法类型
             });
         }
         return masks;
@@ -967,12 +1004,13 @@ class PresetManager {
         const config = this.editor.dataManager.getConfig();
         const imageData = imagePreview.dataset.imageData || null;
 
-        // 确保角色数据包含语法类型
+        // 🔧 修复：确保角色数据包含语法类型和FILL状态
         const characters = config.characters ? config.characters.map(char => ({
             ...char,
-            syntax_type: char.syntax_type || (config.syntax_mode === 'regional_prompts' ? 'REGION' : 'COUPLE'),
-            weight: char.weight || 1.0,
-            feather: char.feather || 0
+            syntax_type: char.syntax_type || (config.syntax_mode === 'regional_prompts' ? 'AREA' : 'COUPLE'),
+            weight: char.weight !== undefined ? Math.max(0, Math.min(1, char.weight)) : 1.0,
+            feather: char.feather !== undefined ? char.feather : 0,
+            use_fill: char.use_fill || false
         })) : [];
 
         try {
@@ -1067,6 +1105,18 @@ class PresetManager {
                                             </svg>
                                         </div>
                                         <span class="mce-global-title">${t('globalPrompt') || '全局提示词'}</span>
+                                        <label class="mce-char-fill-toggle ${preset.global_use_fill ? 'active' : ''}" title="${t('useFill') || 'FILL语法'}">
+                                            <input type="checkbox" ${preset.global_use_fill ? 'checked' : ''} data-character-index="__global__">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                                                <polyline points="7.5 4.21 12 6.81 16.5 4.21"></polyline>
+                                                <polyline points="7.5 19.79 7.5 14.6 3 12"></polyline>
+                                                <polyline points="21 12 16.5 14.6 16.5 19.79"></polyline>
+                                                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                                                <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                                            </svg>
+                                            <span>FILL</span>
+                                        </label>
                                     </div>
                                     <div class="mce-global-prompt-input-container">
                                         <textarea
@@ -1147,7 +1197,15 @@ class PresetManager {
                 }
                 await this.updatePreset(presetId);
 
-                // 🔧 修复：保存成功后关闭模态框
+                // 🔧 修复：保存成功后立即刷新预设管理界面的列表显示
+                const presetList = document.getElementById('preset-list-container');
+                if (presetList) {
+                    console.log(`[预设管理器] 保存成功后刷新预设列表`);
+                    presetList.innerHTML = this.renderPresetList();
+                    this.bindPresetManagementEvents();
+                }
+
+                // 🔧 修复：保存成功后关闭编辑界面
                 this.closeModal('edit');
             });
         }
@@ -1177,17 +1235,37 @@ class PresetManager {
             this.setupGlobalPromptAutocomplete();
         }, 100);
 
-        // 重新绑定角色列表事件（因为DOM重新生成了）
-        setTimeout(() => {
-            this.bindPresetCharacterListEvents(presetId);
-        }, 100);
+        // 角色列表事件在初始化时已绑定，不需要重复绑定
 
-        // 确保表单内容被正确填充
+        // 确保表单内容被正确填充并绑定滑条事件
         setTimeout(() => {
+            const preset = this.presets.find(p => p.id === presetId);
+            if (!preset) return;
+
             const activeCharItem = document.querySelector('.mce-edit-preset-char-item.active');
             if (activeCharItem) {
                 const activeIndex = parseInt(activeCharItem.dataset.characterId);
+                console.log(`[预设管理器] 初始化时绑定第一个角色事件 - characterIndex: ${activeIndex}`);
+
+                // 🔧 修复：绑定滑条事件
+                this.bindPresetCharacterEditEvents(presetId, activeIndex);
+
+                // 更新表单内容
                 this.updateEditForm(preset, activeIndex);
+
+                // 🔧 新增：延迟检查滑条元素是否正确添加到DOM
+                setTimeout(() => {
+                    this.debugSliderElements();
+                }, 100);
+            } else {
+                // 如果没有激活的角色项，默认绑定第一个角色（索引0）
+                console.log(`[预设管理器] 没有激活角色，默认绑定第一个角色`);
+                this.bindPresetCharacterEditEvents(presetId, 0);
+                this.updateEditForm(preset, 0);
+
+                setTimeout(() => {
+                    this.debugSliderElements();
+                }, 100);
             }
         }, 150);
     }
@@ -1337,10 +1415,9 @@ class PresetManager {
                     minQueryLength: 1,
                     customClass: 'mce-autocomplete',
                     onSelect: (tag) => {
-                        console.log('[PresetManager] 全局提示词模态框选择标签:', tag);
+                        // 标签已选择
                     }
                 });
-                console.log('[PresetManager] 全局提示词模态框智能补全初始化成功');
             } catch (error) {
                 console.error('[PresetManager] 全局提示词模态框智能补全初始化失败:', error);
             }
@@ -1355,21 +1432,157 @@ class PresetManager {
         const characterList = document.getElementById('edit-preset-character-list');
         if (!characterList) return;
 
+        // 避免重复绑定（innerHTML 重新渲染后 dataset.bound 会自动清空）
+        if (characterList.dataset.bound) return;
+
+        characterList.dataset.bound = 'true';
         characterList.addEventListener('click', (e) => {
-            const charItem = e.target.closest('.mce-edit-preset-char-item');
-            if (charItem) {
-                const characterIndex = parseInt(charItem.dataset.characterId);
-                this.editPresetCharacter(presetId, characterIndex);
-            }
+            this.handleCharacterListClick(e, presetId);
         });
+    }
+
+    /**
+     * 处理角色列表点击事件
+     */
+    handleCharacterListClick(e, presetId) {
+        console.log(`[预设管理器] handleCharacterListClick 被调用 - presetId: ${presetId}`, {
+            target: e.target,
+            targetClass: e.target.className,
+            targetId: e.target.id
+        });
+
+        // 🔧 修复：更严格地检查是否点击了FILL开关或其子元素
+        const fillToggle = e.target.closest('.mce-char-fill-toggle');
+        if (fillToggle) {
+            e.preventDefault(); // 阻止默认行为
+            e.stopPropagation(); // 阻止事件冒泡
+            e.stopImmediatePropagation(); // 阻止同一元素上的其他监听器
+
+            const checkbox = fillToggle.querySelector('input[type="checkbox"]');
+            const characterIndexStr = checkbox.dataset.characterIndex;
+
+            // 支持全局FILL和角色FILL
+            if (characterIndexStr === '__global__') {
+                this.toggleCharacterFill(presetId, '__global__');
+            } else {
+                const characterIndex = parseInt(characterIndexStr);
+                if (!isNaN(characterIndex)) {
+                    this.toggleCharacterFill(presetId, characterIndex);
+                }
+            }
+            return; // 阻止继续处理
+        }
+
+        // 🔧 修复：确保不是点击FILL相关元素时才处理角色卡片点击
+        // 检查是否点击了FILL开关的SVG或span
+        if (e.target.closest('.mce-char-fill-toggle svg') ||
+            e.target.closest('.mce-char-fill-toggle span')) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+
+        // 处理角色卡片点击（切换角色）
+        const charItem = e.target.closest('.mce-edit-preset-char-item');
+        console.log(`[预设管理器] 角色卡片点击检查:`, {
+            charItem: !!charItem,
+            charItemId: charItem?.dataset?.characterId,
+            containsFillToggle: charItem?.contains(e.target.closest('.mce-char-fill-toggle'))
+        });
+
+        if (charItem && !charItem.contains(e.target.closest('.mce-char-fill-toggle'))) {
+            const characterIndex = parseInt(charItem.dataset.characterId);
+            console.log(`[预设管理器] 准备调用 editPresetCharacter - characterIndex: ${characterIndex}`);
+
+            this.editPresetCharacter(presetId, characterIndex);
+
+        } else {
+            console.log(`[预设管理器] 角色卡片点击被跳过`);
+        }
+    }
+
+    /**
+     * 切换角色的FILL状态（支持单选逻辑）
+     */
+    toggleCharacterFill(presetId, characterIndex) {
+        const preset = this.presets.find(p => p.id === presetId);
+        if (!preset) return;
+
+        // 处理全局FILL
+        if (characterIndex === '__global__') {
+            const newState = !preset.global_use_fill;
+
+            // 单选逻辑：如果开启全局FILL，关闭所有角色的FILL
+            if (newState) {
+                // 关闭所有角色的FILL
+                if (preset.characters) {
+                    preset.characters.forEach(char => {
+                        char.use_fill = false;
+                    });
+                }
+            }
+
+            preset.global_use_fill = newState;
+
+            // 先保存到本地存储（更新this.presets数组）
+            this.savePresetToLocalStorage(preset);
+
+            // 再刷新角色列表（使用最新数据更新所有FILL按钮状态）
+            this.refreshCharacterListAndForm(preset, 0, presetId);
+
+            // 显示提示
+            this.toastManager.showToast(`全局FILL状态已${newState ? '开启' : '关闭'}`, 'success');
+            return;
+        }
+
+        // 处理角色FILL
+        if (!preset.characters || !preset.characters[characterIndex]) return;
+
+        const character = preset.characters[characterIndex];
+        const newState = !character.use_fill;
+
+        // 单选逻辑：如果开启角色FILL，关闭全局FILL和其他角色的FILL
+        if (newState) {
+            // 关闭全局FILL
+            preset.global_use_fill = false;
+
+            // 关闭所有其他角色的FILL
+            preset.characters.forEach((char, idx) => {
+                if (idx !== characterIndex) {
+                    char.use_fill = false;
+                }
+            });
+        }
+
+        character.use_fill = newState;
+
+        // 先保存到本地存储（更新this.presets数组）
+        this.savePresetToLocalStorage(preset);
+
+        // 再刷新角色列表（使用最新数据更新所有FILL按钮状态）
+        this.refreshCharacterListAndForm(preset, characterIndex, presetId);
+
+        // 显示提示
+        this.toastManager.showToast(`角色 ${character.name || '未命名'} 的FILL状态已${newState ? '开启' : '关闭'}`, 'success');
     }
 
     /**
      * 编辑预设中的角色
      */
     editPresetCharacter(presetId, characterIndex) {
+        console.log(`[预设管理器] editPresetCharacter 被调用 - presetId: ${presetId}, characterIndex: ${characterIndex}`);
+
         const preset = this.presets.find(p => p.id === presetId);
-        if (!preset || !preset.characters || !preset.characters[characterIndex]) return;
+        if (!preset || !preset.characters || !preset.characters[characterIndex]) {
+            console.warn(`[预设管理器] editPresetCharacter 数据验证失败:`, {
+                presetExists: !!preset,
+                charactersExists: !!preset?.characters,
+                characterExists: !!preset?.characters?.[characterIndex]
+            });
+            return;
+        }
+
+        console.log(`[预设管理器] editPresetCharacter 数据验证通过，开始处理`);
 
         // 🔧 修复：在切换角色前，先临时保存当前编辑的内容
         this.saveCurrentEditTemporarily(presetId);
@@ -1382,6 +1595,11 @@ class PresetManager {
 
         // 绑定编辑面板事件
         this.bindPresetCharacterEditEvents(presetId, characterIndex);
+
+        // 🔧 新增：延迟检查滑条元素是否正确添加到DOM
+        setTimeout(() => {
+            this.debugSliderElements();
+        }, 100);
 
         // 销毁旧的智能补全实例
         if (this.presetCharacterAutocompleteInstance) {
@@ -1423,8 +1641,15 @@ class PresetManager {
             if (promptInput) character.prompt = promptInput.value.trim();
 
             // 保存权重、羽化和语法类型
-            if (weightInput) character.weight = parseFloat(weightInput.value) || 1.0;
-            if (featherInput) character.feather = parseInt(featherInput.value) || 0;
+            if (weightInput) {
+                const weight = parseFloat(weightInput.value);
+                // 确保权重在0-1范围内
+                character.weight = isNaN(weight) ? 1.0 : Math.max(0, Math.min(1, weight));
+            }
+            if (featherInput) {
+                const feather = parseInt(featherInput.value);
+                character.feather = isNaN(feather) ? 0 : feather;
+            }
             // 根据语法模式设置语法类型
             const syntaxMode = preset.syntax_mode || 'attention_couple';
             if (syntaxMode === 'attention_couple') {
@@ -1472,6 +1697,10 @@ class PresetManager {
         const promptInput = document.getElementById('edit-character-prompt');
         const globalPromptInput = document.getElementById('edit-global-prompt');
         const syntaxTypeSelect = document.getElementById('edit-character-syntax-type');
+        const weightInput = document.getElementById('edit-character-weight-input');
+        const weightSlider = document.getElementById('edit-character-weight');
+        const featherInput = document.getElementById('edit-character-feather-input');
+        const featherSlider = document.getElementById('edit-character-feather');
 
         if (noteInput) noteInput.value = character.name || ''; // 备注显示角色名称
         if (promptInput) promptInput.value = character.prompt || '';
@@ -1479,9 +1708,18 @@ class PresetManager {
         // 更新语法类型 - 根据语法模式设置正确的默认值
         if (syntaxTypeSelect) {
             const syntaxMode = preset.syntax_mode || 'attention_couple';
-            const defaultSyntaxType = syntaxMode === 'regional_prompts' ? 'REGION' : 'COUPLE';
+            const defaultSyntaxType = syntaxMode === 'regional_prompts' ? 'AREA' : 'COUPLE';
             syntaxTypeSelect.value = character.syntax_type || defaultSyntaxType;
         }
+
+        // 更新权重（确保在0-1范围内）
+        const weight = character.weight !== undefined ? Math.max(0, Math.min(1, character.weight)) : 1.0;
+        if (weightInput) weightInput.value = weight;
+        if (weightSlider) weightSlider.value = weight;
+
+        // 更新羽化
+        if (featherInput) featherInput.value = character.feather !== undefined ? character.feather : 0;
+        if (featherSlider) featherSlider.value = character.feather !== undefined ? character.feather : 0;
 
         // 🔧 修复：同时更新全局提示词
         if (globalPromptInput) {
@@ -1493,44 +1731,251 @@ class PresetManager {
      * 绑定预设角色编辑面板事件
      */
     bindPresetCharacterEditEvents(presetId, characterIndex) {
+        console.log(`[预设管理器] 开始绑定滑条事件 - presetId: ${presetId}, characterIndex: ${characterIndex}`);
+
+        // 清理之前的事件监听器，避免重复绑定
+        this.cleanupPresetCharacterEditEvents();
+
         // 权重滑块和输入框同步
         const weightSlider = document.getElementById('edit-character-weight');
         const weightInput = document.getElementById('edit-character-weight-input');
 
-        if (weightSlider && weightInput) {
-            weightSlider.addEventListener('input', () => {
-                weightInput.value = weightSlider.value;
-            });
+        console.log(`[预设管理器] 权重滑条元素查找结果:`, {
+            weightSlider: !!weightSlider,
+            weightInput: !!weightInput,
+            weightSliderId: weightSlider?.id,
+            weightInputId: weightInput?.id
+        });
 
-            weightInput.addEventListener('input', () => {
+        if (weightSlider && weightInput) {
+            // 存储事件处理器引用，用于后续清理
+            this.weightSliderHandler = () => {
+                console.log(`[预设管理器] 权重滑条拖动事件触发，值: ${weightSlider.value}`);
+                weightInput.value = weightSlider.value;
+
+                // 🔧 新增：实时保存权重变化到内存中的预设数据
+                this.saveWeightChangeRealtime(weightSlider.value);
+            };
+
+            this.weightInputHandler = () => {
                 const value = parseFloat(weightInput.value);
-                if (!isNaN(value) && value >= 0.1 && value <= 2.0) {
+                console.log(`[预设管理器] 权重输入框变化事件触发，值: ${value}`);
+                if (!isNaN(value) && value >= 0 && value <= 1) {
                     weightSlider.value = value;
+                    console.log(`[预设管理器] 权重滑条值已更新为: ${weightSlider.value}`);
+                } else {
+                    console.warn(`[预设管理器] 权重输入值无效: ${value}`);
                 }
-            });
+            };
+
+            weightSlider.addEventListener('input', this.weightSliderHandler);
+            weightInput.addEventListener('input', this.weightInputHandler);
+
+            console.log(`[预设管理器] 权重滑条事件绑定完成`);
+        } else {
+            console.warn(`[预设管理器] 权重滑条或输入框元素未找到`);
         }
 
         // 羽化滑块和输入框同步
         const featherSlider = document.getElementById('edit-character-feather');
         const featherInput = document.getElementById('edit-character-feather-input');
 
-        if (featherSlider && featherInput) {
-            featherSlider.addEventListener('input', () => {
-                featherInput.value = featherSlider.value;
-            });
+        console.log(`[预设管理器] 羽化滑条元素查找结果:`, {
+            featherSlider: !!featherSlider,
+            featherInput: !!featherInput,
+            featherSliderId: featherSlider?.id,
+            featherInputId: featherInput?.id
+        });
 
-            featherInput.addEventListener('input', () => {
+        if (featherSlider && featherInput) {
+            // 存储事件处理器引用，用于后续清理
+            this.featherSliderHandler = () => {
+                console.log(`[预设管理器] 羽化滑条拖动事件触发，值: ${featherSlider.value}`);
+                featherInput.value = featherSlider.value;
+            };
+
+            this.featherInputHandler = () => {
                 const value = parseFloat(featherInput.value);
+                console.log(`[预设管理器] 羽化输入框变化事件触发，值: ${value}`);
                 if (!isNaN(value) && value >= 0 && value <= 50) {
                     featherSlider.value = value;
+                    console.log(`[预设管理器] 羽化滑条值已更新为: ${featherSlider.value}`);
+                } else {
+                    console.warn(`[预设管理器] 羽化输入值无效: ${value}`);
                 }
-            });
+            };
+
+            featherSlider.addEventListener('input', this.featherSliderHandler);
+            featherInput.addEventListener('input', this.featherInputHandler);
+
+            console.log(`[预设管理器] 羽化滑条事件绑定完成`);
+        } else {
+            console.warn(`[预设管理器] 羽化滑条或输入框元素未找到`);
         }
 
         // 🔧 新增：绑定语法类型事件
         this.bindSyntaxTypeEvents(presetId, characterIndex);
+
+        console.log(`[预设管理器] 滑条事件绑定完成`);
     }
 
+    /**
+     * 清理预设角色编辑面板事件监听器
+     */
+    cleanupPresetCharacterEditEvents() {
+        console.log(`[预设管理器] 开始清理滑条事件监听器`);
+
+        // 清理权重滑条事件
+        const weightSlider = document.getElementById('edit-character-weight');
+        const weightInput = document.getElementById('edit-character-weight-input');
+
+        if (weightSlider && this.weightSliderHandler) {
+            weightSlider.removeEventListener('input', this.weightSliderHandler);
+            console.log(`[预设管理器] 权重滑条事件监听器已清理`);
+        }
+
+        if (weightInput && this.weightInputHandler) {
+            weightInput.removeEventListener('input', this.weightInputHandler);
+            console.log(`[预设管理器] 权重输入框事件监听器已清理`);
+        }
+
+        // 清理羽化滑条事件
+        const featherSlider = document.getElementById('edit-character-feather');
+        const featherInput = document.getElementById('edit-character-feather-input');
+
+        if (featherSlider && this.featherSliderHandler) {
+            featherSlider.removeEventListener('input', this.featherSliderHandler);
+            console.log(`[预设管理器] 羽化滑条事件监听器已清理`);
+        }
+
+        if (featherInput && this.featherInputHandler) {
+            featherInput.removeEventListener('input', this.featherInputHandler);
+            console.log(`[预设管理器] 羽化输入框事件监听器已清理`);
+        }
+
+        // 清理事件处理器引用
+        this.weightSliderHandler = null;
+        this.weightInputHandler = null;
+        this.featherSliderHandler = null;
+        this.featherInputHandler = null;
+
+        // 清理语法类型事件
+        this.cleanupSyntaxTypeEvents();
+
+        console.log(`[预设管理器] 滑条事件监听器清理完成`);
+    }
+
+    /**
+     * 🔧 新增：实时保存权重变化
+     */
+    saveWeightChangeRealtime(weightValue) {
+        // 获取当前激活的角色项
+        const activeCharItem = document.querySelector('.mce-edit-preset-char-item.active');
+        if (!activeCharItem) return;
+
+        const characterIndex = parseInt(activeCharItem.dataset.characterId);
+        const presetId = this.getCurrentEditingPresetId();
+
+        if (!presetId) return;
+
+        const preset = this.presets.find(p => p.id === presetId);
+        if (!preset || !preset.characters || !preset.characters[characterIndex]) return;
+
+        const character = preset.characters[characterIndex];
+        const weight = parseFloat(weightValue);
+
+        if (!isNaN(weight)) {
+            character.weight = Math.max(0, Math.min(1, weight));
+            console.log(`[预设管理器] 实时保存权重变化: ${character.weight}`);
+
+            // 立即保存到本地存储
+            this.savePresetToLocalStorage(preset);
+
+            // 立即更新预设列表显示
+            const listContainer = document.getElementById('preset-list-container');
+            if (listContainer) {
+                listContainer.innerHTML = this.renderPresetList();
+                this.bindPresetManagementEvents();
+            }
+        }
+    }
+
+    /**
+     * 获取当前正在编辑的预设ID
+     */
+    getCurrentEditingPresetId() {
+        // 从编辑面板的模态框中获取预设ID
+        const editPanel = document.getElementById('edit-preset-edit-panel');
+        if (!editPanel) return null;
+
+        // 查找包含编辑面板的模态框
+        const modal = editPanel.closest('.mce-preset-modal-container');
+        if (!modal) return null;
+
+        // 从模态框的父元素中查找预设项
+        const presetItem = modal.closest('.mce-preset-item');
+        if (presetItem) {
+            return presetItem.dataset.presetId;
+        }
+
+        return null;
+    }
+
+    /**
+     * 调试滑条元素状态
+     */
+    debugSliderElements() {
+        console.log(`[预设管理器] 开始调试滑条元素状态`);
+
+        const weightSlider = document.getElementById('edit-character-weight');
+        const weightInput = document.getElementById('edit-character-weight-input');
+        const featherSlider = document.getElementById('edit-character-feather');
+        const featherInput = document.getElementById('edit-character-feather-input');
+
+        console.log(`[预设管理器] 滑条元素状态检查:`, {
+            weightSlider: {
+                exists: !!weightSlider,
+                id: weightSlider?.id,
+                value: weightSlider?.value,
+                disabled: weightSlider?.disabled,
+                style: weightSlider ? window.getComputedStyle(weightSlider).display : 'N/A'
+            },
+            weightInput: {
+                exists: !!weightInput,
+                id: weightInput?.id,
+                value: weightInput?.value,
+                disabled: weightInput?.disabled
+            },
+            featherSlider: {
+                exists: !!featherSlider,
+                id: featherSlider?.id,
+                value: featherSlider?.value,
+                disabled: featherSlider?.disabled,
+                style: featherSlider ? window.getComputedStyle(featherSlider).display : 'N/A'
+            },
+            featherInput: {
+                exists: !!featherInput,
+                id: featherInput?.id,
+                value: featherInput?.value,
+                disabled: featherInput?.disabled
+            }
+        });
+
+        // 检查事件监听器是否正确绑定
+        if (weightSlider) {
+            console.log(`[预设管理器] 权重滑条事件监听器状态:`, {
+                hasInputListener: this.weightSliderHandler !== null,
+                handlerFunction: typeof this.weightSliderHandler
+            });
+        }
+
+        if (featherSlider) {
+            console.log(`[预设管理器] 羽化滑条事件监听器状态:`, {
+                hasInputListener: this.featherSliderHandler !== null,
+                handlerFunction: typeof this.featherSliderHandler
+            });
+        }
+    }
 
     /**
      * 保存预设角色
@@ -1553,8 +1998,15 @@ class PresetManager {
         character.prompt = promptInput.value.trim();
 
         // 保存权重、羽化和语法类型
-        if (weightInput) character.weight = parseFloat(weightInput.value) || 1.0;
-        if (featherInput) character.feather = parseInt(featherInput.value) || 0;
+        if (weightInput) {
+            const weight = parseFloat(weightInput.value);
+            // 确保权重在0-1范围内
+            character.weight = isNaN(weight) ? 1.0 : Math.max(0, Math.min(1, weight));
+        }
+        if (featherInput) {
+            const feather = parseInt(featherInput.value);
+            character.feather = isNaN(feather) ? 0 : feather;
+        }
 
         // 根据语法模式设置语法类型
         const syntaxMode = preset.syntax_mode || 'attention_couple';
@@ -1588,15 +2040,43 @@ class PresetManager {
     refreshCharacterListAndForm(preset, characterIndex, presetId) {
         const t = this.languageManager.t;
 
+        // 🔧 确保使用最新的 preset 对象
+        const latestPreset = this.presets.find(p => p.id === presetId) || preset;
+
         // 刷新角色列表（保留全局提示词部分）
         const characterList = document.getElementById('edit-preset-character-list');
         if (characterList) {
             // 获取当前全局提示词的值
             const globalPromptInput = document.getElementById('edit-global-prompt');
-            const currentGlobalPrompt = globalPromptInput ? globalPromptInput.value : (this.editor.dataManager.config.global_prompt || preset.global_prompt || '');
+            const currentGlobalPrompt = globalPromptInput ? globalPromptInput.value : (this.editor.dataManager.config.global_prompt || latestPreset.global_prompt || '');
 
-            // 重新渲染整个列表，包括全局提示词
+            // 重新渲染整个列表，包括语法模式、全局提示词和角色列表
+            const globalFillChecked = latestPreset.global_use_fill ? 'checked' : '';
+            const globalFillClass = latestPreset.global_use_fill ? 'active' : '';
+            const syntaxMode = latestPreset.syntax_mode || 'attention_couple';
+
             characterList.innerHTML = `
+                <!-- 预设设置区域 -->
+                <div class="mce-preset-settings-section">
+                    <!-- 语法模式 -->
+                    <div class="mce-setting-item">
+                        <label class="mce-setting-label">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="4 7 4 4 20 4 20 7"></polyline>
+                                <line x1="9" y1="20" x2="15" y2="20"></line>
+                                <line x1="12" y1="4" x2="12" y2="20"></line>
+                            </svg>
+                            ${t('syntaxMode') || '语法模式'}
+                        </label>
+                        <div class="mce-setting-control">
+                            <select id="edit-preset-syntax-mode" class="mce-setting-select">
+                                <option value="attention_couple" ${syntaxMode === 'attention_couple' ? 'selected' : ''}>Attention Couple</option>
+                                <option value="regional_prompts" ${syntaxMode === 'regional_prompts' ? 'selected' : ''}>Regional Prompts</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- 全局提示词固定在顶端 -->
                 <div class="mce-global-prompt-item" data-character-id="__global__">
                     <div class="mce-character-item-header">
@@ -1607,6 +2087,18 @@ class PresetManager {
                             </svg>
                         </div>
                         <span class="mce-global-title">${t('globalPrompt') || '全局提示词'}</span>
+                        <label class="mce-char-fill-toggle ${globalFillClass}" title="${t('useFill') || 'FILL语法'}">
+                            <input type="checkbox" ${globalFillChecked} data-character-index="__global__">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                                <polyline points="7.5 4.21 12 6.81 16.5 4.21"></polyline>
+                                <polyline points="7.5 19.79 7.5 14.6 3 12"></polyline>
+                                <polyline points="21 12 16.5 14.6 16.5 19.79"></polyline>
+                                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                                <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                            </svg>
+                            <span>FILL</span>
+                        </label>
                     </div>
                     <div class="mce-global-prompt-input-container">
                         <textarea
@@ -1621,28 +2113,23 @@ class PresetManager {
                 <div class="mce-global-separator"></div>
 
                 <!-- 角色列表 -->
-                ${this.renderPresetCharacterList(preset)}
+                ${this.renderPresetCharacterList(latestPreset, characterIndex)}
             `;
         }
 
         // 刷新编辑表单
         const editPanel = document.getElementById('edit-preset-edit-panel');
         if (editPanel) {
-            editPanel.innerHTML = this.renderPresetCharacterEditForm(preset, characterIndex);
+            editPanel.innerHTML = this.renderPresetCharacterEditForm(latestPreset, characterIndex);
 
             // 重新渲染后立即更新表单内容
             setTimeout(() => {
-                this.updateEditForm(preset, characterIndex);
+                this.updateEditForm(latestPreset, characterIndex);
             }, 0);
         }
 
-        // 重新绑定事件
+        // 由于DOM重新渲染，需要重新绑定事件（dataset.bound 已随 innerHTML 清空）
         this.bindPresetCharacterListEvents(presetId);
-        this.bindPresetCharacterEditEvents(presetId, characterIndex);
-        this.bindGlobalPromptEvents(presetId);
-
-        // 重新绑定主按钮事件（因为DOM重新生成了）
-        this.bindEditPresetEvents(presetId);
 
         // 重新设置智能补全
         setTimeout(() => {
@@ -1677,10 +2164,9 @@ class PresetManager {
                     minQueryLength: 2,
                     customClass: 'mce-autocomplete',
                     onSelect: (tag) => {
-                        console.log('[PresetManager] 预设角色编辑选择标签:', tag);
+                        // 标签已选择
                     }
                 });
-                console.log('[PresetManager] 预设角色编辑智能补全初始化成功');
             } catch (error) {
                 console.error('[PresetManager] 预设角色编辑智能补全初始化失败:', error);
             }
@@ -1713,10 +2199,9 @@ class PresetManager {
                     minQueryLength: 1,
                     customClass: 'mce-autocomplete',
                     onSelect: (tag) => {
-                        console.log('[PresetManager] 全局提示词选择标签:', tag);
+                        // 标签已选择
                     }
                 });
-                console.log('[PresetManager] 全局提示词智能补全初始化成功');
             } catch (error) {
                 console.error('[PresetManager] 全局提示词智能补全初始化失败:', error);
             }
@@ -1748,17 +2233,17 @@ class PresetManager {
         const globalPromptInput = document.getElementById('edit-global-prompt');
         const globalPrompt = globalPromptInput ? globalPromptInput.value.trim() : (preset.global_prompt || '');
 
-        // 获取当前编辑器的配置，以确保保存语法模式和全局FILL状态
-        const editorConfig = this.editor.dataManager.getConfig();
-        const globalUseFill = editorConfig.global_use_fill || false;
-        const syntaxMode = preset.syntax_mode || editorConfig.syntax_mode || 'attention_couple';
+        // 🔧 修复：从预设对象中获取全局FILL状态，而不是从编辑器配置中获取
+        const globalUseFill = preset.global_use_fill || false;
+        const syntaxMode = preset.syntax_mode || 'attention_couple';
 
-        // 确保角色数据包含语法类型
+        // 🔧 修复：确保角色数据包含语法类型和FILL状态
         const characters = preset.characters ? preset.characters.map(char => ({
             ...char,
-            syntax_type: char.syntax_type || (syntaxMode === 'regional_prompts' ? 'REGION' : 'COUPLE'),
-            weight: char.weight || 1.0,
-            feather: char.feather || 0
+            syntax_type: char.syntax_type || (syntaxMode === 'regional_prompts' ? 'AREA' : 'COUPLE'),
+            weight: char.weight !== undefined ? Math.max(0, Math.min(1, char.weight)) : 1.0,
+            feather: char.feather !== undefined ? char.feather : 0,
+            use_fill: char.use_fill || false
         })) : [];
 
         // 同时更新编辑器配置中的全局提示词
@@ -1796,7 +2281,14 @@ class PresetManager {
             if (data.success) {
                 this.toastManager.showToast(t('presetSaved'), 'success', 3000);
                 await this.loadPresets();
-                // 不关闭模态框，让用户可以继续编辑
+
+                // 🔧 保存成功后，如果预设管理界面是打开的，刷新列表显示
+                const presetListContainer = document.getElementById('preset-list-container');
+                if (presetListContainer) {
+                    console.log(`[预设管理器] 服务器保存成功后刷新预设列表`);
+                    presetListContainer.innerHTML = this.renderPresetList();
+                    this.bindPresetManagementEvents();
+                }
             } else {
                 this.toastManager.showToast(data.error || t('error'), 'error', 3000);
             }
@@ -1862,6 +2354,14 @@ class PresetManager {
 
         if (!preset || !preset.characters) return;
 
+        console.log(`[预设管理器] 开始应用预设 - presetId: ${presetId}`, {
+            global_use_fill: preset.global_use_fill,
+            characters: preset.characters.map(char => ({
+                name: char.name,
+                use_fill: char.use_fill
+            }))
+        });
+
         // 清空当前角色列表
         if (this.editor.components.characterEditor) {
             this.editor.components.characterEditor.clearAllCharacters();
@@ -1874,13 +2374,17 @@ class PresetManager {
             }
         });
 
-        // 更新配置，包括语法模式
-        this.editor.dataManager.updateConfig({
+        // 更新配置，包括语法模式和FILL状态
+        const configUpdate = {
             characters: preset.characters,
             global_prompt: preset.global_prompt,
             global_note: '',
-            syntax_mode: preset.syntax_mode || 'attention_couple'  // 🔧 修复：应用预设的语法模式
-        });
+            syntax_mode: preset.syntax_mode || 'attention_couple',  // 🔧 修复：应用预设的语法模式
+            global_use_fill: preset.global_use_fill || false  // 🔧 修复：应用预设的全局FILL状态
+        };
+
+        console.log(`[预设管理器] 更新配置:`, configUpdate);
+        this.editor.dataManager.updateConfig(configUpdate);
 
         // 🔧 修复：强制刷新角色列表显示
         if (this.editor.components.characterEditor) {
@@ -2022,8 +2526,8 @@ class PresetManager {
             delete button.dataset.bound;
         });
 
-        // 移除所有现有的预设相关模态框
-        const existingModals = document.querySelectorAll('.mce-preset-modal-overlay, .mce-edit-preset-container, .mce-save-preset-container');
+        // 只移除编辑和保存相关的模态框，保留预设管理界面
+        const existingModals = document.querySelectorAll('#edit-preset-modal-overlay, #save-preset-modal-overlay, #global-prompt-modal-overlay');
         existingModals.forEach(modal => {
             modal.remove();
         });
@@ -2246,6 +2750,34 @@ class PresetManager {
                 margin-bottom: 12px;
             }
 
+            .mce-character-item-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .mce-character-color {
+                width: 24px;
+                height: 24px;
+                border-radius: 4px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+            }
+
+            .mce-global-icon {
+                background: rgba(124, 58, 237, 0.3);
+                border: 1px solid rgba(124, 58, 237, 0.5);
+            }
+
+            .mce-global-title {
+                font-size: 14px;
+                font-weight: 600;
+                color: #E0E0E0;
+                flex: 1;
+            }
+
             .mce-global-prompt-input-container {
                 margin-top: 8px;
             }
@@ -2302,39 +2834,41 @@ class PresetManager {
             }
 
             .mce-preset-item {
-                background: rgba(42, 42, 62, 0.6);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 10px;
+                background: rgba(42, 42, 62, 0.7);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 8px;
                 overflow: hidden;
                 transition: all 0.2s ease;
                 cursor: pointer;
-                margin-bottom: 8px; /* 减小上下间距 */
+                margin-bottom: 6px;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
             }
 
             .mce-preset-item:hover {
-                border-color: rgba(124, 58, 237, 0.5);
-                box-shadow: 0 4px 12px rgba(124, 58, 237, 0.2);
-                transform: translateY(-2px);
+                border-color: rgba(124, 58, 237, 0.6);
+                box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
+                transform: translateY(-1px);
             }
 
             .mce-preset-item-info {
-                padding: 10px; /* 减小内边距 */
+                padding: 8px;
                 display: flex;
                 flex-direction: column;
-                gap: 6px; /* 减小元素间距 */
+                gap: 4px;
             }
 
             .mce-preset-item-name {
                 margin: 0;
-                font-size: 14px;
+                font-size: 13px;
                 font-weight: 600;
                 color: #E0E0E0;
+                line-height: 1.3;
             }
 
             .mce-preset-item-prompt {
-                font-size: 12px;
+                font-size: 11px;
                 color: rgba(224, 224, 224, 0.7);
-                line-height: 1.4;
+                line-height: 1.3;
                 word-break: break-word;
                 overflow: hidden;
                 display: -webkit-box;
@@ -2343,25 +2877,25 @@ class PresetManager {
             }
 
             .mce-preset-item-actions {
-                padding: 8px 12px 12px;
+                padding: 6px 8px 8px;
                 display: flex;
-                gap: 6px;
+                gap: 5px;
             }
 
             .mce-preset-action-btn {
                 flex: 1;
-                padding: 6px 8px;
+                padding: 5px 6px;
                 background: rgba(124, 58, 237, 0.15);
                 border: 1px solid rgba(124, 58, 237, 0.3);
-                border-radius: 6px;
+                border-radius: 5px;
                 color: #b794f4;
-                font-size: 11px;
+                font-size: 10px;
                 cursor: pointer;
                 transition: all 0.2s ease;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                gap: 4px;
+                gap: 3px;
             }
 
             .mce-preset-action-btn:hover {
@@ -2578,6 +3112,82 @@ class PresetManager {
                 font-weight: 600;
                 color: #E0E0E0;
                 flex: 1;
+            }
+
+            .mce-char-fill-toggle {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 4px;
+                padding: 4px 8px;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                border-radius: 4px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                user-select: none;
+            }
+
+            .mce-char-fill-toggle:hover {
+                transform: scale(1.05);
+            }
+
+            /* 
+             * 🎨 FILL开关样式重构
+             * 统一管理激活与非激活状态，解决父元素.active状态污染FILL图标颜色的问题。
+             */
+
+            /* --- 非激活状态 (Inactive State) --- */
+            .mce-char-fill-toggle:not(.active) {
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+            }
+
+            .mce-char-fill-toggle:not(.active) span {
+                color: rgba(176, 176, 176, 0.6);
+                font-weight: 400;
+            }
+
+            .mce-char-fill-toggle:not(.active) svg,
+            .mce-char-fill-toggle:not(.active) svg * {
+                stroke: rgba(176, 176, 176, 0.6);
+            }
+
+            /* --- 激活状态 (Active State) --- */
+            .mce-char-fill-toggle.active {
+                background: rgba(34, 197, 94, 0.25);
+                border: 1px solid rgba(34, 197, 94, 0.5);
+            }
+            
+            .mce-char-fill-toggle.active:hover {
+                background: rgba(34, 197, 94, 0.35);
+            }
+
+            .mce-char-fill-toggle.active span {
+                color: #ef4444;
+                font-weight: 600;
+            }
+
+            .mce-char-fill-toggle.active svg,
+            .mce-char-fill-toggle.active svg * {
+                stroke: #ef4444;
+            }
+
+            .mce-char-fill-toggle input[type="checkbox"] {
+                display: none;
+            }
+
+            .mce-char-fill-toggle svg {
+                width: 12px;
+                height: 12px;
+                flex-shrink: 0;
+            }
+
+            .mce-char-fill-toggle span {
+                font-size: 9px;
+                text-transform: uppercase;
+                letter-spacing: 0.3px;
+                white-space: nowrap;
             }
 
             .mce-edit-preset-char-prompt {
@@ -2974,37 +3584,38 @@ class PresetManager {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                margin-bottom: 8px;
+                margin-bottom: 4px;
             }
             
             .mce-preset-syntax-mode {
-                font-size: 11px;
-                padding: 2px 6px;
-                background: rgba(124, 58, 237, 0.2);
-                border: 1px solid rgba(124, 58, 237, 0.3);
-                border-radius: 4px;
+                font-size: 10px;
+                padding: 2px 5px;
+                background: rgba(124, 58, 237, 0.25);
+                border: 1px solid rgba(124, 58, 237, 0.4);
+                border-radius: 3px;
                 color: #b794f4;
                 font-weight: 500;
+                line-height: 1;
             }
             
             .mce-preset-item-content {
-                margin-top: 8px;
+                margin-top: 4px;
             }
             
             .mce-preset-content-list {
                 display: flex;
                 flex-direction: column;
-                gap: 6px;
+                gap: 4px;
             }
             
             .mce-preset-content-item {
                 display: flex;
                 flex-direction: column;
-                gap: 4px;
-                padding: 6px 8px;
-                background: rgba(26, 26, 38, 0.4);
-                border-radius: 6px;
-                border-left: 3px solid transparent;
+                gap: 3px;
+                padding: 4px 6px;
+                background: rgba(26, 26, 38, 0.5);
+                border-radius: 4px;
+                border-left: 2px solid transparent;
             }
             
             .mce-preset-content-item.mce-global-item {
@@ -3018,21 +3629,23 @@ class PresetManager {
             .mce-preset-item-label {
                 display: flex;
                 align-items: center;
-                gap: 6px;
-                font-size: 12px;
+                gap: 4px;
+                font-size: 11px;
                 font-weight: 600;
                 color: rgba(224, 224, 224, 0.9);
+                line-height: 1.2;
+                flex-wrap: wrap;
             }
             
             .mce-preset-item-details {
                 display: flex;
                 flex-direction: column;
-                gap: 4px;
-                margin-left: 18px;
+                gap: 3px;
+                margin-left: 14px;
             }
             
             .mce-preset-item-text {
-                font-size: 11px;
+                font-size: 10px;
                 color: rgba(224, 224, 224, 0.7);
                 line-height: 1.3;
                 word-break: break-word;
@@ -3041,30 +3654,92 @@ class PresetManager {
             .mce-preset-item-params {
                 display: flex;
                 flex-wrap: wrap;
-                gap: 4px;
-                margin-top: 2px;
+                gap: 3px;
+                margin-top: 1px;
             }
             
             .mce-param-tag {
-                font-size: 10px;
-                padding: 1px 4px;
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 3px;
+                font-size: 9px;
+                padding: 1px 3px;
+                background: rgba(255, 255, 255, 0.12);
+                border-radius: 2px;
                 color: rgba(224, 224, 224, 0.8);
+                line-height: 1;
+            }
+            
+            .mce-fill-tag {
+                background: rgba(239, 68, 68, 0.25);
+                border: 1px solid rgba(239, 68, 68, 0.4);
+                color: #ef4444;
+                font-weight: 600;
+                padding: 1px 4px;
             }
             
             .mce-preset-content-separator {
                 height: 1px;
-                background: rgba(255, 255, 255, 0.1);
-                margin: 4px 0;
+                background: rgba(255, 255, 255, 0.12);
+                margin: 3px 0;
             }
             
             .mce-preset-empty-content {
-                font-size: 12px;
+                font-size: 11px;
                 color: rgba(224, 224, 224, 0.5);
                 font-style: italic;
                 text-align: center;
-                padding: 8px;
+                padding: 6px;
+            }
+
+            /* 
+             * 🎨 FILL开关样式重构
+             * 统一管理激活与非激活状态，解决父元素.active状态污染FILL图标颜色的问题。
+             */
+
+            /* --- 非激活状态 (Inactive State) --- */
+            .mce-char-fill-toggle:not(.active) {
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+            }
+
+            .mce-char-fill-toggle:not(.active) span {
+                color: rgba(176, 176, 176, 0.6);
+                font-weight: 400;
+            }
+
+            .mce-char-fill-toggle:not(.active) svg,
+            .mce-char-fill-toggle:not(.active) svg * {
+                stroke: rgba(176, 176, 176, 0.6);
+            }
+
+            /* --- 激活状态 (Active State) --- */
+            .mce-char-fill-toggle.active {
+                background: rgba(34, 197, 94, 0.25);
+                border: 1px solid rgba(34, 197, 94, 0.5);
+            }
+            
+            .mce-char-fill-toggle.active:hover {
+                background: rgba(34, 197, 94, 0.35);
+            }
+
+            .mce-char-fill-toggle.active span {
+                color: #ef4444;
+                font-weight: 600;
+            }
+
+            .mce-char-fill-toggle.active svg,
+            .mce-char-fill-toggle.active svg * {
+                stroke: #ef4444;
+            }
+
+            .mce-char-fill-toggle input[type="checkbox"] {
+                display: none;
+            }
+
+            /* 关键修复：同时为svg和其子元素（如path）设置颜色，覆盖外来.active污染 */
+            .mce-char-fill-toggle:not(.active) svg,
+            .mce-char-fill-toggle:not(.active) svg *,
+            .mce-edit-preset-char-item.active .mce-char-fill-toggle:not(.active) svg,
+            .mce-edit-preset-char-item.active .mce-char-fill-toggle:not(.active) svg * {
+                stroke: rgba(176, 176, 176, 0.6) !important;
             }
         `;
 
@@ -3098,6 +3773,11 @@ class PresetManager {
                             this.bindPresetCharacterEditEvents(presetId, activeIndex);
                             // 更新表单内容
                             this.updateEditForm(preset, activeIndex);
+
+                            // 🔧 新增：延迟检查滑条元素是否正确添加到DOM
+                            setTimeout(() => {
+                                this.debugSliderElements();
+                            }, 100);
                             // 🔧 新增：绑定语法类型事件
                             this.bindSyntaxTypeEvents(presetId, activeIndex);
                         }
@@ -3114,15 +3794,24 @@ class PresetManager {
      * 绑定语法类型事件
      */
     bindSyntaxTypeEvents(presetId, characterIndex) {
+        console.log(`[预设管理器] 开始绑定语法类型事件 - presetId: ${presetId}, characterIndex: ${characterIndex}`);
+
+        // 清理之前的语法类型事件监听器
+        this.cleanupSyntaxTypeEvents();
+
         const syntaxTypeSelect = document.getElementById('edit-character-syntax-type');
         if (syntaxTypeSelect) {
-            syntaxTypeSelect.addEventListener('change', (e) => {
+            // 存储事件处理器引用，用于后续清理
+            this.syntaxTypeHandler = (e) => {
                 const newSyntaxType = e.target.value;
+                console.log(`[预设管理器] 语法类型切换事件触发 - 新类型: ${newSyntaxType}, 角色索引: ${characterIndex}`);
+
                 const preset = this.presets.find(p => p.id === presetId);
 
                 if (preset && preset.characters && preset.characters[characterIndex]) {
                     // 立即保存语法类型到角色数据
                     preset.characters[characterIndex].syntax_type = newSyntaxType;
+                    console.log(`[预设管理器] 语法类型已保存到角色数据: ${newSyntaxType}`);
 
                     // 保存到本地存储
                     this.savePresetToLocalStorage(preset);
@@ -3142,8 +3831,31 @@ class PresetManager {
                     // 显示保存提示
                     this.toastManager.showToast('语法类型已更新', 'success');
                 }
-            });
+            };
+
+            syntaxTypeSelect.addEventListener('change', this.syntaxTypeHandler);
+            console.log(`[预设管理器] 语法类型事件绑定完成`);
+        } else {
+            console.warn(`[预设管理器] 语法类型选择器元素未找到`);
         }
+    }
+
+    /**
+     * 清理语法类型事件监听器
+     */
+    cleanupSyntaxTypeEvents() {
+        console.log(`[预设管理器] 开始清理语法类型事件监听器`);
+
+        const syntaxTypeSelect = document.getElementById('edit-character-syntax-type');
+        if (syntaxTypeSelect && this.syntaxTypeHandler) {
+            syntaxTypeSelect.removeEventListener('change', this.syntaxTypeHandler);
+            console.log(`[预设管理器] 语法类型事件监听器已清理`);
+        }
+
+        // 清理事件处理器引用
+        this.syntaxTypeHandler = null;
+
+        console.log(`[预设管理器] 语法类型事件监听器清理完成`);
     }
 
     /**
@@ -3155,8 +3867,8 @@ class PresetManager {
         // 更新所有角色的语法类型
         if (preset.characters) {
             preset.characters.forEach(character => {
-                // 如果切换到Regional模式且当前语法类型不是REGION或MASK，则默认设置为MASK（符合用户要求）
-                if (isRegionalMode && character.syntax_type !== 'REGION' && character.syntax_type !== 'MASK') {
+                // 如果切换到Regional模式且当前语法类型不是AREA或MASK，则默认设置为MASK（符合用户要求）
+                if (isRegionalMode && character.syntax_type !== 'AREA' && character.syntax_type !== 'MASK') {
                     character.syntax_type = 'MASK';  // 用户要求：切换到区域提示词时默认使用MASK
                     character.use_mask_syntax = true;
                 }
@@ -3195,14 +3907,16 @@ class PresetManager {
             const globalPreview = preset.global_prompt.length > 50 ?
                 preset.global_prompt.substring(0, 50) + '...' :
                 preset.global_prompt;
+            const globalFillTag = preset.global_use_fill ? '<span class="mce-param-tag mce-fill-tag">FILL</span>' : '';
             content += `
                 <div class="mce-preset-content-item mce-global-item">
                     <div class="mce-preset-item-label">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                             <circle cx="12" cy="12" r="10"></circle>
                             <path d="M12 8v8m-4-4h8"></path>
                         </svg>
                         ${this.languageManager.t('globalPrompt') || '全局提示词'}
+                        ${globalFillTag}
                     </div>
                     <div class="mce-preset-item-text">${this.escapeHtml(globalPreview)}</div>
                 </div>
@@ -3215,9 +3929,9 @@ class PresetManager {
                 .map((char, index) => {
                     const name = char.name || `角色 ${index + 1}`;
                     const prompt = char.prompt || '';
-                    const preview = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
-                    const weight = char.weight || 1.0;
-                    const feather = char.feather || 0;
+                    const preview = prompt.length > 35 ? prompt.substring(0, 35) + '...' : prompt;
+                    const weight = char.weight !== undefined ? Math.max(0, Math.min(1, char.weight)) : 1.0;
+                    const feather = char.feather !== undefined ? char.feather : 0;
                     // 🔧 修复：根据预设的语法模式设置正确的默认语法类型（区域提示词默认使用MASK）
                     const syntaxMode = preset.syntax_mode || 'attention_couple';
                     const defaultSyntaxType = syntaxMode === 'regional_prompts' ? 'MASK' : 'COUPLE';
@@ -3226,7 +3940,7 @@ class PresetManager {
                     return `
                         <div class="mce-preset-content-item mce-character-item">
                             <div class="mce-preset-item-label">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                                     <circle cx="12" cy="7" r="4"></circle>
                                 </svg>
@@ -3238,6 +3952,7 @@ class PresetManager {
                                     <span class="mce-param-tag">${syntaxType}</span>
                                     <span class="mce-param-tag">权重: ${weight.toFixed(1)}</span>
                                     ${feather > 0 ? `<span class="mce-param-tag">羽化: ${feather}px</span>` : ''}
+                                    ${char.use_fill ? '<span class="mce-param-tag mce-fill-tag">FILL</span>' : ''}
                                 </div>
                             </div>
                         </div>
@@ -3261,6 +3976,12 @@ class PresetManager {
      */
     savePresetToLocalStorage(preset) {
         try {
+            // 更新 this.presets 数组中的预设对象
+            const memIndex = this.presets.findIndex(p => p.id === preset.id);
+            if (memIndex !== -1) {
+                this.presets[memIndex] = preset;
+            }
+
             // 获取当前存储的预设列表
             const storedPresets = localStorage.getItem('mce_presets');
             let presets = storedPresets ? JSON.parse(storedPresets) : [];

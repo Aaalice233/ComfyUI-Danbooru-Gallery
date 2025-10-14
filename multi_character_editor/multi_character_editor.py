@@ -700,6 +700,8 @@ async def save_preset(request):
         preset_name = data.get('name')
         characters = data.get('characters', [])
         global_prompt = data.get('global_prompt', '')
+        global_use_fill = data.get('global_use_fill', False)  # 🔧 添加全局FILL状态
+        syntax_mode = data.get('syntax_mode', 'attention_couple')  # 🔧 添加语法模式
         global_note = ''  # 清空备注
         preview_image = data.get('preview_image')  # base64编码的图片
         
@@ -718,6 +720,8 @@ async def save_preset(request):
                     preset['name'] = preset_name
                     preset['characters'] = characters
                     preset['global_prompt'] = global_prompt
+                    preset['global_use_fill'] = global_use_fill  # 🔧 保存全局FILL状态
+                    preset['syntax_mode'] = syntax_mode  # 🔧 保存语法模式
                     preset['global_note'] = ''  # 清空备注
                     preset['updated_at'] = time.time()
 
@@ -751,6 +755,8 @@ async def save_preset(request):
                 'name': preset_name,
                 'characters': characters,
                 'global_prompt': global_prompt,
+                'global_use_fill': global_use_fill,  # 🔧 保存全局FILL状态
+                'syntax_mode': syntax_mode,  # 🔧 保存语法模式
                 'global_note': '',  # 清空备注
                 'created_at': time.time(),
                 'updated_at': time.time()
