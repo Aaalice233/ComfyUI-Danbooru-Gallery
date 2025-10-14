@@ -1916,6 +1916,45 @@ class MultiCharacterEditor {
             console.error('[MultiCharacterEditor] renderZoomInfo: 渲染缩放比例信息失败:', error);
         }
     }
+
+    onConfigure(config) {
+        if (!this.multiCharacterEditorInstance || !this.multiCharacterEditorInstance.isReady) {
+            setTimeout(() => this.onConfigure(config), 50);
+            return;
+        }
+
+        if (config && config.multi_character_editor) {
+            const data = config.multi_character_editor;
+
+            if (this.validateConfiguration(data)) {
+
+                // 更新Widget值
+                if (data.widgets) {
+                    for (const key in data.widgets) {
+                        if (this.widgets[key]) {
+                            this.widgets[key].value = data.widgets[key];
+                        }
+                    }
+                }
+
+                // 恢复画布尺寸
+                if (this.multiCharacterEditorInstance && this.multiCharacterEditorInstance.components.maskEditor && typeof this.multiCharacterEditorInstance.components.maskEditor.resizeCanvasWithRetry === 'function') {
+                    this.multiCharacterEditorInstance.components.maskEditor.resizeCanvasWithRetry(data.canvas_width, data.canvas_height);
+                }
+
+                // 恢复配置数据
+                if (data.config_data) {
+                    this.dataManager.updateConfig(data.config_data);
+                }
+
+                // 恢复后强制刷新一次画布和坐标系
+                if (data.config_data && data.config_data.image_size) {
+                    const { width, height } = data.config_data.image_size;
+                    this.multiCharacterEditorInstance.forceInitializeCoordinateSystem(width, height);
+                }
+            }
+        }
+    }
 }
 
 // 数据管理器
