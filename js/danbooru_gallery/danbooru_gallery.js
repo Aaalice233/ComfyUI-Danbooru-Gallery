@@ -161,6 +161,7 @@ app.registerExtension({
                 }, 10);
 
                 let globalTooltip, globalTooltipTimeout;
+                let currentTooltipId = 0; // 用于追踪当前活动的tooltip请求
                 let posts = [], currentPage = 1, isLoading = false;
                 let filterState = { startTime: null, endTime: null, startPage: null };
                 let userAuth = { username: "", api_key: "", has_auth: false }; // 用户认证信息
@@ -2939,6 +2940,11 @@ app.registerExtension({
 
                     wrapper.addEventListener("mouseenter", async (e) => {
                         if (!uiSettings.tooltip_enabled) return;
+
+                        // 生成新的tooltip ID，使之前的异步请求失效
+                        currentTooltipId++;
+                        const thisTooltipId = currentTooltipId;
+
                         clearTimeout(globalTooltipTimeout);
 
                         const tagsContainer = globalTooltip.querySelector('.danbooru-tooltip-tags');
@@ -3006,6 +3012,11 @@ app.registerExtension({
                             }
                         }
 
+                        // 检查tooltip ID是否仍然有效（防止快速切换时显示过期的tooltip）
+                        if (thisTooltipId !== currentTooltipId) {
+                            return; // 用户已经移动到另一张图片，放弃显示此tooltip
+                        }
+
                         // Render all tag categories with translations
                         categoryOrder.forEach(categoryName => {
                             if (categorizedTags[categoryName].size > 0) {
@@ -3041,8 +3052,12 @@ app.registerExtension({
                     });
 
                     wrapper.addEventListener("mouseleave", () => {
+                        // 增加tooltip ID，使当前的异步请求失效
+                        currentTooltipId++;
+
                         // 鼠标离开图像时立即隐藏tooltip
                         globalTooltip.style.display = "none";
+
                         // 移除点击监听器
                         if (currentClickHandler) {
                             document.removeEventListener('click', currentClickHandler);
