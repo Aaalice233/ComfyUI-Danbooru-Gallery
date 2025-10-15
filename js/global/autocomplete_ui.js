@@ -265,8 +265,9 @@ class AutocompleteUI {
 
             if (isChinese) {
                 // 中文搜索结果
-                const tag = item.tag || item;
-                const translation = item.translation || '';
+                // 处理中文搜索API返回的格式 {chinese, english, weight}
+                const tag = item.english || item.tag || item;
+                const translation = item.chinese || item.translation || '';
                 const count = item.post_count || item.count || 0;
 
                 suggestionElement.innerHTML = `
@@ -337,7 +338,8 @@ class AutocompleteUI {
                 if (this.selectedIndex >= 0) {
                     e.preventDefault();
                     const suggestion = this.currentSuggestions[this.selectedIndex];
-                    const tag = suggestion.tag || suggestion.name || suggestion;
+                    // 支持多种数据格式：{english, tag, name} 或纯字符串
+                    const tag = suggestion.english || suggestion.tag || suggestion.name || suggestion;
                     this.selectSuggestion(tag);
                 }
                 break;
