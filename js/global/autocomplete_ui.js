@@ -24,6 +24,7 @@ class AutocompleteUI {
         this.currentSuggestions = [];
         this.debounceTimer = null;
         this.lastQuery = '';
+        this.querySequence = 0; // 查询序列号，用于处理异步查询顺序问题
 
         // 初始化
         this.init();
@@ -163,9 +164,16 @@ class AutocompleteUI {
         const textBeforeCursor = value.substring(0, cursorPosition);
         const lastWord = this.getLastWord(textBeforeCursor);
 
-        // 如果输入长度不够，隐藏建议
+        // 如果输入长度不够，不显示新建议，但保持已有菜单打开
+        // 只有在菜单未激活时才跳过
         if (!lastWord || lastWord.length < this.minQueryLength) {
-            this.hide();
+            // 如果菜单还没显示，就不显示
+            // 如果菜单已经显示，保持显示状态，不自动关闭
+            if (!this.isActive) {
+                return;
+            }
+            // 菜单已激活，清空建议但不隐藏
+            // 用户可以通过失焦或ESC键关闭
             return;
         }
 
@@ -175,7 +183,7 @@ class AutocompleteUI {
                 await this.fetchSuggestions(lastWord);
             } catch (error) {
                 console.error('[AutocompleteUI] 处理输入时出错:', error);
-                this.hide();
+                // 出错时也不自动隐藏，让用户通过失焦关闭
             }
         }, this.debounceDelay);
     }
@@ -194,17 +202,24 @@ class AutocompleteUI {
      * 获取建议
      */
     async fetchSuggestions(query) {
+        // 验证查询有效性
+        if (!query || query.trim().length === 0) {
+            console.warn('[AutocompleteUI] 查询为空，忽略');
+            return;
+        }
+
         if (query === this.lastQuery) {
             return; // 避免重复查询
         }
 
-        this.lastQuery = query;
+        // 增加查询序列号
+        this.querySequence++;
+        const currentSequence = this.querySequence;
 
         try {
             // 检查缓存系统是否可用
             if (!globalAutocompleteCache) {
                 console.warn('[AutocompleteUI] 缓存系统不可用');
-                this.hide();
                 return;
             }
 
@@ -225,16 +240,24 @@ class AutocompleteUI {
                 });
             }
 
+            // 检查是否是最新的查询结果（防止旧查询覆盖新查询）
+            if (currentSequence !== this.querySequence) {
+                // 查询已过期，忽略结果
+                return;
+            }
+
             // 验证返回数据
             if (!Array.isArray(suggestions)) {
                 suggestions = [];
             }
 
+            // 只有在获得有效结果后才更新 lastQuery
+            this.lastQuery = query;
             this.currentSuggestions = suggestions;
             this.renderSuggestions(suggestions, containsChinese);
         } catch (error) {
             console.error('[AutocompleteUI] 获取建议失败:', error);
-            this.hide();
+            // 出错时不自动关闭菜单，让用户通过失焦或ESC键关闭
         }
     }
 
@@ -243,7 +266,15 @@ class AutocompleteUI {
      */
     renderSuggestions(suggestions, isChinese = false) {
         if (!suggestions || suggestions.length === 0) {
-            this.hide();
+            // 没有结果时显示提示信息，而不是立即关闭
+            this.containerElement.innerHTML = `
+                <div style="padding: 12px; color: #999; text-align: center; font-size: 12px;">
+                    ${isChinese ? '未找到匹配的标签' : 'No matching tags found'}
+                </div>
+            `;
+            this.currentSuggestions = [];
+            this.selectedIndex = -1;
+            this.show(); // 显示"无结果"提示
             return;
         }
 
@@ -574,6 +605,7 @@ class AutocompleteUI {
         this.selectedIndex = -1;
         this.currentSuggestions = [];
         this.lastQuery = '';
+        // 不重置 querySequence，让它持续递增以确保旧查询永远不会覆盖新查询
     }
 
     /**
