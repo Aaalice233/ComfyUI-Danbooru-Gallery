@@ -51,7 +51,6 @@ const createManagerStyles = () => {
             width: 460px;
             min-width: 300px;
             min-height: 200px;
-            max-height: 600px;
             background: var(--gem-bg-primary);
             border: 1px solid var(--gem-border);
             border-radius: var(--gem-radius-lg);
@@ -62,7 +61,8 @@ const createManagerStyles = () => {
             font-family: system-ui, -apple-system, sans-serif;
             color: var(--gem-text-primary);
             box-sizing: border-box;
-            transition: height 0.2s ease;
+            transition: height 0.1s ease;
+            margin-bottom: 8px;
         }
 
         /* 标题区域 */
@@ -117,6 +117,11 @@ const createManagerStyles = () => {
             border-top: 1px solid var(--gem-border);
             background: rgba(0, 0, 0, 0.1);
             box-sizing: border-box;
+            flex-shrink: 0;
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         /* 空状态提示 */
@@ -156,14 +161,15 @@ const createManagerStyles = () => {
             background: var(--gem-bg-secondary);
             border: 1px solid var(--gem-border);
             border-radius: var(--gem-radius-md);
-            padding: var(--gem-spacing-md) var(--gem-spacing-sm) var(--gem-spacing-md) var(--gem-spacing-sm);
-            margin-bottom: var(--gem-spacing-sm);
+            padding: var(--gem-spacing-sm) var(--gem-spacing-sm);
+            margin-bottom: var(--gem-spacing-xs);
             display: flex;
             align-items: center;
             gap: var(--gem-spacing-sm);
             transition: var(--gem-transition);
             box-sizing: border-box;
             cursor: move;
+            min-height: 44px;
         }
 
         .gem-item:hover {
@@ -472,26 +478,32 @@ app.registerExtension({
                 if (this.domContainer) {
                     const newSize = this.computeSize();
 
-                    // 更新节点尺寸
+                    // 立即更新节点尺寸
                     this.size[0] = newSize[0];
                     this.size[1] = newSize[1];
 
-                    // 更新DOM容器高度
+                    // 立即更新DOM容器高度，确保内容完全适应
                     this.domContainer.style.height = newSize[1] + 'px';
 
-                    // 通知ComfyUI节点尺寸已变化
+                    // 立即通知ComfyUI节点尺寸已变化
                     this.setDirtyCanvas(true, true);
 
-                    console.log('[GroupExecuteManager] 节点尺寸已调整:', newSize);
+                    // 使用requestAnimationFrame确保视觉更新立即生效
+                    requestAnimationFrame(() => {
+                        this.setDirtyCanvas(true, false);
+                    });
                 }
             };
 
-            // 简化的onResize方法
+            // 优化的onResize方法
             this.onResize = function (size) {
-                console.log('[GroupExecuteManager] 节点调整大小:', size);
-                // 当用户手动调整时，更新DOM容器尺寸
+                // 立即响应节点大小变化
                 if (this.domContainer) {
+                    // 立即更新DOM容器高度，确保内容完全适应
                     this.domContainer.style.height = size[1] + 'px';
+
+                    // 立即重绘以避免延迟
+                    this.setDirtyCanvas(true, false);
                 }
             };
 
@@ -595,10 +607,10 @@ app.registerExtension({
                 // 初始渲染
                 this.renderGroups();
 
-                // 初始化后调整尺寸
+                // 初始化后调整尺寸，减少延迟
                 setTimeout(() => {
                     this.changeSize();
-                }, 100);
+                }, 10);
             } catch (error) {
                 console.error('[GroupExecuteManager] Error in createDOMStructure:', error);
                 globalToastManager.showToast(
@@ -626,36 +638,38 @@ app.registerExtension({
 
             // 如果有DOM容器，根据内容动态计算高度
             if (this.domContainer) {
-                // 计算实际需要的高度
-                const headerHeight = 50; // 标题区域高度
-                const controlsHeight = 0;  // 控制区域高度（当前简化版没有）
-                const footerHeight = 60;  // 底部按钮区域高度
-                const itemHeight = 60;     // 每个组项目的高度
-                const padding = 24;        // 内边距
+                // 根据实际DOM结构和CSS计算高度
+                const footerHeight = 72;  // 底部按钮区域高度 (min-height: 60px + padding: 24px + border: 1px)
+                const itemHeight = 48;     // 每个组项目高度 (min-height: 44px + margin: 4px)
+                const listPadding = 24;    // 列表容器的padding (12px * 2)
+                const borderAndMargin = 6; // 边框和额外间距
 
                 // 计算列表区域高度
                 const groupsCount = this.groups ? this.groups.length : 0;
                 let listHeight = 0;
 
                 if (groupsCount === 0) {
-                    // 空状态高度
-                    listHeight = 200;
+                    // 空状态高度 - 根据CSS min-height: 200px + padding: 24px
+                    listHeight = 224;
                 } else {
-                    // 根据组数量计算高度，最小3项，最多显示8项
-                    const visibleItems = Math.min(Math.max(groupsCount, 3), 8);
-                    listHeight = visibleItems * itemHeight;
+                    // 根据组数量计算实际高度
+                    listHeight = groupsCount * itemHeight;
 
-                    // 如果组数量超过8个，添加额外空间给滚动条
-                    if (groupsCount > 8) {
-                        listHeight += 20; // 滚动条空间
+                    // 添加列表容器的padding
+                    listHeight += listPadding;
+
+                    // 如果组数量超过10个，限制最大高度并显示滚动条
+                    const maxListHeight = 10 * itemHeight + listPadding + 16; // 16px给滚动条
+                    if (listHeight > maxListHeight) {
+                        listHeight = maxListHeight;
                     }
                 }
 
-                baseHeight = headerHeight + controlsHeight + listHeight + footerHeight + padding;
+                // 计算总高度：列表高度 + 底部高度 + 边框间距
+                baseHeight = listHeight + footerHeight + borderAndMargin;
 
-                // 确保高度在合理范围内
-                baseHeight = Math.max(baseHeight, 200); // 最小高度
-                baseHeight = Math.min(baseHeight, 600); // 最大高度
+                // 确保最小高度，至少能容纳空状态或少数项目
+                baseHeight = Math.max(baseHeight, 300);
             }
 
             const size = [baseWidth, baseHeight];
@@ -829,10 +843,8 @@ app.registerExtension({
                             3000
                         );
 
-                        // 拖拽排序后调整尺寸（确保布局正确）
-                        setTimeout(() => {
-                            this.changeSize();
-                        }, 50);
+                        // 拖拽排序后立即调整尺寸（确保布局正确）
+                        this.changeSize();
                     }
                 };
 
@@ -854,10 +866,8 @@ app.registerExtension({
                 );
             }
 
-            // 渲染完成后调整节点尺寸
-            setTimeout(() => {
-                this.changeSize();
-            }, 50);
+            // 渲染完成后立即调整节点尺寸，消除延迟
+            this.changeSize();
         };
 
         // 显示组选择器
@@ -894,10 +904,8 @@ app.registerExtension({
                     this.renderGroups();
                     this.hideGroupSelector();
 
-                    // 添加新组后调整尺寸
-                    setTimeout(() => {
-                        this.changeSize();
-                    }, 50);
+                    // 添加新组后立即调整尺寸
+                    this.changeSize();
                 }
             });
 
@@ -978,10 +986,8 @@ app.registerExtension({
                 this.renderGroups();
                 console.log('[GroupExecuteManager] Group deleted:', groupName);
 
-                // 删除组后调整尺寸
-                setTimeout(() => {
-                    this.changeSize();
-                }, 50);
+                // 删除组后立即调整尺寸
+                this.changeSize();
             }
         };
 
@@ -1240,10 +1246,8 @@ app.registerExtension({
                     this.groups.map((g, i) => `${i+1}. ${g.name}`).join(', '));
                 if (this.listContainer) {
                     this.renderGroups();
-                    // 加载配置后调整尺寸
-                    setTimeout(() => {
-                        this.changeSize();
-                    }, 100);
+                    // 加载配置后立即调整尺寸
+                    this.changeSize();
                 }
             }
         };
