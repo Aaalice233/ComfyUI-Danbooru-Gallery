@@ -4,6 +4,371 @@ import { globalMultiLanguageManager } from './global/multi_language.js';
 import { globalToastManager } from './global/toast_manager.js';
 
 /**
+ * 组执行管理器 - 统一CSS样式系统
+ * 参考多人角色编辑器的简洁设计风格
+ */
+
+// 创建全局CSS样式
+const createManagerStyles = () => {
+    const styleId = 'group-execute-manager-styles';
+
+    // 如果样式已存在，先删除
+    const existingStyle = document.getElementById(styleId);
+    if (existingStyle) {
+        existingStyle.remove();
+    }
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+        /* 设计变量 */
+        :root {
+            --gem-primary: #7c3aed;
+            --gem-primary-hover: #8b5cf6;
+            --gem-primary-light: rgba(124, 58, 237, 0.1);
+            --gem-primary-border: rgba(124, 58, 237, 0.5);
+            --gem-bg-primary: linear-gradient(135deg, #1e1e2e 0%, #2a2a3e 100%);
+            --gem-bg-secondary: rgba(42, 42, 62, 0.4);
+            --gem-bg-hover: rgba(139, 92, 246, 0.2);
+            --gem-text-primary: #E0E0E0;
+            --gem-text-secondary: rgba(255, 255, 255, 0.7);
+            --gem-text-muted: rgba(255, 255, 255, 0.4);
+            --gem-border: rgba(255, 255, 255, 0.1);
+            --gem-border-hover: rgba(139, 92, 246, 0.6);
+            --gem-radius-sm: 6px;
+            --gem-radius-md: 8px;
+            --gem-radius-lg: 12px;
+            --gem-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            --gem-spacing-xs: 4px;
+            --gem-spacing-sm: 8px;
+            --gem-spacing-md: 12px;
+            --gem-spacing-lg: 16px;
+            --gem-transition: all 0.2s ease;
+        }
+
+        /* 主容器 */
+        .gem-manager {
+            width: 460px;
+            min-width: 300px;
+            min-height: 200px;
+            max-height: 600px;
+            background: var(--gem-bg-primary);
+            border: 1px solid var(--gem-border);
+            border-radius: var(--gem-radius-lg);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: var(--gem-shadow);
+            font-family: system-ui, -apple-system, sans-serif;
+            color: var(--gem-text-primary);
+            box-sizing: border-box;
+            transition: height 0.2s ease;
+        }
+
+        /* 标题区域 */
+        .gem-header {
+            padding: var(--gem-spacing-sm) var(--gem-spacing-md);
+            background: rgba(0, 0, 0, 0.1);
+            border-bottom: 1px solid var(--gem-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .gem-resize-hint {
+            font-size: 10px;
+            color: var(--gem-text-muted);
+        }
+
+        /* 控制区域 */
+        .gem-controls {
+            padding: var(--gem-spacing-sm);
+            background: var(--gem-bg-secondary);
+            border-bottom: 1px solid var(--gem-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .gem-controls-left,
+        .gem-controls-right {
+            display: flex;
+            gap: var(--gem-spacing-sm);
+        }
+
+        .gem-btn-icon {
+            width: 30px;
+            padding: var(--gem-spacing-xs) var(--gem-spacing-sm);
+        }
+
+        /* 列表容器 */
+        .gem-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: var(--gem-spacing-md);
+            box-sizing: border-box;
+        }
+
+        /* 底部容器 */
+        .gem-footer {
+            padding: var(--gem-spacing-md);
+            border-top: 1px solid var(--gem-border);
+            background: rgba(0, 0, 0, 0.1);
+            box-sizing: border-box;
+        }
+
+        /* 空状态提示 */
+        .gem-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            min-height: 200px;
+            text-align: center;
+            padding: var(--gem-spacing-lg);
+        }
+
+        .gem-empty-icon {
+            font-size: 48px;
+            margin-bottom: var(--spacing-md);
+            opacity: 0.6;
+        }
+
+        .gem-empty-text {
+            color: var(--gem-text-secondary);
+            font-size: 16px;
+            font-weight: 500;
+            line-height: 1.5;
+            max-width: 300px;
+        }
+
+        .gem-empty-subtext {
+            color: var(--gem-text-muted);
+            font-size: 14px;
+            margin-top: var(--gem-spacing-sm);
+        }
+
+        /* 组项目 */
+        .gem-item {
+            background: var(--gem-bg-secondary);
+            border: 1px solid var(--gem-border);
+            border-radius: var(--gem-radius-md);
+            padding: var(--gem-spacing-md) var(--gem-spacing-sm) var(--gem-spacing-md) var(--gem-spacing-sm);
+            margin-bottom: var(--gem-spacing-sm);
+            display: flex;
+            align-items: center;
+            gap: var(--gem-spacing-sm);
+            transition: var(--gem-transition);
+            box-sizing: border-box;
+            cursor: move;
+        }
+
+        .gem-item:hover {
+            background: var(--gem-bg-hover);
+            border-color: var(--gem-border-hover);
+            transform: translateY(-1px);
+        }
+
+        .gem-item.dragging {
+            opacity: 0.5;
+        }
+
+        .gem-item.drag-over {
+            border-color: var(--gem-border-hover);
+            border-width: 2px;
+            background: var(--gem-bg-hover);
+        }
+
+        /* 拖拽图标 */
+        .gem-drag-handle {
+            color: var(--gem-primary);
+            font-size: 16px;
+            cursor: move;
+            user-select: none;
+            flex-shrink: 0;
+        }
+
+        /* 序号 */
+        .gem-index {
+            color: var(--gem-primary);
+            font-weight: 600;
+            font-size: 18px;
+            min-width: 30px;
+            flex-shrink: 0;
+        }
+
+        /* 组名 */
+        .gem-name {
+            flex: 1;
+            color: var(--gem-text-primary);
+            font-size: 15px;
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* 延迟容器 */
+        .gem-delay-container {
+            display: flex;
+            align-items: center;
+            gap: var(--gem-spacing-xs);
+            flex-shrink: 0;
+        }
+
+        .gem-delay-label {
+            color: var(--gem-text-secondary);
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .gem-delay-value {
+            background: var(--gem-primary-light);
+            border: 1px solid var(--gem-primary-border);
+            border-radius: var(--gem-radius-sm);
+            padding: var(--gem-spacing-xs) var(--gem-spacing-sm);
+            color: var(--gem-primary);
+            font-size: 12px;
+            font-weight: 600;
+            min-width: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: var(--gem-transition);
+        }
+
+        .gem-delay-value:hover {
+            background: var(--gem-bg-hover);
+            border-color: var(--gem-border-hover);
+            transform: scale(1.05);
+        }
+
+        /* 按钮基础样式 */
+        .gem-btn {
+            border: 1px solid var(--gem-primary-border);
+            border-radius: var(--gem-radius-md);
+            color: var(--gem-text-primary);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            padding: var(--gem-spacing-sm) var(--gem-spacing-md);
+            transition: var(--gem-transition);
+            box-sizing: border-box;
+            position: relative;
+            overflow: hidden;
+            background: transparent;
+        }
+
+        .gem-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .gem-btn:active {
+            transform: translateY(0);
+        }
+
+        /* 主按钮样式 */
+        .gem-btn-primary {
+            background: linear-gradient(135deg, var(--gem-primary) 0%, var(--gem-primary-hover) 100%);
+            color: #ffffff;
+            width: 100%;
+        }
+
+        .gem-btn-primary:hover {
+            background: linear-gradient(135deg, var(--gem-primary-hover) 0%, #9d6fff 100%);
+        }
+
+        /* 删除按钮样式 */
+        .gem-btn-danger {
+            background: var(--gem-bg-secondary);
+            border-color: var(--gem-border);
+        }
+
+        .gem-btn-danger:hover {
+            background: rgba(239, 68, 68, 0.4);
+            border-color: rgba(239, 68, 68, 0.6);
+        }
+
+        /* 模态框样式 */
+        .gem-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            box-sizing: border-box;
+        }
+
+        .gem-modal-content {
+            background: var(--gem-bg-primary);
+            border: 1px solid var(--gem-primary-border);
+            border-radius: var(--gem-radius-lg);
+            padding: var(--gem-spacing-lg);
+            max-width: 80%;
+            min-width: 200px;
+            max-height: 300px;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+
+        .gem-modal-item {
+            padding: var(--gem-spacing-sm) var(--gem-spacing-md);
+            margin: var(--gem-spacing-xs) 0;
+            border-radius: var(--gem-radius-sm);
+            transition: var(--gem-transition);
+            cursor: pointer;
+        }
+
+        .gem-modal-item:hover {
+            background: var(--gem-bg-hover);
+        }
+
+        .gem-modal-item.disabled {
+            color: var(--gem-text-muted);
+            cursor: not-allowed;
+            text-decoration: line-through;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 500px) {
+            .gem-manager {
+                width: 100%;
+                min-width: 280px;
+            }
+        }
+
+        /* 滚动条样式 */
+        .gem-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .gem-list::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+        }
+
+        .gem-list::-webkit-scrollbar-thumb {
+            background: var(--gem-primary);
+            border-radius: 3px;
+        }
+
+        .gem-list::-webkit-scrollbar-thumb:hover {
+            background: var(--gem-primary-hover);
+        }
+    `;
+
+    document.head.appendChild(style);
+    console.log('[GroupExecuteManager] CSS样式系统已加载');
+};
+
+/**
  * 组执行管理器节点
  * 在一个节点中管理所有组的执行
  * 支持拖拽排序、多语言、自定义GUI
@@ -64,6 +429,9 @@ const queueManager = new QueueManager();
 // 创建命名空间绑定的翻译函数
 const t = (key) => globalMultiLanguageManager.t(`group_manager.${key}`);
 
+// 初始化CSS样式系统
+createManagerStyles();
+
 app.registerExtension({
     name: "GroupExecuteManager",
 
@@ -89,13 +457,43 @@ app.registerExtension({
             this.footerContainer = null;
             this.dropdownOverlay = null;
             this.statusOverlay = null;
+            this.domWidget = null;  // 保存 DOM widget 引用
 
             // DOM widget 状态
             this.domWidgetEnabled = false;
 
-            // 设置节点大小 - 初始高度较小，会在 DOM 创建后自动调整
-            this.size = [460, 150];
+            // 设置节点大小和最小尺寸
+            this.size = [460, 250];  // 宽度、高度 - 设置更合理的初始高度
+            this.min_size = [300, 200];  // 最小尺寸 - 确保有足够空间
             this.resizable = true;
+
+            // 动态调整节点尺寸的方法
+            this.changeSize = function() {
+                if (this.domContainer) {
+                    const newSize = this.computeSize();
+
+                    // 更新节点尺寸
+                    this.size[0] = newSize[0];
+                    this.size[1] = newSize[1];
+
+                    // 更新DOM容器高度
+                    this.domContainer.style.height = newSize[1] + 'px';
+
+                    // 通知ComfyUI节点尺寸已变化
+                    this.setDirtyCanvas(true, true);
+
+                    console.log('[GroupExecuteManager] 节点尺寸已调整:', newSize);
+                }
+            };
+
+            // 简化的onResize方法
+            this.onResize = function (size) {
+                console.log('[GroupExecuteManager] 节点调整大小:', size);
+                // 当用户手动调整时，更新DOM容器尺寸
+                if (this.domContainer) {
+                    this.domContainer.style.height = size[1] + 'px';
+                }
+            };
 
             // 创建隐藏的数据存储 widget
             this.addWidget("text", "groups_data", JSON.stringify(this.groups), (v) => {
@@ -139,196 +537,135 @@ app.registerExtension({
 
         // 创建DOM结构
         nodeType.prototype.createDOMStructure = function () {
-            // 创建主容器 - 现代扁平设计，紫色/深色主题
-            this.domContainer = document.createElement('div');
-            this.domContainer.className = 'group-execute-manager';
-            this.domContainer.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: linear-gradient(135deg, #1e1e2e 0%, #2a2a3e 100%);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 12px;
-                display: flex;
-                flex-direction: column;
-                overflow: hidden;
-                box-sizing: border-box;
-            `;
-
-            // 创建列表容器 - 滚动区域
-            this.listContainer = document.createElement('div');
-            this.listContainer.style.cssText = `
-                flex: 1;
-                overflow-y: auto;
-                padding: 12px;
-                box-sizing: border-box;
-            `;
-            this.domContainer.appendChild(this.listContainer);
-
-            // 创建footer容器 - 添加组按钮区域
-            this.footerContainer = document.createElement('div');
-            this.footerContainer.style.cssText = `
-                padding: 12px;
-                border-top: 1px solid rgba(255, 255, 255, 0.1);
-                box-sizing: border-box;
-            `;
-
-            // 添加按钮 - 紫色渐变主题，滑动光效
-            const addButton = document.createElement('button');
-            addButton.innerHTML = `+ ${t('addGroup') || '添加组'}`;
-            addButton.style.cssText = `
-                width: 100%;
-                padding: 12px;
-                border: 1px solid rgba(124, 58, 237, 0.5);
-                border-radius: 8px;
-                background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%);
-                color: #ffffff;
-                font-size: 14px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                box-sizing: border-box;
-                position: relative;
-                overflow: hidden;
-            `;
-
-            // 滑动光效伪元素效果
-            const addButtonBefore = document.createElement('div');
-            addButtonBefore.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: -100%;
-                width: 100%;
-                height: 100%;
-                background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-                transition: left 0.5s;
-                pointer-events: none;
-            `;
-            addButton.appendChild(addButtonBefore);
-
-            addButton.addEventListener('mouseenter', () => {
-                addButton.style.transform = 'translateY(-2px)';
-                addButton.style.background = 'linear-gradient(135deg, #8b5cf6 0%, #9d6fff 100%)';
-                addButtonBefore.style.left = '100%';
-            });
-            addButton.addEventListener('mouseleave', () => {
-                addButton.style.transform = 'translateY(0)';
-                addButton.style.background = 'linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%)';
-                setTimeout(() => {
-                    addButtonBefore.style.left = '-100%';
-                }, 500);
-            });
-            addButton.addEventListener('click', () => this.showGroupSelector());
-            this.footerContainer.appendChild(addButton);
-
-            this.domContainer.appendChild(this.footerContainer);
-
-            // 创建下拉菜单覆盖层（初始隐藏）
-            this.dropdownOverlay = document.createElement('div');
-            this.dropdownOverlay.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: rgba(0, 0, 0, 0.6);
-                display: none;
-                align-items: center;
-                justify-content: center;
-                z-index: 1000;
-                box-sizing: border-box;
-            `;
-            this.dropdownOverlay.addEventListener('click', (e) => {
-                if (e.target === this.dropdownOverlay) {
-                    this.hideGroupSelector();
-                }
-            });
-            this.domContainer.appendChild(this.dropdownOverlay);
-
-            // 创建状态覆盖层（初始隐藏）
-            this.statusOverlay = document.createElement('div');
-            this.statusOverlay.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: rgba(0, 0, 0, 0.6);
-                display: none;
-                align-items: center;
-                justify-content: center;
-                z-index: 1001;
-                box-sizing: border-box;
-            `;
-            this.domContainer.appendChild(this.statusOverlay);
-
-            // 打印调试信息
-            console.log('[GroupExecuteManager] DOM structure created');
-            console.log('[GroupExecuteManager] domContainer:', this.domContainer);
-            console.log('[GroupExecuteManager] listContainer:', this.listContainer);
-            console.log('[GroupExecuteManager] footerContainer:', this.footerContainer);
-            console.log('[GroupExecuteManager] domContainer children:', this.domContainer.children.length);
-
-            // 添加widget来显示DOM容器
-            // 立即尝试添加 DOM widget，不要延迟
             try {
+                // 创建主容器 - 使用新的CSS类
+                this.domContainer = document.createElement('div');
+                this.domContainer.className = 'gem-manager';
+
+                // 创建列表容器 - 滚动区域
+                this.listContainer = document.createElement('div');
+                this.listContainer.className = 'gem-list';
+                this.domContainer.appendChild(this.listContainer);
+
+                // 创建footer容器 - 添加组按钮区域
+                this.footerContainer = document.createElement('div');
+                this.footerContainer.className = 'gem-footer';
+
+                // 添加按钮 - 使用CSS类
+                const addButton = document.createElement('button');
+                addButton.className = 'gem-btn gem-btn-primary';
+                addButton.textContent = `+ ${t('addGroup') || '添加组'}`;
+                addButton.addEventListener('click', () => this.showGroupSelector());
+                this.footerContainer.appendChild(addButton);
+
+                this.domContainer.appendChild(this.footerContainer);
+
+                // 创建下拉菜单覆盖层（初始隐藏）
+                this.dropdownOverlay = document.createElement('div');
+                this.dropdownOverlay.className = 'gem-modal';
+                this.dropdownOverlay.style.display = 'none';
+                this.dropdownOverlay.addEventListener('click', (e) => {
+                    if (e.target === this.dropdownOverlay) {
+                        this.hideGroupSelector();
+                    }
+                });
+                this.domContainer.appendChild(this.dropdownOverlay);
+
+                // 创建状态覆盖层（初始隐藏）
+                this.statusOverlay = document.createElement('div');
+                this.statusOverlay.className = 'gem-modal';
+                this.statusOverlay.style.display = 'none';
+                this.domContainer.appendChild(this.statusOverlay);
+
+                // 添加widget来显示DOM容器
                 if (typeof this.addDOMWidget === 'function') {
-                    const widget = this.addDOMWidget('group_manager', 'div', this.domContainer);
-                    console.log('[GroupExecuteManager] DOM widget added successfully:', widget);
+                    const widget = this.addDOMWidget('group_manager', 'div', this.domContainer, {
+                        hideOnZoom: false,
+                        serialize: false
+                    });
 
-                    // 标记 DOM 模式已启用
+                    // 保存 widget 引用
+                    this.domWidget = widget;
                     this.domWidgetEnabled = true;
-
-                    // 强制更新节点尺寸
-                    this.setSize(this.computeSize());
                 } else {
-                    console.warn('[GroupExecuteManager] addDOMWidget method not available, trying fallback');
-                    // 降级到Canvas模式
+                    console.warn('[GroupExecuteManager] addDOMWidget method not available, using fallback');
                     this.addCustomWidget();
                 }
+
+                // 初始渲染
+                this.renderGroups();
+
+                // 初始化后调整尺寸
+                setTimeout(() => {
+                    this.changeSize();
+                }, 100);
             } catch (error) {
-                console.error('[GroupExecuteManager] Failed to add DOM widget:', error);
-                console.error('[GroupExecuteManager] Error stack:', error.stack);
-                // 降级到Canvas模式
+                console.error('[GroupExecuteManager] Error in createDOMStructure:', error);
+                globalToastManager.showToast(
+                    t('messages.domError') || 'DOM创建错误',
+                    'error',
+                    3000
+                );
+                // 尝试降级到Canvas模式
                 this.addCustomWidget();
             }
-
-            // 初始渲染
-            console.log('[GroupExecuteManager] Calling renderGroups...');
-            this.renderGroups();
-            console.log('[GroupExecuteManager] renderGroups completed');
-
-            // 添加详细调试日志
-            setTimeout(() => {
-                if (this.domContainer && this.domContainer.parentElement) {
-                    const parent = this.domContainer.parentElement;
-                    const parentStyle = window.getComputedStyle(parent);
-                    const containerStyle = window.getComputedStyle(this.domContainer);
-
-                    console.log('[GroupExecuteManager] === 容器调试信息 ===');
-                    console.log('[GroupExecuteManager] 父容器:', parent);
-                    console.log('[GroupExecuteManager] 父容器 tagName:', parent.tagName);
-                    console.log('[GroupExecuteManager] 父容器 className:', parent.className);
-                    console.log('[GroupExecuteManager] 父容器 position:', parentStyle.position);
-                    console.log('[GroupExecuteManager] 父容器 width:', parentStyle.width, 'clientWidth:', parent.clientWidth);
-                    console.log('[GroupExecuteManager] 父容器 height:', parentStyle.height, 'clientHeight:', parent.clientHeight);
-                    console.log('[GroupExecuteManager] 父容器 offsetWidth:', parent.offsetWidth, 'offsetHeight:', parent.offsetHeight);
-                    console.log('[GroupExecuteManager] domContainer position:', containerStyle.position);
-                    console.log('[GroupExecuteManager] domContainer width:', containerStyle.width, 'clientWidth:', this.domContainer.clientWidth);
-                    console.log('[GroupExecuteManager] domContainer height:', containerStyle.height, 'clientHeight:', this.domContainer.clientHeight);
-                    console.log('[GroupExecuteManager] domContainer offsetWidth:', this.domContainer.offsetWidth, 'offsetHeight:', this.domContainer.offsetHeight);
-                    console.log('[GroupExecuteManager] domContainer getBoundingClientRect:', this.domContainer.getBoundingClientRect());
-                    console.log('[GroupExecuteManager] === 结束 ===');
-                }
-            }, 500);
         };
 
+        
         // 降级到Canvas模式
         nodeType.prototype.addCustomWidget = function() {
             this.customWidgetMode = true;
             this.setDirtyCanvas(true, true);
+        };
+
+        // 动态计算节点尺寸
+        nodeType.prototype.computeSize = function(out) {
+            // 基础尺寸
+            const baseWidth = 460;
+            let baseHeight = 250;
+
+            // 如果有DOM容器，根据内容动态计算高度
+            if (this.domContainer) {
+                // 计算实际需要的高度
+                const headerHeight = 50; // 标题区域高度
+                const controlsHeight = 0;  // 控制区域高度（当前简化版没有）
+                const footerHeight = 60;  // 底部按钮区域高度
+                const itemHeight = 60;     // 每个组项目的高度
+                const padding = 24;        // 内边距
+
+                // 计算列表区域高度
+                const groupsCount = this.groups ? this.groups.length : 0;
+                let listHeight = 0;
+
+                if (groupsCount === 0) {
+                    // 空状态高度
+                    listHeight = 200;
+                } else {
+                    // 根据组数量计算高度，最小3项，最多显示8项
+                    const visibleItems = Math.min(Math.max(groupsCount, 3), 8);
+                    listHeight = visibleItems * itemHeight;
+
+                    // 如果组数量超过8个，添加额外空间给滚动条
+                    if (groupsCount > 8) {
+                        listHeight += 20; // 滚动条空间
+                    }
+                }
+
+                baseHeight = headerHeight + controlsHeight + listHeight + footerHeight + padding;
+
+                // 确保高度在合理范围内
+                baseHeight = Math.max(baseHeight, 200); // 最小高度
+                baseHeight = Math.min(baseHeight, 600); // 最大高度
+            }
+
+            const size = [baseWidth, baseHeight];
+
+            if (out) {
+                out[0] = size[0];
+                out[1] = size[1];
+            }
+
+            return size;
         };
 
         // Canvas模式的绘制
@@ -362,127 +699,73 @@ app.registerExtension({
 
         // 渲染组列表
         nodeType.prototype.renderGroups = function () {
-            if (!this.listContainer) {
-                console.warn('[GroupExecuteManager] listContainer not found');
-                return;
-            }
+            try {
+                if (!this.listContainer) {
+                    console.warn('[GroupExecuteManager] listContainer not found');
+                    return;
+                }
 
-            console.log('[GroupExecuteManager] renderGroups called, groups:', this.groups);
+                this.listContainer.innerHTML = '';
 
-            this.listContainer.innerHTML = '';
-
-            // 如果没有组，显示提示
+            // 如果没有组，显示居中的提示
             if (this.groups.length === 0) {
+                const emptyHintContainer = document.createElement('div');
+                emptyHintContainer.className = 'gem-empty';
+
+                const emptyIcon = document.createElement('div');
+                emptyIcon.className = 'gem-empty-icon';
+                emptyIcon.innerHTML = '📋';
+
                 const emptyHint = document.createElement('div');
-                emptyHint.style.cssText = `
-                    padding: 20px;
-                    text-align: center;
-                    color: rgba(255, 255, 255, 0.5);
-                    font-size: 14px;
-                `;
+                emptyHint.className = 'gem-empty-text';
                 emptyHint.textContent = t('messages.noGroupsAvailable') || '点击下方按钮添加组';
-                this.listContainer.appendChild(emptyHint);
+
+                const subHint = document.createElement('div');
+                subHint.className = 'gem-empty-subtext';
+                subHint.textContent = '添加组后可以批量执行组内节点';
+
+                emptyHintContainer.appendChild(emptyIcon);
+                emptyHintContainer.appendChild(emptyHint);
+                emptyHintContainer.appendChild(subHint);
+                this.listContainer.appendChild(emptyHintContainer);
                 return;
             }
 
             this.groups.forEach((group, index) => {
                 const item = document.createElement('div');
-                item.style.cssText = `
-                    background: rgba(42, 42, 62, 0.4);
-                    border: 1px solid rgba(255, 255, 255, 0.08);
-                    border-radius: 8px;
-                    padding: 12px 14px;
-                    margin-bottom: 8px;
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    transition: all 0.3s ease;
-                    box-sizing: border-box;
-                    cursor: move;
-                `;
+                item.className = 'gem-item';
                 item.draggable = true;
 
                 // 拖拽图标（用两个短横线表示）
                 const dragHandle = document.createElement('div');
-                dragHandle.style.cssText = `
-                    color: rgba(139, 92, 246, 0.8);
-                    font-size: 16px;
-                    cursor: move;
-                    flex-shrink: 0;
-                    user-select: none;
-                `;
+                dragHandle.className = 'gem-drag-handle';
                 dragHandle.textContent = '☰';
                 item.appendChild(dragHandle);
 
                 // 序号
                 const indexNumber = document.createElement('div');
-                indexNumber.style.cssText = `
-                    color: #8b5cf6;
-                    font-weight: 600;
-                    font-size: 18px;
-                    min-width: 30px;
-                    flex-shrink: 0;
-                `;
+                indexNumber.className = 'gem-index';
                 indexNumber.textContent = `${index + 1}.`;
                 item.appendChild(indexNumber);
 
                 // 组名
                 const nameText = document.createElement('div');
-                nameText.style.cssText = `
-                    flex: 1;
-                    color: #E0E0E0;
-                    font-size: 15px;
-                    font-weight: 500;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                `;
+                nameText.className = 'gem-name';
                 nameText.textContent = group.name || 'Unnamed';
                 item.appendChild(nameText);
 
                 // 延迟容器
                 const delayContainer = document.createElement('div');
-                delayContainer.style.cssText = `
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    flex-shrink: 0;
-                `;
+                delayContainer.className = 'gem-delay-container';
 
                 const delayLabel = document.createElement('span');
+                delayLabel.className = 'gem-delay-label';
                 delayLabel.textContent = t('listHeader.delay') || '延迟';
-                delayLabel.style.cssText = `
-                    color: rgba(139, 92, 246, 0.8);
-                    font-size: 12px;
-                    font-weight: 500;
-                `;
                 delayContainer.appendChild(delayLabel);
 
                 const delayInput = document.createElement('div');
+                delayInput.className = 'gem-delay-value';
                 delayInput.textContent = `${group.delay !== undefined ? group.delay : 0}s`;
-                delayInput.style.cssText = `
-                    background: rgba(139, 92, 246, 0.15);
-                    border: 1px solid rgba(139, 92, 246, 0.4);
-                    border-radius: 6px;
-                    padding: 5px 10px;
-                    color: #8b5cf6;
-                    font-size: 12px;
-                    font-weight: 600;
-                    min-width: 40px;
-                    text-align: center;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                `;
-                delayInput.addEventListener('mouseenter', () => {
-                    delayInput.style.background = 'rgba(139, 92, 246, 0.3)';
-                    delayInput.style.borderColor = 'rgba(139, 92, 246, 0.6)';
-                    delayInput.style.transform = 'scale(1.05)';
-                });
-                delayInput.addEventListener('mouseleave', () => {
-                    delayInput.style.background = 'rgba(139, 92, 246, 0.15)';
-                    delayInput.style.borderColor = 'rgba(139, 92, 246, 0.4)';
-                    delayInput.style.transform = 'scale(1)';
-                });
                 delayInput.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.editDelay(index);
@@ -491,201 +774,157 @@ app.registerExtension({
 
                 item.appendChild(delayContainer);
 
-                // 删除按钮 - 带滑动光效
+                // 删除按钮
                 const deleteButton = document.createElement('button');
-                deleteButton.innerHTML = `<span style="position: relative; z-index: 1;">✕ ${t('deleteGroup') || '删除'}</span>`;
-                deleteButton.style.cssText = `
-                    background: linear-gradient(135deg, rgba(80, 80, 100, 0.3) 0%, rgba(100, 100, 120, 0.3) 100%);
-                    border: 1px solid rgba(255, 255, 255, 0.2);
-                    border-radius: 6px;
-                    color: rgba(255, 255, 255, 0.9);
-                    font-size: 13px;
-                    font-weight: 500;
-                    cursor: pointer;
-                    padding: 7px 14px;
-                    transition: all 0.3s ease;
-                    flex-shrink: 0;
-                    box-sizing: border-box;
-                    position: relative;
-                    overflow: hidden;
-                `;
-
-                // 滑动光效
-                const deleteButtonBefore = document.createElement('div');
-                deleteButtonBefore.style.cssText = `
-                    position: absolute;
-                    top: 0;
-                    left: -100%;
-                    width: 100%;
-                    height: 100%;
-                    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-                    transition: left 0.5s;
-                    pointer-events: none;
-                `;
-                deleteButton.insertBefore(deleteButtonBefore, deleteButton.firstChild);
-
-                deleteButton.addEventListener('mouseenter', () => {
-                    deleteButton.style.background = 'linear-gradient(135deg, rgba(239, 68, 68, 0.4) 0%, rgba(220, 38, 38, 0.4) 100%)';
-                    deleteButton.style.borderColor = 'rgba(239, 68, 68, 0.6)';
-                    deleteButton.style.transform = 'translateY(-2px)';
-                    deleteButtonBefore.style.left = '100%';
-                });
-                deleteButton.addEventListener('mouseleave', () => {
-                    deleteButton.style.background = 'linear-gradient(135deg, rgba(80, 80, 100, 0.3) 0%, rgba(100, 100, 120, 0.3) 100%)';
-                    deleteButton.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-                    deleteButton.style.transform = 'translateY(0)';
-                    setTimeout(() => {
-                        deleteButtonBefore.style.left = '-100%';
-                    }, 500);
-                });
+                deleteButton.className = 'gem-btn gem-btn-danger';
+                deleteButton.textContent = `✕ ${t('deleteGroup') || '删除'}`;
                 deleteButton.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.deleteGroup(index);
                 });
                 item.appendChild(deleteButton);
 
-                // 拖拽事件
-                item.addEventListener('dragstart', (e) => {
+                // 简化的拖拽事件处理
+                const handleDragStart = (e) => {
                     this.draggingIndex = index;
-                    item.style.opacity = '0.5';
+                    item.classList.add('dragging');
                     e.dataTransfer.effectAllowed = 'move';
-                    console.log('[GroupExecuteManager] Drag start:', index);
-                });
+                };
 
-                item.addEventListener('dragend', () => {
+                const handleDragEnd = () => {
                     this.draggingIndex = -1;
-                    item.style.opacity = '1';
-                    console.log('[GroupExecuteManager] Drag end');
-                });
+                    item.classList.remove('dragging');
+                };
 
-                item.addEventListener('dragover', (e) => {
+                const handleDragOver = (e) => {
                     e.preventDefault();
                     if (this.draggingIndex !== -1 && this.draggingIndex !== index) {
-                        item.style.borderColor = 'rgba(139, 92, 246, 0.6)';
-                        item.style.borderWidth = '2px';
-                        item.style.background = 'rgba(139, 92, 246, 0.2)';
+                        item.classList.add('drag-over');
                     }
-                });
+                };
 
-                item.addEventListener('dragleave', () => {
-                    item.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-                    item.style.borderWidth = '1px';
-                    item.style.background = 'rgba(42, 42, 62, 0.4)';
-                });
+                const handleDragLeave = () => {
+                    item.classList.remove('drag-over');
+                };
 
-                item.addEventListener('drop', (e) => {
+                const handleDrop = (e) => {
                     e.preventDefault();
-                    item.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-                    item.style.borderWidth = '1px';
-                    item.style.background = 'rgba(42, 42, 62, 0.4)';
+                    item.classList.remove('drag-over');
 
                     if (this.draggingIndex !== -1 && this.draggingIndex !== index) {
-                        console.log(`[GroupExecuteManager] Drag & Drop: moving item from ${this.draggingIndex} to ${index}`);
-
                         // 移动数组元素
                         const draggedItem = this.groups[this.draggingIndex];
                         this.groups.splice(this.draggingIndex, 1);
                         this.groups.splice(index, 0, draggedItem);
 
-                        console.log('[GroupExecuteManager] New order:',
-                            this.groups.map((g, i) => `${i+1}. ${g.name}`).join(', '));
-
-                        // 保存数据
+                        // 保存数据和渲染
                         this.saveGroupsToWidget();
-
-                        // 重新渲染
                         this.renderGroups();
 
                         // 显示确认提示
+                        const orderText = this.groups.map((g, i) => `${i+1}.${g.name}`).join(' → ');
                         globalToastManager.showToast(
-                            `✅ ${t('messages.dragSuccess') || '排序完成'}: ${this.groups.map((g, i) => `${i+1}.${g.name}`).join(' → ')}`,
+                            `✅ ${t('messages.dragSuccess') || '排序完成'}: ${orderText}`,
                             'success',
                             3000
                         );
+
+                        // 拖拽排序后调整尺寸（确保布局正确）
+                        setTimeout(() => {
+                            this.changeSize();
+                        }, 50);
                     }
-                });
+                };
+
+                // 添加事件监听器
+                item.addEventListener('dragstart', handleDragStart);
+                item.addEventListener('dragend', handleDragEnd);
+                item.addEventListener('dragover', handleDragOver);
+                item.addEventListener('dragleave', handleDragLeave);
+                item.addEventListener('drop', handleDrop);
 
                 this.listContainer.appendChild(item);
             });
+            } catch (error) {
+                console.error('[GroupExecuteManager] Error in renderGroups:', error);
+                globalToastManager.showToast(
+                    t('messages.renderError') || '渲染错误，请刷新页面',
+                    'error',
+                    3000
+                );
+            }
+
+            // 渲染完成后调整节点尺寸
+            setTimeout(() => {
+                this.changeSize();
+            }, 50);
         };
 
         // 显示组选择器
         nodeType.prototype.showGroupSelector = function () {
-            const availableGroups = this.getAllGroupNames();
-            if (availableGroups.length === 0) {
-                globalToastManager.showToast(
-                    t('messages.noGroupsAvailable') || '工作流中没有可用的组',
-                    'warning',
-                    3000
-                );
-                return;
-            }
+            try {
+                const availableGroups = this.getAllGroupNames();
+                if (availableGroups.length === 0) {
+                    globalToastManager.showToast(
+                        t('messages.noGroupsAvailable') || '工作流中没有可用的组',
+                        'warning',
+                        3000
+                    );
+                    return;
+                }
 
             this.dropdownOverlay.innerHTML = '';
             const dropdown = document.createElement('div');
-            dropdown.style.cssText = `
-                background: linear-gradient(135deg, #2a2a3e 0%, #1e1e2e 100%);
-                border: 1px solid rgba(139, 92, 246, 0.4);
-                border-radius: 12px;
-                padding: 8px;
-                max-height: 300px;
-                overflow-y: auto;
-                min-width: 200px;
-                max-width: 80%;
-                box-sizing: border-box;
-            `;
+            dropdown.className = 'gem-modal-content';
 
-            availableGroups.forEach(groupName => {
-                // 检查是否已经添加
-                const alreadyAdded = this.groups.some(g => g.name === groupName);
+            // 使用事件委托来处理点击事件
+            dropdown.addEventListener('click', (e) => {
+                const item = e.target.closest('.gem-modal-item:not(.disabled)');
+                if (item) {
+                    const groupName = item.textContent;
 
-                const item = document.createElement('div');
-                item.textContent = groupName;
-                item.style.cssText = `
-                    padding: 10px 12px;
-                    color: ${alreadyAdded ? 'rgba(255, 255, 255, 0.3)' : '#E0E0E0'};
-                    font-size: 14px;
-                    cursor: ${alreadyAdded ? 'not-allowed' : 'pointer'};
-                    border-radius: 8px;
-                    margin: 4px 0;
-                    transition: all 0.3s ease;
-                    box-sizing: border-box;
-                    ${alreadyAdded ? 'text-decoration: line-through;' : ''}
-                `;
+                    // 添加新组，默认延迟为0
+                    this.groups.push({ name: groupName, delay: 0 });
+                    this.saveGroupsToWidget();
+                    globalToastManager.showToast(
+                        `${t('messages.addGroupSuccess') || '添加成功'}: ${groupName}`,
+                        'success',
+                        2000
+                    );
+                    this.renderGroups();
+                    this.hideGroupSelector();
 
-                if (!alreadyAdded) {
-                    item.addEventListener('mouseenter', () => {
-                        item.style.background = 'rgba(139, 92, 246, 0.3)';
-                        item.style.color = '#ffffff';
-                        item.style.transform = 'translateX(4px)';
-                    });
-
-                    item.addEventListener('mouseleave', () => {
-                        item.style.background = 'transparent';
-                        item.style.color = '#E0E0E0';
-                        item.style.transform = 'translateX(0)';
-                    });
-
-                    item.addEventListener('click', () => {
-                        // 添加新组，默认延迟为0
-                        this.groups.push({ name: groupName, delay: 0 });
-                        this.saveGroupsToWidget();
-                        globalToastManager.showToast(
-                            `${t('messages.addGroupSuccess') || '添加成功'}: ${groupName}`,
-                            'success',
-                            2000
-                        );
-                        this.renderGroups();
-                        this.hideGroupSelector();
-                        console.log('[GroupExecuteManager] Group added:', groupName);
-                    });
+                    // 添加新组后调整尺寸
+                    setTimeout(() => {
+                        this.changeSize();
+                    }, 50);
                 }
+            });
 
+            // 创建项目元素
+            availableGroups.forEach(groupName => {
+                const alreadyAdded = this.groups.some(g => g.name === groupName);
+                const item = document.createElement('div');
+                item.className = 'gem-modal-item';
+                if (alreadyAdded) {
+                    item.classList.add('disabled');
+                }
+                item.textContent = groupName;
                 dropdown.appendChild(item);
             });
 
             this.dropdownOverlay.appendChild(dropdown);
             this.dropdownOverlay.style.display = 'flex';
+            this.dropdownOverlay.style.alignItems = 'center';
+            this.dropdownOverlay.style.justifyContent = 'center';
+            } catch (error) {
+                console.error('[GroupExecuteManager] Error in showGroupSelector:', error);
+                globalToastManager.showToast(
+                    t('messages.selectorError') || '选择器错误',
+                    'error',
+                    3000
+                );
+            }
         };
 
         // 隐藏组选择器
@@ -738,6 +977,11 @@ app.registerExtension({
                 );
                 this.renderGroups();
                 console.log('[GroupExecuteManager] Group deleted:', groupName);
+
+                // 删除组后调整尺寸
+                setTimeout(() => {
+                    this.changeSize();
+                }, 50);
             }
         };
 
@@ -746,17 +990,9 @@ app.registerExtension({
             this.executionStatus = status;
             if (status && this.statusOverlay) {
                 this.statusOverlay.innerHTML = `
-                    <div style="
-                        background: linear-gradient(135deg, #2a2a3e 0%, #1e1e2e 100%);
-                        border: 1px solid rgba(139, 92, 246, 0.6);
-                        border-radius: 12px;
-                        padding: 24px 36px;
-                        min-width: 200px;
-                        max-width: 80%;
-                        box-sizing: border-box;
-                    ">
+                    <div class="gem-modal-content">
                         <div style="
-                            color: #E0E0E0;
+                            color: var(--gem-text-primary);
                             font-size: 16px;
                             font-weight: 600;
                             text-align: center;
@@ -764,6 +1000,8 @@ app.registerExtension({
                     </div>
                 `;
                 this.statusOverlay.style.display = 'flex';
+                this.statusOverlay.style.alignItems = 'center';
+                this.statusOverlay.style.justifyContent = 'center';
             } else if (this.statusOverlay) {
                 this.statusOverlay.style.display = 'none';
             }
@@ -842,18 +1080,19 @@ app.registerExtension({
 
         // 执行所有组
         nodeType.prototype.executeAllGroups = async function () {
-            console.log('[GroupExecuteManager] executeAllGroups called, isExecuting:', this.isExecuting);
-            console.log('[GroupExecuteManager] Current groups:', this.groups);
+            try {
+                console.log('[GroupExecuteManager] executeAllGroups called, isExecuting:', this.isExecuting);
+                console.log('[GroupExecuteManager] Current groups:', this.groups);
 
-            if (this.isExecuting) {
-                console.log('[GroupExecuteManager] Already executing, aborting');
-                globalToastManager.showToast(
-                    t('messages.executionStarted') || '正在执行中',
-                    'warning',
-                    2000
-                );
-                return;
-            }
+                if (this.isExecuting) {
+                    console.log('[GroupExecuteManager] Already executing, aborting');
+                    globalToastManager.showToast(
+                        t('messages.executionStarted') || '正在执行中',
+                        'warning',
+                        2000
+                    );
+                    return;
+                }
 
             if (this.groups.length === 0) {
                 globalToastManager.showToast(
@@ -950,6 +1189,17 @@ app.registerExtension({
                 this.cancelExecution = false;
                 console.log('[GroupExecuteManager] isExecuting reset to false');
             }
+            } catch (error) {
+                console.error('[GroupExecuteManager] Critical error in executeAllGroups:', error);
+                globalToastManager.showToast(
+                    t('messages.criticalError') || '严重错误，请检查控制台',
+                    'error',
+                    5000
+                );
+                // 确保在严重错误时也重置执行状态
+                this.isExecuting = false;
+                this.cancelExecution = false;
+            }
         };
 
         // 保存组数据到widget
@@ -990,6 +1240,10 @@ app.registerExtension({
                     this.groups.map((g, i) => `${i+1}. ${g.name}`).join(', '));
                 if (this.listContainer) {
                     this.renderGroups();
+                    // 加载配置后调整尺寸
+                    setTimeout(() => {
+                        this.changeSize();
+                    }, 100);
                 }
             }
         };
