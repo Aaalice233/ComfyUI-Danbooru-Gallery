@@ -6,7 +6,8 @@
       "Bash(test:*)",
       "Read(//e/ComfyUI-aki-v2/ComfyUI/**)",
       "mcp__zai-mcp-server__analyze_image",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
