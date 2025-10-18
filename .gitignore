@@ -4,7 +4,9 @@ config.json
 user_settings.json
 *_config.json
 *_settings.json
-.claude/settings.local.json
+
+# Claude相关文件
+.claude/
 
 # 缓存目录
 cache/
