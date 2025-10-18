@@ -220,13 +220,11 @@ import { mceTranslations } from './translations/mce_translations.js';
 import { danbooruTranslations } from './translations/danbooru_translations.js';
 import { promptSelectorTranslations } from './translations/prompt_selector_translations.js';
 import { charSwapTranslations } from './translations/char_swap_translations.js';
-import { groupManagerTranslations } from './translations/group_manager_translations.js';
 
 globalMultiLanguageManager.registerTranslations('mce', mceTranslations);
 globalMultiLanguageManager.registerTranslations('danbooru', danbooruTranslations);
 globalMultiLanguageManager.registerTranslations('prompt_selector', promptSelectorTranslations);
 globalMultiLanguageManager.registerTranslations('char_swap', charSwapTranslations);
-globalMultiLanguageManager.registerTranslations('group_manager', groupManagerTranslations);
 
 // 导出类和全局实例
 export { GlobalMultiLanguageManager, globalMultiLanguageManager };
