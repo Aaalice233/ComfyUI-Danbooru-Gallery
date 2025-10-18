@@ -29,10 +29,16 @@ except Exception as e:
     logger.error(f"导入 multi_character_editor 节点失败: {e}")
     mce_mappings, mce_display_mappings = {}, {}
 
+try:
+    from .GroprExecuteManager import NODE_CLASS_MAPPINGS as gem_mappings, NODE_DISPLAY_NAME_MAPPINGS as gem_display_mappings
+except Exception as e:
+    logger.error(f"导入 GroprExecuteManager 节点失败: {e}")
+    gem_mappings, gem_display_mappings = {}, {}
+
 
 # 合并所有节点的映射
-NODE_CLASS_MAPPINGS = {**danbooru_mappings, **swap_mappings, **ps_mappings, **mce_mappings}
-NODE_DISPLAY_NAME_MAPPINGS = {**danbooru_display_mappings, **swap_display_mappings, **ps_display_mappings, **mce_display_mappings}
+NODE_CLASS_MAPPINGS = {**danbooru_mappings, **swap_mappings, **ps_mappings, **mce_mappings, **gem_mappings}
+NODE_DISPLAY_NAME_MAPPINGS = {**danbooru_display_mappings, **swap_display_mappings, **ps_display_mappings, **mce_display_mappings, **gem_display_mappings}
 
 # 设置JavaScript文件目录
 WEB_DIRECTORY = "./js"
