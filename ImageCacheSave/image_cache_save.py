@@ -45,6 +45,11 @@ class ImageCacheManager:
                 "timestamp": 0,
                 "metadata": {}
             }
+            # 会话追踪字段
+            self.session_execution_count = 0  # 当前会话中保存缓存的次数
+            self.last_save_timestamp = 0      # 最后一次保存缓存的时间戳
+            self.has_saved_this_session = False  # 当次会话是否已保存过缓存
+
             # 延迟导入folder_paths
             try:
                 import folder_paths
@@ -68,7 +73,9 @@ class ImageCacheManager:
         self.cache_data["images"] = []
         self.cache_data["timestamp"] = 0
         self.cache_data["metadata"] = {}
-        print("[ImageCacheManager] 缓存已清空")
+        # 重置会话追踪信息
+        self.has_saved_this_session = False
+        print("[ImageCacheManager] 缓存已清空，会话状态已重置")
 
     def cache_images(self,
                     images: List[torch.Tensor],
@@ -160,6 +167,12 @@ class ImageCacheManager:
             "prefix": filename_prefix,
             "has_masks": masks is not None
         }
+
+        # 更新会话追踪信息
+        self.session_execution_count += 1
+        self.last_save_timestamp = timestamp
+        self.has_saved_this_session = True
+        print(f"[ImageCacheManager] 会话保存次数: {self.session_execution_count}")
 
         # 发送WebSocket事件通知缓存更新（延迟导入）
         if cache_data:
@@ -310,6 +323,40 @@ class ImageCacheManager:
     def is_cache_empty(self) -> bool:
         """检查缓存是否为空"""
         return len(self.cache_data["images"]) == 0
+
+    def is_cache_valid(self, max_age_minutes: int = 30) -> bool:
+        """
+        检查缓存是否有效（当次会话保存且未过期）
+
+        Args:
+            max_age_minutes: 缓存最大有效时间（分钟），默认30分钟
+
+        Returns:
+            bool: 缓存是否有效
+        """
+        import time
+
+        # 检查是否有缓存数据
+        if self.is_cache_empty():
+            print("[ImageCacheManager] 缓存为空，无效")
+            return False
+
+        # 检查当次会话是否已保存过缓存
+        if not self.has_saved_this_session:
+            print("[ImageCacheManager] 当次会话未保存过缓存，可能是过期缓存")
+            return False
+
+        # 检查缓存时间戳是否过期
+        current_time = int(time.time() * 1000)
+        age_ms = current_time - self.last_save_timestamp
+        age_minutes = age_ms / (1000 * 60)
+
+        if age_minutes > max_age_minutes:
+            print(f"[ImageCacheManager] 缓存已过期，保存时间: {age_minutes:.1f}分钟前")
+            return False
+
+        print(f"[ImageCacheManager] 缓存有效，保存时间: {age_minutes:.1f}分钟前，会话次数: {self.session_execution_count}")
+        return True
 
 
 # 全局缓存管理器实例

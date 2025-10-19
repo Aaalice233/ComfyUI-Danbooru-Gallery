@@ -45,6 +45,11 @@ class ImageCacheManager:
                 "timestamp": 0,
                 "metadata": {}
             }
+            # 会话追踪字段
+            self.session_execution_count = 0  # 当前会话中保存缓存的次数
+            self.last_save_timestamp = 0      # 最后一次保存缓存的时间戳
+            self.has_saved_this_session = False  # 当次会话是否已保存过缓存
+
             # 延迟导入folder_paths
             try:
                 import folder_paths
@@ -68,7 +73,9 @@ class ImageCacheManager:
         self.cache_data["images"] = []
         self.cache_data["timestamp"] = 0
         self.cache_data["metadata"] = {}
-        print("[ImageCacheManager] 缓存已清空")
+        # 重置会话追踪信息
+        self.has_saved_this_session = False
+        print("[ImageCacheManager] 缓存已清空，会话状态已重置")
 
     def cache_images(self,
                     images: List[torch.Tensor],
@@ -160,6 +167,12 @@ class ImageCacheManager:
             "prefix": filename_prefix,
             "has_masks": masks is not None
         }
+
+        # 更新会话追踪信息
+        self.session_execution_count += 1
+        self.last_save_timestamp = timestamp
+        self.has_saved_this_session = True
+        print(f"[ImageCacheManager] 会话保存次数: {self.session_execution_count}")
 
         # 发送WebSocket事件通知缓存更新（延迟导入）
         if cache_data:
@@ -311,6 +324,40 @@ class ImageCacheManager:
         """检查缓存是否为空"""
         return len(self.cache_data["images"]) == 0
 
+    def is_cache_valid(self, max_age_minutes: int = 30) -> bool:
+        """
+        检查缓存是否有效（当次会话保存且未过期）
+
+        Args:
+            max_age_minutes: 缓存最大有效时间（分钟），默认30分钟
+
+        Returns:
+            bool: 缓存是否有效
+        """
+        import time
+
+        # 检查是否有缓存数据
+        if self.is_cache_empty():
+            print("[ImageCacheManager] 缓存为空，无效")
+            return False
+
+        # 检查当次会话是否已保存过缓存
+        if not self.has_saved_this_session:
+            print("[ImageCacheManager] 当次会话未保存过缓存，可能是过期缓存")
+            return False
+
+        # 检查缓存时间戳是否过期
+        current_time = int(time.time() * 1000)
+        age_ms = current_time - self.last_save_timestamp
+        age_minutes = age_ms / (1000 * 60)
+
+        if age_minutes > max_age_minutes:
+            print(f"[ImageCacheManager] 缓存已过期，保存时间: {age_minutes:.1f}分钟前")
+            return False
+
+        print(f"[ImageCacheManager] 缓存有效，保存时间: {age_minutes:.1f}分钟前，会话次数: {self.session_execution_count}")
+        return True
+
 
 # 全局缓存管理器实例
 cache_manager = ImageCacheManager()
@@ -324,7 +371,9 @@ class ImageReceiver:
     @classmethod
     def INPUT_TYPES(cls):
         return {
-            "required": {}
+            "required": {
+                "default_image": ("IMAGE", {"tooltip": "当缓存无效时使用的默认图像（可选）"})
+            }
         }
 
     RETURN_TYPES = ("IMAGE",)
@@ -333,35 +382,79 @@ class ImageReceiver:
     OUTPUT_IS_LIST = (True,)
     FUNCTION = "get_cached_images"
 
-    def get_cached_images(self) -> List[torch.Tensor]:
+    def get_cached_images(self, default_image) -> List[torch.Tensor]:
         """
         从全局缓存中获取图像数据
         """
         try:
             print(f"[ImageCacheGet] 开始获取缓存图像")
 
-            # 使用缓存管理器获取最新图像（固定不清除缓存）
-            images, _ = cache_manager.get_cached_images(
-                get_latest=True,  # 总是获取最新图像
-                index=0,  # 不再使用索引
-                clear_after_get=False  # 固定不清除缓存
-            )
+            # 首先检查缓存是否有效
+            if cache_manager.is_cache_valid():
+                print("[ImageCacheGet] 缓存有效，尝试从缓存获取图像")
+                # 使用缓存管理器获取最新图像（固定不清除缓存）
+                images, _ = cache_manager.get_cached_images(
+                    get_latest=True,  # 总是获取最新图像
+                    index=0,  # 不再使用索引
+                    clear_after_get=False  # 固定不清除缓存
+                )
 
-            # 发送成功toast通知
-            try:
-                from server import PromptServer
-                PromptServer.instance.send_sync("image-cache-toast", {
-                    "message": f"成功获取 {len(images)} 张图像",
-                    "type": "success",
-                    "duration": 3000
-                })
-            except ImportError:
-                print("[ImageCacheGet] 警告: 不在ComfyUI环境中，跳过toast通知")
-            except Exception as e:
-                print(f"[ImageCacheGet] Toast通知失败: {e}")
+                # 发送成功toast通知
+                try:
+                    from server import PromptServer
+                    PromptServer.instance.send_sync("image-cache-toast", {
+                        "message": f"成功获取 {len(images)} 张缓存图像",
+                        "type": "success",
+                        "duration": 3000
+                    })
+                except ImportError:
+                    print("[ImageCacheGet] 警告: 不在ComfyUI环境中，跳过toast通知")
+                except Exception as e:
+                    print(f"[ImageCacheGet] Toast通知失败: {e}")
 
-            print(f"[ImageCacheGet] ✓ 成功获取 {len(images)} 张图像")
-            return images
+                print(f"[ImageCacheGet] ✓ 成功获取 {len(images)} 张缓存图像")
+                return images
+            else:
+                print("[ImageCacheGet] 缓存无效或为空，使用默认图像")
+
+                # 处理默认图像
+                if default_image is not None and len(default_image) > 0:
+                    # 使用用户提供的默认图像
+                    print(f"[ImageCacheGet] ✓ 使用默认图像，共 {len(default_image)} 张")
+
+                    # 发送使用默认图像的toast通知
+                    try:
+                        from server import PromptServer
+                        PromptServer.instance.send_sync("image-cache-toast", {
+                            "message": f"缓存无效，使用默认图像 ({len(default_image)} 张)",
+                            "type": "info",
+                            "duration": 3000
+                        })
+                    except ImportError:
+                        print("[ImageCacheGet] 警告: 不在ComfyUI环境中，跳过toast通知")
+                    except Exception as e:
+                        print(f"[ImageCacheGet] Toast通知失败: {e}")
+
+                    return default_image
+                else:
+                    print("[ImageCacheGet] 未提供默认图像，返回空白图像")
+
+                    # 发送空白图像的toast通知
+                    try:
+                        from server import PromptServer
+                        PromptServer.instance.send_sync("image-cache-toast", {
+                            "message": "缓存无效且未提供默认图像，返回空白图像",
+                            "type": "warning",
+                            "duration": 3000
+                        })
+                    except ImportError:
+                        print("[ImageCacheGet] 警告: 不在ComfyUI环境中，跳过toast通知")
+                    except Exception as e:
+                        print(f"[ImageCacheGet] Toast通知失败: {e}")
+
+                    # 返回空白图像
+                    empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                    return [empty_image]
 
         except Exception as e:
             error_msg = f"获取图像失败: {str(e)}"
