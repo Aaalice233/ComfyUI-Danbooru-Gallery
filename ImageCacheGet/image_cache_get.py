@@ -218,6 +218,8 @@ class ImageCacheManager:
             print(f"[ImageCacheManager] 缓存为空，返回空图像")
             empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
             empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
+            print(f"[ImageCacheManager] 空白图像形状: {empty_image.shape}")
+            print(f"[ImageCacheManager] 空白遮罩形状: {empty_mask.shape}")
             return [empty_image], [empty_mask]
 
         try:
@@ -246,6 +248,7 @@ class ImageCacheManager:
                     print(f"[ImageCacheManager] 索引 {index} 超出范围，缓存中共有 {len(self.cache_data['images'])} 张图像")
                     empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
                     empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
+                    print(f"[ImageCacheManager] 索引越界空白图像形状: {empty_image.shape}")
                     return [empty_image], [empty_mask]
 
             # 加载图像
@@ -268,17 +271,50 @@ class ImageCacheManager:
 
                         # 转换为张量
                         image = np.array(rgb_image).astype(np.float32) / 255.0
-                        image = torch.from_numpy(image)[None,]
+                        image = torch.from_numpy(image)  # 先创建3D张量 (H, W, C)
+
+                        # 确保是4D张量格式 (batch, height, width, channels)
+                        if image.dim() == 3:
+                            image = image.unsqueeze(0)  # 添加批次维度 -> (1, H, W, C)
+                        elif image.dim() == 2:
+                            image = image.unsqueeze(0).unsqueeze(-1)  # (1, H, W, 1)
+                            image = image.expand(-1, -1, -1, 3)  # 扩展为3通道
+
+                        print(f"[ImageCacheManager] RGBA图像处理，最终形状: {image.shape}")
 
                         # 遮罩处理 (注意反转)
                         mask = np.array(a).astype(np.float32) / 255.0
-                        mask = torch.from_numpy(mask)[None,]
+                        mask = torch.from_numpy(mask)  # 先创建2D张量 (H, W)
+
+                        # 确保遮罩是3D张量格式 (batch, height, width)
+                        if mask.dim() == 2:
+                            mask = mask.unsqueeze(0)  # 添加批次维度 -> (1, H, W)
+                        elif mask.dim() == 3:
+                            if mask.shape[-1] == 1:
+                                mask = mask.squeeze(-1)  # 移除通道维度 -> (1, H, W)
+                            elif mask.shape[0] == 1:
+                                # 如果是 (1, H, W) 格式，直接使用
+                                pass
+
                         mask = 1.0 - mask
+                        print(f"[ImageCacheManager] 遮罩处理，最终形状: {mask.shape}")
                     else:
                         # RGB格式处理
                         image = np.array(img.convert('RGB')).astype(np.float32) / 255.0
-                        image = torch.from_numpy(image)[None,]
+                        image = torch.from_numpy(image)  # 先创建3D张量 (H, W, C)
+
+                        # 确保是4D张量格式 (batch, height, width, channels)
+                        if image.dim() == 3:
+                            image = image.unsqueeze(0)  # 添加批次维度 -> (1, H, W, C)
+                        elif image.dim() == 2:
+                            image = image.unsqueeze(0).unsqueeze(-1)  # (1, H, W, 1)
+                            image = image.expand(-1, -1, -1, 3)  # 扩展为3通道
+
+                        print(f"[ImageCacheManager] RGB图像处理，最终形状: {image.shape}")
+
+                        # 创建空白遮罩，确保是3D格式
                         mask = torch.zeros((1, image.shape[1], image.shape[2]), dtype=torch.float32, device="cpu")
+                        print(f"[ImageCacheManager] 创建空白遮罩，形状: {mask.shape}")
 
                     output_images.append(image)
                     output_masks.append(mask)
@@ -296,6 +332,7 @@ class ImageCacheManager:
                 print(f"[ImageCacheManager] 没有成功加载任何图像，返回空图像")
                 empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
                 empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
+                print(f"[ImageCacheManager] 无图像加载时空白图像形状: {empty_image.shape}")
                 return [empty_image], [empty_mask]
 
             print(f"[ImageCacheManager] 成功获取 {len(output_images)} 张图像")
@@ -305,6 +342,7 @@ class ImageCacheManager:
             print(f"[ImageCacheManager] 获取图像时出错: {str(e)}")
             empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
             empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
+            print(f"[ImageCacheManager] 异常时空白图像形状: {empty_image.shape}")
             return [empty_image], [empty_mask]
 
     def get_cache_info(self) -> Dict[str, Any]:
@@ -419,14 +457,55 @@ class ImageReceiver:
 
                 # 处理默认图像
                 if default_image is not None and len(default_image) > 0:
-                    # 使用用户提供的默认图像
+                    # 使用用户提供的默认图像，需要验证和修复张量维度
                     print(f"[ImageCacheGet] ✓ 使用默认图像，共 {len(default_image)} 张")
+
+                    # 验证和修复默认图像的张量维度
+                    validated_images = []
+                    for idx, img in enumerate(default_image):
+                        print(f"[ImageCacheGet] 处理默认图像 {idx+1}，原始形状: {img.shape}")
+
+                        # 确保张量是4D格式 (batch, height, width, channels)
+                        if img.dim() == 2:
+                            # 2D张量转4D (height, width) -> (1, height, width, 1)
+                            print(f"[ImageCacheGet] 检测到2D张量，转换为4D")
+                            img = img.unsqueeze(0).unsqueeze(-1)
+                            if img.shape[-1] != 3:
+                                # 如果通道数不是3，扩展为3通道
+                                img = img.expand(-1, -1, -1, 3)
+                        elif img.dim() == 3:
+                            # 3D张量转4D (height, width, channels) -> (1, height, width, channels)
+                            print(f"[ImageCacheGet] 检测到3D张量，添加批次维度")
+                            img = img.unsqueeze(0)
+                        elif img.dim() == 4:
+                            # 已经是4D张量，直接使用
+                            print(f"[ImageCacheGet] 检测到4D张量，直接使用")
+                        else:
+                            print(f"[ImageCacheGet] 警告：不支持的张量维度 {img.dim()}，跳过此图像")
+                            continue
+
+                        # 确保通道数为3
+                        if img.shape[-1] != 3:
+                            print(f"[ImageCacheGet] 警告：通道数为 {img.shape[-1]}，调整为3通道")
+                            if img.shape[-1] == 1:
+                                img = img.expand(-1, -1, -1, 3)
+                            else:
+                                # 如果通道数既不是1也不是3，只取前3个通道
+                                img = img[..., :3]
+
+                        print(f"[ImageCacheGet] 默认图像 {idx+1} 最终形状: {img.shape}")
+                        validated_images.append(img)
+
+                    if not validated_images:
+                        print("[ImageCacheGet] 默认图像验证失败，使用空白图像")
+                        empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                        validated_images = [empty_image]
 
                     # 发送使用默认图像的toast通知
                     try:
                         from server import PromptServer
                         PromptServer.instance.send_sync("image-cache-toast", {
-                            "message": f"缓存无效，使用默认图像 ({len(default_image)} 张)",
+                            "message": f"缓存无效，使用默认图像 ({len(validated_images)} 张)",
                             "type": "info",
                             "duration": 3000
                         })
@@ -435,7 +514,7 @@ class ImageReceiver:
                     except Exception as e:
                         print(f"[ImageCacheGet] Toast通知失败: {e}")
 
-                    return default_image
+                    return validated_images
                 else:
                     print("[ImageCacheGet] 未提供默认图像，返回空白图像")
 
@@ -454,6 +533,7 @@ class ImageReceiver:
 
                     # 返回空白图像
                     empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                    print(f"[ImageCacheGet] 返回空白图像，形状: {empty_image.shape}")
                     return [empty_image]
 
         except Exception as e:
@@ -475,6 +555,7 @@ class ImageReceiver:
 
             # 返回空图像但不要抛出异常，避免中断工作流
             empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+            print(f"[ImageCacheGet] 错误情况下返回空白图像，形状: {empty_image.shape}")
             return [empty_image]
 
 
