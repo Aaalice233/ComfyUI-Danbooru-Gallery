@@ -1367,20 +1367,28 @@ app.registerExtension({
                         continue;
                     }
 
-                    // 检查组内是否有输出节点
-                    const outputNodes = groupNodes.filter((n) => {
-                        return n.mode !== LiteGraph.NEVER &&
-                               n.constructor.nodeData?.output_node === true;
-                    });
+                    // 检查组内是否有输出节点，区分mute状态
+                    const allOutputNodes = groupNodes.filter((n) =>
+                        n.constructor.nodeData?.output_node === true
+                    );
+                    const activeOutputNodes = allOutputNodes.filter((n) =>
+                        n.mode !== LiteGraph.NEVER
+                    );
 
-                    if (outputNodes.length === 0) {
+                    if (allOutputNodes.length === 0) {
+                        // 真正没有输出节点，这是严重错误
                         const errorMsg = t('noOutputNodes', { groupName: group_name });
                         console.error(`[GEM-JS] #${executionId} ✗ ${errorMsg}`);
                         validationErrors.push(errorMsg);
                         continue;
+                    } else if (activeOutputNodes.length === 0) {
+                        // 所有输出节点都被mute，记录跳过状态但不报错
+                        console.warn(`[GEM-JS] #${executionId} ⚠️ 组 "${group_name}" 内所有输出节点已被静音，将跳过执行`);
+                        // 在execution对象中标记跳过原因
+                        execution.skipReason = 'all_nodes_muted';
+                    } else {
+                        console.log(`[GEM-JS] #${executionId} ✓ 组 "${group_name}" 验证通过 (${activeOutputNodes.length} 个活跃输出节点)`);
                     }
-
-                    console.log(`[GEM-JS] #${executionId} ✓ 组 "${group_name}" 验证通过 (${outputNodes.length} 个输出节点)`);
                 }
 
                 // 如果有验证错误，显示并退出
@@ -1424,6 +1432,14 @@ app.registerExtension({
                             console.log(`[GEM-JS] #${executionId} ✓ 延迟等待完成`);
                         }
                         continue;
+                    }
+
+                    // 检查是否需要跳过（所有输出节点被mute）
+                    if (execution.skipReason === 'all_nodes_muted') {
+                        // 弹出toast提示
+                        app.ui.toast(`组 "${group_name}" 内所有节点已被静音，跳过执行`);
+                        console.log(`[GEM-JS] #${executionId} 跳过被mute的组: "${group_name}"`);
+                        continue; // 跳过该组，继续下一个
                     }
 
                     // 查找组
