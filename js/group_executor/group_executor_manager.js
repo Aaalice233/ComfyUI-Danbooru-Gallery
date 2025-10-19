@@ -34,7 +34,8 @@ app.registerExtension({
             // 初始化节点属性
             this.properties = {
                 isExecuting: false,
-                groups: []  // 组列表
+                groups: [],  // 组列表
+                selectedColorFilter: ''  // 当前选中的颜色过滤器
             };
 
             // 设置节点初始大小
@@ -71,13 +72,21 @@ app.registerExtension({
                 <div class="gem-content">
                     <div class="gem-groups-header">
                         <span class="gem-groups-title">${t('title')}</span>
-                        <button class="gem-refresh-button" id="gem-refresh" title="${t('refresh')}">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="23 4 23 10 17 10"></polyline>
-                                <polyline points="1 20 1 14 7 14"></polyline>
-                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                            </svg>
-                        </button>
+                        <div class="gem-header-controls">
+                            <div class="gem-color-filter-container" id="gem-color-filter-container">
+                                <span class="gem-filter-label">${t('filterOptions')}</span>
+                                <select class="gem-color-filter-select" id="gem-color-filter" title="${t('filterByColor')}">
+                                    <option value="">${t('allColors')}</option>
+                                </select>
+                            </div>
+                            <button class="gem-refresh-button" id="gem-refresh" title="${t('refresh')}">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <polyline points="1 20 1 14 7 14"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                     <div class="gem-groups-list" id="gem-groups-list"></div>
                     <div class="gem-add-group-container">
@@ -108,6 +117,11 @@ app.registerExtension({
 
             // 初始化组列表
             this.updateGroupsList();
+
+            // 立即初始化颜色过滤器
+            setTimeout(() => {
+                this.refreshColorFilter();
+            }, 50);
 
             // 从widget的group_config中加载初始数据
             setTimeout(() => {
@@ -174,6 +188,67 @@ app.registerExtension({
                     display: flex;
                     align-items: center;
                     justify-content: space-between;
+                }
+
+                .gem-header-controls {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+
+                .gem-color-filter-container {
+                    position: relative;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+
+                .gem-filter-label {
+                    font-size: 12px;
+                    color: #B0B0B0;
+                    white-space: nowrap;
+                    font-weight: 500;
+                }
+
+                .gem-color-filter-select {
+                    background: rgba(0, 0, 0, 0.2);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 6px;
+                    padding: 4px 8px;
+                    color: #E0E0E0;
+                    font-size: 12px;
+                    min-width: 100px;
+                    transition: all 0.2s ease;
+                    cursor: pointer;
+                }
+
+                .gem-color-filter-select:focus {
+                    outline: none;
+                    border-color: #743795;
+                    background: rgba(0, 0, 0, 0.3);
+                }
+
+                .gem-color-filter-select option {
+                    background: #2a2a3e;
+                    color: #E0E0E0;
+                }
+
+                .gem-color-filter-select::-ms-expand {
+                    display: none;
+                }
+
+                .gem-color-filter-container::after {
+                    content: '';
+                    position: absolute;
+                    right: 8px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    width: 0;
+                    height: 0;
+                    border-left: 4px solid transparent;
+                    border-right: 4px solid transparent;
+                    border-top: 4px solid #B0B0B0;
+                    pointer-events: none;
                 }
 
                 .gem-groups-title {
@@ -468,6 +543,19 @@ app.registerExtension({
                 languageButton.title = t('languageSwitch');
             }
 
+            // 更新颜色过滤器
+            const colorFilter = this.customUI.querySelector('#gem-color-filter');
+            if (colorFilter && colorFilter.options[0]) {
+                colorFilter.options[0].text = t('allColors');
+                colorFilter.title = t('filterByColor');
+            }
+
+            // 更新过滤选项标签
+            const filterLabel = this.customUI.querySelector('.gem-filter-label');
+            if (filterLabel) {
+                filterLabel.textContent = t('filterOptions');
+            }
+
             // 更新添加组按钮
             const addButtonText = this.customUI.querySelector('#gem-add-group span');
             if (addButtonText) {
@@ -498,6 +586,9 @@ app.registerExtension({
                 }
             });
 
+            // 重新刷新颜色过滤器以更新选项文本
+            this.refreshColorFilter();
+
             console.log('[GEM] UI text updated');
         };
 
@@ -526,12 +617,24 @@ app.registerExtension({
                     this.switchLanguage();
                 });
             }
+
+            // 颜色过滤器
+            const colorFilter = container.querySelector('#gem-color-filter');
+            if (colorFilter) {
+                colorFilter.addEventListener('change', (e) => {
+                    this.properties.selectedColorFilter = e.target.value;
+                    this.refreshGroupsList();
+                });
+            }
         };
 
         /**
          * 刷新组列表下拉选项
          */
         nodeType.prototype.refreshGroupsList = function() {
+            // 刷新颜色过滤器选项
+            this.refreshColorFilter();
+
             const availableGroups = this.getAvailableGroups();
 
             // 更新所有组项的下拉选择框
@@ -550,7 +653,7 @@ app.registerExtension({
                     `<option value="${name}" ${name === currentValue ? 'selected' : ''}>${name}</option>`
                 ).join('');
 
-                select.innerHTML = `<option value="">选择组...</option>${groupOptions}`;
+                select.innerHTML = `<option value="">${t('selectGroup')}</option>${groupOptions}`;
 
                 // 如果当前值不在新的组列表中，清空选择
                 if (currentValue && !availableGroups.includes(currentValue)) {
@@ -602,15 +705,349 @@ app.registerExtension({
         };
 
         /**
-         * 获取工作流中的所有组
+         * 获取工作流中的所有组（支持颜色过滤）
          */
         nodeType.prototype.getAvailableGroups = function() {
             if (!app.graph || !app.graph._groups) return [];
 
-            return app.graph._groups
-                .filter(g => g && g.title)
+            let groups = app.graph._groups.filter(g => g && g.title);
+
+            // 应用颜色过滤
+            if (this.properties.selectedColorFilter) {
+                groups = groups.filter(g => this.matchesGroupColor(g, this.properties.selectedColorFilter));
+            }
+
+            return groups
                 .map(g => g.title)
                 .sort((a, b) => a.localeCompare(b));
+        };
+
+        /**
+         * 获取ComfyUI内置颜色列表
+         */
+        nodeType.prototype.getAvailableGroupColors = function() {
+            // 只返回ComfyUI内置颜色
+            const builtinColors = [
+                'red', 'brown', 'green', 'blue', 'pale blue',
+                'cyan', 'purple', 'yellow', 'black'
+            ];
+
+            return builtinColors;
+        };
+
+        /**
+         * 标准化颜色格式
+         */
+        nodeType.prototype.normalizeColor = function(color) {
+            if (!color) return '';
+
+            let normalizedColor = color.replace('#', '').trim().toLowerCase();
+
+            // 转换 ComfyUI 内置颜色名称为十六进制值
+            if (LGraphCanvas.node_colors && LGraphCanvas.node_colors[normalizedColor]) {
+                normalizedColor = LGraphCanvas.node_colors[normalizedColor].groupcolor;
+            }
+
+            // 标准化十六进制格式
+            normalizedColor = normalizedColor.replace('#', '').toLowerCase();
+
+            // 将 3 位十六进制转换为 6 位 (#RGB -> #RRGGBB)
+            if (normalizedColor.length === 3) {
+                normalizedColor = normalizedColor.replace(/(.)(.)(.)/, '$1$1$2$2$3$3');
+            }
+
+            return `#${normalizedColor}`;
+        };
+
+        /**
+         * 获取ComfyUI内置颜色的十六进制值
+         */
+        nodeType.prototype.getComfyUIColorHex = function(colorName) {
+            if (!colorName) return null;
+
+            const normalizedColor = colorName.replace('#', '').trim().toLowerCase();
+
+            // 尝试从LGraphCanvas获取颜色（优先级最高）
+            if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
+                // 直接查找
+                if (LGraphCanvas.node_colors[normalizedColor]) {
+                    const groupColor = LGraphCanvas.node_colors[normalizedColor].groupcolor;
+                    const hexColor = this.normalizeColor(groupColor);
+                    console.log(`[GEM] 从LGraphCanvas获取颜色 ${normalizedColor}: ${hexColor}`);
+                    return hexColor;
+                }
+
+                // 尝试移除空格查找
+                const spacelessColor = normalizedColor.replace(/\s+/g, '');
+                if (LGraphCanvas.node_colors[spacelessColor]) {
+                    const groupColor = LGraphCanvas.node_colors[spacelessColor].groupcolor;
+                    const hexColor = this.normalizeColor(groupColor);
+                    console.log(`[GEM] 从LGraphCanvas获取颜色 ${spacelessColor}: ${hexColor}`);
+                    return hexColor;
+                }
+            }
+
+            // 动态检测工作流中该颜色名称对应的实际颜色值
+            const dynamicColor = this.getDynamicColorFromWorkflow(normalizedColor);
+            if (dynamicColor) {
+                console.log(`[GEM] 使用动态检测的颜色值 ${normalizedColor}: ${dynamicColor}`);
+                return dynamicColor;
+            }
+
+            // 改进的硬编码ComfyUI默认颜色值（更准确的值）
+            const defaultColors = {
+                'red': '#f55',
+                'brown': '#a63',
+                'green': '#5a5',
+                'blue': '#55a',
+                'pale blue': '#3f789e', // 使用实际观测到的颜色值
+                'cyan': '#5aa',
+                'purple': '#a5a',
+                'yellow': '#aa5',
+                'black': '#222'
+            };
+
+            if (defaultColors[normalizedColor]) {
+                console.log(`[GEM] 使用默认颜色值 ${normalizedColor}: ${defaultColors[normalizedColor]}`);
+                return defaultColors[normalizedColor];
+            }
+
+            // 尝试移除空格匹配默认颜色
+            const spacelessMatch = normalizedColor.replace(/\s+/g, '');
+            if (defaultColors[spacelessMatch]) {
+                console.log(`[GEM] 使用默认颜色值 ${spacelessMatch}: ${defaultColors[spacelessMatch]}`);
+                return defaultColors[spacelessMatch];
+            }
+
+            console.warn(`[GEM] 未找到颜色定义: ${colorName}`);
+            return null;
+        };
+
+        /**
+         * 从工作流中动态检测颜色值
+         */
+        nodeType.prototype.getDynamicColorFromWorkflow = function(colorName) {
+            if (!app.graph || !app.graph._groups) return null;
+
+            const colorNameLower = colorName.toLowerCase();
+            const matchingColors = new Set();
+
+            // 收集所有匹配该颜色名称的组的实际颜色值
+            app.graph._groups.forEach(group => {
+                if (group && group.color) {
+                    // 检查组名称是否包含颜色名称
+                    const groupTitleLower = group.title.toLowerCase();
+                    if (groupTitleLower.includes(colorNameLower)) {
+                        matchingColors.add(this.normalizeColor(group.color));
+                    }
+                }
+            });
+
+            // 如果找到了匹配的颜色，使用最常见的那个
+            if (matchingColors.size > 0) {
+                const colorArray = Array.from(matchingColors);
+                // 简单选择第一个匹配的颜色
+                return colorArray[0];
+            }
+
+            return null;
+        };
+
+        /**
+         * 检查组是否匹配指定颜色
+         */
+        nodeType.prototype.matchesGroupColor = function(group, filterColor) {
+            if (!group) return false;
+            if (!filterColor || filterColor === '') return true;
+
+            // 如果组没有颜色，不匹配任何特定颜色
+            if (!group.color) return false;
+
+            // 处理内置颜色名称
+            const builtinColors = ['red', 'brown', 'green', 'blue', 'pale blue', 'cyan', 'purple', 'yellow', 'black'];
+            const normalizedFilterColor = filterColor.toLowerCase();
+
+            if (builtinColors.includes(normalizedFilterColor)) {
+                // 方法1: 尝试通过十六进制值匹配
+                const expectedHex = this.getComfyUIColorHex(filterColor);
+                const actualHex = this.normalizeColor(group.color);
+
+                // 方法2: 尝试通过颜色名称直接匹配
+                const isNameMatch = this.matchColorByName(group.color, normalizedFilterColor);
+
+                // 方法3: 容错匹配 - 允许颜色值在一定范围内匹配
+                const isHexMatch = expectedHex === actualHex;
+                const isColorClose = this.isColorClose(expectedHex, actualHex);
+
+                const matches = isHexMatch || isNameMatch || isColorClose;
+
+                // 添加调试日志
+                console.log(`[GEM] 颜色匹配调试:`, {
+                    groupTitle: group.title,
+                    filterColor: filterColor,
+                    groupColor: group.color,
+                    normalizedFilterColor: normalizedFilterColor,
+                    expectedHex: expectedHex,
+                    actualHex: actualHex,
+                    isHexMatch: isHexMatch,
+                    isNameMatch: isNameMatch,
+                    isColorClose: isColorClose,
+                    finalResult: matches
+                });
+
+                return matches;
+            }
+
+            return false;
+        };
+
+        /**
+         * 通过颜色名称匹配（检查ComfyUI内置颜色映射）
+         */
+        nodeType.prototype.matchColorByName = function(groupColor, filterColorName) {
+            if (!groupColor || !filterColorName) return false;
+
+            // 标准化组颜色
+            const normalizedGroupColor = groupColor.replace('#', '').trim().toLowerCase();
+
+            // 检查ComfyUI内置颜色映射
+            if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
+                for (const [colorName, colorData] of Object.entries(LGraphCanvas.node_colors)) {
+                    if (colorName === filterColorName) {
+                        const expectedColor = this.normalizeColor(colorData.groupcolor);
+                        const actualColor = this.normalizeColor(groupColor);
+                        return expectedColor === actualColor;
+                    }
+                }
+            }
+
+            // 检查组的颜色值是否直接包含颜色名称
+            return normalizedGroupColor.includes(filterColorName.replace(' ', ''));
+        };
+
+        /**
+         * 检查两个颜色是否相近（容差匹配）
+         */
+        nodeType.prototype.isColorClose = function(color1, color2, tolerance = 50) {
+            if (!color1 || !color2) return false;
+
+            try {
+                // 移除#号并标准化
+                const hex1 = color1.replace('#', '').toLowerCase();
+                const hex2 = color2.replace('#', '').toLowerCase();
+
+                // 确保是6位十六进制
+                const c1 = hex1.length === 3 ? hex1.replace(/(.)(.)(.)/, '$1$1$2$2$3$3') : hex1;
+                const c2 = hex2.length === 3 ? hex2.replace(/(.)(.)(.)/, '$1$1$2$2$3$3') : hex2;
+
+                // 转换为RGB
+                const r1 = parseInt(c1.substr(0, 2), 16);
+                const g1 = parseInt(c1.substr(2, 2), 16);
+                const b1 = parseInt(c1.substr(4, 2), 16);
+
+                const r2 = parseInt(c2.substr(0, 2), 16);
+                const g2 = parseInt(c2.substr(2, 2), 16);
+                const b2 = parseInt(c2.substr(4, 2), 16);
+
+                // 计算欧几里得距离
+                const distance = Math.sqrt(
+                    Math.pow(r1 - r2, 2) +
+                    Math.pow(g1 - g2, 2) +
+                    Math.pow(b1 - b2, 2)
+                );
+
+                return distance <= tolerance;
+            } catch (error) {
+                console.warn('[GEM] 颜色比较失败:', error);
+                return false;
+            }
+        };
+
+        /**
+         * 刷新颜色过滤器选项
+         */
+        nodeType.prototype.refreshColorFilter = function() {
+            const colorFilter = this.customUI.querySelector('#gem-color-filter');
+            if (!colorFilter) return;
+
+            // 保存当前选中的值
+            const currentValue = colorFilter.value;
+
+            // 获取ComfyUI内置颜色
+            const builtinColors = this.getAvailableGroupColors();
+
+            let options = [];
+
+            // 添加ComfyUI内置颜色选项
+            builtinColors.forEach(colorName => {
+                const hexColor = this.getComfyUIColorHex(colorName);
+                // 如果无法获取十六进制值，仍然显示颜色名称（用于节点刚创建时）
+                if (hexColor) {
+                    const displayName = this.getColorDisplayName(colorName);
+                    const isSelected = currentValue === colorName || currentValue === hexColor;
+                    options.push(`<option value="${colorName}" ${isSelected ? 'selected' : ''} style="background-color: ${hexColor}; color: ${this.getContrastColor(hexColor)};">${displayName}</option>`);
+                } else {
+                    // 如果无法获取颜色值，只显示名称
+                    const displayName = this.getColorDisplayName(colorName);
+                    const isSelected = currentValue === colorName;
+                    options.push(`<option value="${colorName}" ${isSelected ? 'selected' : ''}>${displayName}</option>`);
+                }
+            });
+
+            // 构建最终的选项HTML
+            const allOptions = [
+                `<option value="">${t('allColors')}</option>`,
+                ...options
+            ].join('');
+
+            colorFilter.innerHTML = allOptions;
+
+            // 如果当前值不在新的颜色列表中，清空选择
+            const validValues = ['', ...builtinColors];
+            if (currentValue && !validValues.includes(currentValue)) {
+                colorFilter.value = '';
+                this.properties.selectedColorFilter = '';
+            }
+
+            console.log('[GEM] 颜色过滤器已刷新，可用选项：', ['All Colors', ...builtinColors]);
+        };
+
+        /**
+         * 获取颜色显示名称
+         */
+        nodeType.prototype.getColorDisplayName = function(color) {
+            if (!color) return t('allColors');
+
+            // 如果是颜色名称，返回首字母大写的格式
+            const builtinColors = ['red', 'brown', 'green', 'blue', 'pale blue', 'cyan', 'purple', 'yellow', 'black'];
+            if (builtinColors.includes(color.toLowerCase())) {
+                const formattedName = color.toLowerCase();
+                return formattedName.charAt(0).toUpperCase() + formattedName.slice(1);
+            }
+
+            // 默认返回原始值
+            return color;
+        };
+
+        /**
+         * 获取对比色（用于文本颜色）
+         */
+        nodeType.prototype.getContrastColor = function(hexColor) {
+            if (!hexColor) return '#E0E0E0';
+
+            // 移除 # 号
+            const color = hexColor.replace('#', '');
+
+            // 转换为 RGB
+            const r = parseInt(color.substr(0, 2), 16);
+            const g = parseInt(color.substr(2, 2), 16);
+            const b = parseInt(color.substr(4, 2), 16);
+
+            // 计算亮度
+            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+
+            // 根据亮度返回对比色
+            return brightness > 128 ? '#000000' : '#FFFFFF';
         };
 
         /**
@@ -779,6 +1216,7 @@ app.registerExtension({
         nodeType.prototype.onSerialize = function(info) {
             const data = onSerialize?.apply?.(this, arguments);
             info.groups = this.properties.groups;
+            info.selectedColorFilter = this.properties.selectedColorFilter;
             return data;
         };
 
@@ -790,9 +1228,19 @@ app.registerExtension({
             onConfigure?.apply?.(this, arguments);
             if (info.groups) {
                 this.properties.groups = info.groups;
-                if (this.customUI) {
-                    this.updateGroupsList();
-                }
+            }
+            if (info.selectedColorFilter !== undefined) {
+                this.properties.selectedColorFilter = info.selectedColorFilter;
+            }
+            if (this.customUI) {
+                this.updateGroupsList();
+                // 恢复颜色过滤器选择
+                setTimeout(() => {
+                    const colorFilter = this.customUI.querySelector('#gem-color-filter');
+                    if (colorFilter) {
+                        colorFilter.value = this.properties.selectedColorFilter || '';
+                    }
+                }, 100);
             }
         };
 

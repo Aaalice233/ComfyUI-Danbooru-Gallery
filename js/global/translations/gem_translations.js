@@ -14,6 +14,11 @@ export const gemTranslations = {
         refresh: "刷新组列表",
         delete: "删除",
         languageSwitch: "切换语言",
+        filterByColor: "按颜色过滤",
+        filterOptions: "过滤选项",
+        allColors: "所有颜色",
+        noColor: "无颜色",
+        customColors: "自定义颜色",
 
         // 验证消息
         groupNotFound: "找不到组 \"{groupName}\"",
@@ -55,6 +60,11 @@ export const gemTranslations = {
         refresh: "Refresh Group List",
         delete: "Delete",
         languageSwitch: "Switch Language",
+        filterByColor: "Filter by Color",
+        filterOptions: "Filter Options",
+        allColors: "All Colors",
+        noColor: "No Color",
+        customColors: "Custom Colors",
 
         // Validation Messages
         groupNotFound: "Group \"{groupName}\" not found",
