@@ -330,7 +330,6 @@ class ImageCache:
             "required": {
                 "images": ("IMAGE", {"tooltip": "要缓存的图像"}),
                 "filename_prefix": ("STRING", {"default": "cached_image", "tooltip": "文件名前缀"}),
-                "clear_cache": ("BOOLEAN", {"default": True, "tooltip": "是否在缓存新图像前清空之前的缓存"}),
                 "preview_rgba": ("BOOLEAN", {"default": True, "tooltip": "开启后预览显示RGBA格式，关闭则预览显示RGB格式"})
             },
             "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
@@ -345,7 +344,6 @@ class ImageCache:
     def cache_images(self,
                     images: List,
                     filename_prefix: List[str],
-                    clear_cache: List[bool],
                     preview_rgba: List[bool],
                     prompt: Optional[Dict] = None,
                     extra_pnginfo: Optional[Dict] = None) -> Dict[str, Any]:
@@ -355,18 +353,17 @@ class ImageCache:
         try:
             # 参数处理
             processed_filename_prefix = filename_prefix[0] if isinstance(filename_prefix, list) else filename_prefix
-            processed_clear_cache = clear_cache[0] if isinstance(clear_cache, list) else clear_cache
             processed_preview_rgba = preview_rgba[0] if isinstance(preview_rgba, list) else preview_rgba
 
             print(f"[ImageCacheSave] 开始缓存 {len(images)} 张图像")
             print(f"[ImageCacheSave] 文件名前缀: {processed_filename_prefix}")
 
-            # 使用缓存管理器缓存图像（不传递masks参数）
+            # 使用缓存管理器缓存图像（不传递masks参数，固定清除之前缓存）
             results = cache_manager.cache_images(
                 images=images,
                 filename_prefix=processed_filename_prefix,
                 masks=None,  # 不再处理masks
-                clear_cache=processed_clear_cache,
+                clear_cache=True,  # 固定清除之前的缓存
                 preview_rgba=processed_preview_rgba
             )
 

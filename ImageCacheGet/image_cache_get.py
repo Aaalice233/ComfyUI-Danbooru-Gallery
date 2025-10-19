@@ -324,9 +324,7 @@ class ImageReceiver:
     @classmethod
     def INPUT_TYPES(cls):
         return {
-            "required": {
-                "clear_after_get": ("BOOLEAN", {"default": False, "tooltip": "获取后是否清空缓存"})
-            }
+            "required": {}
         }
 
     RETURN_TYPES = ("IMAGE",)
@@ -335,20 +333,18 @@ class ImageReceiver:
     OUTPUT_IS_LIST = (True,)
     FUNCTION = "get_cached_images"
 
-    def get_cached_images(self,
-                         clear_after_get: bool) -> List[torch.Tensor]:
+    def get_cached_images(self) -> List[torch.Tensor]:
         """
         从全局缓存中获取图像数据
         """
         try:
             print(f"[ImageCacheGet] 开始获取缓存图像")
-            print(f"[ImageCacheGet] 获取后清空: {clear_after_get}")
 
-            # 使用缓存管理器获取最新图像
+            # 使用缓存管理器获取最新图像（固定不清除缓存）
             images, _ = cache_manager.get_cached_images(
                 get_latest=True,  # 总是获取最新图像
                 index=0,  # 不再使用索引
-                clear_after_get=clear_after_get
+                clear_after_get=False  # 固定不清除缓存
             )
 
             # 发送成功toast通知
