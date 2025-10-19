@@ -420,13 +420,13 @@ class ImageReceiver:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("images",)
     CATEGORY = CATEGORY_TYPE
-    OUTPUT_IS_LIST = (True,)
-    INPUT_IS_LIST = False  # 输入不是列表，但输出是列表
+    OUTPUT_IS_LIST = (False,)  # 输出单个张量，与VAEEncode匹配
+    INPUT_IS_LIST = False  # 输入不是列表
     FUNCTION = "get_cached_images"
 
-    def get_cached_images(self, default_image) -> List[torch.Tensor]:
+    def get_cached_images(self, default_image) -> torch.Tensor:
         """
-        从全局缓存中获取图像数据
+        从全局缓存中获取图像数据，返回单个张量
         """
         try:
             print(f"[ImageCacheGet] ========== 开始获取缓存图像 ==========")
@@ -470,7 +470,16 @@ class ImageReceiver:
                     print(f"[ImageCacheGet] Toast通知失败: {e}")
 
                 print(f"[ImageCacheGet] ✓ 成功获取 {len(images)} 张缓存图像")
-                return images
+                # 返回第一个图像张量，确保与VAEEncode兼容
+                if len(images) > 0:
+                    result_image = images[0]
+                    print(f"[ImageCacheGet] 返回缓存图像，形状: {result_image.shape}")
+                    return result_image
+                else:
+                    # 理论上不应该到这里，但为了安全起见
+                    empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                    print(f"[ImageCacheGet] 缓存图像为空，返回空白图像，形状: {empty_image.shape}")
+                    return empty_image
             else:
                 print("[ImageCacheGet] 缓存无效或为空，尝试使用默认图像")
                 print(f"[ImageCacheGet] 检查默认图像条件:")
@@ -537,7 +546,16 @@ class ImageReceiver:
                     except Exception as e:
                         print(f"[ImageCacheGet] Toast通知失败: {e}")
 
-                    return validated_images
+                    # 返回第一个验证后的图像张量，确保与VAEEncode兼容
+                    if len(validated_images) > 0:
+                        result_image = validated_images[0]
+                        print(f"[ImageCacheGet] 返回默认图像，形状: {result_image.shape}")
+                        return result_image
+                    else:
+                        # 理论上不应该到这里，但为了安全起见
+                        empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                        print(f"[ImageCacheGet] 默认图像验证失败，返回空白图像，形状: {empty_image.shape}")
+                        return empty_image
                 else:
                     print("[ImageCacheGet] ========== 未提供默认图像或默认图像为空 ==========")
                     print(f"[ImageCacheGet] default_image: {default_image}")
@@ -560,7 +578,7 @@ class ImageReceiver:
                     # 返回空白图像
                     empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
                     print(f"[ImageCacheGet] 返回空白图像，形状: {empty_image.shape}")
-                    return [empty_image]
+                    return empty_image
 
         except Exception as e:
             print(f"[ImageCacheGet] ========== 异常发生 ==========")
@@ -585,7 +603,7 @@ class ImageReceiver:
             # 返回空图像但不要抛出异常，避免中断工作流
             empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
             print(f"[ImageCacheGet] 错误情况下返回空白图像，形状: {empty_image.shape}")
-            return [empty_image]
+            return empty_image
 
 
 # 节点映射
