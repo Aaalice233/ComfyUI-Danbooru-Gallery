@@ -773,7 +773,6 @@ app.registerExtension({
                 if (LGraphCanvas.node_colors[normalizedColor]) {
                     const groupColor = LGraphCanvas.node_colors[normalizedColor].groupcolor;
                     const hexColor = this.normalizeColor(groupColor);
-                    console.log(`[GEM] 从LGraphCanvas获取颜色 ${normalizedColor}: ${hexColor}`);
                     return hexColor;
                 }
 
@@ -782,7 +781,6 @@ app.registerExtension({
                 if (LGraphCanvas.node_colors[spacelessColor]) {
                     const groupColor = LGraphCanvas.node_colors[spacelessColor].groupcolor;
                     const hexColor = this.normalizeColor(groupColor);
-                    console.log(`[GEM] 从LGraphCanvas获取颜色 ${spacelessColor}: ${hexColor}`);
                     return hexColor;
                 }
             }
@@ -790,7 +788,6 @@ app.registerExtension({
             // 动态检测工作流中该颜色名称对应的实际颜色值
             const dynamicColor = this.getDynamicColorFromWorkflow(normalizedColor);
             if (dynamicColor) {
-                console.log(`[GEM] 使用动态检测的颜色值 ${normalizedColor}: ${dynamicColor}`);
                 return dynamicColor;
             }
 
@@ -808,18 +805,15 @@ app.registerExtension({
             };
 
             if (defaultColors[normalizedColor]) {
-                console.log(`[GEM] 使用默认颜色值 ${normalizedColor}: ${defaultColors[normalizedColor]}`);
                 return defaultColors[normalizedColor];
             }
 
             // 尝试移除空格匹配默认颜色
             const spacelessMatch = normalizedColor.replace(/\s+/g, '');
             if (defaultColors[spacelessMatch]) {
-                console.log(`[GEM] 使用默认颜色值 ${spacelessMatch}: ${defaultColors[spacelessMatch]}`);
                 return defaultColors[spacelessMatch];
             }
 
-            console.warn(`[GEM] 未找到颜色定义: ${colorName}`);
             return null;
         };
 
@@ -879,23 +873,7 @@ app.registerExtension({
                 const isHexMatch = expectedHex === actualHex;
                 const isColorClose = this.isColorClose(expectedHex, actualHex);
 
-                const matches = isHexMatch || isNameMatch || isColorClose;
-
-                // 添加调试日志
-                console.log(`[GEM] 颜色匹配调试:`, {
-                    groupTitle: group.title,
-                    filterColor: filterColor,
-                    groupColor: group.color,
-                    normalizedFilterColor: normalizedFilterColor,
-                    expectedHex: expectedHex,
-                    actualHex: actualHex,
-                    isHexMatch: isHexMatch,
-                    isNameMatch: isNameMatch,
-                    isColorClose: isColorClose,
-                    finalResult: matches
-                });
-
-                return matches;
+                return isHexMatch || isNameMatch || isColorClose;
             }
 
             return false;
@@ -1009,8 +987,7 @@ app.registerExtension({
                 this.properties.selectedColorFilter = '';
             }
 
-            console.log('[GEM] 颜色过滤器已刷新，可用选项：', ['All Colors', ...builtinColors]);
-        };
+            };
 
         /**
          * 获取颜色显示名称
