@@ -411,6 +411,9 @@ class ImageReceiver:
         return {
             "required": {
                 "default_image": ("IMAGE", {"tooltip": "当缓存无效时使用的默认图像（可选）"})
+            },
+            "optional": {
+                # 可以添加其他可选参数
             }
         }
 
@@ -418,6 +421,7 @@ class ImageReceiver:
     RETURN_NAMES = ("images",)
     CATEGORY = CATEGORY_TYPE
     OUTPUT_IS_LIST = (True,)
+    INPUT_IS_LIST = False  # 输入不是列表，但输出是列表
     FUNCTION = "get_cached_images"
 
     def get_cached_images(self, default_image) -> List[torch.Tensor]:
@@ -425,7 +429,22 @@ class ImageReceiver:
         从全局缓存中获取图像数据
         """
         try:
-            print(f"[ImageCacheGet] 开始获取缓存图像")
+            print(f"[ImageCacheGet] ========== 开始获取缓存图像 ==========")
+            print(f"[ImageCacheGet] 输入参数:")
+            print(f"[ImageCacheGet]   - default_image: {default_image is not None}")
+            if default_image is not None:
+                print(f"[ImageCacheGet]   - default_image类型: {type(default_image)}")
+                print(f"[ImageCacheGet]   - default_image形状: {default_image.shape if hasattr(default_image, 'shape') else 'N/A'}")
+                print(f"[ImageCacheGet]   - default_image维度: {default_image.dim() if hasattr(default_image, 'dim') else 'N/A'}")
+                print(f"[ImageCacheGet]   - default_image设备: {default_image.device if hasattr(default_image, 'device') else 'N/A'}")
+
+                # 将单个张量转换为列表格式处理
+                if not isinstance(default_image, list):
+                    default_image_list = [default_image]
+                else:
+                    default_image_list = default_image
+            else:
+                default_image_list = []
 
             # 首先检查缓存是否有效
             if cache_manager.is_cache_valid():
@@ -453,16 +472,20 @@ class ImageReceiver:
                 print(f"[ImageCacheGet] ✓ 成功获取 {len(images)} 张缓存图像")
                 return images
             else:
-                print("[ImageCacheGet] 缓存无效或为空，使用默认图像")
+                print("[ImageCacheGet] 缓存无效或为空，尝试使用默认图像")
+                print(f"[ImageCacheGet] 检查默认图像条件:")
+                print(f"[ImageCacheGet]   - default_image_list: {default_image_list}")
+                print(f"[ImageCacheGet]   - len(default_image_list) > 0: {len(default_image_list) > 0}")
+                print(f"[ImageCacheGet]   - 实际长度: {len(default_image_list)}")
 
                 # 处理默认图像
-                if default_image is not None and len(default_image) > 0:
+                if default_image_list and len(default_image_list) > 0:
                     # 使用用户提供的默认图像，需要验证和修复张量维度
-                    print(f"[ImageCacheGet] ✓ 使用默认图像，共 {len(default_image)} 张")
+                    print(f"[ImageCacheGet] ✓ 使用默认图像，共 {len(default_image_list)} 张")
 
                     # 验证和修复默认图像的张量维度
                     validated_images = []
-                    for idx, img in enumerate(default_image):
+                    for idx, img in enumerate(default_image_list):
                         print(f"[ImageCacheGet] 处理默认图像 {idx+1}，原始形状: {img.shape}")
 
                         # 确保张量是4D格式 (batch, height, width, channels)
@@ -516,7 +539,10 @@ class ImageReceiver:
 
                     return validated_images
                 else:
-                    print("[ImageCacheGet] 未提供默认图像，返回空白图像")
+                    print("[ImageCacheGet] ========== 未提供默认图像或默认图像为空 ==========")
+                    print(f"[ImageCacheGet] default_image: {default_image}")
+                    print(f"[ImageCacheGet] default_image_list: {default_image_list}")
+                    print(f"[ImageCacheGet] len(default_image_list): {len(default_image_list) if default_image_list is not None else 'None'}")
 
                     # 发送空白图像的toast通知
                     try:
@@ -537,8 +563,11 @@ class ImageReceiver:
                     return [empty_image]
 
         except Exception as e:
+            print(f"[ImageCacheGet] ========== 异常发生 ==========")
             error_msg = f"获取图像失败: {str(e)}"
             print(f"[ImageCacheGet] ✗ {error_msg}")
+            import traceback
+            print(f"[ImageCacheGet] 完整堆栈追踪:\n{traceback.format_exc()}")
 
             # 发送错误toast通知
             try:
