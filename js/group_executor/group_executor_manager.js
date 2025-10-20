@@ -2336,6 +2336,61 @@ app.registerExtension({
 
         console.log(`[GEM-SETUP] ✓ addEventListener 注册完成`);
         console.log(`[GEM-SETUP] ==================== WebSocket监听器初始化完成 ====================`);
+
+        // ========== 监听器注册 ==========
+        console.log(`[GEM-SETUP] ========== 注册监听器 ==========`);
+
+        // 为多页面执行问题添加一个全局存储
+        if (!window.hasOwnProperty('currentlyExecutingGemNodes')) {
+            window.currentlyExecutingGemNodes = new Set();
+        }
+
+        // 监听队列执行事件
+        if (!app.originalQueuePrompt) {
+            app.originalQueuePrompt = app.queuePrompt;
+            app.queuePrompt = function (...args) {
+                console.log("[GEM-JS] 监听到 queuePrompt 调用");
+                // 在执行前清空并记录当前图中的所有组管理器节点
+                window.currentlyExecutingGemNodes.clear();
+                const gemNodes = app.graph._nodes.filter(node => node.type === "GroupExecutorManager");
+                if (gemNodes.length > 0) {
+                    console.log(`[GEM-JS] 发现 ${gemNodes.length} 个组执行管理器节点，将其ID添加到执行列表:`, gemNodes.map(n => n.id));
+                    gemNodes.forEach(node => window.currentlyExecutingGemNodes.add(String(node.id)));
+                } else {
+                    console.log("[GEM-JS] 未发现组执行管理器节点");
+                }
+                // 调用原始函数，确保执行链不中断
+                return app.originalQueuePrompt.apply(this, args);
+            };
+            console.log("[GEM-JS] 已包装 app.queuePrompt 用于多页面隔离");
+        }
+
+
+        // 错误监听器
+        try {
+            api.addEventListener("group_executor_error", ({ detail }) => {
+                console.error(`[GEM-ERROR] 收到错误信息:`, detail);
+
+                const errors = detail.errors || [];
+                if (errors.length === 0) return;
+
+                // 构建错误消息
+                const errorList = errors.map((err, idx) => `${idx + 1}. ${err}`).join('\n');
+                const errorMessage = t('configError', { errors: errorList });
+
+                // 显示错误消息
+                showErrorDialog(errorMessage);
+            });
+            console.log(`[GEM-SETUP] ✓ 'group_executor_error' 监听器注册成功`);
+            if (window.gemWebSocketDiagnostic) {
+                window.gemWebSocketDiagnostic.logListenerRegistration("group_executor_error", true);
+            }
+        } catch (e) {
+            console.error(`[GEM-SETUP] ✗ 'group_executor_error' 监听器注册失败:`, e);
+            if (window.gemWebSocketDiagnostic) {
+                window.gemWebSocketDiagnostic.logListenerRegistration("group_executor_error", false, e);
+            }
+        }
     },
 
     /**
