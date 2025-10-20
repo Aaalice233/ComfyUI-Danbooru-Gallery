@@ -493,6 +493,14 @@ app.registerExtension({
         console.log(`[GEM] 分布式执行状态已初始化`);
         console.log(`[GEM] BroadcastChannel支持: ${tabCommManager.isSupported ? '是' : '否'}`);
 
+        // 强制初始化选项卡通信管理器
+        try {
+            tabCommManager.initialize();
+            console.log(`[GEM] ✓ 选项卡通信管理器初始化成功`);
+        } catch (e) {
+            console.error(`[GEM] ✗ 选项卡通信管理器初始化失败:`, e);
+        }
+
         // 加载WebSocket诊断工具
         if (!window.gemWebSocketDiagnostic) {
             console.log(`[GEM] Loading WebSocket diagnostic tool...`);
@@ -683,6 +691,12 @@ app.registerExtension({
         // =================================================================
 
         console.log(`[GEM-SETUP] 注册 'execution_interrupted' 监听器...`);
+        if (!api) {
+            console.error(`[GEM-SETUP] ✗ API对象不存在，无法注册事件监听器`);
+            return;
+        }
+        console.log(`[GEM-SETUP] ✓ API对象存在，开始注册监听器`);
+
         api.addEventListener("execution_interrupted", () => {
             console.log("[GEM-INTERRUPT] ========== 监听到执行中断事件 ==========");
 
@@ -712,6 +726,12 @@ app.registerExtension({
         console.log(`[GEM-SETUP] ✓ 'execution_interrupted' 监听器注册成功`);
 
         console.log(`[GEM-SETUP] 注册 'group_executor_prepare' 监听器...`);
+        if (!api.addEventListener) {
+            console.error(`[GEM-SETUP] ✗ api.addEventListener 不存在，无法注册 'group_executor_prepare' 监听器`);
+        } else {
+            console.log(`[GEM-SETUP] ✓ 开始注册 'group_executor_prepare' 监听器`);
+        }
+
         api.addEventListener("group_executor_prepare", async ({ detail }) => {
             console.log(`[GEM-JS] ========== 收到准备执行信号 ==========`);
             console.log(`[GEM-JS] detail:`, detail);
@@ -771,6 +791,12 @@ app.registerExtension({
         });
 
         console.log(`[GEM-SETUP] 注册 'group_executor_execute' 监听器...`);
+        if (!api.addEventListener) {
+            console.error(`[GEM-SETUP] ✗ api.addEventListener 不存在，无法注册 'group_executor_execute' 监听器`);
+        } else {
+            console.log(`[GEM-SETUP] ✓ 开始注册 'group_executor_execute' 监听器`);
+        }
+
         api.addEventListener("group_executor_execute", async ({ detail }) => {
             console.log(`[GEM-JS] ========== WebSocket 消息到达 ==========`);
             console.log(`[GEM-JS] detail:`, detail);
@@ -1165,7 +1191,17 @@ app.registerExtension({
 
         console.log(`[GEM-SETUP] ✓ 'group_executor_status' 监听器注册成功`);
 
-        console.log(`[GEM-SETUP] ✓ 'group_executor_execute' 监听器注册成功`);
+        // 添加WebSocket连接测试
+        setTimeout(() => {
+            console.log(`[GEM-TEST] ========== WebSocket连接测试 ==========`);
+            console.log(`[GEM-TEST] 检查API对象:`);
+            console.log(`[GEM-TEST]   - api对象存在: ${!!api}`);
+            console.log(`[GEM-TEST]   - api.addEventListener存在: ${!!(api && api.addEventListener)}`);
+            console.log(`[GEM-TEST]   - app对象存在: ${!!app}`);
+            console.log(`[GEM-TEST]   - 当前选项卡ID: ${CURRENT_TAB_ID}`);
+            console.log(`[GEM-TEST]   - 当前选项卡角色: ${tabCommManager.currentRole}`);
+            console.log(`[GEM-TEST] ========== WebSocket连接测试完成 ==========`);
+        }, 2000);
 
         console.log(`[GEM] ========== GroupExecutorManager Extension Setup Complete ==========`);
 
