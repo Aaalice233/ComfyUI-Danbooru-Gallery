@@ -24,6 +24,10 @@ class ImageCacheManager:
 
     def __init__(self):
         if not self._initialized:
+            # 实例ID，用于追踪是否为同一个对象
+            self.instance_id = id(self)
+            print(f"[ImageCacheManager DEBUG] New instance created with ID: {self.instance_id}")
+
             self.cache_data = {
                 "images": [],
                 "timestamp": 0,
@@ -80,6 +84,10 @@ class ImageCacheManager:
         Returns:
             缓存的图像数据列表
         """
+        print(f"[ImageCacheManager DEBUG] cache_images called on instance ID: {self.instance_id}")
+        print(f"[ImageCacheManager DEBUG] Current cache size before adding: {len(self.cache_data['images'])}")
+        print(f"[ImageCacheManager DEBUG] Number of new images to add: {len(images)}")
+
         timestamp = int(time.time() * 1000)
         results = []
         cache_data = []
@@ -146,10 +154,16 @@ class ImageCacheManager:
                 continue
 
         # 更新全局缓存
-        self.cache_data["images"] = cache_data
+        if clear_cache:
+            self.cache_data["images"] = cache_data
+        else:
+            self.cache_data["images"].extend(cache_data)
+
+        print(f"[ImageCacheManager DEBUG] Cache size after adding: {len(self.cache_data['images'])}")
+
         self.cache_data["timestamp"] = timestamp
         self.cache_data["metadata"] = {
-            "count": len(cache_data),
+            "count": len(self.cache_data["images"]), # 使用更新后的列表长度
             "prefix": filename_prefix,
             "has_masks": masks is not None
         }
@@ -194,6 +208,9 @@ class ImageCacheManager:
         Returns:
             (images_tensors, masks_tensors) 图像和遮罩张量元组
         """
+        print(f"[ImageCacheManager DEBUG] get_cached_images called on instance ID: {self.instance_id}")
+        print(f"[ImageCacheManager DEBUG] Current cache size at get: {len(self.cache_data['images'])}")
+
         print(f"[ImageCacheManager] 开始获取缓存图像")
         print(f"[ImageCacheManager] 获取最新: {get_latest}")
         print(f"[ImageCacheManager] 索引: {index}")
@@ -359,6 +376,8 @@ class ImageCacheManager:
             bool: 缓存是否有效
         """
         import time
+
+        print(f"[ImageCacheManager DEBUG] is_cache_valid called on instance ID: {self.instance_id}")
 
         # 检查是否有缓存数据
         if self.is_cache_empty():

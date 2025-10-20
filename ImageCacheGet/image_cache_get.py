@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image
 from typing import List, Dict, Any, Optional, Tuple
 from ..image_cache_manager import cache_manager
+import hashlib
 
 CATEGORY_TYPE = "Danbooru/Image"
 
@@ -35,6 +36,13 @@ class ImageReceiver:
     """
     图像获取节点 - 主动从全局单通道缓存中获取图像数据
     """
+
+    @classmethod
+    def IS_CHANGED(cls, *args, **kwargs):
+        # 通过返回当前时间的哈希值，强制节点每次都重新执行
+        # 这对于组执行器至关重要，因为它能确保节点在每个组的上下文中都实际运行
+        # 而不是被ComfyUI的执行缓存跳过
+        return hashlib.sha256(str(time.time()).encode()).hexdigest()
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -70,6 +78,7 @@ class ImageReceiver:
             包含图像张量和预览信息的字典
         """
         try:
+            print(f"[ImageCacheGet DEBUG] Executing get node. Using cache_manager instance ID: {id(cache_manager)}")
             # INPUT_IS_LIST=True时，ComfyUI会将输入包装为列表
             default_image_list = default_image if default_image is not None else []
 
@@ -97,9 +106,9 @@ class ImageReceiver:
                     print(f"[ImageCacheGet] Toast通知失败: {e}")
 
                 print(f"[ImageCacheGet] [SUCCESS] 成功获取 {len(images)} 张缓存图像")
-                # 返回第一个图像张量，确保与VAEEncode兼容
+                # 返回最后一个图像张量，确保获取的是最新的缓存
                 if len(images) > 0:
-                    result_image = images[0]
+                    result_image = images[-1]
                     # 根据ComfyUI官方文档确保张量格式为 [B, H, W, C]
                     result_image = self._ensure_tensor_format(result_image, "缓存图像")
 
@@ -110,11 +119,11 @@ class ImageReceiver:
                             # 获取缓存信息以找到原始文件路径
                             cache_info = cache_manager.get_cache_info()
                             if cache_info["count"] > 0:
-                                # 从缓存数据中获取第一个图像文件名
+                                # 从缓存数据中获取最后一个（最新的）图像文件名用于预览
                                 cached_images = cache_manager.cache_data["images"]
                                 if cached_images:
-                                    first_image_info = cached_images[0]
-                                    image_filename = first_image_info["filename"]
+                                    latest_image_info = cached_images[-1]
+                                    image_filename = latest_image_info["filename"]
 
                                     # 生成标准预览信息
                                     preview_item = {
@@ -123,7 +132,7 @@ class ImageReceiver:
                                         "type": "temp"
                                     }
                                     preview_results.append(preview_item)
-                                    print(f"[ImageCacheGet] [SUCCESS] 已生成标准预览信息: {image_filename}")
+                                    print(f"[ImageCacheGet] [SUCCESS] 已生成最新图像的预览: {image_filename}")
                                 else:
                                     print(f"[ImageCacheGet] [WARNING] 缓存数据为空，无法生成预览")
                             else:

@@ -69,6 +69,7 @@ class ImageCache:
         将图像缓存到全局单通道
         """
         try:
+            print(f"[ImageCacheSave DEBUG] Executing save node. Using cache_manager instance ID: {id(cache_manager)}")
             # 参数处理
             processed_enable_preview = enable_preview[0] if isinstance(enable_preview, list) else enable_preview
 
@@ -77,7 +78,7 @@ class ImageCache:
                 images=images,
                 filename_prefix="cached_image",  # 固定使用默认前缀
                 masks=None,  # 不再处理masks
-                clear_cache=False,  # 不清除之前的缓存，支持组执行管理器中的多次获取
+                clear_cache=False,  # 恢复为False，以启用追加逻辑
                 preview_rgba=True  # 固定使用RGBA预览以保留透明度
             )
 
