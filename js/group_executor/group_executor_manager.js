@@ -330,9 +330,18 @@ const distributedExecutionState = {
 
     // 检查是否可以执行
     canExecute() {
-        // 只有主选项卡可以执行
+        // ✅ 修复：在单选项卡环境下，简化权限检查
+        const activeTabsCount = tabCommManager.tabRegistry.size;
+
+        // 如果只有一个选项卡，允许执行
+        if (activeTabsCount <= 1) {
+            console.log(`[GEM-EXEC] 选项卡 ${CURRENT_TAB_ID} 单选项卡模式，允许执行`);
+            return true;
+        }
+
+        // 多选项卡模式下，只有主选项卡可以执行
         if (this.getCurrentRole() !== 'master') {
-            console.log(`[GEM-EXEC] 选项卡 ${CURRENT_TAB_ID} 不是主选项卡，无法执行`);
+            console.log(`[GEM-EXEC] 选项卡 ${CURRENT_TAB_ID} 不是主选项卡（当前角色：${this.getCurrentRole()}），无法执行`);
             return false;
         }
 
@@ -495,11 +504,25 @@ app.registerExtension({
 
         // 强制初始化选项卡通信管理器
         try {
-            tabCommManager.initialize();
-            console.log(`[GEM] ✓ 选项卡通信管理器初始化成功`);
+            if (typeof tabCommManager.initialize === 'function') {
+                tabCommManager.initialize();
+                console.log(`[GEM] ✓ 选项卡通信管理器初始化成功`);
+            } else {
+                console.log(`[GEM] ✓ 选项卡通信管理器已自动初始化`);
+            }
         } catch (e) {
             console.error(`[GEM] ✗ 选项卡通信管理器初始化失败:`, e);
         }
+
+        // ✅ 修复：强制当前选项卡成为master（单选项卡情况下）
+        setTimeout(() => {
+            if (tabCommManager.currentRole !== 'master') {
+                console.log(`[GEM] 当前角色为 ${tabCommManager.currentRole}，强制提升为 master`);
+                tabCommManager.changeRole('master');
+            } else {
+                console.log(`[GEM] 当前角色已为 master，无需调整`);
+            }
+        }, 1000);
 
         // 加载WebSocket诊断工具
         if (!window.gemWebSocketDiagnostic) {
