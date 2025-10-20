@@ -10,14 +10,49 @@ import { globalMultiLanguageManager } from "../global/multi_language.js";
 import { toastManagerProxy } from "../global/toast_manager.js";
 import "./websocket_diagnostic.js";  // 加载WebSocket诊断工具
 
-// 全局执行标志，防止重复执行
-let isExecutingGroups = false;
+// 生成唯一的窗口ID
+const generateWindowId = () => {
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 10000);
+    return `gem_window_${timestamp}_${random}`;
+};
 
-// 全局中断标志，用于检测用户是否主动中断执行
-let shouldStopExecution = false;
+// 当前窗口的标识符
+const CURRENT_WINDOW_ID = generateWindowId();
 
-// 标志：是否是我们自己触发的中断（用于避免双队列）
-let isOurInterrupt = false;
+// 多窗口执行状态管理
+const windowExecutionState = {
+    // 全局执行标志，防止重复执行（带窗口ID）
+    isExecutingGroups: false,
+
+    // 全局中断标志，用于检测用户是否主动中断执行（带窗口ID）
+    shouldStopExecution: false,
+
+    // 标志：是否是我们自己触发的中断（用于避免双队列）（带窗口ID）
+    isOurInterrupt: false,
+
+    // 窗口执行锁，防止跨窗口干扰
+    windowExecutionLock: false,
+
+    // 最后执行时间戳
+    lastExecutionTime: 0
+};
+
+// 为了向后兼容，保留旧的变量名但映射到新结构
+Object.defineProperty(window, 'isExecutingGroups', {
+    get: () => windowExecutionState.isExecutingGroups,
+    set: (value) => { windowExecutionState.isExecutingGroups = value; }
+});
+
+Object.defineProperty(window, 'shouldStopExecution', {
+    get: () => windowExecutionState.shouldStopExecution,
+    set: (value) => { windowExecutionState.shouldStopExecution = value; }
+});
+
+Object.defineProperty(window, 'isOurInterrupt', {
+    get: () => windowExecutionState.isOurInterrupt,
+    set: (value) => { windowExecutionState.isOurInterrupt = value; }
+});
 
 // Create convenience translation function for 'gem' namespace
 const t = (key, params = {}) => {
@@ -39,6 +74,8 @@ app.registerExtension({
      */
     async init(app) {
         console.log(`[GEM] ========== GroupExecutorManager Extension Initialized ==========`);
+        console.log(`[GEM] 当前窗口ID: ${CURRENT_WINDOW_ID}`);
+        console.log(`[GEM] 窗口执行状态已初始化`);
 
         // 加载WebSocket诊断工具
         if (!window.gemWebSocketDiagnostic) {
@@ -233,16 +270,16 @@ app.registerExtension({
         api.addEventListener("execution_interrupted", () => {
             console.log("[GEM-INTERRUPT] ========== 监听到执行中断事件 ==========");
 
-            // 检查是否是我们自己触发的中断（用于避免双队列）
-            if (isOurInterrupt) {
-                console.log("[GEM-INTERRUPT] 这是我们自己触发的中断，忽略");
-                isOurInterrupt = false;  // 重置标志
+            // ✅ 多窗口支持：检查是否是我们自己触发的中断（用于避免双队列）
+            if (windowExecutionState.isOurInterrupt) {
+                console.log(`[GEM-INTERRUPT] 窗口 ${CURRENT_WINDOW_ID} 这是我们自己触发的中断，忽略`);
+                windowExecutionState.isOurInterrupt = false;  // 重置标志
                 return;
             }
 
-            // 只有用户主动中断才设置停止标志
-            shouldStopExecution = true;
-            console.log("[GEM-INTERRUPT] 用户主动中断，设置 shouldStopExecution = true，停止后续组执行");
+            // ✅ 多窗口支持：只有用户主动中断才设置停止标志
+            windowExecutionState.shouldStopExecution = true;
+            console.log(`[GEM-INTERRUPT] 窗口 ${CURRENT_WINDOW_ID} 用户主动中断，设置 shouldStopExecution = true，停止后续组执行`);
 
             // 遍历所有节点，重置所有组执行管理器的状态
             const allNodes = app.graph._nodes;
@@ -273,13 +310,15 @@ app.registerExtension({
 
             console.log(`[GEM-JS] ✓ 找到节点 #${nodeId}，准备阻止初始队列执行`);
 
-            // 立即中断任何正在进行的队列执行
+            // ✅ 多窗口支持：立即中断任何正在进行的队列执行
             try {
-                console.log(`[GEM-JS] 立即中断当前队列执行...`);
+                console.log(`[GEM-JS] 窗口 ${CURRENT_WINDOW_ID} 立即中断当前队列执行...`);
+                windowExecutionState.isOurInterrupt = true;  // 标记这是我们触发的中断
                 await api.interrupt();
-                console.log(`[GEM-JS] ✓ 队列中断完成`);
+                console.log(`[GEM-JS] 窗口 ${CURRENT_WINDOW_ID} ✓ 队列中断完成`);
             } catch (e) {
-                console.warn(`[GEM-JS] ⚠️ 中断队列失败: ${e}`);
+                console.warn(`[GEM-JS] ⚠️ 窗口 ${CURRENT_WINDOW_ID} 中断队列失败: ${e}`);
+                windowExecutionState.isOurInterrupt = false;  // 重置标志
             }
 
             // 等待队列完全清空
@@ -320,11 +359,33 @@ app.registerExtension({
             console.log(`[GEM-JS] ========== WebSocket 消息到达 ==========`);
             console.log(`[GEM-JS] detail:`, detail);
 
-            // 检查是否已经在执行中，防止重复执行
-            if (isExecutingGroups) {
-                console.log(`[GEM-JS] ⚠️ 已在执行组，忽略此次 WebSocket 消息（防止双队列）`);
+            // ✅ 多窗口支持：检查是否已经在执行中，防止重复执行
+            if (windowExecutionState.isExecutingGroups) {
+                console.log(`[GEM-JS] ⚠️ 窗口 ${CURRENT_WINDOW_ID} 已在执行组，忽略此次 WebSocket 消息（防止双队列）`);
+                console.log(`[GEM-JS] 执行状态详情:`, {
+                    isExecutingGroups: windowExecutionState.isExecutingGroups,
+                    windowExecutionLock: windowExecutionState.windowExecutionLock,
+                    lastExecutionTime: new Date(windowExecutionState.lastExecutionTime).toISOString()
+                });
                 return;
             }
+
+            // ✅ 多窗口支持：检查执行锁
+            if (windowExecutionState.windowExecutionLock) {
+                console.log(`[GEM-JS] ⚠️ 窗口 ${CURRENT_WINDOW_ID} 执行被锁定，忽略执行请求`);
+                return;
+            }
+
+            // ✅ 多窗口支持：设置执行锁
+            const currentTime = Date.now();
+            if (currentTime - windowExecutionState.lastExecutionTime < 1000) {
+                console.log(`[GEM-JS] ⚠️ 窗口 ${CURRENT_WINDOW_ID} 执行间隔过短，忽略请求（距离上次执行 ${currentTime - windowExecutionState.lastExecutionTime}ms）`);
+                return;
+            }
+
+            console.log(`[GEM-JS] ✓ 窗口 ${CURRENT_WINDOW_ID} 通过执行检查，开始执行`);
+            windowExecutionState.windowExecutionLock = true;
+            windowExecutionState.lastExecutionTime = currentTime;
 
             const nodeId = String(detail.node_id);
             const node = app.graph._nodes_by_id[nodeId];
@@ -345,9 +406,9 @@ app.registerExtension({
             }
 
             // 设置执行标志
-            isExecutingGroups = true;
-            shouldStopExecution = false;  // 重置中断标志
-            console.log(`[GEM-JS] 设置 isExecutingGroups = true，shouldStopExecution = false，开始执行流程`);
+            windowExecutionState.isExecutingGroups = true;
+            windowExecutionState.shouldStopExecution = false;  // 重置中断标志
+            console.log(`[GEM-JS] 窗口 ${CURRENT_WINDOW_ID} 设置执行标志: isExecutingGroups = true, shouldStopExecution = false`);
             console.log(`[GEM-JS] 消息ID: ${detail.message_id || 'unknown'}`);
             console.log(`[GEM-JS] 总组数: ${detail.total_groups || 'unknown'}`);
 
@@ -506,9 +567,9 @@ app.registerExtension({
                             let hasStarted = false; // 标记队列是否已经开始执行
 
                             const checkQueue = () => {
-                                // ⚠️ 检查是否有中断请求（参考 GroupExecutor 官方实现）
-                                if (shouldStopExecution) {
-                                    console.log(`[GEM-JS] ⚠️ 检测到中断请求，立即停止队列等待`);
+                                // ✅ 多窗口支持：检查是否有中断请求（参考 GroupExecutor 官方实现）
+                                if (windowExecutionState.shouldStopExecution) {
+                                    console.log(`[GEM-JS] ⚠️ 窗口 ${CURRENT_WINDOW_ID} 检测到中断请求，立即停止队列等待`);
                                     resolve();
                                     return;
                                 }
@@ -567,9 +628,9 @@ app.registerExtension({
 
                     console.log(`[GEM-JS] ✓ 组 "${item.group_name}" 执行完成`);
 
-                    // 检查是否有中断请求
-                    if (shouldStopExecution) {
-                        console.log(`[GEM-JS] ⚠️ 检测到中断请求，停止后续组执行`);
+                    // ✅ 多窗口支持：检查是否有中断请求
+                    if (windowExecutionState.shouldStopExecution) {
+                        console.log(`[GEM-JS] ⚠️ 窗口 ${CURRENT_WINDOW_ID} 检测到中断请求，停止后续组执行`);
                         // Mute 当前组后退出
                         setGroupActive(item.group_name, false);
                         updateNodeStatus(node, t('interrupted'));
@@ -595,10 +656,12 @@ app.registerExtension({
                 console.error(`[GEM-JS] 执行出错:`, error);
                 updateNodeStatus(node, t('error'));
             } finally {
-                // 重置执行标志，允许下一次执行
-                isExecutingGroups = false;
-                shouldStopExecution = false;  // 重置中断标志
-                console.log(`[GEM-JS] 设置 isExecutingGroups = false, shouldStopExecution = false，执行流程结束`);
+                // ✅ 多窗口支持：重置执行标志，允许下一次执行
+                windowExecutionState.isExecutingGroups = false;
+                windowExecutionState.shouldStopExecution = false;  // 重置中断标志
+                windowExecutionState.windowExecutionLock = false;  // 释放执行锁
+                console.log(`[GEM-JS] 窗口 ${CURRENT_WINDOW_ID} 重置执行标志: isExecutingGroups = false, shouldStopExecution = false, windowExecutionLock = false`);
+                console.log(`[GEM-JS] 窗口 ${CURRENT_WINDOW_ID} 执行流程结束`);
 
                 releaseExecutionLock(node);
                 app.graph.setDirtyCanvas(true, true);
@@ -644,6 +707,32 @@ app.registerExtension({
         console.log(`[GEM-SETUP] ✓ 'group_executor_execute' 监听器注册成功`);
 
         console.log(`[GEM] ========== GroupExecutorManager Extension Setup Complete ==========`);
+
+        // ✅ 多窗口支持：添加窗口状态监控
+        const monitorWindowState = () => {
+            // 监控窗口焦点变化
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    console.log(`[GEM-WINDOW] 窗口 ${CURRENT_WINDOW_ID} 失去焦点`);
+                } else {
+                    console.log(`[GEM-WINDOW] 窗口 ${CURRENT_WINDOW_ID} 获得焦点`);
+                }
+            });
+
+            // 监控窗口关闭事件
+            window.addEventListener('beforeunload', () => {
+                console.log(`[GEM-WINDOW] 窗口 ${CURRENT_WINDOW_ID} 即将关闭，清理执行状态`);
+                windowExecutionState.isExecutingGroups = false;
+                windowExecutionState.shouldStopExecution = false;
+                windowExecutionState.windowExecutionLock = false;
+                windowExecutionState.isOurInterrupt = false;
+            });
+
+            console.log(`[GEM-WINDOW] 窗口 ${CURRENT_WINDOW_ID} 状态监控已启用`);
+        };
+
+        // 启动窗口状态监控
+        monitorWindowState();
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
