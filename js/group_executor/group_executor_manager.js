@@ -332,25 +332,30 @@ const distributedExecutionState = {
     canExecute() {
         // 只有主选项卡可以执行
         if (this.getCurrentRole() !== 'master') {
+            console.log(`[GEM-EXEC] 选项卡 ${CURRENT_TAB_ID} 不是主选项卡，无法执行`);
             return false;
         }
 
-        // 检查是否有其他选项卡正在执行
-        if (this.isExecutingGroups) {
-            return false;
-        }
-
-        // 检查执行锁
-        if (this.distributedLock) {
-            return false;
-        }
-
-        // 检查执行间隔
+        // 检查执行间隔（放宽限制，避免频繁阻止正常执行）
         const currentTime = Date.now();
-        if (currentTime - this.lastExecutionTime < 1000) {
+        if (currentTime - this.lastExecutionTime < 500) { // 从1秒减少到0.5秒
+            console.log(`[GEM-EXEC] 选项卡 ${CURRENT_TAB_ID} 执行间隔过短，拒绝执行 (${currentTime - this.lastExecutionTime}ms < 500ms)`);
             return false;
         }
 
+        // 检查是否有其他选项卡正在执行（但允许当前选项卡继续执行）
+        if (this.isExecutingGroups && this.executingTabId !== CURRENT_TAB_ID) {
+            console.log(`[GEM-EXEC] 选项卡 ${CURRENT_TAB_ID} 检测到其他选项卡正在执行 (${this.executingTabId})，拒绝执行`);
+            return false;
+        }
+
+        // 如果是当前选项卡自己正在执行，允许继续
+        if (this.isExecutingGroups && this.executingTabId === CURRENT_TAB_ID) {
+            console.log(`[GEM-EXEC] 选项卡 ${CURRENT_TAB_ID} 正在执行中，允许继续执行`);
+            return true;
+        }
+
+        console.log(`[GEM-EXEC] 选项卡 ${CURRENT_TAB_ID} 通过执行检查，可以开始新的执行`);
         return true;
     },
 
@@ -358,6 +363,12 @@ const distributedExecutionState = {
     requestExecutionLock() {
         if (!this.canExecute()) {
             return false;
+        }
+
+        // 如果已经是当前选项卡持有锁，不要重复请求
+        if (this.distributedLock && this.executingTabId === CURRENT_TAB_ID) {
+            console.log(`[GEM-EXEC] 选项卡 ${CURRENT_TAB_ID} 已持有执行锁，无需重复请求`);
+            return true;
         }
 
         this.distributedLock = true;
@@ -862,7 +873,8 @@ app.registerExtension({
                     console.log(`[GEM-JS]   - "${g.title}": is_muted=${g.is_muted}`);
                 });
 
-                // ✅ 修复：使用正确的边界检测方法（参考官方文档）
+                // ✅ 修复：确保所有组外节点在组执行期间被静默
+                // 这些节点不应该在组执行过程中执行，以免破坏组执行顺序
                 const nodesOutsideGroups = app.graph._nodes.filter(node => {
                     if (!node || !node.pos) return false;
 
@@ -876,12 +888,16 @@ app.registerExtension({
                 });
 
                 if (nodesOutsideGroups.length > 0) {
-                    console.log(`[GEM-JS] ⚠️ 发现 ${nodesOutsideGroups.length} 个不在任何组内的节点（这些节点总是会执行）:`);
+                    console.log(`[GEM-JS] ⚠️ 发现 ${nodesOutsideGroups.length} 个不在任何组内的节点，这些节点将在组执行期间被忽略以避免干扰执行顺序:`);
                     nodesOutsideGroups.forEach(node => {
                         console.log(`[GEM-JS]   - [#${node.id}] ${node.type} ${node.title ? `"${node.title}"` : ''}`);
+                        // 临时标记这些节点为已静音，避免它们干扰组执行
+                        node._gem_original_mode = node.mode;
+                        node.mode = 4; // 设置为静音模式
                     });
+                    console.log(`[GEM-JS] ✓ 组外节点已被临时静默，组执行完成后将恢复`);
                 } else {
-                    console.log(`[GEM-JS] ✓ 所有节点都在组内，没有组外节点`);
+                    console.log(`[GEM-JS] ✓ 所有节点都在组内，无需处理组外节点`);
                 }
             }
 
@@ -1051,6 +1067,22 @@ app.registerExtension({
                         // Mute 当前组后退出
                         setGroupActive(item.group_name, false);
                         updateNodeStatus(node, t('interrupted'));
+
+                        // ✅ 修复：中断时也要恢复组外节点状态
+                        if (app.graph && app.graph._nodes) {
+                            const restoredNodes = [];
+                            app.graph._nodes.forEach(node => {
+                                if (node._gem_original_mode !== undefined) {
+                                    node.mode = node._gem_original_mode;
+                                    delete node._gem_original_mode;
+                                    restoredNodes.push(node.id);
+                                }
+                            });
+                            if (restoredNodes.length > 0) {
+                                console.log(`[GEM-JS] ✓ 中断处理中已恢复 ${restoredNodes.length} 个组外节点的状态:`, restoredNodes);
+                            }
+                        }
+
                         break;  // 退出执行循环
                     }
 
@@ -1073,6 +1105,21 @@ app.registerExtension({
                 console.error(`[GEM-JS] 执行出错:`, error);
                 updateNodeStatus(node, t('error'));
             } finally {
+                // ✅ 修复：恢复组外节点的状态
+                if (app.graph && app.graph._nodes) {
+                    const restoredNodes = [];
+                    app.graph._nodes.forEach(node => {
+                        if (node._gem_original_mode !== undefined) {
+                            node.mode = node._gem_original_mode;
+                            delete node._gem_original_mode;
+                            restoredNodes.push(node.id);
+                        }
+                    });
+                    if (restoredNodes.length > 0) {
+                        console.log(`[GEM-JS] ✓ 已恢复 ${restoredNodes.length} 个组外节点的状态:`, restoredNodes);
+                    }
+                }
+
                 // ✅ 选项卡重构：释放分布式执行锁
                 distributedExecutionState.releaseExecutionLock();
                 console.log(`[GEM-JS] 选项卡 ${CURRENT_TAB_ID} 分布式执行锁已释放，执行流程结束`);
