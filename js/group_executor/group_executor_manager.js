@@ -2471,31 +2471,6 @@ app.registerExtension({
                 window.gemWebSocketDiagnostic.logListenerRegistration("group_executor_error", false, e);
             }
         }
-
-        // ========== 监听器注册确认机制 ==========
-        console.log(`[GEM-SETUP] ========== 开始注册事件监听器 ==========`);
-
-        /**
-         * 监听执行中断事件 (用户点击中断按钮)
-         */
-        try {
-            api.addEventListener("execution_interrupted", () => {
-                console.log("[GEM-INTERRUPT] 监听到执行中断事件！");
-                // 遍历所有节点，重置所有组执行管理器的状态
-                const allNodes = app.graph._nodes;
-                if (allNodes && allNodes.length > 0) {
-                    for (const node of allNodes) {
-                        if (node.type === "GroupExecutorManager") {
-                            console.log(`[GEM-INTERRUPT] 正在重置节点 #${node.id} 的状态...`);
-                            resetExecutionState(node);
-                        }
-                    }
-                }
-            });
-            console.log(`[GEM-SETUP] ✓ 'execution_interrupted' 监听器注册成功`);
-        } catch (e) {
-            console.error(`[GEM-SETUP] ✗ 'execution_interrupted' 监听器注册失败:`, e);
-        }
     },
 
     /**
@@ -2732,46 +2707,5 @@ app.registerExtension({
         }
 
         return true;
-    },
-
-    /**
-     * 重置所有受控组的状态，确保它们都被静音并释放执行锁。
-     * @param {object} node - 目标节点实例
-     */
-    resetExecutionState(node) {
-        if (!node || !node.widgets) {
-            console.warn('[GEM-RESET] 节点无效或缺少widgets，无法重置状态');
-            return;
-        }
-        console.log(`[GEM-RESET] 正在为节点 #${node.id} 重置执行状态...`);
-
-        try {
-            const configWidget = node.widgets.find(w => w.name === "group_config");
-            if (!configWidget || !configWidget.value) {
-                console.warn(`[GEM-RESET] 节点 #${node.id} 未找到组配置，跳过组静音操作。`);
-            } else {
-                const config = JSON.parse(configWidget.value);
-                if (Array.isArray(config)) {
-                    console.log(`[GEM-RESET] 将 ${config.length} 个组的状态重置为静音...`);
-                    for (const group of config) {
-                        if (group.group_name && group.group_name !== '__delay__') {
-                            this.setGroupActive(group.group_name, false);
-                        }
-                    }
-                }
-            }
-        } catch (e) {
-            console.error(`[GEM-RESET] 解析组配置失败，无法重置组状态:`, e);
-        }
-
-        // 释放执行锁并更新UI
-        this.releaseExecutionLock(node, "interrupt/reset");
-        this.updateNodeStatus(node, t('idle'));
-        node.widgets.find(w => w.name === "progress").value = 0;
-        app.graph.setDirtyCanvas(true, true);
-    },
-
-    setGroupActive(groupName, isActive) {
-        // ... existing code ...
     }
 });
