@@ -1656,7 +1656,7 @@ app.registerExtension({
         };
 
         /**
-         * 重置所有受控组的状态，确保它们都被静音并释放执行锁。
+         * 重置节点的执行状态（简化版，不操作组状态）
          * @param {object} node - 目标节点实例
          */
         const resetExecutionState = (node) => {
@@ -1667,33 +1667,31 @@ app.registerExtension({
             console.log(`[GEM-RESET] 正在为节点 #${node.id} 重置执行状态...`);
 
             try {
-                const configWidget = node.widgets.find(w => w.name === "group_config");
-                if (!configWidget || !configWidget.value) {
-                    console.warn(`[GEM-RESET] 节点 #${node.id} 未找到组配置，跳过组静音操作。`);
-                } else {
-                    const config = JSON.parse(configWidget.value);
-                    if (Array.isArray(config)) {
-                        console.log(`[GEM-RESET] 将 ${config.length} 个组的状态重置为静音...`);
-                        for (const group of config) {
-                            if (group.group_name && group.group_name !== '__delay__') {
-                                setGroupActive(group.group_name, false);
-                            }
-                        }
-                    }
+                // 释放执行锁
+                if (node._executionLock) {
+                    console.log(`[GEM-RESET] 释放执行锁...`);
+                    node._executionLock = false;
+                    node._executionLockStartTime = null;
                 }
-            } catch (e) {
-                console.error(`[GEM-RESET] 解析组配置失败，无法重置组状态:`, e);
-            }
 
-            // 释放执行锁并更新UI
-            releaseExecutionLock(node, "interrupt/reset");
-            updateNodeStatus(node, t('idle'));
-            const progressWidget = node.widgets.find(w => w.name === "progress");
-            if (progressWidget) {
-                progressWidget.value = 0;
+                // 重置进度条
+                const progressWidget = node.widgets.find(w => w.name === "progress");
+                if (progressWidget) {
+                    progressWidget.value = 0;
+                }
+
+                // 更新状态文本
+                const statusWidget = node.widgets.find(w => w.name === "status");
+                if (statusWidget) {
+                    statusWidget.value = t('idle');
+                }
+
+                // 强制重绘画布
+                app.graph.setDirtyCanvas(true, true);
+                console.log(`[GEM-RESET] ✓ 节点 #${node.id} 的状态已重置完成`);
+            } catch (e) {
+                console.error(`[GEM-RESET] 重置状态时出错:`, e);
             }
-            app.graph.setDirtyCanvas(true, true);
-            console.log(`[GEM-RESET] ✓ 节点 #${node.id} 的状态已重置完成`);
         };
 
         /**
