@@ -54,7 +54,7 @@ app.registerExtension({
 
         // 添加自定义Widget
         const onNodeCreated = nodeType.prototype.onNodeCreated;
-        nodeType.prototype.onNodeCreated = function() {
+        nodeType.prototype.onNodeCreated = function () {
             const result = onNodeCreated?.apply(this, arguments);
 
             // 初始化节点属性
@@ -85,7 +85,7 @@ app.registerExtension({
         /**
          * 创建自定义UI界面 - 增强版本，包含错误处理和状态验证
          */
-        nodeType.prototype.createCustomUI = function() {
+        nodeType.prototype.createCustomUI = function () {
             try {
                 console.log('[GEM-UI] 开始创建自定义UI:', this.id);
 
@@ -152,30 +152,30 @@ app.registerExtension({
                 </div>
             `;
 
-            // 添加到节点的自定义widget
-            this.addDOMWidget("gem_ui", "div", container);
-            this.customUI = container;
+                // 添加到节点的自定义widget
+                this.addDOMWidget("gem_ui", "div", container);
+                this.customUI = container;
 
-            // 绑定事件
-            this.bindUIEvents();
+                // 绑定事件
+                this.bindUIEvents();
 
-            // 初始化组列表
-            this.updateGroupsList();
+                // 初始化组列表
+                this.updateGroupsList();
 
-            // 立即初始化颜色过滤器
-            setTimeout(() => {
-                this.refreshColorFilter();
-            }, 50);
+                // 立即初始化颜色过滤器
+                setTimeout(() => {
+                    this.refreshColorFilter();
+                }, 50);
 
-            // 从widget的group_config中加载初始数据
-            setTimeout(() => {
-                this.loadConfigFromWidget();
-            }, 100);
+                // 从widget的group_config中加载初始数据
+                setTimeout(() => {
+                    this.loadConfigFromWidget();
+                }, 100);
 
-            // 监听图表变化，自动刷新组列表
-            this.setupGraphChangeListener();
+                // 监听图表变化，自动刷新组列表
+                this.setupGraphChangeListener();
 
-            console.log('[GEM-UI] 自定义UI创建完成');
+                console.log('[GEM-UI] 自定义UI创建完成');
 
             } catch (error) {
                 console.error('[GEM-UI] 创建自定义UI时出错:', error);
@@ -202,7 +202,7 @@ app.registerExtension({
         /**
          * 设置图表变化监听器
          */
-        nodeType.prototype.setupGraphChangeListener = function() {
+        nodeType.prototype.setupGraphChangeListener = function () {
             // 保存上次的组列表
             this.lastGroupsList = this.getAvailableGroups().join(',');
 
@@ -220,7 +220,7 @@ app.registerExtension({
         /**
          * 添加样式
          */
-        nodeType.prototype.addStyles = function() {
+        nodeType.prototype.addStyles = function () {
             if (document.querySelector('#gem-styles')) return;
 
             const style = document.createElement('style');
@@ -572,7 +572,7 @@ app.registerExtension({
         /**
          * 切换语言
          */
-        nodeType.prototype.switchLanguage = function() {
+        nodeType.prototype.switchLanguage = function () {
             // 在中英文之间切换
             const currentLang = globalMultiLanguageManager.getLanguage();
             const newLang = currentLang === 'zh' ? 'en' : 'zh';
@@ -589,7 +589,7 @@ app.registerExtension({
         /**
          * 更新 UI 文本（语言切换时使用）
          */
-        nodeType.prototype.updateUIText = function() {
+        nodeType.prototype.updateUIText = function () {
             if (!this.customUI) return;
 
             // 更新标题
@@ -662,7 +662,7 @@ app.registerExtension({
         /**
          * 绑定UI事件
          */
-        nodeType.prototype.bindUIEvents = function() {
+        nodeType.prototype.bindUIEvents = function () {
             const container = this.customUI;
 
             // 添加组按钮
@@ -698,7 +698,7 @@ app.registerExtension({
         /**
          * 刷新组列表下拉选项
          */
-        nodeType.prototype.refreshGroupsList = function() {
+        nodeType.prototype.refreshGroupsList = function () {
             // 刷新颜色过滤器选项
             this.refreshColorFilter();
 
@@ -736,7 +736,7 @@ app.registerExtension({
         /**
          * 添加组
          */
-        nodeType.prototype.addGroup = function() {
+        nodeType.prototype.addGroup = function () {
             const newGroup = {
                 id: Date.now(),
                 group_name: '',
@@ -751,7 +751,7 @@ app.registerExtension({
         /**
          * 删除组
          */
-        nodeType.prototype.deleteGroup = function(groupId) {
+        nodeType.prototype.deleteGroup = function (groupId) {
             const index = this.properties.groups.findIndex(g => g.id === groupId);
             if (index !== -1) {
                 this.properties.groups.splice(index, 1);
@@ -763,7 +763,7 @@ app.registerExtension({
         /**
          * 更新组列表显示
          */
-        nodeType.prototype.updateGroupsList = function() {
+        nodeType.prototype.updateGroupsList = function () {
             const listContainer = this.customUI.querySelector('#gem-groups-list');
             listContainer.innerHTML = '';
 
@@ -776,7 +776,7 @@ app.registerExtension({
         /**
          * 获取工作流中的所有组（支持颜色过滤）
          */
-        nodeType.prototype.getAvailableGroups = function() {
+        nodeType.prototype.getAvailableGroups = function () {
             if (!app.graph || !app.graph._groups) return [];
 
             let groups = app.graph._groups.filter(g => g && g.title);
@@ -794,7 +794,7 @@ app.registerExtension({
         /**
          * 获取ComfyUI内置颜色列表
          */
-        nodeType.prototype.getAvailableGroupColors = function() {
+        nodeType.prototype.getAvailableGroupColors = function () {
             // 只返回ComfyUI内置颜色
             const builtinColors = [
                 'red', 'brown', 'green', 'blue', 'pale blue',
@@ -807,7 +807,7 @@ app.registerExtension({
         /**
          * 标准化颜色格式
          */
-        nodeType.prototype.normalizeColor = function(color) {
+        nodeType.prototype.normalizeColor = function (color) {
             if (!color) return '';
 
             let normalizedColor = color.replace('#', '').trim().toLowerCase();
@@ -831,7 +831,7 @@ app.registerExtension({
         /**
          * 获取ComfyUI内置颜色的十六进制值
          */
-        nodeType.prototype.getComfyUIColorHex = function(colorName) {
+        nodeType.prototype.getComfyUIColorHex = function (colorName) {
             if (!colorName) return null;
 
             const normalizedColor = colorName.replace('#', '').trim().toLowerCase();
@@ -889,7 +889,7 @@ app.registerExtension({
         /**
          * 从工作流中动态检测颜色值
          */
-        nodeType.prototype.getDynamicColorFromWorkflow = function(colorName) {
+        nodeType.prototype.getDynamicColorFromWorkflow = function (colorName) {
             if (!app.graph || !app.graph._groups) return null;
 
             const colorNameLower = colorName.toLowerCase();
@@ -919,7 +919,7 @@ app.registerExtension({
         /**
          * 检查组是否匹配指定颜色
          */
-        nodeType.prototype.matchesGroupColor = function(group, filterColor) {
+        nodeType.prototype.matchesGroupColor = function (group, filterColor) {
             if (!group) return false;
             if (!filterColor || filterColor === '') return true;
 
@@ -951,7 +951,7 @@ app.registerExtension({
         /**
          * 通过颜色名称匹配（检查ComfyUI内置颜色映射）
          */
-        nodeType.prototype.matchColorByName = function(groupColor, filterColorName) {
+        nodeType.prototype.matchColorByName = function (groupColor, filterColorName) {
             if (!groupColor || !filterColorName) return false;
 
             // 标准化组颜色
@@ -975,7 +975,7 @@ app.registerExtension({
         /**
          * 检查两个颜色是否相近（容差匹配）
          */
-        nodeType.prototype.isColorClose = function(color1, color2, tolerance = 50) {
+        nodeType.prototype.isColorClose = function (color1, color2, tolerance = 50) {
             if (!color1 || !color2) return false;
 
             try {
@@ -1013,7 +1013,7 @@ app.registerExtension({
         /**
          * 刷新颜色过滤器选项
          */
-        nodeType.prototype.refreshColorFilter = function() {
+        nodeType.prototype.refreshColorFilter = function () {
             const colorFilter = this.customUI.querySelector('#gem-color-filter');
             if (!colorFilter) return;
 
@@ -1063,7 +1063,7 @@ app.registerExtension({
         /**
          * 获取颜色显示名称
          */
-        nodeType.prototype.getColorDisplayName = function(color) {
+        nodeType.prototype.getColorDisplayName = function (color) {
             if (!color) return t('allColors');
 
             // 如果是颜色名称，返回首字母大写的格式
@@ -1080,7 +1080,7 @@ app.registerExtension({
         /**
          * 获取对比色（用于文本颜色）
          */
-        nodeType.prototype.getContrastColor = function(hexColor) {
+        nodeType.prototype.getContrastColor = function (hexColor) {
             if (!hexColor) return '#E0E0E0';
 
             // 移除 # 号
@@ -1101,7 +1101,7 @@ app.registerExtension({
         /**
          * 创建组项元素
          */
-        nodeType.prototype.createGroupItem = function(group, index) {
+        nodeType.prototype.createGroupItem = function (group, index) {
             const item = document.createElement('div');
             item.className = 'gem-group-item';
             item.draggable = true;
@@ -1205,7 +1205,7 @@ app.registerExtension({
         /**
          * 从widget加载配置
          */
-        nodeType.prototype.loadConfigFromWidget = function() {
+        nodeType.prototype.loadConfigFromWidget = function () {
             const configWidget = this.widgets?.find(w => w.name === "group_config");
             if (configWidget && configWidget.value) {
                 try {
@@ -1223,7 +1223,7 @@ app.registerExtension({
         /**
          * 同步配置到widget
          */
-        nodeType.prototype.syncConfig = function() {
+        nodeType.prototype.syncConfig = function () {
             console.log('[GEM-SYNC] ========== 同步配置 ==========');
             console.log('[GEM-SYNC] 时间戳:', new Date().toISOString());
 
@@ -1263,7 +1263,7 @@ app.registerExtension({
          * 序列化节点数据 - 增强版本，确保完整的状态保存
          */
         const onSerialize = nodeType.prototype.onSerialize;
-        nodeType.prototype.onSerialize = function(info) {
+        nodeType.prototype.onSerialize = function (info) {
             // 调用原始序列化方法
             const data = onSerialize?.apply?.(this, arguments);
 
@@ -1304,7 +1304,7 @@ app.registerExtension({
          * 反序列化节点数据 - 增强版本，包含数据验证和兼容性处理
          */
         const onConfigure = nodeType.prototype.onConfigure;
-        nodeType.prototype.onConfigure = function(info) {
+        nodeType.prototype.onConfigure = function (info) {
             // 调用原始配置方法
             onConfigure?.apply?.(this, arguments);
 
@@ -1326,9 +1326,9 @@ app.registerExtension({
                 // 验证并清理组数据
                 const validGroups = info.groups.filter(group => {
                     return group &&
-                           typeof group === 'object' &&
-                           typeof group.group_name === 'string' &&
-                           typeof group.delay_seconds === 'number';
+                        typeof group === 'object' &&
+                        typeof group.group_name === 'string' &&
+                        typeof group.delay_seconds === 'number';
                 });
 
                 this.properties.groups = validGroups;
@@ -1396,7 +1396,7 @@ app.registerExtension({
             } else {
                 // 如果UI还未创建，等待节点创建完成后恢复
                 const originalCreateCustomUI = this.createCustomUI;
-                this.createCustomUI = function() {
+                this.createCustomUI = function () {
                     const result = originalCreateCustomUI.apply(this, arguments);
 
                     setTimeout(() => {
@@ -1422,7 +1422,7 @@ app.registerExtension({
         /**
          * 检查执行锁状态
          */
-        nodeType.prototype.checkExecutionLock = function(node, executionId) {
+        nodeType.prototype.checkExecutionLock = function (node, executionId) {
             console.log(`[GEM-LOCK] #${executionId} ========== 检查执行锁状态 ==========`);
 
             // 检查节点是否有执行锁时间戳记录
@@ -1463,7 +1463,7 @@ app.registerExtension({
         /**
          * 强制释放执行锁
          */
-        nodeType.prototype.forceReleaseExecutionLock = function(node, executionId, reason) {
+        nodeType.prototype.forceReleaseExecutionLock = function (node, executionId, reason) {
             console.log(`[GEM-LOCK] #${executionId} ========== 强制释放执行锁 ==========`);
             console.log(`[GEM-LOCK] #${executionId} 释放原因: ${reason}`);
 
@@ -1499,7 +1499,7 @@ app.registerExtension({
         /**
          * 检查队列状态
          */
-        nodeType.prototype.checkQueueStatus = async function(executionId) {
+        nodeType.prototype.checkQueueStatus = async function (executionId) {
             console.log(`[GEM-LOCK] #${executionId} 检查队列状态...`);
 
             try {
@@ -1536,7 +1536,7 @@ app.registerExtension({
         /**
          * 安全设置执行锁
          */
-        nodeType.prototype.setExecutionLock = function(node, executionId) {
+        nodeType.prototype.setExecutionLock = function (node, executionId) {
             console.log(`[GEM-LOCK] #${executionId} ========== 安全设置执行锁 ==========`);
             console.log(`[GEM-LOCK] #${executionId} 节点ID: ${node.id}`);
             console.log(`[GEM-LOCK] #${executionId} 节点类型: ${node.type}`);
@@ -1597,7 +1597,7 @@ app.registerExtension({
         /**
          * 安全释放执行锁
          */
-        nodeType.prototype.releaseExecutionLock = function(node, executionId) {
+        nodeType.prototype.releaseExecutionLock = function (node, executionId) {
             console.log(`[GEM-LOCK] #${executionId} ========== 安全释放执行锁 ==========`);
             console.log(`[GEM-LOCK] #${executionId} 节点ID: ${node.id}`);
             console.log(`[GEM-LOCK] #${executionId} 节点类型: ${node.type}`);
@@ -1659,7 +1659,7 @@ app.registerExtension({
          * 节点被移除时清理资源 - 增强版本，确保完整的资源清理
          */
         const onRemoved = nodeType.prototype.onRemoved;
-        nodeType.prototype.onRemoved = function() {
+        nodeType.prototype.onRemoved = function () {
             console.log('[GEM-REMOVE] 开始清理节点资源:', this.id);
 
             // 清除定时器
@@ -1815,8 +1815,8 @@ app.registerExtension({
             try {
                 // 将toast类型映射到项目toast管理器的等级
                 const toastLevel = type === 'error' ? 'error' :
-                                 type === 'warning' ? 'warning' :
-                                 type === 'success' ? 'success' : 'info';
+                    type === 'warning' ? 'warning' :
+                        type === 'success' ? 'success' : 'info';
 
                 toastManagerProxy.showToast(message, toastLevel, duration, {
                     // 可以在这里添加特定于组执行管理器的选项
@@ -1885,6 +1885,15 @@ app.registerExtension({
                 console.log(`[GEM-JS] 监听器ID: ${listenerID}`);
                 console.log(`[GEM-JS] 接收时间: ${new Date().toISOString()}`);
                 console.log(`[GEM-JS] detail 对象:`, JSON.parse(JSON.stringify(detail)));
+
+                // ========== 多页面执行隔离检查 ==========
+                const nodeId = String(detail.node_id);
+                if (!window.currentlyExecutingGemNodes.has(nodeId)) {
+                    console.warn(`[GEM-JS] ⚠️ 接收到来自其他页面的执行请求 (节点ID: ${nodeId})，已忽略。`);
+                    console.warn(`[GEM-JS] ⚠️ 当前页面正在等待的节点ID:`, Array.from(window.currentlyExecutingGemNodes));
+                    return;
+                }
+                console.log(`[GEM-JS] ✓ 节点ID ${nodeId} 验证通过，是当前页面发起的执行。`);
 
                 // 记录到诊断工具
                 if (window.gemWebSocketDiagnostic) {
@@ -2113,7 +2122,7 @@ app.registerExtension({
 
                         const outputNodes = groupNodes.filter((n) => {
                             return n.mode !== LiteGraph.NEVER &&
-                                   n.constructor.nodeData?.output_node === true;
+                                n.constructor.nodeData?.output_node === true;
                         });
                         console.log(`[GEM-JS] #${executionId} 输出节点数: ${outputNodes.length}`);
                         console.log(`[GEM-JS] #${executionId} 输出节点:`, outputNodes.map(n => `${n.type}(${n.id})`));

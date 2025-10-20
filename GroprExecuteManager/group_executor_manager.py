@@ -7,6 +7,8 @@ import hashlib
 import json
 import logging
 import time
+import sys
+import os
 from server import PromptServer
 
 # 日志记录

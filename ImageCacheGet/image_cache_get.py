@@ -10,7 +10,7 @@ import torch
 import numpy as np
 from PIL import Image
 from typing import List, Dict, Any, Optional, Tuple
-from ..image_cache_manager import cache_manager
+from ..ImageCacheManager.image_cache_manager import cache_manager
 import hashlib
 
 CATEGORY_TYPE = "Danbooru/Image"
