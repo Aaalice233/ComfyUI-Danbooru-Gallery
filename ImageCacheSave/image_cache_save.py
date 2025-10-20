@@ -73,9 +73,17 @@ class ImageCache:
             # 参数处理
             processed_enable_preview = enable_preview[0] if isinstance(enable_preview, list) else enable_preview
 
+            # 将输入的批次列表展开为单个图像张量列表
+            # ComfyUI's INPUT_IS_LIST=True wraps inputs in a list.
+            # Each item in the list is a batch tensor (B, H, W, C).
+            # We need to unpack all batches into a single flat list of images for the manager.
+            unpacked_images = []
+            for batch in images:
+                unpacked_images.extend(list(batch))  # Iterating over a tensor unpacks the first dimension
+
             # 使用缓存管理器缓存图像（固定使用默认前缀，不清除之前缓存以支持组执行管理器）
             results = cache_manager.cache_images(
-                images=images,
+                images=unpacked_images,
                 filename_prefix="cached_image",  # 固定使用默认前缀
                 masks=None,  # 不再处理masks
                 clear_cache=False,  # 恢复为False，以启用追加逻辑
