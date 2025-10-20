@@ -33,10 +33,20 @@ class ImageCacheManager:
                 "timestamp": 0,
                 "metadata": {}
             }
-            # 会话追踪字段
-            self.session_execution_count = 0  # 当前会话中保存缓存的次数
-            self.last_save_timestamp = 0      # 最后一次保存缓存的时间戳
-            self.has_saved_this_session = False  # 当次会话是否已保存过缓存
+
+            # 增强的会话追踪字段
+            self.session_execution_count = 0          # 当前会话中保存缓存的次数
+            self.last_save_timestamp = 0              # 最后一次保存缓存的时间戳
+            self.has_saved_this_session = False       # 当次会话是否已保存过缓存
+            self.session_start_time = time.time()     # 当前会话开始时间
+            self.session_id = int(time.time())        # 会话唯一ID
+            self.last_get_timestamp = 0               # 最后一次获取缓存的时间戳
+            self.get_count_this_session = 0           # 当前会话中获取缓存的次数
+
+            # 状态同步字段
+            self._pending_operations = set()          # 进行中的操作集合
+            self._operation_lock = False              # 操作锁，防止并发问题
+            self._last_operation = None               # 最后一次操作信息
 
             # 延迟导入folder_paths
             try:
@@ -54,16 +64,39 @@ class ImageCacheManager:
             self.type = "temp"
             self.compress_level = 1
             self._initialized = True
-            print("[ImageCacheManager] Initialized global image cache manager")
+            print(f"[ImageCacheManager] Initialized global image cache manager (Session ID: {self.session_id})")
 
     def clear_cache(self) -> None:
         """清空缓存"""
-        self.cache_data["images"] = []
-        self.cache_data["timestamp"] = 0
-        self.cache_data["metadata"] = {}
-        # 重置会话追踪信息
-        self.has_saved_this_session = False
-        print("[ImageCacheManager] 缓存已清空，会话状态已重置")
+        operation_id = f"clear_{int(time.time() * 1000)}"
+        self._start_operation(operation_id, "clear_cache")
+
+        try:
+            print(f"[ImageCacheManager] 清空缓存开始 (操作ID: {operation_id})")
+
+            # 清空缓存数据
+            self.cache_data["images"] = []
+            self.cache_data["timestamp"] = 0
+            self.cache_data["metadata"] = {}
+
+            # 重置会话追踪信息
+            self.has_saved_this_session = False
+            self.session_execution_count = 0
+            self.last_save_timestamp = 0
+            self.get_count_this_session = 0
+            self.last_get_timestamp = 0
+
+            # 记录操作
+            self._last_operation = {
+                "type": "clear_cache",
+                "timestamp": time.time(),
+                "session_id": self.session_id
+            }
+
+            print("[ImageCacheManager] ✓ 缓存已清空，会话状态已重置")
+
+        finally:
+            self._end_operation(operation_id)
 
     def cache_images(self,
                     images: List[torch.Tensor],
@@ -80,66 +113,71 @@ class ImageCacheManager:
         Returns:
             缓存的图像数据列表
         """
-        print(f"[ImageCacheManager DEBUG] cache_images called on instance ID: {self.instance_id}")
-        print(f"[ImageCacheManager DEBUG] Current cache size before adding: {len(self.cache_data['images'])}")
-        print(f"[ImageCacheManager DEBUG] Number of new images to add: {len(images)}")
+        operation_id = f"cache_{int(time.time() * 1000)}"
+        self._start_operation(operation_id, "cache_images")
 
-        timestamp = int(time.time() * 1000)
-        results = []
-        cache_data = []
+        try:
+            print(f"[ImageCacheManager DEBUG] cache_images called on instance ID: {self.instance_id}")
+            print(f"[ImageCacheManager DEBUG] Operation ID: {operation_id}")
+            print(f"[ImageCacheManager DEBUG] Current cache size before adding: {len(self.cache_data['images'])}")
+            print(f"[ImageCacheManager DEBUG] Number of new images to add: {len(images)}")
 
-        print(f"[ImageCacheManager] 开始缓存 {len(images)} 张图像")
-        print(f"[ImageCacheManager] 文件名前缀: {filename_prefix}")
-        print(f"[ImageCacheManager] 当前模式: 追加（不清空旧缓存）")
+            timestamp = int(time.time() * 1000)
+            results = []
+            cache_data = []
 
-        for idx, image_batch in enumerate(images):
-            try:
-                # 图像处理
-                image = image_batch.squeeze()
-                rgb_image = Image.fromarray(np.clip(255. * image.cpu().numpy(), 0, 255).astype(np.uint8))
+            print(f"[ImageCacheManager] 开始缓存 {len(images)} 张图像")
+            print(f"[ImageCacheManager] 文件名前缀: {filename_prefix}")
+            print(f"[ImageCacheManager] 当前模式: 追加（不清空旧缓存）")
 
-                # 创建默认遮罩（完全不透明）
-                mask_img = Image.new('L', rgb_image.size, 255)
+                for idx, image_batch in enumerate(images):
+                try:
+                    # 图像处理
+                    image = image_batch.squeeze()
+                    rgb_image = Image.fromarray(np.clip(255. * image.cpu().numpy(), 0, 255).astype(np.uint8))
 
-                # 合并为RGBA
-                r, g, b = rgb_image.convert('RGB').split()
-                rgba_image = Image.merge('RGBA', (r, g, b, mask_img))
+                    # 创建默认遮罩（完全不透明）
+                    mask_img = Image.new('L', rgb_image.size, 255)
 
-                # 保存文件
-                filename = f"{filename_prefix}_{timestamp}_{idx}.png"
-                file_path = os.path.join(self.output_dir, filename)
-                rgba_image.save(file_path, compress_level=self.compress_level)
+                    # 合并为RGBA
+                    r, g, b = rgb_image.convert('RGB').split()
+                    rgba_image = Image.merge('RGBA', (r, g, b, mask_img))
 
-                # 准备缓存数据，包含预览格式信息
-                cache_item = {
-                    "filename": filename,
-                    "subfolder": "",
-                    "type": self.type,
-                    "timestamp": timestamp,
-                    "index": idx,
-                    "preview_format": "rgba" if preview_rgba else "rgb",
-                    "original_filename": filename
-                }
-                cache_data.append(cache_item)
+                    # 保存文件
+                    filename = f"{filename_prefix}_{timestamp}_{idx}.png"
+                    file_path = os.path.join(self.output_dir, filename)
+                    rgba_image.save(file_path, compress_level=self.compress_level)
 
-                # 预览处理
-                if not preview_rgba:
-                    preview_filename = f"{filename_prefix}_{timestamp}_{idx}_preview.jpg"
-                    preview_path = os.path.join(self.output_dir, preview_filename)
-                    rgb_image.save(preview_path, format="JPEG", quality=95)
-                    results.append({
-                        "filename": preview_filename,
+                    # 准备缓存数据，包含预览格式信息
+                    cache_item = {
+                        "filename": filename,
                         "subfolder": "",
-                        "type": self.type
-                    })
-                else:
-                    results.append(cache_item)
+                        "type": self.type,
+                        "timestamp": timestamp,
+                        "index": idx,
+                        "preview_format": "rgba" if preview_rgba else "rgb",
+                        "original_filename": filename
+                    }
+                    cache_data.append(cache_item)
 
-                print(f"[ImageCacheManager] 缓存图像 {idx+1}/{len(images)}: {filename}")
+                    # 预览处理
+                    if not preview_rgba:
+                        preview_filename = f"{filename_prefix}_{timestamp}_{idx}_preview.jpg"
+                        preview_path = os.path.join(self.output_dir, preview_filename)
+                        rgb_image.save(preview_path, format="JPEG", quality=95)
+                        results.append({
+                            "filename": preview_filename,
+                            "subfolder": "",
+                            "type": self.type
+                        })
+                    else:
+                        results.append(cache_item)
 
-            except Exception as e:
-                print(f"[ImageCacheManager] 处理图像 {idx+1} 时出错: {str(e)}")
-                continue
+                    print(f"[ImageCacheManager] 缓存图像 {idx+1}/{len(images)}: {filename}")
+
+                except Exception as e:
+                    print(f"[ImageCacheManager] 处理图像 {idx+1} 时出错: {str(e)}")
+                    continue
 
         # 更新全局缓存（总是追加）
         self.cache_data["images"].extend(cache_data)
@@ -175,6 +213,9 @@ class ImageCacheManager:
             except Exception as e:
                 print(f"[ImageCacheManager] WebSocket通知失败: {e}")
 
+        finally:
+            self._end_operation(operation_id)
+
         return results
 
     def get_cached_images(self,
@@ -190,12 +231,21 @@ class ImageCacheManager:
         Returns:
             (images_tensors, masks_tensors) 图像和遮罩张量元组
         """
-        print(f"[ImageCacheManager DEBUG] get_cached_images called on instance ID: {self.instance_id}")
-        print(f"[ImageCacheManager DEBUG] Current cache size at get: {len(self.cache_data['images'])}")
+        operation_id = f"get_{int(time.time() * 1000)}"
+        self._start_operation(operation_id, "get_cached_images")
 
-        print(f"[ImageCacheManager] 开始获取缓存图像")
-        print(f"[ImageCacheManager] 获取最新: {get_latest}")
-        print(f"[ImageCacheManager] 索引: {index}")
+        try:
+            # 增加获取计数
+            self.increment_get_count()
+
+            print(f"[ImageCacheManager DEBUG] get_cached_images called on instance ID: {self.instance_id}")
+            print(f"[ImageCacheManager DEBUG] Operation ID: {operation_id}")
+            print(f"[ImageCacheManager DEBUG] Current cache size at get: {len(self.cache_data['images'])}")
+
+            print(f"[ImageCacheManager] 开始获取缓存图像")
+            print(f"[ImageCacheManager] 获取最新: {get_latest}")
+            print(f"[ImageCacheManager] 索引: {index}")
+            print(f"[ImageCacheManager] 会话获取次数: {self.get_count_this_session}")
 
         # 检查缓存中是否有图像
         if not self.cache_data["images"]:
@@ -324,6 +374,9 @@ class ImageCacheManager:
             print(f"[ImageCacheManager] 异常时空白图像形状: {empty_image.shape}")
             return [empty_image], [empty_mask]
 
+        finally:
+            self._end_operation(operation_id)
+
     def get_cache_info(self) -> Dict[str, Any]:
         """
         获取当前缓存信息
@@ -371,6 +424,44 @@ class ImageCacheManager:
 
         print(f"[ImageCacheManager] 缓存有效，保存时间: {age_minutes:.1f}分钟前，会话次数: {self.session_execution_count}")
         return True
+
+    def _start_operation(self, operation_id: str, operation_type: str) -> None:
+        """开始操作，添加到操作集合"""
+        if self._operation_lock:
+            print(f"[ImageCacheManager] 警告: 操作被锁定，{operation_id} 等待中...")
+        self._pending_operations.add(operation_id)
+        print(f"[ImageCacheManager] 开始操作: {operation_type} (ID: {operation_id})")
+
+    def _end_operation(self, operation_id: str) -> None:
+        """结束操作，从操作集合中移除"""
+        if operation_id in self._pending_operations:
+            self._pending_operations.remove(operation_id)
+        print(f"[ImageCacheManager] 完成操作: {operation_id}")
+
+    def get_session_info(self) -> Dict[str, Any]:
+        """获取会话信息"""
+        current_time = time.time()
+        session_duration = current_time - self.session_start_time
+
+        return {
+            "session_id": self.session_id,
+            "session_start_time": self.session_start_time,
+            "session_duration_seconds": round(session_duration, 2),
+            "execution_count": self.session_execution_count,
+            "get_count": self.get_count_this_session,
+            "has_saved_this_session": self.has_saved_this_session,
+            "last_save_timestamp": self.last_save_timestamp,
+            "last_get_timestamp": self.last_get_timestamp,
+            "pending_operations": list(self._pending_operations),
+            "operation_lock": self._operation_lock,
+            "last_operation": self._last_operation
+        }
+
+    def increment_get_count(self) -> None:
+        """增加获取计数"""
+        self.get_count_this_session += 1
+        self.last_get_timestamp = time.time()
+        print(f"[ImageCacheManager] 获取次数更新: {self.get_count_this_session}")
 
 # 全局缓存管理器实例
 cache_manager = ImageCacheManager()

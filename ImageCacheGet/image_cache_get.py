@@ -39,10 +39,52 @@ class ImageReceiver:
 
     @classmethod
     def IS_CHANGED(cls, *args, **kwargs):
-        # 通过返回当前时间的哈希值，强制节点每次都重新执行
-        # 这对于组执行器至关重要，因为它能确保节点在每个组的上下文中都实际运行
-        # 而不是被ComfyUI的执行缓存跳过
-        return hashlib.sha256(str(time.time()).encode()).hexdigest()
+        """
+        智能判断节点是否需要重新执行
+
+        策略：
+        1. 如果缓存管理器有有效缓存，返回稳定值，避免不必要的重复执行
+        2. 如果缓存管理器没有缓存，强制执行一次以获取默认图像
+        3. 检测是否在组执行上下文中，避免"抢跑"
+        """
+        try:
+            from ..ImageCacheManager.image_cache_manager import cache_manager
+
+            # 获取缓存信息
+            cache_info = cache_manager.get_cache_info()
+            cache_count = cache_info['count']
+            last_save_timestamp = cache_manager.last_save_timestamp
+            has_saved_this_session = cache_manager.has_saved_this_session
+
+            # 获取当前时间戳（秒级精度）
+            current_timestamp = int(time.time())
+
+            print(f"[ImageCacheGet.IS_CHANGED] ========== 智能执行判断 ==========")
+            print(f"[ImageCacheGet.IS_CHANGED] 缓存状态: count={cache_count}, has_saved={has_saved_this_session}")
+            print(f"[ImageCacheGet.IS_CHANGED] 最后保存时间: {last_save_timestamp}")
+            print(f"[ImageCacheGet.IS_CHANGED] 当前时间: {current_timestamp}")
+
+            # 如果当前有缓存，且是在本次会话中保存的，返回稳定值避免重复执行
+            if cache_count > 0 and has_saved_this_session:
+                # 使用缓存信息的哈希值，只要缓存没变化就不会重新执行
+                cache_state_str = f"{cache_count}_{last_save_timestamp}"
+                cache_hash = hashlib.sha256(cache_state_str.encode()).hexdigest()
+                print(f"[ImageCacheGet.IS_CHANGED] 缓存有效，返回稳定哈希: {cache_hash[:16]}...")
+                return cache_hash
+
+            # 如果没有缓存，或者缓存是上次会话的，需要执行一次
+            else:
+                # 生成基于时间的哈希，但使用较低的时间精度（秒级）
+                # 这样在短时间内不会重复执行，但能保证会执行一次
+                time_hash = hashlib.sha256(str(current_timestamp).encode()).hexdigest()
+                print(f"[ImageCacheGet.IS_CHANGED] 需要执行，返回时间哈希: {time_hash[:16]}...")
+                return time_hash
+
+        except Exception as e:
+            print(f"[ImageCacheGet.IS_CHANGED] 判断过程出错，使用默认策略: {str(e)}")
+            # 出错时回退到原来的策略，但使用秒级时间精度
+            current_timestamp = int(time.time())
+            return hashlib.sha256(str(current_timestamp).encode()).hexdigest()
 
     @classmethod
     def INPUT_TYPES(cls):

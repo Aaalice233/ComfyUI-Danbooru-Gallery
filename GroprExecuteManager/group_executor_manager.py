@@ -63,13 +63,34 @@ class GroupExecutorManager:
             logger.info(f"[GEM-PY] ==================== Python Execute 被调用 #{exec_id} ====================")
             logger.info(f"[GEM-PY] #{exec_id} 时间戳: {time.time()}")
             logger.info(f"[GEM-PY] #{exec_id} 节点ID: {unique_id}")
-            logger.info(f"[GEM-PY] #{exec_id} 原始配置类型: {type(group_config)}")
+            logger.info(f"[GEM-PY] #{exec_id] 原始配置类型: {type(group_config)}")
             logger.info(f"[GEM-PY] #{exec_id} 原始配置长度: {len(group_config) if group_config else 0}")
             logger.info(f"[GEM-PY] #{exec_id} 原始配置（前500字符）: {group_config[:500] if group_config else 'None'}")
 
             # 如果配置很长，打印完整内容
             if group_config and len(group_config) > 500:
                 logger.info(f"[GEM-PY] #{exec_id} 原始配置（完整）: {group_config}")
+
+            # 新增：阻止初始队列执行机制
+            # 发送"准备执行"信号到前端，让前端阻止ComfyUI的默认执行流程
+            try:
+                logger.info(f"[GEM-PY] #{exec_id} 发送'准备执行'信号到前端，阻止初始队列...")
+                preparation_data = {
+                    "node_id": unique_id,
+                    "exec_id": exec_id,
+                    "timestamp": time.time(),
+                    "action": "prepare_execution"
+                }
+                PromptServer.instance.send_sync("group_executor_prepare", preparation_data)
+                logger.info(f"[GEM-PY] #{exec_id} ✓ '准备执行'信号已发送")
+
+                # 等待前端确认（短暂等待，避免阻塞）
+                import time
+                time.sleep(0.1)  # 100ms等待前端处理
+
+            except Exception as e:
+                logger.error(f"[GEM-PY] #{exec_id} ✗ 发送'准备执行'信号失败: {str(e)}")
+                # 即使信号发送失败，也继续执行，因为这可能只是前端连接问题
 
             # 解析配置
             execution_list = []
@@ -214,21 +235,24 @@ class GroupExecutorManager:
             logger.info(f"[GEM-PY] #{exec_id} 事件名称: group_executor_execute")
             logger.info(f"[GEM-PY] #{exec_id} 目标节点ID: {unique_id}")
 
-            # ========== WebSocket 发送确认机制 ==========
+            # ========== 改进的WebSocket发送确认机制 ==========
             message_data = {
                 "node_id": unique_id,
                 "execution_list": validated_list,
                 "python_exec_id": exec_id,  # 添加 Python 执行ID用于追踪
-                "timestamp": time.time()
+                "timestamp": time.time(),
+                "message_id": f"gem_{exec_id}_{int(time.time() * 1000)}",  # 添加消息ID用于确认
+                "total_groups": len(validated_list)  # 添加总组数信息
             }
 
             websocket_send_success = False
-            max_retries = 3
-            retry_delay = 0.5  # 秒
+            max_retries = 5  # 增加重试次数
+            retry_delay = 0.3  # 秒，减少初始延迟
 
             for attempt in range(max_retries):
                 try:
                     logger.info(f"[GEM-PY] #{exec_id} WebSocket 发送尝试 #{attempt + 1}/{max_retries}")
+                    logger.info(f"[GEM-PY] #{exec_id} 消息ID: {message_data['message_id']}")
 
                     # 检查PromptServer实例状态
                     if not PromptServer.instance:
@@ -241,15 +265,30 @@ class GroupExecutorManager:
                         logger.info(f"[GEM-PY] #{exec_id} 当前连接的WebSocket客户端数量: {client_count}")
 
                         if client_count == 0:
-                            logger.warning(f"[GEM-PY] #{exec_id} ⚠️ 没有WebSocket客户端连接")
+                            logger.warning(f"[GEM-PY] #{exec_id} ⚠️ 没有WebSocket客户端连接，等待连接...")
+                            # 等待一段时间让客户端有机会连接
+                            if attempt < max_retries - 1:
+                                time.sleep(1.0)
+                                continue
                     else:
                         logger.warning(f"[GEM-PY] #{exec_id} ⚠️ 无法检查WebSocket客户端状态")
 
-                    # 发送消息
+                    # 发送执行消息
                     PromptServer.instance.send_sync("group_executor_execute", message_data)
+
+                    # 立即发送状态同步消息
+                    sync_data = {
+                        "node_id": unique_id,
+                        "message_id": message_data["message_id"],
+                        "status": "message_sent",
+                        "python_exec_id": exec_id,
+                        "timestamp": time.time()
+                    }
+                    PromptServer.instance.send_sync("group_executor_status", sync_data)
 
                     websocket_send_success = True
                     logger.info(f"[GEM-PY] #{exec_id} ✓ WebSocket 消息发送成功")
+                    logger.info(f"[GEM-PY] #{exec_id} 状态同步消息也已发送")
                     break
 
                 except Exception as e:
@@ -259,26 +298,31 @@ class GroupExecutorManager:
                     if attempt < max_retries - 1:
                         logger.info(f"[GEM-PY] #{exec_id} 等待 {retry_delay}秒后重试...")
                         time.sleep(retry_delay)
-                        retry_delay *= 1.5  # 指数退避
+                        retry_delay = min(retry_delay * 1.5, 3.0)  # 指数退避，最大3秒
 
             if not websocket_send_success:
                 logger.error(f"[GEM-PY] #{exec_id} ✗ 所有WebSocket发送尝试都失败了")
                 # 尝试发送错误事件到前端
                 try:
-                    PromptServer.instance.send_sync("group_executor_error", {
+                    error_data = {
                         "node_id": unique_id,
-                        "errors": [f"WebSocket通信失败: 无法发送执行指令到前端"],
+                        "message_id": message_data.get("message_id", "unknown"),
+                        "errors": [f"WebSocket通信失败: 无法发送执行指令到前端 (重试{max_retries}次均失败)"],
                         "python_exec_id": exec_id,
-                        "timestamp": time.time()
-                    })
+                        "timestamp": time.time(),
+                        "error_type": "websocket_failed"
+                    }
+                    PromptServer.instance.send_sync("group_executor_error", error_data)
                     logger.info(f"[GEM-PY] #{exec_id} ✓ 已发送错误通知到前端")
                 except Exception as error_send_e:
                     logger.error(f"[GEM-PY] #{exec_id} ✗ 发送错误通知也失败了: {error_send_e}")
             else:
                 logger.info(f"[GEM-PY] #{exec_id} ✓ 已发送 WebSocket 消息到前端")
                 logger.info(f"[GEM-PY] #{exec_id} 消息内容验证:")
+                logger.info(f"[GEM-PY] #{exec_id}   - message_id: {message_data['message_id']}")
                 logger.info(f"[GEM-PY] #{exec_id}   - node_id: {message_data['node_id']}")
                 logger.info(f"[GEM-PY] #{exec_id}   - execution_list 长度: {len(message_data['execution_list'])}")
+                logger.info(f"[GEM-PY] #{exec_id}   - total_groups: {message_data['total_groups']}")
                 logger.info(f"[GEM-PY] #{exec_id}   - python_exec_id: {message_data['python_exec_id']}")
 
             logger.info(f"[GEM-PY] #{exec_id} ==================== Python Execute 完成 ====================")

@@ -209,6 +209,63 @@ app.registerExtension({
         });
         console.log(`[GEM-SETUP] ✓ 'execution_interrupted' 监听器注册成功`);
 
+        console.log(`[GEM-SETUP] 注册 'group_executor_prepare' 监听器...`);
+        api.addEventListener("group_executor_prepare", async ({ detail }) => {
+            console.log(`[GEM-JS] ========== 收到准备执行信号 ==========`);
+            console.log(`[GEM-JS] detail:`, detail);
+
+            const nodeId = String(detail.node_id);
+            const node = app.graph._nodes_by_id[nodeId];
+
+            if (!node) {
+                console.error(`[GEM-JS] ✗ 未找到节点:`, nodeId);
+                return;
+            }
+
+            console.log(`[GEM-JS] ✓ 找到节点 #${nodeId}，准备阻止初始队列执行`);
+
+            // 立即中断任何正在进行的队列执行
+            try {
+                console.log(`[GEM-JS] 立即中断当前队列执行...`);
+                await api.interrupt();
+                console.log(`[GEM-JS] ✓ 队列中断完成`);
+            } catch (e) {
+                console.warn(`[GEM-JS] ⚠️ 中断队列失败: ${e}`);
+            }
+
+            // 等待队列完全清空
+            try {
+                console.log(`[GEM-JS] 等待队列完全清空...`);
+                let queueCleared = false;
+                for (let i = 0; i < 10; i++) {  // 最多等待1秒
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    try {
+                        const queueInfo = await api.fetchApi('/queue').then(r => r.json());
+                        const running = (queueInfo.queue_running || []).length;
+                        const pending = (queueInfo.queue_pending || []).length;
+
+                        console.log(`[GEM-JS] 队列状态检查 #${i+1}: running=${running}, pending=${pending}`);
+
+                        if (running === 0 && pending === 0) {
+                            queueCleared = true;
+                            console.log(`[GEM-JS] ✓ 队列已完全清空，准备接收执行指令`);
+                            break;
+                        }
+                    } catch (e) {
+                        console.warn(`[GEM-JS] 检查队列状态失败: ${e}`);
+                    }
+                }
+
+                if (!queueCleared) {
+                    console.warn(`[GEM-JS] ⚠️ 队列未能在超时时间内完全清空，但继续执行`);
+                }
+            } catch (e) {
+                console.warn(`[GEM-JS] ⚠️ 等待队列清空时出错: ${e}`);
+            }
+
+            console.log(`[GEM-JS] ========== 准备完成，等待执行指令 ==========`);
+        });
+
         console.log(`[GEM-SETUP] 注册 'group_executor_execute' 监听器...`);
         api.addEventListener("group_executor_execute", async ({ detail }) => {
             console.log(`[GEM-JS] ========== WebSocket 消息到达 ==========`);
@@ -230,44 +287,37 @@ app.registerExtension({
 
             console.log(`[GEM-JS] ✓ 找到节点 #${nodeId}`);
 
+            // 验证消息完整性
+            if (!detail.message_id) {
+                console.warn(`[GEM-JS] ⚠️ 消息缺少message_id，但继续执行`);
+            }
+            if (!detail.total_groups) {
+                console.warn(`[GEM-JS] ⚠️ 消息缺少total_groups，但继续执行`);
+            }
+
             // 设置执行标志
             isExecutingGroups = true;
             shouldStopExecution = false;  // 重置中断标志
             console.log(`[GEM-JS] 设置 isExecutingGroups = true，shouldStopExecution = false，开始执行流程`);
+            console.log(`[GEM-JS] 消息ID: ${detail.message_id || 'unknown'}`);
+            console.log(`[GEM-JS] 总组数: ${detail.total_groups || 'unknown'}`);
 
-            // 先中断现有的队列（由用户点击执行按钮触发的初始队列）
-            console.log(`[GEM-JS] 中断初始队列以避免双队列问题...`);
+            // 注意：队列中断已经在"准备执行"阶段完成，这里不再需要中断逻辑
+            console.log(`[GEM-JS] 队列已在准备阶段清空，直接开始执行...`);
+
+            // 发送执行开始确认回Python端（可选）
             try {
-                isOurInterrupt = true;  // 标记这是我们触发的中断
-                await api.interrupt();
-                console.log(`[GEM-JS] 等待队列清空...`);
-
-                // 等待队列完全清空
-                let queueCleared = false;
-                for (let i = 0; i < 20; i++) {  // 最多等待2秒
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    try {
-                        const queueInfo = await api.fetchApi('/queue').then(r => r.json());
-                        const running = (queueInfo.queue_running || []).length;
-                        const pending = (queueInfo.queue_pending || []).length;
-
-                        console.log(`[GEM-JS] 队列状态检查 #${i+1}: running=${running}, pending=${pending}`);
-
-                        if (running === 0 && pending === 0) {
-                            queueCleared = true;
-                            console.log(`[GEM-JS] ✓ 队列已完全清空`);
-                            break;
-                        }
-                    } catch (e) {
-                        console.warn(`[GEM-JS] 检查队列状态失败: ${e}`);
-                    }
-                }
-
-                if (!queueCleared) {
-                    console.warn(`[GEM-JS] ⚠️ 队列未能在超时时间内清空，继续执行`);
-                }
+                const confirmation_data = {
+                    "node_id": nodeId,
+                    "message_id": detail.message_id,
+                    "status": "execution_started",
+                    "python_exec_id": detail.python_exec_id,
+                    "timestamp:": Date.now() / 1000
+                };
+                // 这里可以通过反向WebSocket或其他方式发送确认，目前先记录日志
+                console.log(`[GEM-JS] 执行开始确认:`, confirmation_data);
             } catch (e) {
-                console.warn(`[GEM-JS] ⚠️ 中断初始队列失败: ${e}`);
+                console.warn(`[GEM-JS] 发送执行开始确认失败: ${e}`);
             }
 
             // 执行前重置状态
@@ -445,6 +495,43 @@ app.registerExtension({
                 app.graph.setDirtyCanvas(true, true);
             }
         });
+
+        console.log(`[GEM-SETUP] 注册 'group_executor_status' 监听器...`);
+        api.addEventListener("group_executor_status", async ({ detail }) => {
+            console.log(`[GEM-JS] ========== 收到状态同步消息 ==========`);
+            console.log(`[GEM-JS] detail:`, detail);
+
+            const nodeId = String(detail.node_id);
+            const node = app.graph._nodes_by_id[nodeId];
+
+            if (!node) {
+                console.warn(`[GEM-JS] ⚠️ 未找到节点: ${nodeId}，忽略状态消息`);
+                return;
+            }
+
+            console.log(`[GEM-JS] ✓ 节点 #${nodeId} 状态同步: ${detail.status}`);
+
+            // 根据状态更新节点UI
+            switch (detail.status) {
+                case "message_sent":
+                    console.log(`[GEM-JS] 执行消息已发送，准备开始执行`);
+                    // 可以在这里添加UI状态更新
+                    break;
+                case "execution_started":
+                    console.log(`[GEM-JS] 组执行已开始`);
+                    updateNodeStatus(node, t('executing'));
+                    break;
+                case "execution_completed":
+                    console.log(`[GEM-JS] 组执行已完成`);
+                    updateNodeStatus(node, t('completed'));
+                    break;
+                default:
+                    console.log(`[GEM-JS] 未知状态: ${detail.status}`);
+            }
+        });
+
+        console.log(`[GEM-SETUP] ✓ 'group_executor_status' 监听器注册成功`);
+
         console.log(`[GEM-SETUP] ✓ 'group_executor_execute' 监听器注册成功`);
 
         console.log(`[GEM] ========== GroupExecutorManager Extension Setup Complete ==========`);
