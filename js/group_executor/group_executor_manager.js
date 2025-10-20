@@ -1656,6 +1656,47 @@ app.registerExtension({
         };
 
         /**
+         * 重置所有受控组的状态，确保它们都被静音并释放执行锁。
+         * @param {object} node - 目标节点实例
+         */
+        const resetExecutionState = (node) => {
+            if (!node || !node.widgets) {
+                console.warn('[GEM-RESET] 节点无效或缺少widgets，无法重置状态');
+                return;
+            }
+            console.log(`[GEM-RESET] 正在为节点 #${node.id} 重置执行状态...`);
+
+            try {
+                const configWidget = node.widgets.find(w => w.name === "group_config");
+                if (!configWidget || !configWidget.value) {
+                    console.warn(`[GEM-RESET] 节点 #${node.id} 未找到组配置，跳过组静音操作。`);
+                } else {
+                    const config = JSON.parse(configWidget.value);
+                    if (Array.isArray(config)) {
+                        console.log(`[GEM-RESET] 将 ${config.length} 个组的状态重置为静音...`);
+                        for (const group of config) {
+                            if (group.group_name && group.group_name !== '__delay__') {
+                                setGroupActive(group.group_name, false);
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error(`[GEM-RESET] 解析组配置失败，无法重置组状态:`, e);
+            }
+
+            // 释放执行锁并更新UI
+            releaseExecutionLock(node, "interrupt/reset");
+            updateNodeStatus(node, t('idle'));
+            const progressWidget = node.widgets.find(w => w.name === "progress");
+            if (progressWidget) {
+                progressWidget.value = 0;
+            }
+            app.graph.setDirtyCanvas(true, true);
+            console.log(`[GEM-RESET] ✓ 节点 #${node.id} 的状态已重置完成`);
+        };
+
+        /**
          * 节点被移除时清理资源 - 增强版本，确保完整的资源清理
          */
         const onRemoved = nodeType.prototype.onRemoved;
@@ -1726,6 +1767,9 @@ app.registerExtension({
             // 调用原始移除方法
             onRemoved?.apply?.(this, arguments);
         };
+
+        // 挂载颜色选择器UI
+        this.mountColorSelector(node, colorSelectorContainer);
     },
 
     /**
@@ -1845,6 +1889,36 @@ app.registerExtension({
         console.log(`[GEM-SETUP] ========== 开始注册事件监听器 ==========`);
 
         /**
+         * 监听执行中断事件 (用户点击中断按钮)
+         */
+        console.log(`[GEM-SETUP] 注册 'execution_interrupted' 监听器...`);
+        try {
+            api.addEventListener("execution_interrupted", () => {
+                console.log("[GEM-INTERRUPT] 监听到执行中断事件！");
+                // 遍历所有节点，重置所有组执行管理器的状态
+                const allNodes = app.graph._nodes;
+                if (allNodes && allNodes.length > 0) {
+                    for (const node of allNodes) {
+                        if (node.type === "GroupExecutorManager") {
+                            console.log(`[GEM-INTERRUPT] 正在重置节点 #${node.id} 的状态...`);
+                            resetExecutionState(node);
+                        }
+                    }
+                }
+                console.log("[GEM-INTERRUPT] ✓ 所有组执行管理器节点已重置");
+            });
+            console.log(`[GEM-SETUP] ✓ 'execution_interrupted' 监听器注册成功`);
+            if (window.gemWebSocketDiagnostic) {
+                window.gemWebSocketDiagnostic.logListenerRegistration("execution_interrupted", true);
+            }
+        } catch (e) {
+            console.error(`[GEM-SETUP] ✗ 'execution_interrupted' 监听器注册失败:`, e);
+            if (window.gemWebSocketDiagnostic) {
+                window.gemWebSocketDiagnostic.logListenerRegistration("execution_interrupted", false, e);
+            }
+        }
+
+        /**
          * 监听错误事件（从后端触发）
          */
         console.log(`[GEM-SETUP] 注册 'group_executor_error' 监听器...`);
@@ -1919,6 +1993,12 @@ app.registerExtension({
                     return;
                 }
                 console.log(`[GEM-JS] #${executionId} ✓ 找到节点，类型:`, node.type);
+
+                // ==================== 执行前状态重置 ====================
+                // 确保每次执行都从干净的状态开始
+                console.log(`[GEM-JS] #${executionId} 开始重置节点状态...`);
+                resetExecutionState(node);
+                console.log(`[GEM-JS] #${executionId} ✓ 节点状态已重置`);
 
                 console.log(`[GEM-JS] #${executionId} 检查执行锁...`);
                 console.log(`[GEM-JS] #${executionId} 当前 isExecuting 状态:`, node.properties.isExecuting);
@@ -2391,6 +2471,31 @@ app.registerExtension({
                 window.gemWebSocketDiagnostic.logListenerRegistration("group_executor_error", false, e);
             }
         }
+
+        // ========== 监听器注册确认机制 ==========
+        console.log(`[GEM-SETUP] ========== 开始注册事件监听器 ==========`);
+
+        /**
+         * 监听执行中断事件 (用户点击中断按钮)
+         */
+        try {
+            api.addEventListener("execution_interrupted", () => {
+                console.log("[GEM-INTERRUPT] 监听到执行中断事件！");
+                // 遍历所有节点，重置所有组执行管理器的状态
+                const allNodes = app.graph._nodes;
+                if (allNodes && allNodes.length > 0) {
+                    for (const node of allNodes) {
+                        if (node.type === "GroupExecutorManager") {
+                            console.log(`[GEM-INTERRUPT] 正在重置节点 #${node.id} 的状态...`);
+                            resetExecutionState(node);
+                        }
+                    }
+                }
+            });
+            console.log(`[GEM-SETUP] ✓ 'execution_interrupted' 监听器注册成功`);
+        } catch (e) {
+            console.error(`[GEM-SETUP] ✗ 'execution_interrupted' 监听器注册失败:`, e);
+        }
     },
 
     /**
@@ -2627,5 +2732,46 @@ app.registerExtension({
         }
 
         return true;
+    },
+
+    /**
+     * 重置所有受控组的状态，确保它们都被静音并释放执行锁。
+     * @param {object} node - 目标节点实例
+     */
+    resetExecutionState(node) {
+        if (!node || !node.widgets) {
+            console.warn('[GEM-RESET] 节点无效或缺少widgets，无法重置状态');
+            return;
+        }
+        console.log(`[GEM-RESET] 正在为节点 #${node.id} 重置执行状态...`);
+
+        try {
+            const configWidget = node.widgets.find(w => w.name === "group_config");
+            if (!configWidget || !configWidget.value) {
+                console.warn(`[GEM-RESET] 节点 #${node.id} 未找到组配置，跳过组静音操作。`);
+            } else {
+                const config = JSON.parse(configWidget.value);
+                if (Array.isArray(config)) {
+                    console.log(`[GEM-RESET] 将 ${config.length} 个组的状态重置为静音...`);
+                    for (const group of config) {
+                        if (group.group_name && group.group_name !== '__delay__') {
+                            this.setGroupActive(group.group_name, false);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error(`[GEM-RESET] 解析组配置失败，无法重置组状态:`, e);
+        }
+
+        // 释放执行锁并更新UI
+        this.releaseExecutionLock(node, "interrupt/reset");
+        this.updateNodeStatus(node, t('idle'));
+        node.widgets.find(w => w.name === "progress").value = 0;
+        app.graph.setDirtyCanvas(true, true);
+    },
+
+    setGroupActive(groupName, isActive) {
+        // ... existing code ...
     }
 });
