@@ -63,7 +63,7 @@ class GroupExecutorManager:
             logger.info(f"[GEM-PY] ==================== Python Execute 被调用 #{exec_id} ====================")
             logger.info(f"[GEM-PY] #{exec_id} 时间戳: {time.time()}")
             logger.info(f"[GEM-PY] #{exec_id} 节点ID: {unique_id}")
-            logger.info(f"[GEM-PY] #{exec_id] 原始配置类型: {type(group_config)}")
+            logger.info(f"[GEM-PY] #{exec_id} 原始配置类型: {type(group_config)}")
             logger.info(f"[GEM-PY] #{exec_id} 原始配置长度: {len(group_config) if group_config else 0}")
             logger.info(f"[GEM-PY] #{exec_id} 原始配置（前500字符）: {group_config[:500] if group_config else 'None'}")
 
@@ -85,7 +85,6 @@ class GroupExecutorManager:
                 logger.info(f"[GEM-PY] #{exec_id} ✓ '准备执行'信号已发送")
 
                 # 等待前端确认（短暂等待，避免阻塞）
-                import time
                 time.sleep(0.1)  # 100ms等待前端处理
 
             except Exception as e:

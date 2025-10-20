@@ -203,7 +203,10 @@ class ImageReceiver:
                     }
                 else:
                     # 理论上不应该到这里，但为了安全起见
-                    empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                    try:
+                        empty_image = torch.zeros((1, 32, 32, 3), dtype=torch.float32)
+                    except Exception:
+                        empty_image = torch.zeros((1, 16, 16, 3), dtype=torch.float32, device="cpu")
                     return {
                         "result": (empty_image,),
                         "ui": {"images": []}
@@ -230,7 +233,10 @@ class ImageReceiver:
 
                     if not validated_images:
                         print("[ImageCacheGet] 默认图像验证失败，使用空白图像")
-                        empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                        try:
+                            empty_image = torch.zeros((1, 32, 32, 3), dtype=torch.float32)
+                        except Exception:
+                            empty_image = torch.zeros((1, 16, 16, 3), dtype=torch.float32, device="cpu")
                         validated_images = [empty_image]
 
                     # 发送使用默认图像的toast通知
@@ -272,8 +278,17 @@ class ImageReceiver:
                     except Exception as e:
                         print(f"[ImageCacheGet] Toast通知失败: {e}")
 
-                    # 返回空白图像
-                    empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                    # 返回空白图像（使用更小的尺寸以减少内存使用）
+                    try:
+                        # 尝试分配较小的空白图像
+                        empty_image = torch.zeros((1, 32, 32, 3), dtype=torch.float32)
+                        print(f"[ImageCacheGet] [SUCCESS] 创建小型空白图像: {empty_image.shape}")
+                    except Exception as mem_e:
+                        print(f"[ImageCacheGet] [WARNING] 内存不足，使用最小空白图像: {str(mem_e)}")
+                        # 如果连小图像都分配失败，使用CPU张量
+                        empty_image = torch.zeros((1, 16, 16, 3), dtype=torch.float32, device="cpu")
+                        print(f"[ImageCacheGet] [SUCCESS] 创建CPU空白图像: {empty_image.shape}")
+
                     return {
                         "result": (empty_image,),
                         "ui": {"images": []}
@@ -300,7 +315,16 @@ class ImageReceiver:
                 print(f"[ImageCacheGet] Toast通知失败: {toast_e}")
 
             # 返回空图像但不要抛出异常，避免中断工作流
-            empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+            try:
+                # 尝试分配较小的空白图像
+                empty_image = torch.zeros((1, 32, 32, 3), dtype=torch.float32)
+                print(f"[ImageCacheGet] [SUCCESS] 异常处理：创建小型空白图像: {empty_image.shape}")
+            except Exception as mem_e:
+                print(f"[ImageCacheGet] [WARNING] 异常处理：内存不足，使用CPU空白图像: {str(mem_e)}")
+                # 如果GPU内存不足，使用CPU张量
+                empty_image = torch.zeros((1, 16, 16, 3), dtype=torch.float32, device="cpu")
+                print(f"[ImageCacheGet] [SUCCESS] 异常处理：创建CPU空白图像: {empty_image.shape}")
+
             return {
                 "result": (empty_image,),
                 "ui": {"images": []}
@@ -321,7 +345,10 @@ class ImageReceiver:
             格式化后的张量，确保符合ComfyUI的IMAGE类型标准
         """
         if tensor.dim() not in [2, 3, 4, 5]:
-            return torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+            try:
+                return torch.zeros((1, 32, 32, 3), dtype=torch.float32)
+            except Exception:
+                return torch.zeros((1, 16, 16, 3), dtype=torch.float32, device="cpu")
         
         original_shape = tensor.shape
         
@@ -351,12 +378,18 @@ class ImageReceiver:
                 return self._ensure_tensor_format(tensor, f"{tensor_name}(第一帧)")
             
             if tensor.dim() != 4 or tensor.shape[-1] != 3:
-                return torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                try:
+                    return torch.zeros((1, 32, 32, 3), dtype=torch.float32)
+                except Exception:
+                    return torch.zeros((1, 16, 16, 3), dtype=torch.float32, device="cpu")
 
             return tensor
         except Exception as e:
             print(f"[ImageCacheGet] [FAILED] 张量格式转换失败: {str(e)}")
-            return torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+            try:
+                return torch.zeros((1, 32, 32, 3), dtype=torch.float32)
+            except Exception:
+                return torch.zeros((1, 16, 16, 3), dtype=torch.float32, device="cpu")
 
 
 # 节点映射

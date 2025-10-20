@@ -147,30 +147,79 @@ app.registerExtension({
             console.log(`[GEM-RESET] 正在为节点 #${node.id} 重置执行状态...`);
 
             try {
-                // 1. Mute 所有受控组
+                // 1. 强制重置所有组的状态（关键修复）
+                console.log(`[GEM-RESET] ========== 强制重置所有组状态 ==========`);
+
+                // 首先强制 mute 所有工作流中的组，不管配置中是否有
+                if (app.graph && app.graph._groups) {
+                    console.log(`[GEM-RESET] 工作流中共有 ${app.graph._groups.length} 个组`);
+
+                    app.graph._groups.forEach((group, index) => {
+                        if (group && group.title) {
+                            console.log(`[GEM-RESET] 强制静音组 #${index}: "${group.title}" (当前状态: ${group.is_muted})`);
+                            group.is_muted = true; // 强制设置为静音
+                        }
+                    });
+
+                    console.log(`[GEM-RESET] ✓ 所有组已强制静音`);
+                } else {
+                    console.warn(`[GEM-RESET] 无法访问工作流组列表`);
+                }
+
+                // 2. 额外确保：再次根据配置 mute 组（双重保险）
                 const configWidget = node.widgets.find(w => w.name === "group_config");
                 if (configWidget && configWidget.value) {
                     const config = JSON.parse(configWidget.value);
                     if (Array.isArray(config)) {
+                        console.log(`[GEM-RESET] 根据配置再次确认 ${config.length} 个组的状态`);
+
                         for (const group of config) {
                             if (group.group_name && group.group_name !== '__delay__') {
-                                setGroupActive(group.group_name, false); // Mute all groups
+                                const targetGroup = app.graph._groups.find(g => g.title === group.group_name);
+                                if (targetGroup) {
+                                    console.log(`[GEM-RESET] 确认静音组: "${group.group_name}" (当前状态: ${targetGroup.is_muted})`);
+                                    targetGroup.is_muted = true; // 确保静音
+                                } else {
+                                    console.warn(`[GEM-RESET] 配置中的组 "${group.group_name}" 在工作流中不存在`);
+                                }
                             }
                         }
                     }
                 }
 
-                // 2. 释放执行锁
+                // 3. 验证所有组的状态
+                if (app.graph && app.graph._groups) {
+                    console.log(`[GEM-RESET] ========== 验证重置结果 ==========`);
+                    let allMuted = true;
+
+                    app.graph._groups.forEach((group, index) => {
+                        if (group && group.title) {
+                            const status = group.is_muted ? '已静音' : '未静音';
+                            console.log(`[GEM-RESET] 组 #${index} "${group.title}": ${status}`);
+                            if (!group.is_muted) {
+                                allMuted = false;
+                            }
+                        }
+                    });
+
+                    if (allMuted) {
+                        console.log(`[GEM-RESET] ✓ 所有组验证通过：全部已静音`);
+                    } else {
+                        console.error(`[GEM-RESET] ✗ 验证失败：存在未静音的组！`);
+                    }
+                }
+
+                // 4. 释放执行锁
                 releaseExecutionLock(node);
 
-                // 3. 更新UI
+                // 5. 更新UI
                 updateNodeStatus(node, t('idle'));
                 updateNodeProgress(node, 0);
 
-                // 4. 强制重绘
+                // 6. 强制重绘（确保UI更新）
                 app.graph.setDirtyCanvas(true, true);
 
-                console.log(`[GEM-RESET] ✓ 节点 #${node.id} 状态已重置`);
+                console.log(`[GEM-RESET] ✓ 节点 #${node.id} 状态已完全重置`);
             } catch (e) {
                 console.error(`[GEM-RESET] 重置状态时出错:`, e);
             }
@@ -382,17 +431,52 @@ app.registerExtension({
                         continue;
                     }
 
-                    // Unmute 当前组
+                    // ✅ 关键修复：确保只有当前组是未静音状态
+                    // 1. 首先强制静音所有组
+                    if (app.graph && app.graph._groups) {
+                        app.graph._groups.forEach(group => {
+                            if (group && group.title) {
+                                group.is_muted = true;
+                            }
+                        });
+                    }
+
+                    // 2. 只unmute当前要执行的组
                     setGroupActive(item.group_name, true);
 
-                    // 验证unmute操作后所有组的状态
+                    // ✅ 关键修复：验证状态并强制确保只有当前组是激活的
                     if (app.graph && app.graph._groups) {
-                        console.log(`[GEM-JS] Unmute "${item.group_name}" 后所有组的状态:`);
+                        console.log(`[GEM-JS] 执行前强制验证组状态 (期望只有 "${item.group_name}" 未静音):`);
+                        let actualActiveGroups = [];
+
                         app.graph._groups.forEach(g => {
                             const status = g.is_muted ? '已静音' : '未静音';
-                            const indicator = g.title === item.group_name ? ' ← 当前' : '';
+                            const indicator = g.title === item.group_name ? ' ← 当前执行组' : '';
                             console.log(`[GEM-JS]   - "${g.title}": ${status}${indicator}`);
+
+                            // 如果不是当前组但却是未静音状态，强制静音
+                            if (g.title !== item.group_name && !g.is_muted) {
+                                console.warn(`[GEM-JS] ⚠️ 强制静音意外激活的组: "${g.title}"`);
+                                g.is_muted = true;
+                            }
+
+                            // 统计实际激活的组
+                            if (!g.is_muted) {
+                                actualActiveGroups.push(g.title);
+                            }
                         });
+
+                        // 如果激活的组数量不是1，说明有问题
+                        if (actualActiveGroups.length !== 1) {
+                            console.error(`[GEM-JS] ✗ 组状态异常！预期1个激活组，实际${actualActiveGroups.length}个:`, actualActiveGroups);
+                            // 再次强制确保只有当前组是激活的
+                            app.graph._groups.forEach(g => {
+                                g.is_muted = g.title !== item.group_name;
+                            });
+                            console.log(`[GEM-JS] 🔧 已强制修正组状态，确保只有 "${item.group_name}" 激活`);
+                        } else {
+                            console.log(`[GEM-JS] ✓ 组状态验证通过，只有 "${item.group_name}" 是激活的`);
+                        }
                     }
 
                     updateNodeStatus(node, t('executingGroup', { groupName: item.group_name }));
@@ -408,53 +492,78 @@ app.registerExtension({
                     const nodeIds = outputNodes.map(n => n.id);
                     console.log(`[GEM-JS] 将执行 ${nodeIds.length} 个输出节点:`, nodeIds);
 
-                    // 使用 QueueManager 执行指定节点及其依赖
-                    await queueManager.queueOutputNodes(nodeIds);
+                    // ✅ 关键修复：使用更严格的队列执行控制
+                    // 确保队列开始时只有当前组的节点可以执行
+                    console.log(`[GEM-JS] 开始严格队列执行控制...`);
 
-                    // 等待队列完成
-                    console.log(`[GEM-JS] 等待队列完成...`);
-                    await new Promise((resolve) => {
-                        let hasStarted = false; // 标记队列是否已经开始执行
+                    try {
+                        // 使用 QueueManager 执行指定节点及其依赖
+                        await queueManager.queueOutputNodes(nodeIds);
 
-                        const checkQueue = () => {
-                            // ⚠️ 检查是否有中断请求（参考 GroupExecutor 官方实现）
-                            if (shouldStopExecution) {
-                                console.log(`[GEM-JS] ⚠️ 检测到中断请求，立即停止队列等待`);
-                                resolve();
-                                return;
-                            }
+                        // 等待队列完成
+                        console.log(`[GEM-JS] 等待队列完成...`);
+                        await new Promise((resolve) => {
+                            let hasStarted = false; // 标记队列是否已经开始执行
 
-                            api.fetchApi('/queue')
-                                .then(response => response.json())
-                                .then(data => {
-                                    const isRunning = (data.queue_running || []).length > 0;
-                                    const isPending = (data.queue_pending || []).length > 0;
+                            const checkQueue = () => {
+                                // ⚠️ 检查是否有中断请求（参考 GroupExecutor 官方实现）
+                                if (shouldStopExecution) {
+                                    console.log(`[GEM-JS] ⚠️ 检测到中断请求，立即停止队列等待`);
+                                    resolve();
+                                    return;
+                                }
 
-                                    // 如果队列正在运行或有待处理项，说明已经开始了
-                                    if (isRunning || isPending) {
-                                        hasStarted = true;
-                                        console.log(`[GEM-JS] 队列正在执行... (running: ${data.queue_running?.length || 0}, pending: ${data.queue_pending?.length || 0})`);
-                                    }
+                                api.fetchApi('/queue')
+                                    .then(response => response.json())
+                                    .then(data => {
+                                        const isRunning = (data.queue_running || []).length > 0;
+                                        const isPending = (data.queue_pending || []).length > 0;
 
-                                    // 只有在队列已经开始执行后，才检查是否完成
-                                    if (hasStarted && !isRunning && !isPending) {
-                                        console.log(`[GEM-JS] ✓ 队列已清空`);
-                                        setTimeout(resolve, 100); // 额外等待100ms确保完成（参考官方实现）
-                                        return;
-                                    }
+                                        // 如果队列正在运行或有待处理项，说明已经开始了
+                                        if (isRunning || isPending) {
+                                            hasStarted = true;
+                                            console.log(`[GEM-JS] 队列正在执行... (running: ${data.queue_running?.length || 0}, pending: ${data.queue_pending?.length || 0})`);
 
-                                    // 继续检查
-                                    setTimeout(checkQueue, 500); // 每500ms检查一次（参考官方实现，减少服务器负担）
-                                })
-                                .catch(error => {
-                                    console.error(`[GEM-JS] 检查队列状态出错:`, error);
-                                    setTimeout(checkQueue, 1000); // 出错后1秒重试
-                                });
-                        };
+                                            // ✅ 在队列执行期间，持续验证组状态
+                                            if (app.graph && app.graph._groups) {
+                                                let unexpectedActiveGroups = [];
+                                                app.graph._groups.forEach(g => {
+                                                    if (g.title !== item.group_name && !g.is_muted) {
+                                                        unexpectedActiveGroups.push(g.title);
+                                                    }
+                                                });
 
-                        // 延迟500ms后开始检查，给队列时间启动
-                        setTimeout(checkQueue, 500);
-                    });
+                                                if (unexpectedActiveGroups.length > 0) {
+                                                    console.warn(`[GEM-JS] ⚠️ 队列执行期间发现意外激活的组:`, unexpectedActiveGroups);
+                                                    // 在队列执行期间不要修改组状态，避免干扰正在执行的队列
+                                                }
+                                            }
+                                        }
+
+                                        // 只有在队列已经开始执行后，才检查是否完成
+                                        if (hasStarted && !isRunning && !isPending) {
+                                            console.log(`[GEM-JS] ✓ 队列已清空`);
+                                            setTimeout(resolve, 100); // 额外等待100ms确保完成（参考官方实现）
+                                            return;
+                                        }
+
+                                        // 继续检查
+                                        setTimeout(checkQueue, 500); // 每500ms检查一次（参考官方实现，减少服务器负担）
+                                    })
+                                    .catch(error => {
+                                        console.error(`[GEM-JS] 检查队列状态出错:`, error);
+                                        setTimeout(checkQueue, 1000); // 出错后1秒重试
+                                    });
+                            };
+
+                            // 延迟500ms后开始检查，给队列时间启动
+                            setTimeout(checkQueue, 500);
+                        });
+
+                    } catch (error) {
+                        console.error(`[GEM-JS] 组 "${item.group_name}" 执行失败:`, error);
+                        throw error;
+                    }
 
                     console.log(`[GEM-JS] ✓ 组 "${item.group_name}" 执行完成`);
 

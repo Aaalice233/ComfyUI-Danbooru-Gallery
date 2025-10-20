@@ -130,7 +130,7 @@ class ImageCacheManager:
             print(f"[ImageCacheManager] 文件名前缀: {filename_prefix}")
             print(f"[ImageCacheManager] 当前模式: 追加（不清空旧缓存）")
 
-                for idx, image_batch in enumerate(images):
+            for idx, image_batch in enumerate(images):
                 try:
                     # 图像处理
                     image = image_batch.squeeze()
@@ -179,39 +179,39 @@ class ImageCacheManager:
                     print(f"[ImageCacheManager] 处理图像 {idx+1} 时出错: {str(e)}")
                     continue
 
-        # 更新全局缓存（总是追加）
-        self.cache_data["images"].extend(cache_data)
+            # 更新全局缓存（总是追加）
+            self.cache_data["images"].extend(cache_data)
 
-        print(f"[ImageCacheManager DEBUG] Cache size after adding: {len(self.cache_data['images'])}")
+            print(f"[ImageCacheManager DEBUG] Cache size after adding: {len(self.cache_data['images'])}")
 
-        self.cache_data["timestamp"] = timestamp
-        self.cache_data["metadata"] = {
-            "count": len(self.cache_data["images"]), # 使用更新后的列表长度
-            "prefix": filename_prefix
-        }
+            self.cache_data["timestamp"] = timestamp
+            self.cache_data["metadata"] = {
+                "count": len(self.cache_data["images"]), # 使用更新后的列表长度
+                "prefix": filename_prefix
+            }
 
-        # 更新会话追踪信息
-        self.session_execution_count += 1
-        self.last_save_timestamp = timestamp
-        self.has_saved_this_session = True
-        print(f"[ImageCacheManager] 会话保存次数: {self.session_execution_count}")
+            # 更新会话追踪信息
+            self.session_execution_count += 1
+            self.last_save_timestamp = timestamp
+            self.has_saved_this_session = True
+            print(f"[ImageCacheManager] 会话保存次数: {self.session_execution_count}")
 
-        # 发送WebSocket事件通知缓存更新（延迟导入）
-        if cache_data:
-            print(f"[ImageCacheManager] 已缓存 {len(cache_data)} 张图像")
-            try:
-                from server import PromptServer
-                PromptServer.instance.send_sync("image-cache-update", {
-                    "cache_info": {
-                        "count": len(cache_data),
-                        "timestamp": timestamp,
-                        "metadata": self.cache_data["metadata"]
-                    }
-                })
-            except ImportError:
-                print("[ImageCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
-            except Exception as e:
-                print(f"[ImageCacheManager] WebSocket通知失败: {e}")
+            # 发送WebSocket事件通知缓存更新（延迟导入）
+            if cache_data:
+                print(f"[ImageCacheManager] 已缓存 {len(cache_data)} 张图像")
+                try:
+                    from server import PromptServer
+                    PromptServer.instance.send_sync("image-cache-update", {
+                        "cache_info": {
+                            "count": len(cache_data),
+                            "timestamp": timestamp,
+                            "metadata": self.cache_data["metadata"]
+                        }
+                    })
+                except ImportError:
+                    print("[ImageCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+                except Exception as e:
+                    print(f"[ImageCacheManager] WebSocket通知失败: {e}")
 
         finally:
             self._end_operation(operation_id)
@@ -247,132 +247,132 @@ class ImageCacheManager:
             print(f"[ImageCacheManager] 索引: {index}")
             print(f"[ImageCacheManager] 会话获取次数: {self.get_count_this_session}")
 
-        # 检查缓存中是否有图像
-        if not self.cache_data["images"]:
-            print(f"[ImageCacheManager] 缓存为空，返回空图像")
-            empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-            empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
-            print(f"[ImageCacheManager] 空白图像形状: {empty_image.shape}")
-            print(f"[ImageCacheManager] 空白遮罩形状: {empty_mask.shape}")
-            return [empty_image], [empty_mask]
-
-        try:
-            # 延迟导入folder_paths
-            try:
-                import folder_paths
-                temp_dir = folder_paths.get_temp_directory()
-            except ImportError:
-                temp_dir = self.output_dir
-            except Exception:
-                temp_dir = self.output_dir
-            output_images = []
-            output_masks = []
-
-            # 确定要获取的图像
-            if get_latest:
-                # 获取所有缓存的图像
-                images_to_get = self.cache_data["images"]
-                print(f"[ImageCacheManager] 获取所有 {len(images_to_get)} 张缓存图像")
-            else:
-                # 获取指定索引的图像
-                if index < len(self.cache_data["images"]):
-                    images_to_get = [self.cache_data["images"][index]]
-                    print(f"[ImageCacheManager] 获取索引 {index} 的图像")
-                else:
-                    print(f"[ImageCacheManager] 索引 {index} 超出范围，缓存中共有 {len(self.cache_data['images'])} 张图像")
-                    empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-                    empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
-                    print(f"[ImageCacheManager] 索引越界空白图像形状: {empty_image.shape}")
-                    return [empty_image], [empty_mask]
-
-            # 加载图像
-            for img_data in images_to_get:
-                try:
-                    img_file = img_data["filename"]
-                    img_path = os.path.join(temp_dir, img_file)
-
-                    if not os.path.exists(img_path):
-                        print(f"[ImageCacheManager] 文件不存在: {img_path}")
-                        continue
-
-                    img = Image.open(img_path)
-                    print(f"[ImageCacheManager] 成功加载图像: {img_file}")
-
-                    # RGBA格式处理
-                    if img.mode == 'RGBA':
-                        r, g, b, a = img.split()
-                        rgb_image = Image.merge('RGB', (r, g, b))
-
-                        # 转换为张量
-                        image = np.array(rgb_image).astype(np.float32) / 255.0
-                        image = torch.from_numpy(image)  # 先创建3D张量 (H, W, C)
-
-                        # 确保是4D张量格式 (batch, height, width, channels)
-                        if image.dim() == 3:
-                            image = image.unsqueeze(0)  # 添加批次维度 -> (1, H, W, C)
-                        elif image.dim() == 2:
-                            image = image.unsqueeze(0).unsqueeze(-1)  # (1, H, W, 1)
-                            image = image.expand(-1, -1, -1, 3)  # 扩展为3通道
-
-                        print(f"[ImageCacheManager] RGBA图像处理，最终形状: {image.shape}")
-
-                        # 遮罩处理 (注意反转)
-                        mask = np.array(a).astype(np.float32) / 255.0
-                        mask = torch.from_numpy(mask)  # 先创建2D张量 (H, W)
-
-                        # 确保遮罩是3D张量格式 (batch, height, width)
-                        if mask.dim() == 2:
-                            mask = mask.unsqueeze(0)  # 添加批次维度 -> (1, H, W)
-                        elif mask.dim() == 3:
-                            if mask.shape[-1] == 1:
-                                mask = mask.squeeze(-1)  # 移除通道维度 -> (1, H, W)
-                            elif mask.shape[0] == 1:
-                                # 如果是 (1, H, W) 格式，直接使用
-                                pass
-
-                        mask = 1.0 - mask
-                        print(f"[ImageCacheManager] 遮罩处理，最终形状: {mask.shape}")
-                    else:
-                        # RGB格式处理
-                        image = np.array(img.convert('RGB')).astype(np.float32) / 255.0
-                        image = torch.from_numpy(image)  # 先创建3D张量 (H, W, C)
-
-                        # 确保是4D张量格式 (batch, height, width, channels)
-                        if image.dim() == 3:
-                            image = image.unsqueeze(0)  # 添加批次维度 -> (1, H, W, C)
-                        elif image.dim() == 2:
-                            image = image.unsqueeze(0).unsqueeze(-1)  # (1, H, W, 1)
-                            image = image.expand(-1, -1, -1, 3)  # 扩展为3通道
-
-                        print(f"[ImageCacheManager] RGB图像处理，最终形状: {image.shape}")
-
-                        # 创建空白遮罩，确保是3D格式
-                        mask = torch.zeros((1, image.shape[1], image.shape[2]), dtype=torch.float32, device="cpu")
-                        print(f"[ImageCacheManager] 创建空白遮罩，形状: {mask.shape}")
-
-                    output_images.append(image)
-                    output_masks.append(mask)
-
-                except Exception as e:
-                    print(f"[ImageCacheManager] 处理文件时出错: {str(e)}")
-                    continue
-
-            if not output_images:
-                print(f"[ImageCacheManager] 没有成功加载任何图像，返回空图像")
+            # 检查缓存中是否有图像
+            if not self.cache_data["images"]:
+                print(f"[ImageCacheManager] 缓存为空，返回空图像")
                 empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
                 empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
-                print(f"[ImageCacheManager] 无图像加载时空白图像形状: {empty_image.shape}")
+                print(f"[ImageCacheManager] 空白图像形状: {empty_image.shape}")
+                print(f"[ImageCacheManager] 空白遮罩形状: {empty_mask.shape}")
                 return [empty_image], [empty_mask]
 
-            print(f"[ImageCacheManager] 成功获取 {len(output_images)} 张图像")
-            return output_images, output_masks
+            try:
+                # 延迟导入folder_paths
+                try:
+                    import folder_paths
+                    temp_dir = folder_paths.get_temp_directory()
+                except ImportError:
+                    temp_dir = self.output_dir
+                except Exception:
+                    temp_dir = self.output_dir
+                output_images = []
+                output_masks = []
 
-        except Exception as e:
-            print(f"[ImageCacheManager] 获取图像时出错: {str(e)}")
-            empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-            empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
-            print(f"[ImageCacheManager] 异常时空白图像形状: {empty_image.shape}")
-            return [empty_image], [empty_mask]
+                # 确定要获取的图像
+                if get_latest:
+                    # 获取所有缓存的图像
+                    images_to_get = self.cache_data["images"]
+                    print(f"[ImageCacheManager] 获取所有 {len(images_to_get)} 张缓存图像")
+                else:
+                    # 获取指定索引的图像
+                    if index < len(self.cache_data["images"]):
+                        images_to_get = [self.cache_data["images"][index]]
+                        print(f"[ImageCacheManager] 获取索引 {index} 的图像")
+                    else:
+                        print(f"[ImageCacheManager] 索引 {index} 超出范围，缓存中共有 {len(self.cache_data['images'])} 张图像")
+                        empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                        empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
+                        print(f"[ImageCacheManager] 索引越界空白图像形状: {empty_image.shape}")
+                        return [empty_image], [empty_mask]
+
+                # 加载图像
+                for img_data in images_to_get:
+                    try:
+                        img_file = img_data["filename"]
+                        img_path = os.path.join(temp_dir, img_file)
+
+                        if not os.path.exists(img_path):
+                            print(f"[ImageCacheManager] 文件不存在: {img_path}")
+                            continue
+
+                        img = Image.open(img_path)
+                        print(f"[ImageCacheManager] 成功加载图像: {img_file}")
+
+                        # RGBA格式处理
+                        if img.mode == 'RGBA':
+                            r, g, b, a = img.split()
+                            rgb_image = Image.merge('RGB', (r, g, b))
+
+                            # 转换为张量
+                            image = np.array(rgb_image).astype(np.float32) / 255.0
+                            image = torch.from_numpy(image)  # 先创建3D张量 (H, W, C)
+
+                            # 确保是4D张量格式 (batch, height, width, channels)
+                            if image.dim() == 3:
+                                image = image.unsqueeze(0)  # 添加批次维度 -> (1, H, W, C)
+                            elif image.dim() == 2:
+                                image = image.unsqueeze(0).unsqueeze(-1)  # (1, H, W, 1)
+                                image = image.expand(-1, -1, -1, 3)  # 扩展为3通道
+
+                            print(f"[ImageCacheManager] RGBA图像处理，最终形状: {image.shape}")
+
+                            # 遮罩处理 (注意反转)
+                            mask = np.array(a).astype(np.float32) / 255.0
+                            mask = torch.from_numpy(mask)  # 先创建2D张量 (H, W)
+
+                            # 确保遮罩是3D张量格式 (batch, height, width)
+                            if mask.dim() == 2:
+                                mask = mask.unsqueeze(0)  # 添加批次维度 -> (1, H, W)
+                            elif mask.dim() == 3:
+                                if mask.shape[-1] == 1:
+                                    mask = mask.squeeze(-1)  # 移除通道维度 -> (1, H, W)
+                                elif mask.shape[0] == 1:
+                                    # 如果是 (1, H, W) 格式，直接使用
+                                    pass
+
+                            mask = 1.0 - mask
+                            print(f"[ImageCacheManager] 遮罩处理，最终形状: {mask.shape}")
+                        else:
+                            # RGB格式处理
+                            image = np.array(img.convert('RGB')).astype(np.float32) / 255.0
+                            image = torch.from_numpy(image)  # 先创建3D张量 (H, W, C)
+
+                            # 确保是4D张量格式 (batch, height, width, channels)
+                            if image.dim() == 3:
+                                image = image.unsqueeze(0)  # 添加批次维度 -> (1, H, W, C)
+                            elif image.dim() == 2:
+                                image = image.unsqueeze(0).unsqueeze(-1)  # (1, H, W, 1)
+                                image = image.expand(-1, -1, -1, 3)  # 扩展为3通道
+
+                            print(f"[ImageCacheManager] RGB图像处理，最终形状: {image.shape}")
+
+                            # 创建空白遮罩，确保是3D格式
+                            mask = torch.zeros((1, image.shape[1], image.shape[2]), dtype=torch.float32, device="cpu")
+                            print(f"[ImageCacheManager] 创建空白遮罩，形状: {mask.shape}")
+
+                        output_images.append(image)
+                        output_masks.append(mask)
+
+                    except Exception as e:
+                        print(f"[ImageCacheManager] 处理文件时出错: {str(e)}")
+                        continue
+
+                if not output_images:
+                    print(f"[ImageCacheManager] 没有成功加载任何图像，返回空图像")
+                    empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                    empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
+                    print(f"[ImageCacheManager] 无图像加载时空白图像形状: {empty_image.shape}")
+                    return [empty_image], [empty_mask]
+
+                print(f"[ImageCacheManager] 成功获取 {len(output_images)} 张图像")
+                return output_images, output_masks
+
+            except Exception as e:
+                print(f"[ImageCacheManager] 获取图像时出错: {str(e)}")
+                empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                empty_mask = torch.zeros((1, 64, 64), dtype=torch.float32)
+                print(f"[ImageCacheManager] 异常时空白图像形状: {empty_image.shape}")
+                return [empty_image], [empty_mask]
 
         finally:
             self._end_operation(operation_id)
