@@ -10,48 +10,451 @@ import { globalMultiLanguageManager } from "../global/multi_language.js";
 import { toastManagerProxy } from "../global/toast_manager.js";
 import "./websocket_diagnostic.js";  // 加载WebSocket诊断工具
 
-// 生成唯一的窗口ID
-const generateWindowId = () => {
+// ✅ 选项卡重构：生成唯一的选项卡ID
+const generateTabId = () => {
     const timestamp = Date.now();
     const random = Math.floor(Math.random() * 10000);
-    return `gem_window_${timestamp}_${random}`;
+    // 添加页面标识符增强唯一性
+    const pageId = Math.random().toString(36).substr(2, 9);
+    return `gem_tab_${timestamp}_${random}_${pageId}`;
 };
 
-// 当前窗口的标识符
-const CURRENT_WINDOW_ID = generateWindowId();
+// 当前选项卡的标识符
+const CURRENT_TAB_ID = generateTabId();
 
-// 多窗口执行状态管理
-const windowExecutionState = {
-    // 全局执行标志，防止重复执行（带窗口ID）
+// ✅ 选项卡通信管理
+class TabCommunicationManager {
+    constructor() {
+        this.channelName = 'gem_tab_coordination';
+        this.channel = null;
+        this.isSupported = false;
+        this.tabRegistry = new Map(); // 注册的选项卡信息
+        this.currentRole = 'follower'; // 'master' | 'follower'
+        this.lastHeartbeat = Date.now();
+        this.heartbeatInterval = null;
+        this.heartbeatTimeout = null;
+
+        this.init();
+    }
+
+    init() {
+        try {
+            // 检查BroadcastChannel支持
+            if ('BroadcastChannel' in window) {
+                this.channel = new BroadcastChannel(this.channelName);
+                this.isSupported = true;
+                this.setupEventListeners();
+                this.startHeartbeat();
+                console.log(`[GEM-TAB] 选项卡 ${CURRENT_TAB_ID} 通信管理器初始化成功`);
+            } else {
+                console.warn(`[GEM-TAB] 当前浏览器不支持BroadcastChannel API，回退到单选项卡模式`);
+                this.currentRole = 'master'; // 不支持时默认为主选项卡
+            }
+        } catch (error) {
+            console.error(`[GEM-TAB] 初始化选项卡通信管理器失败:`, error);
+            this.currentRole = 'master'; // 出错时默认为主选项卡
+        }
+    }
+
+    setupEventListeners() {
+        if (!this.channel) return;
+
+        this.channel.onmessage = (event) => {
+            this.handleMessage(event.data);
+        };
+
+        this.channel.onmessageerror = (error) => {
+            console.error(`[GEM-TAB] 选项卡通信错误:`, error);
+        };
+    }
+
+    handleMessage(data) {
+        const { type, tabId, timestamp, payload } = data;
+
+        // 忽略自己发送的消息
+        if (tabId === CURRENT_TAB_ID) return;
+
+        console.log(`[GEM-TAB] 收到来自选项卡 ${tabId} 的消息:`, type);
+
+        switch (type) {
+            case 'heartbeat':
+                this.handleHeartbeat(tabId, payload);
+                break;
+            case 'execution_request':
+                this.handleExecutionRequest(tabId, payload);
+                break;
+            case 'execution_start':
+                this.handleExecutionStart(tabId, payload);
+                break;
+            case 'execution_end':
+                this.handleExecutionEnd(tabId, payload);
+                break;
+            case 'role_change':
+                this.handleRoleChange(tabId, payload);
+                break;
+            case 'tab_close':
+                this.handleTabClose(tabId);
+                break;
+            default:
+                console.warn(`[GEM-TAB] 未知消息类型: ${type}`);
+        }
+    }
+
+    startHeartbeat() {
+        // 发送心跳
+        const sendHeartbeat = () => {
+            if (this.isSupported && this.channel) {
+                const heartbeatData = {
+                    type: 'heartbeat',
+                    tabId: CURRENT_TAB_ID,
+                    timestamp: Date.now(),
+                    payload: {
+                        isActive: !document.hidden,
+                        url: window.location.href,
+                        role: this.currentRole
+                    }
+                };
+
+                try {
+                    this.channel.postMessage(heartbeatData);
+                    this.lastHeartbeat = Date.now();
+                } catch (error) {
+                    console.error(`[GEM-TAB] 发送心跳失败:`, error);
+                }
+            }
+        };
+
+        // 每3秒发送一次心跳
+        this.heartbeatInterval = setInterval(sendHeartbeat, 3000);
+
+        // 立即发送一次心跳
+        sendHeartbeat();
+    }
+
+    handleHeartbeat(tabId, payload) {
+        // 更新选项卡注册信息
+        this.tabRegistry.set(tabId, {
+            ...payload,
+            lastSeen: Date.now()
+        });
+
+        // 检查是否需要重新选举主选项卡
+        this.checkMasterElection();
+    }
+
+    checkMasterElection() {
+        if (this.currentRole === 'master') {
+            // 检查是否有更活跃的选项卡
+            const activeTabs = Array.from(this.tabRegistry.entries())
+                .filter(([id, info]) =>
+                    info.isActive &&
+                    Date.now() - info.lastSeen < 10000 // 10秒内有活动
+                );
+
+            // 按ID排序，选择最小ID作为主选项卡（确保一致性）
+            activeTabs.sort(([idA], [idB]) => idA.localeCompare(idB));
+
+            if (activeTabs.length > 0) {
+                const [masterId] = activeTabs[0];
+                if (masterId !== CURRENT_TAB_ID && masterId < CURRENT_TAB_ID) {
+                    // 切换到从选项卡
+                    this.changeRole('follower');
+                }
+            }
+        } else {
+            // 检查是否需要成为主选项卡
+            const activeMasters = Array.from(this.tabRegistry.entries())
+                .filter(([id, info]) =>
+                    info.role === 'master' &&
+                    info.isActive &&
+                    Date.now() - info.lastSeen < 10000
+                );
+
+            if (activeMasters.length === 0) {
+                // 没有活跃的主选项卡，尝试成为主选项卡
+                const activeFollowers = Array.from(this.tabRegistry.entries())
+                    .filter(([id, info]) =>
+                        info.isActive &&
+                        Date.now() - info.lastSeen < 10000
+                    );
+
+                activeFollowers.sort(([idA], [idB]) => idA.localeCompare(idB));
+
+                if (activeFollowers.length === 0 || activeFollowers[0][0] === CURRENT_TAB_ID) {
+                    this.changeRole('master');
+                }
+            }
+        }
+    }
+
+    changeRole(newRole) {
+        const oldRole = this.currentRole;
+        this.currentRole = newRole;
+
+        console.log(`[GEM-TAB] 选项卡 ${CURRENT_TAB_ID} 角色变更: ${oldRole} -> ${newRole}`);
+
+        // 通知其他选项卡角色变更
+        this.broadcast({
+            type: 'role_change',
+            payload: { oldRole, newRole }
+        });
+
+        // 触发角色变更事件
+        this.onRoleChange?.(oldRole, newRole);
+    }
+
+    requestExecution() {
+        if (this.currentRole !== 'master') {
+            console.warn(`[GEM-TAB] 选项卡 ${CURRENT_TAB_ID} 不是主选项卡，无法请求执行`);
+            return false;
+        }
+
+        return this.broadcast({
+            type: 'execution_request',
+            payload: {
+                requesterId: CURRENT_TAB_ID,
+                timestamp: Date.now()
+            }
+        });
+    }
+
+    broadcast(data) {
+        if (!this.isSupported || !this.channel) {
+            console.warn(`[GEM-TAB] 选项卡通信不可用，无法广播消息`);
+            return false;
+        }
+
+        const message = {
+            ...data,
+            tabId: CURRENT_TAB_ID,
+            timestamp: Date.now()
+        };
+
+        try {
+            this.channel.postMessage(message);
+            return true;
+        } catch (error) {
+            console.error(`[GEM-TAB] 广播消息失败:`, error);
+            return false;
+        }
+    }
+
+    cleanup() {
+        // 清理心跳
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+
+        if (this.heartbeatTimeout) {
+            clearTimeout(this.heartbeatTimeout);
+            this.heartbeatTimeout = null;
+        }
+
+        // 通知其他选项卡此选项卡关闭
+        this.broadcast({
+            type: 'tab_close',
+            payload: { reason: 'cleanup' }
+        });
+
+        // 关闭通信通道
+        if (this.channel) {
+            this.channel.close();
+            this.channel = null;
+        }
+
+        console.log(`[GEM-TAB] 选项卡 ${CURRENT_TAB_ID} 通信管理器已清理`);
+    }
+
+    // 事件处理器（可被外部重写）
+    onRoleChange(oldRole, newRole) {
+        console.log(`[GEM-TAB] 选项卡角色变更回调: ${oldRole} -> ${newRole}`);
+    }
+
+    handleExecutionRequest(tabId, payload) {
+        console.log(`[GEM-TAB] 选项卡 ${tabId} 请求执行，当前角色: ${this.currentRole}`);
+    }
+
+    handleExecutionStart(tabId, payload) {
+        console.log(`[GEM-TAB] 选项卡 ${tabId} 开始执行`);
+    }
+
+    handleExecutionEnd(tabId, payload) {
+        console.log(`[GEM-TAB] 选项卡 ${tabId} 执行结束`);
+    }
+
+    handleRoleChange(tabId, payload) {
+        console.log(`[GEM-TAB] 选项卡 ${tabId} 角色变更:`, payload);
+    }
+
+    handleTabClose(tabId) {
+        // 从注册表中移除关闭的选项卡
+        this.tabRegistry.delete(tabId);
+        console.log(`[GEM-TAB] 选项卡 ${tabId} 已关闭，从注册表中移除`);
+
+        // 如果关闭的是主选项卡，重新选举
+        this.checkMasterElection();
+    }
+}
+
+// 创建全局选项卡通信管理器
+const tabCommManager = new TabCommunicationManager();
+
+// ✅ 选项卡重构：分布式执行状态管理
+const distributedExecutionState = {
+    // 执行状态
     isExecutingGroups: false,
 
-    // 全局中断标志，用于检测用户是否主动中断执行（带窗口ID）
+    // 中断标志
     shouldStopExecution: false,
 
-    // 标志：是否是我们自己触发的中断（用于避免双队列）（带窗口ID）
+    // 中断来源标记
     isOurInterrupt: false,
 
-    // 窗口执行锁，防止跨窗口干扰
-    windowExecutionLock: false,
+    // 分布式执行锁
+    distributedLock: false,
+
+    // 当前执行选项卡ID
+    executingTabId: null,
 
     // 最后执行时间戳
-    lastExecutionTime: 0
+    lastExecutionTime: 0,
+
+    // 执行超时时间（秒）
+    executionTimeout: 300, // 5分钟超时
+
+    // 获取当前角色（master/follower）
+    getCurrentRole() {
+        return tabCommManager.currentRole;
+    },
+
+    // 检查是否可以执行
+    canExecute() {
+        // 只有主选项卡可以执行
+        if (this.getCurrentRole() !== 'master') {
+            return false;
+        }
+
+        // 检查是否有其他选项卡正在执行
+        if (this.isExecutingGroups) {
+            return false;
+        }
+
+        // 检查执行锁
+        if (this.distributedLock) {
+            return false;
+        }
+
+        // 检查执行间隔
+        const currentTime = Date.now();
+        if (currentTime - this.lastExecutionTime < 1000) {
+            return false;
+        }
+
+        return true;
+    },
+
+    // 请求执行锁
+    requestExecutionLock() {
+        if (!this.canExecute()) {
+            return false;
+        }
+
+        this.distributedLock = true;
+        this.executingTabId = CURRENT_TAB_ID;
+        this.lastExecutionTime = Date.now();
+
+        // 广播执行请求
+        const success = tabCommManager.broadcast({
+            type: 'execution_request',
+            payload: {
+                requesterId: CURRENT_TAB_ID,
+                timestamp: this.lastExecutionTime
+            }
+        });
+
+        if (success) {
+            console.log(`[GEM-EXEC] 选项卡 ${CURRENT_TAB_ID} 成功请求执行锁`);
+        }
+
+        return success;
+    },
+
+    // 释放执行锁
+    releaseExecutionLock() {
+        this.distributedLock = false;
+        this.executingTabId = null;
+        this.isExecutingGroups = false;
+        this.shouldStopExecution = false;
+
+        // 广播执行结束
+        tabCommManager.broadcast({
+            type: 'execution_end',
+            payload: {
+                executorId: CURRENT_TAB_ID,
+                timestamp: Date.now()
+            }
+        });
+
+        console.log(`[GEM-EXEC] 选项卡 ${CURRENT_TAB_ID} 释放执行锁`);
+    },
+
+    // 开始执行
+    startExecution() {
+        if (!this.requestExecutionLock()) {
+            return false;
+        }
+
+        this.isExecutingGroups = true;
+        this.shouldStopExecution = false;
+
+        // 广播执行开始
+        tabCommManager.broadcast({
+            type: 'execution_start',
+            payload: {
+                executorId: CURRENT_TAB_ID,
+                timestamp: Date.now()
+            }
+        });
+
+        console.log(`[GEM-EXEC] 选项卡 ${CURRENT_TAB_ID} 开始执行`);
+        return true;
+    },
+
+    // 强制释放执行锁（超时或错误时使用）
+    forceReleaseExecutionLock(reason) {
+        console.warn(`[GEM-EXEC] 强制释放执行锁: ${reason}`);
+
+        this.distributedLock = false;
+        this.executingTabId = null;
+        this.isExecutingGroups = false;
+        this.shouldStopExecution = false;
+
+        tabCommManager.broadcast({
+            type: 'execution_end',
+            payload: {
+                executorId: CURRENT_TAB_ID,
+                timestamp: Date.now(),
+                reason: reason
+            }
+        });
+    }
 };
 
-// 为了向后兼容，保留旧的变量名但映射到新结构
+// ✅ 选项卡重构：向后兼容的属性映射
 Object.defineProperty(window, 'isExecutingGroups', {
-    get: () => windowExecutionState.isExecutingGroups,
-    set: (value) => { windowExecutionState.isExecutingGroups = value; }
+    get: () => distributedExecutionState.isExecutingGroups,
+    set: (value) => { distributedExecutionState.isExecutingGroups = value; }
 });
 
 Object.defineProperty(window, 'shouldStopExecution', {
-    get: () => windowExecutionState.shouldStopExecution,
-    set: (value) => { windowExecutionState.shouldStopExecution = value; }
+    get: () => distributedExecutionState.shouldStopExecution,
+    set: (value) => { distributedExecutionState.shouldStopExecution = value; }
 });
 
 Object.defineProperty(window, 'isOurInterrupt', {
-    get: () => windowExecutionState.isOurInterrupt,
-    set: (value) => { windowExecutionState.isOurInterrupt = value; }
+    get: () => distributedExecutionState.isOurInterrupt,
+    set: (value) => { distributedExecutionState.isOurInterrupt = value; }
 });
 
 // Create convenience translation function for 'gem' namespace
@@ -74,8 +477,10 @@ app.registerExtension({
      */
     async init(app) {
         console.log(`[GEM] ========== GroupExecutorManager Extension Initialized ==========`);
-        console.log(`[GEM] 当前窗口ID: ${CURRENT_WINDOW_ID}`);
-        console.log(`[GEM] 窗口执行状态已初始化`);
+        console.log(`[GEM] 当前选项卡ID: ${CURRENT_TAB_ID}`);
+        console.log(`[GEM] 选项卡角色: ${tabCommManager.currentRole}`);
+        console.log(`[GEM] 分布式执行状态已初始化`);
+        console.log(`[GEM] BroadcastChannel支持: ${tabCommManager.isSupported ? '是' : '否'}`);
 
         // 加载WebSocket诊断工具
         if (!window.gemWebSocketDiagnostic) {
@@ -270,16 +675,16 @@ app.registerExtension({
         api.addEventListener("execution_interrupted", () => {
             console.log("[GEM-INTERRUPT] ========== 监听到执行中断事件 ==========");
 
-            // ✅ 多窗口支持：检查是否是我们自己触发的中断（用于避免双队列）
-            if (windowExecutionState.isOurInterrupt) {
-                console.log(`[GEM-INTERRUPT] 窗口 ${CURRENT_WINDOW_ID} 这是我们自己触发的中断，忽略`);
-                windowExecutionState.isOurInterrupt = false;  // 重置标志
+            // ✅ 选项卡重构：检查是否是我们自己触发的中断（用于避免双队列）
+            if (distributedExecutionState.isOurInterrupt) {
+                console.log(`[GEM-INTERRUPT] 选项卡 ${CURRENT_TAB_ID} 这是我们自己触发的中断，忽略`);
+                distributedExecutionState.isOurInterrupt = false;  // 重置标志
                 return;
             }
 
-            // ✅ 多窗口支持：只有用户主动中断才设置停止标志
-            windowExecutionState.shouldStopExecution = true;
-            console.log(`[GEM-INTERRUPT] 窗口 ${CURRENT_WINDOW_ID} 用户主动中断，设置 shouldStopExecution = true，停止后续组执行`);
+            // ✅ 选项卡重构：只有用户主动中断才设置停止标志
+            distributedExecutionState.shouldStopExecution = true;
+            console.log(`[GEM-INTERRUPT] 选项卡 ${CURRENT_TAB_ID} 用户主动中断，设置 shouldStopExecution = true，停止后续组执行`);
 
             // 遍历所有节点，重置所有组执行管理器的状态
             const allNodes = app.graph._nodes;
@@ -310,15 +715,15 @@ app.registerExtension({
 
             console.log(`[GEM-JS] ✓ 找到节点 #${nodeId}，准备阻止初始队列执行`);
 
-            // ✅ 多窗口支持：立即中断任何正在进行的队列执行
+            // ✅ 选项卡重构：立即中断任何正在进行的队列执行
             try {
-                console.log(`[GEM-JS] 窗口 ${CURRENT_WINDOW_ID} 立即中断当前队列执行...`);
-                windowExecutionState.isOurInterrupt = true;  // 标记这是我们触发的中断
+                console.log(`[GEM-JS] 选项卡 ${CURRENT_TAB_ID} 立即中断当前队列执行...`);
+                distributedExecutionState.isOurInterrupt = true;  // 标记这是我们触发的中断
                 await api.interrupt();
-                console.log(`[GEM-JS] 窗口 ${CURRENT_WINDOW_ID} ✓ 队列中断完成`);
+                console.log(`[GEM-JS] 选项卡 ${CURRENT_TAB_ID} ✓ 队列中断完成`);
             } catch (e) {
-                console.warn(`[GEM-JS] ⚠️ 窗口 ${CURRENT_WINDOW_ID} 中断队列失败: ${e}`);
-                windowExecutionState.isOurInterrupt = false;  // 重置标志
+                console.warn(`[GEM-JS] ⚠️ 选项卡 ${CURRENT_TAB_ID} 中断队列失败: ${e}`);
+                distributedExecutionState.isOurInterrupt = false;  // 重置标志
             }
 
             // 等待队列完全清空
@@ -359,33 +764,47 @@ app.registerExtension({
             console.log(`[GEM-JS] ========== WebSocket 消息到达 ==========`);
             console.log(`[GEM-JS] detail:`, detail);
 
-            // ✅ 多窗口支持：检查是否已经在执行中，防止重复执行
-            if (windowExecutionState.isExecutingGroups) {
-                console.log(`[GEM-JS] ⚠️ 窗口 ${CURRENT_WINDOW_ID} 已在执行组，忽略此次 WebSocket 消息（防止双队列）`);
+            // ✅ 选项卡重构：检查执行权限
+            const currentRole = distributedExecutionState.getCurrentRole();
+            console.log(`[GEM-JS] 选项卡 ${CURRENT_TAB_ID} 收到执行请求，当前角色: ${currentRole}`);
+
+            if (currentRole !== 'master') {
+                console.warn(`[GEM-JS] ⚠️ 选项卡 ${CURRENT_TAB_ID} 不是主选项卡，忽略执行请求`);
+                // 显示用户提示
+                if (typeof showToast === 'function') {
+                    showToast('当前选项卡不是主选项卡，无法执行。请切换到主选项卡。', 'warning', 5000);
+                }
+                return;
+            }
+
+            // ✅ 选项卡重构：使用分布式执行状态检查
+            if (!distributedExecutionState.canExecute()) {
+                console.warn(`[GEM-JS] ⚠️ 选项卡 ${CURRENT_TAB_ID} 无法执行，状态检查失败`);
                 console.log(`[GEM-JS] 执行状态详情:`, {
-                    isExecutingGroups: windowExecutionState.isExecutingGroups,
-                    windowExecutionLock: windowExecutionState.windowExecutionLock,
-                    lastExecutionTime: new Date(windowExecutionState.lastExecutionTime).toISOString()
+                    isExecutingGroups: distributedExecutionState.isExecutingGroups,
+                    distributedLock: distributedExecutionState.distributedLock,
+                    executingTabId: distributedExecutionState.executingTabId,
+                    lastExecutionTime: new Date(distributedExecutionState.lastExecutionTime).toISOString()
                 });
+
+                // 显示用户提示
+                if (typeof showToast === 'function') {
+                    if (distributedExecutionState.executingTabId && distributedExecutionState.executingTabId !== CURRENT_TAB_ID) {
+                        showToast(`另一个选项卡正在执行中，请稍后再试。`, 'info', 3000);
+                    } else {
+                        showToast(`执行间隔过短，请稍后再试。`, 'warning', 3000);
+                    }
+                }
                 return;
             }
 
-            // ✅ 多窗口支持：检查执行锁
-            if (windowExecutionState.windowExecutionLock) {
-                console.log(`[GEM-JS] ⚠️ 窗口 ${CURRENT_WINDOW_ID} 执行被锁定，忽略执行请求`);
+            console.log(`[GEM-JS] ✓ 选项卡 ${CURRENT_TAB_ID} 通过执行检查，开始执行`);
+
+            // ✅ 选项卡重构：开始分布式执行
+            if (!distributedExecutionState.startExecution()) {
+                console.error(`[GEM-JS] ✗ 选项卡 ${CURRENT_TAB_ID} 无法开始分布式执行`);
                 return;
             }
-
-            // ✅ 多窗口支持：设置执行锁
-            const currentTime = Date.now();
-            if (currentTime - windowExecutionState.lastExecutionTime < 1000) {
-                console.log(`[GEM-JS] ⚠️ 窗口 ${CURRENT_WINDOW_ID} 执行间隔过短，忽略请求（距离上次执行 ${currentTime - windowExecutionState.lastExecutionTime}ms）`);
-                return;
-            }
-
-            console.log(`[GEM-JS] ✓ 窗口 ${CURRENT_WINDOW_ID} 通过执行检查，开始执行`);
-            windowExecutionState.windowExecutionLock = true;
-            windowExecutionState.lastExecutionTime = currentTime;
 
             const nodeId = String(detail.node_id);
             const node = app.graph._nodes_by_id[nodeId];
@@ -405,10 +824,8 @@ app.registerExtension({
                 console.warn(`[GEM-JS] ⚠️ 消息缺少total_groups，但继续执行`);
             }
 
-            // 设置执行标志
-            windowExecutionState.isExecutingGroups = true;
-            windowExecutionState.shouldStopExecution = false;  // 重置中断标志
-            console.log(`[GEM-JS] 窗口 ${CURRENT_WINDOW_ID} 设置执行标志: isExecutingGroups = true, shouldStopExecution = false`);
+            // ✅ 选项卡重构：分布式执行状态已在startExecution()中设置
+            console.log(`[GEM-JS] 选项卡 ${CURRENT_TAB_ID} 分布式执行已启动`);
             console.log(`[GEM-JS] 消息ID: ${detail.message_id || 'unknown'}`);
             console.log(`[GEM-JS] 总组数: ${detail.total_groups || 'unknown'}`);
 
@@ -567,9 +984,9 @@ app.registerExtension({
                             let hasStarted = false; // 标记队列是否已经开始执行
 
                             const checkQueue = () => {
-                                // ✅ 多窗口支持：检查是否有中断请求（参考 GroupExecutor 官方实现）
-                                if (windowExecutionState.shouldStopExecution) {
-                                    console.log(`[GEM-JS] ⚠️ 窗口 ${CURRENT_WINDOW_ID} 检测到中断请求，立即停止队列等待`);
+                                // ✅ 选项卡重构：检查是否有中断请求（参考 GroupExecutor 官方实现）
+                                if (distributedExecutionState.shouldStopExecution) {
+                                    console.log(`[GEM-JS] ⚠️ 选项卡 ${CURRENT_TAB_ID} 检测到中断请求，立即停止队列等待`);
                                     resolve();
                                     return;
                                 }
@@ -628,9 +1045,9 @@ app.registerExtension({
 
                     console.log(`[GEM-JS] ✓ 组 "${item.group_name}" 执行完成`);
 
-                    // ✅ 多窗口支持：检查是否有中断请求
-                    if (windowExecutionState.shouldStopExecution) {
-                        console.log(`[GEM-JS] ⚠️ 窗口 ${CURRENT_WINDOW_ID} 检测到中断请求，停止后续组执行`);
+                    // ✅ 选项卡重构：检查是否有中断请求
+                    if (distributedExecutionState.shouldStopExecution) {
+                        console.log(`[GEM-JS] ⚠️ 选项卡 ${CURRENT_TAB_ID} 检测到中断请求，停止后续组执行`);
                         // Mute 当前组后退出
                         setGroupActive(item.group_name, false);
                         updateNodeStatus(node, t('interrupted'));
@@ -656,12 +1073,9 @@ app.registerExtension({
                 console.error(`[GEM-JS] 执行出错:`, error);
                 updateNodeStatus(node, t('error'));
             } finally {
-                // ✅ 多窗口支持：重置执行标志，允许下一次执行
-                windowExecutionState.isExecutingGroups = false;
-                windowExecutionState.shouldStopExecution = false;  // 重置中断标志
-                windowExecutionState.windowExecutionLock = false;  // 释放执行锁
-                console.log(`[GEM-JS] 窗口 ${CURRENT_WINDOW_ID} 重置执行标志: isExecutingGroups = false, shouldStopExecution = false, windowExecutionLock = false`);
-                console.log(`[GEM-JS] 窗口 ${CURRENT_WINDOW_ID} 执行流程结束`);
+                // ✅ 选项卡重构：释放分布式执行锁
+                distributedExecutionState.releaseExecutionLock();
+                console.log(`[GEM-JS] 选项卡 ${CURRENT_TAB_ID} 分布式执行锁已释放，执行流程结束`);
 
                 releaseExecutionLock(node);
                 app.graph.setDirtyCanvas(true, true);
@@ -708,31 +1122,108 @@ app.registerExtension({
 
         console.log(`[GEM] ========== GroupExecutorManager Extension Setup Complete ==========`);
 
-        // ✅ 多窗口支持：添加窗口状态监控
-        const monitorWindowState = () => {
-            // 监控窗口焦点变化
+        // ✅ 选项卡重构：选项卡状态监控和UI增强
+        const setupTabStateManagement = () => {
+            // 监控页面可见性变化
             document.addEventListener('visibilitychange', () => {
-                if (document.hidden) {
-                    console.log(`[GEM-WINDOW] 窗口 ${CURRENT_WINDOW_ID} 失去焦点`);
-                } else {
-                    console.log(`[GEM-WINDOW] 窗口 ${CURRENT_WINDOW_ID} 获得焦点`);
+                const isActive = !document.hidden;
+                console.log(`[GEM-TAB] 选项卡 ${CURRENT_TAB_ID} 可见性变化: ${isActive ? '可见' : '隐藏'}`);
+
+                // 广播可见性状态变化
+                tabCommManager.broadcast({
+                    type: 'visibility_change',
+                    payload: { isActive }
+                });
+
+                // 如果选项卡变为可见且当前没有主选项卡，尝试成为主选项卡
+                if (isActive && tabCommManager.currentRole !== 'master') {
+                    setTimeout(() => {
+                        tabCommManager.checkMasterElection();
+                    }, 1000);
                 }
             });
 
-            // 监控窗口关闭事件
+            // 监控选项卡关闭事件
             window.addEventListener('beforeunload', () => {
-                console.log(`[GEM-WINDOW] 窗口 ${CURRENT_WINDOW_ID} 即将关闭，清理执行状态`);
-                windowExecutionState.isExecutingGroups = false;
-                windowExecutionState.shouldStopExecution = false;
-                windowExecutionState.windowExecutionLock = false;
-                windowExecutionState.isOurInterrupt = false;
+                console.log(`[GEM-TAB] 选项卡 ${CURRENT_TAB_ID} 即将关闭，清理所有状态`);
+
+                // 强制释放执行锁
+                distributedExecutionState.forceReleaseExecutionLock('tab_closing');
+
+                // 清理选项卡通信管理器
+                tabCommManager.cleanup();
             });
 
-            console.log(`[GEM-WINDOW] 窗口 ${CURRENT_WINDOW_ID} 状态监控已启用`);
+            // 监听选项卡角色变化
+            tabCommManager.onRoleChange = (oldRole, newRole) => {
+                console.log(`[GEM-TAB] 选项卡角色变化通知: ${oldRole} -> ${newRole}`);
+
+                // 显示角色变化提示
+                if (typeof showToast === 'function') {
+                    if (newRole === 'master') {
+                        showToast('此选项卡已成为主选项卡，可以执行组管理。', 'success', 3000);
+                    } else {
+                        showToast('此选项卡已切换为从选项卡。', 'info', 3000);
+                    }
+                }
+
+                // 更新所有组执行管理器节点的UI状态
+                updateAllNodesTabRole(newRole);
+            };
+
+            // 监听其他选项卡的执行事件
+            tabCommManager.handleExecutionStart = (tabId, payload) => {
+                console.log(`[GEM-TAB] 选项卡 ${tabId} 开始执行`);
+
+                // 如果自己不是主选项卡，显示提示
+                if (tabCommManager.currentRole !== 'master' && typeof showToast === 'function') {
+                    showToast('另一个选项卡正在执行组管理...', 'info', 2000);
+                }
+            };
+
+            tabCommManager.handleExecutionEnd = (tabId, payload) => {
+                console.log(`[GEM-TAB] 选项卡 ${tabId} 执行结束`);
+
+                // 如果自己是从选项卡，提示可以尝试执行
+                if (tabCommManager.currentRole !== 'master' && typeof showToast === 'function') {
+                    showToast('其他选项卡执行完成，您可以尝试执行。', 'success', 2000);
+                }
+            };
+
+            console.log(`[GEM-TAB] 选项卡 ${CURRENT_TAB_ID} 状态管理已启用`);
         };
 
-        // 启动窗口状态监控
-        monitorWindowState();
+        // 更新所有节点的选项卡角色状态
+        const updateAllNodesTabRole = (role) => {
+            const allNodes = app.graph._nodes;
+            if (allNodes && allNodes.length > 0) {
+                for (const node of allNodes) {
+                    if (node.type === "GroupExecutorManager") {
+                        // 更新节点UI中的角色指示器（如果存在）
+                        updateNodeTabRoleIndicator(node, role);
+                    }
+                }
+            }
+        };
+
+        // 更新节点的选项卡角色指示器
+        const updateNodeTabRoleIndicator = (node, role) => {
+            if (!node.widgets) return;
+
+            // 查找或创建角色指示器widget
+            let roleWidget = node.widgets.find(w => w.name === "tab_role_indicator");
+            if (!roleWidget) {
+                // 如果没有找到，在节点状态中显示
+                const statusWidget = node.widgets.find(w => w.name === "status");
+                if (statusWidget) {
+                    const roleText = role === 'master' ? '[主选项卡]' : '[从选项卡]';
+                    statusWidget.value = `${statusWidget.value} ${roleText}`;
+                }
+            }
+        };
+
+        // 启动选项卡状态管理
+        setupTabStateManagement();
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
