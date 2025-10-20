@@ -69,7 +69,15 @@ class ImageCache:
         将图像缓存到全局单通道
         """
         try:
+            import datetime
+            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            print(f"[ImageCacheSave] ==================== 执行时间: {current_time} ====================")
             print(f"[ImageCacheSave DEBUG] Executing save node. Using cache_manager instance ID: {id(cache_manager)}")
+
+            # 获取保存前的缓存状态
+            cache_info = cache_manager.get_cache_info()
+            print(f"[ImageCacheSave] 保存前缓存状态: count={cache_info['count']}, 会话次数={cache_info.get('session_count', 0)}")
+
             # 参数处理
             processed_enable_preview = enable_preview[0] if isinstance(enable_preview, list) else enable_preview
 
@@ -81,12 +89,10 @@ class ImageCache:
             for batch in images:
                 unpacked_images.extend(list(batch))  # Iterating over a tensor unpacks the first dimension
 
-            # 使用缓存管理器缓存图像（固定使用默认前缀，不清除之前缓存以支持组执行管理器）
+            # 使用缓存管理器缓存图像（固定使用默认前缀，总是追加到现有缓存）
             results = cache_manager.cache_images(
                 images=unpacked_images,
                 filename_prefix="cached_image",  # 固定使用默认前缀
-                masks=None,  # 不再处理masks
-                clear_cache=False,  # 恢复为False，以启用追加逻辑
                 preview_rgba=True  # 固定使用RGBA预览以保留透明度
             )
 

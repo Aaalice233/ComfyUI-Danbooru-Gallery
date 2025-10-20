@@ -78,18 +78,27 @@ class ImageReceiver:
             包含图像张量和预览信息的字典
         """
         try:
+            import datetime
+            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            print(f"[ImageCacheGet] ==================== 执行时间: {current_time} ====================")
             print(f"[ImageCacheGet DEBUG] Executing get node. Using cache_manager instance ID: {id(cache_manager)}")
+
+            # 获取缓存状态信息
+            cache_info = cache_manager.get_cache_info()
+            print(f"[ImageCacheGet] 当前缓存状态: count={cache_info['count']}, 会话次数={cache_info.get('session_count', 0)}")
+            if cache_info['count'] > 0:
+                print(f"[ImageCacheGet] 最后保存时间: {datetime.datetime.fromtimestamp(cache_info['timestamp']/1000).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+
             # INPUT_IS_LIST=True时，ComfyUI会将输入包装为列表
             default_image_list = default_image if default_image is not None else []
 
             # 首先检查缓存是否有效
             if cache_manager.is_cache_valid():
                 print("[ImageCacheGet] 缓存有效，尝试从缓存获取图像")
-                # 使用缓存管理器获取最新图像（固定不清除缓存）
+                # 使用缓存管理器获取最新图像
                 images, _ = cache_manager.get_cached_images(
-                    get_latest=True,  # 总是获取最新图像
-                    index=0,  # 不再使用索引
-                    clear_after_get=False  # 固定不清除缓存
+                    get_latest=True,  # 总是获取所有缓存图像
+                    index=0  # 当get_latest=False时才使用
                 )
 
                 # 发送成功toast通知

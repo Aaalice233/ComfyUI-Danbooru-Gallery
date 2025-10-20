@@ -10,6 +10,15 @@ import { globalMultiLanguageManager } from "../global/multi_language.js";
 import { toastManagerProxy } from "../global/toast_manager.js";
 import "./websocket_diagnostic.js";  // 加载WebSocket诊断工具
 
+// 全局执行标志，防止重复执行
+let isExecutingGroups = false;
+
+// 全局中断标志，用于检测用户是否主动中断执行
+let shouldStopExecution = false;
+
+// 标志：是否是我们自己触发的中断（用于避免双队列）
+let isOurInterrupt = false;
+
 // Create convenience translation function for 'gem' namespace
 const t = (key, params = {}) => {
     let text = globalMultiLanguageManager.t(`gem.${key}`);
@@ -51,11 +60,43 @@ app.registerExtension({
          * 设置指定组的激活状态（mute/unmute）
          */
         const setGroupActive = (groupName, isActive) => {
-            if (!app.graph || !app.graph._groups) return;
+            if (!app.graph || !app.graph._groups) {
+                console.warn(`[GEM-GROUP] 无法访问组列表: graph=${!!app.graph}, _groups=${!!(app.graph && app.graph._groups)}`);
+                return;
+            }
+
+            // 查找匹配的组
             const group = app.graph._groups.find(g => g.title === groupName);
+
             if (group) {
+                const previousState = group.is_muted;
                 group.is_muted = !isActive;
-                console.log(`[GEM-GROUP] ${isActive ? 'Unmuting' : 'Muting'} group: ${groupName}`);
+                console.log(`[GEM-GROUP] ${isActive ? 'Unmuting' : 'Muting'} group: ${groupName} (muted: ${previousState} -> ${group.is_muted})`);
+
+                // ✅ 参考 GroupExecutor 官方实现：
+                // 不修改节点的 mode（避免节点变成紫色），节点执行控制完全由 QueueManager 通过过滤 prompt.output 实现
+                // 只统计组内节点数量用于日志输出
+                const nodesInGroup = [];
+                for (const node of app.graph._nodes) {
+                    if (!node || !node.pos) continue;
+                    // 使用 LiteGraph 的边界重叠检测方法
+                    if (LiteGraph.overlapBounding(group._bounding, node.getBounding())) {
+                        nodesInGroup.push(node);
+                    }
+                }
+
+                console.log(`[GEM-GROUP] 组 "${groupName}" 内的节点 (${nodesInGroup.length}个):`);
+                nodesInGroup.forEach(node => {
+                    console.log(`[GEM-GROUP]   - [#${node.id}] ${node.type} ${node.title ? `"${node.title}"` : ''}`);
+                });
+
+                // 验证状态是否正确设置
+                if (group.is_muted === isActive) {
+                    console.error(`[GEM-GROUP] ✗ 状态设置失败！期望 is_muted=${!isActive}, 实际 is_muted=${group.is_muted}`);
+                }
+            } else {
+                console.warn(`[GEM-GROUP] ✗ 未找到名为 "${groupName}" 的组`);
+                console.log(`[GEM-GROUP] 可用的组:`, app.graph._groups.map(g => `"${g.title}"`).join(', '));
             }
         };
 
@@ -142,6 +183,18 @@ app.registerExtension({
         console.log(`[GEM-SETUP] 注册 'execution_interrupted' 监听器...`);
         api.addEventListener("execution_interrupted", () => {
             console.log("[GEM-INTERRUPT] ========== 监听到执行中断事件 ==========");
+
+            // 检查是否是我们自己触发的中断（用于避免双队列）
+            if (isOurInterrupt) {
+                console.log("[GEM-INTERRUPT] 这是我们自己触发的中断，忽略");
+                isOurInterrupt = false;  // 重置标志
+                return;
+            }
+
+            // 只有用户主动中断才设置停止标志
+            shouldStopExecution = true;
+            console.log("[GEM-INTERRUPT] 用户主动中断，设置 shouldStopExecution = true，停止后续组执行");
+
             // 遍历所有节点，重置所有组执行管理器的状态
             const allNodes = app.graph._nodes;
             if (allNodes && allNodes.length > 0) {
@@ -161,6 +214,12 @@ app.registerExtension({
             console.log(`[GEM-JS] ========== WebSocket 消息到达 ==========`);
             console.log(`[GEM-JS] detail:`, detail);
 
+            // 检查是否已经在执行中，防止重复执行
+            if (isExecutingGroups) {
+                console.log(`[GEM-JS] ⚠️ 已在执行组，忽略此次 WebSocket 消息（防止双队列）`);
+                return;
+            }
+
             const nodeId = String(detail.node_id);
             const node = app.graph._nodes_by_id[nodeId];
 
@@ -171,6 +230,46 @@ app.registerExtension({
 
             console.log(`[GEM-JS] ✓ 找到节点 #${nodeId}`);
 
+            // 设置执行标志
+            isExecutingGroups = true;
+            shouldStopExecution = false;  // 重置中断标志
+            console.log(`[GEM-JS] 设置 isExecutingGroups = true，shouldStopExecution = false，开始执行流程`);
+
+            // 先中断现有的队列（由用户点击执行按钮触发的初始队列）
+            console.log(`[GEM-JS] 中断初始队列以避免双队列问题...`);
+            try {
+                isOurInterrupt = true;  // 标记这是我们触发的中断
+                await api.interrupt();
+                console.log(`[GEM-JS] 等待队列清空...`);
+
+                // 等待队列完全清空
+                let queueCleared = false;
+                for (let i = 0; i < 20; i++) {  // 最多等待2秒
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    try {
+                        const queueInfo = await api.fetchApi('/queue').then(r => r.json());
+                        const running = (queueInfo.queue_running || []).length;
+                        const pending = (queueInfo.queue_pending || []).length;
+
+                        console.log(`[GEM-JS] 队列状态检查 #${i+1}: running=${running}, pending=${pending}`);
+
+                        if (running === 0 && pending === 0) {
+                            queueCleared = true;
+                            console.log(`[GEM-JS] ✓ 队列已完全清空`);
+                            break;
+                        }
+                    } catch (e) {
+                        console.warn(`[GEM-JS] 检查队列状态失败: ${e}`);
+                    }
+                }
+
+                if (!queueCleared) {
+                    console.warn(`[GEM-JS] ⚠️ 队列未能在超时时间内清空，继续执行`);
+                }
+            } catch (e) {
+                console.warn(`[GEM-JS] ⚠️ 中断初始队列失败: ${e}`);
+            }
+
             // 执行前重置状态
             console.log(`[GEM-JS] 执行前重置节点状态...`);
             resetExecutionState(node);
@@ -178,6 +277,42 @@ app.registerExtension({
             // 按顺序执行组
             const executionList = detail.execution_list;
             console.log(`[GEM-JS] 执行列表:`, executionList.map(e => e.group_name));
+
+            // 打印所有组的当前mute状态
+            if (app.graph && app.graph._groups) {
+                console.log(`[GEM-JS] 开始执行前所有组的状态:`);
+                app.graph._groups.forEach(g => {
+                    console.log(`[GEM-JS]   - "${g.title}": is_muted=${g.is_muted}`);
+                });
+
+                // ✅ 修复：使用正确的边界检测方法（参考官方文档）
+                const nodesOutsideGroups = app.graph._nodes.filter(node => {
+                    if (!node || !node.pos) return false;
+
+                    // 检查节点是否在任何组内
+                    const isInAnyGroup = app.graph._groups.some(group => {
+                        if (!group._bounding) return false;
+                        // 使用 LiteGraph 的边界重叠检测方法
+                        return LiteGraph.overlapBounding(group._bounding, node.getBounding());
+                    });
+                    return !isInAnyGroup;
+                });
+
+                if (nodesOutsideGroups.length > 0) {
+                    console.log(`[GEM-JS] ⚠️ 发现 ${nodesOutsideGroups.length} 个不在任何组内的节点（这些节点总是会执行）:`);
+                    nodesOutsideGroups.forEach(node => {
+                        console.log(`[GEM-JS]   - [#${node.id}] ${node.type} ${node.title ? `"${node.title}"` : ''}`);
+                    });
+                } else {
+                    console.log(`[GEM-JS] ✓ 所有节点都在组内，没有组外节点`);
+                }
+            }
+
+            // 注意：已移除自动清空缓存的功能
+            // 原因：自动清空会导致在同一次执行中，如果"获取缓存"节点在"保存缓存"节点之前执行，
+            // 则无法获取到本次执行中保存的缓存。
+            // 如需清空缓存，请在工作流中添加专门的清空缓存节点，或通过 UI 手动清空。
+            console.log(`[GEM-JS] 跳过自动清空缓存（已移除自动清空功能，请手动控制）`);
 
             try {
                 updateNodeStatus(node, t('executing'));
@@ -199,19 +334,32 @@ app.registerExtension({
 
                     // Unmute 当前组
                     setGroupActive(item.group_name, true);
+
+                    // 验证unmute操作后所有组的状态
+                    if (app.graph && app.graph._groups) {
+                        console.log(`[GEM-JS] Unmute "${item.group_name}" 后所有组的状态:`);
+                        app.graph._groups.forEach(g => {
+                            const status = g.is_muted ? '已静音' : '未静音';
+                            const indicator = g.title === item.group_name ? ' ← 当前' : '';
+                            console.log(`[GEM-JS]   - "${g.title}": ${status}${indicator}`);
+                        });
+                    }
+
                     updateNodeStatus(node, t('executingGroup', { groupName: item.group_name }));
                     updateNodeProgress(node, progress);
 
-                    // 触发队列（执行当前 unmute 的组）
-                    console.log(`[GEM-JS] 触发队列执行组: ${item.group_name}...`);
-                    try {
-                        window.GEM_EXECUTING_GROUP = true;
-                        console.log(`[GEM-JS] 设置 GEM_EXECUTING_GROUP = true`);
-                        await app.queuePrompt(0, 1);
-                    } finally {
-                        window.GEM_EXECUTING_GROUP = false;
-                        console.log(`[GEM-JS] 设置 GEM_EXECUTING_GROUP = false`);
+                    // ✅ 参考 GroupExecutor 官方实现：查找组内的输出节点并使用 QueueManager 执行
+                    console.log(`[GEM-JS] 查找组 "${item.group_name}" 内的输出节点...`);
+                    const outputNodes = node.getGroupOutputNodes(item.group_name);
+                    if (!outputNodes || outputNodes.length === 0) {
+                        throw new Error(`组 "${item.group_name}" 中没有找到输出节点`);
                     }
+
+                    const nodeIds = outputNodes.map(n => n.id);
+                    console.log(`[GEM-JS] 将执行 ${nodeIds.length} 个输出节点:`, nodeIds);
+
+                    // 使用 QueueManager 执行指定节点及其依赖
+                    await queueManager.queueOutputNodes(nodeIds);
 
                     // 等待队列完成
                     console.log(`[GEM-JS] 等待队列完成...`);
@@ -219,6 +367,13 @@ app.registerExtension({
                         let hasStarted = false; // 标记队列是否已经开始执行
 
                         const checkQueue = () => {
+                            // ⚠️ 检查是否有中断请求（参考 GroupExecutor 官方实现）
+                            if (shouldStopExecution) {
+                                console.log(`[GEM-JS] ⚠️ 检测到中断请求，立即停止队列等待`);
+                                resolve();
+                                return;
+                            }
+
                             api.fetchApi('/queue')
                                 .then(response => response.json())
                                 .then(data => {
@@ -234,12 +389,12 @@ app.registerExtension({
                                     // 只有在队列已经开始执行后，才检查是否完成
                                     if (hasStarted && !isRunning && !isPending) {
                                         console.log(`[GEM-JS] ✓ 队列已清空`);
-                                        setTimeout(resolve, 500); // 额外等待500ms确保完成
+                                        setTimeout(resolve, 100); // 额外等待100ms确保完成（参考官方实现）
                                         return;
                                     }
 
                                     // 继续检查
-                                    setTimeout(checkQueue, 300); // 每300ms检查一次
+                                    setTimeout(checkQueue, 500); // 每500ms检查一次（参考官方实现，减少服务器负担）
                                 })
                                 .catch(error => {
                                     console.error(`[GEM-JS] 检查队列状态出错:`, error);
@@ -252,6 +407,15 @@ app.registerExtension({
                     });
 
                     console.log(`[GEM-JS] ✓ 组 "${item.group_name}" 执行完成`);
+
+                    // 检查是否有中断请求
+                    if (shouldStopExecution) {
+                        console.log(`[GEM-JS] ⚠️ 检测到中断请求，停止后续组执行`);
+                        // Mute 当前组后退出
+                        setGroupActive(item.group_name, false);
+                        updateNodeStatus(node, t('interrupted'));
+                        break;  // 退出执行循环
+                    }
 
                     // Mute 当前组
                     setGroupActive(item.group_name, false);
@@ -272,6 +436,11 @@ app.registerExtension({
                 console.error(`[GEM-JS] 执行出错:`, error);
                 updateNodeStatus(node, t('error'));
             } finally {
+                // 重置执行标志，允许下一次执行
+                isExecutingGroups = false;
+                shouldStopExecution = false;  // 重置中断标志
+                console.log(`[GEM-JS] 设置 isExecutingGroups = false, shouldStopExecution = false，执行流程结束`);
+
                 releaseExecutionLock(node);
                 app.graph.setDirtyCanvas(true, true);
             }
@@ -312,6 +481,39 @@ app.registerExtension({
             this.createCustomUI();
 
             return result;
+        };
+
+        /**
+         * 查找组内的输出节点（参考 GroupExecutor 官方实现）
+         * @param {string} groupName - 组名称
+         * @returns {Array} 组内的输出节点列表
+         */
+        nodeType.prototype.getGroupOutputNodes = function(groupName) {
+            // 1. 根据名称查找组
+            const group = app.graph._groups.find(g => g.title === groupName);
+            if (!group) {
+                console.warn(`[GEM] 未找到名为 "${groupName}" 的组`);
+                return [];
+            }
+
+            // 2. 查找组边界内的所有节点
+            const groupNodes = [];
+            for (const node of app.graph._nodes) {
+                if (!node || !node.pos) continue;
+                // 使用 LiteGraph 的边界重叠检测
+                if (LiteGraph.overlapBounding(group._bounding, node.getBounding())) {
+                    groupNodes.push(node);
+                }
+            }
+
+            // 3. 过滤出输出节点
+            const outputNodes = groupNodes.filter((n) => {
+                return n.mode !== LiteGraph.NEVER &&  // 节点未禁用
+                       n.constructor.nodeData?.output_node === true;  // 是输出节点
+            });
+
+            console.log(`[GEM] 组 "${groupName}" 内找到 ${outputNodes.length} 个输出节点（共 ${groupNodes.length} 个节点）`);
+            return outputNodes;
         };
 
         /**

@@ -55,6 +55,9 @@ Thumbs.db
 
 # 日志文件
 *.log
+log/*
+!log/.gitkeep
+!log/README.md
 
 # 临时文件
 *.tmp

@@ -68,17 +68,13 @@ class ImageCacheManager:
     def cache_images(self,
                     images: List[torch.Tensor],
                     filename_prefix: str = "cached_image",
-                    masks: Optional[List[torch.Tensor]] = None,
-                    clear_cache: bool = True,
                     preview_rgba: bool = True) -> List[Dict[str, Any]]:
         """
-        缓存图像数据
+        缓存图像数据（总是追加到现有缓存）
 
         Args:
             images: 图像张量列表
             filename_prefix: 文件名前缀
-            masks: 可选的遮罩张量列表
-            clear_cache: 是否清空之前的缓存
             preview_rgba: 是否使用RGBA预览
 
         Returns:
@@ -94,11 +90,7 @@ class ImageCacheManager:
 
         print(f"[ImageCacheManager] 开始缓存 {len(images)} 张图像")
         print(f"[ImageCacheManager] 文件名前缀: {filename_prefix}")
-        print(f"[ImageCacheManager] 清空缓存: {clear_cache}")
-
-        # 清空之前的缓存
-        if clear_cache:
-            self.clear_cache()
+        print(f"[ImageCacheManager] 当前模式: 追加（不清空旧缓存）")
 
         for idx, image_batch in enumerate(images):
             try:
@@ -106,12 +98,8 @@ class ImageCacheManager:
                 image = image_batch.squeeze()
                 rgb_image = Image.fromarray(np.clip(255. * image.cpu().numpy(), 0, 255).astype(np.uint8))
 
-                # 遮罩处理
-                if masks is not None and idx < len(masks):
-                    mask = masks[idx].squeeze()
-                    mask_img = Image.fromarray(np.clip(255. * (1 - mask.cpu().numpy()), 0, 255).astype(np.uint8))
-                else:
-                    mask_img = Image.new('L', rgb_image.size, 255)
+                # 创建默认遮罩（完全不透明）
+                mask_img = Image.new('L', rgb_image.size, 255)
 
                 # 合并为RGBA
                 r, g, b = rgb_image.convert('RGB').split()
@@ -153,19 +141,15 @@ class ImageCacheManager:
                 print(f"[ImageCacheManager] 处理图像 {idx+1} 时出错: {str(e)}")
                 continue
 
-        # 更新全局缓存
-        if clear_cache:
-            self.cache_data["images"] = cache_data
-        else:
-            self.cache_data["images"].extend(cache_data)
+        # 更新全局缓存（总是追加）
+        self.cache_data["images"].extend(cache_data)
 
         print(f"[ImageCacheManager DEBUG] Cache size after adding: {len(self.cache_data['images'])}")
 
         self.cache_data["timestamp"] = timestamp
         self.cache_data["metadata"] = {
             "count": len(self.cache_data["images"]), # 使用更新后的列表长度
-            "prefix": filename_prefix,
-            "has_masks": masks is not None
+            "prefix": filename_prefix
         }
 
         # 更新会话追踪信息
@@ -195,15 +179,13 @@ class ImageCacheManager:
 
     def get_cached_images(self,
                          get_latest: bool = True,
-                         index: int = 0,
-                         clear_after_get: bool = False) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+                         index: int = 0) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
         """
         从缓存中获取图像数据
 
         Args:
             get_latest: 是否获取所有缓存图像
             index: 当get_latest为False时，获取指定索引的图像
-            clear_after_get: 获取后是否清空缓存
 
         Returns:
             (images_tensors, masks_tensors) 图像和遮罩张量元组
@@ -214,7 +196,6 @@ class ImageCacheManager:
         print(f"[ImageCacheManager] 开始获取缓存图像")
         print(f"[ImageCacheManager] 获取最新: {get_latest}")
         print(f"[ImageCacheManager] 索引: {index}")
-        print(f"[ImageCacheManager] 获取后清空: {clear_after_get}")
 
         # 检查缓存中是否有图像
         if not self.cache_data["images"]:
@@ -325,11 +306,6 @@ class ImageCacheManager:
                 except Exception as e:
                     print(f"[ImageCacheManager] 处理文件时出错: {str(e)}")
                     continue
-
-            # 清空缓存（如果需要）
-            if clear_after_get:
-                self.clear_cache()
-                print(f"[ImageCacheManager] 已清空缓存")
 
             if not output_images:
                 print(f"[ImageCacheManager] 没有成功加载任何图像，返回空图像")

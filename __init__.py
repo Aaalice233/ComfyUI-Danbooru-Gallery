@@ -55,4 +55,26 @@ NODE_DISPLAY_NAME_MAPPINGS = {**danbooru_display_mappings, **swap_display_mappin
 # 设置JavaScript文件目录
 WEB_DIRECTORY = "./js"
 
+# 注册 WebSocket 事件监听器
+try:
+    from server import PromptServer
+    from aiohttp import web
+    from .ImageCacheManager.image_cache_manager import cache_manager
+
+    @PromptServer.instance.routes.post("/danbooru_gallery/clear_cache")
+    async def clear_image_cache(request):
+        """清空图像缓存的API端点"""
+        try:
+            logger.info("[API] 收到清空缓存请求")
+            cache_manager.clear_cache()
+            logger.info("[API] ✓ 缓存已清空")
+            return web.json_response({"success": True, "message": "缓存已清空"})
+        except Exception as e:
+            logger.error(f"[API] ✗ 清空缓存失败: {e}")
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    logger.info("✓ 已注册图像缓存清空 API: /danbooru_gallery/clear_cache")
+except Exception as e:
+    logger.error(f"注册缓存清空 API 失败: {e}")
+
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']
