@@ -3,6 +3,7 @@
 单节点管理多个组的执行顺序
 """
 
+import hashlib
 import json
 import logging
 import time
@@ -17,6 +18,15 @@ _global_execute_counter = 0
 
 class GroupExecutorManager:
     """组执行管理器节点 - 使用单个节点管理多个组的执行顺序"""
+
+    @classmethod
+    def IS_CHANGED(cls, group_config, unique_id):
+        """通过哈希输入配置来检查节点是否已更改"""
+        # 使用 group_config 的内容计算哈希值
+        # unique_id 在每次队列执行时都会变化，不应包含在哈希计算中
+        m = hashlib.sha256()
+        m.update(group_config.encode('utf-8'))
+        return m.digest().hex()
 
     @classmethod
     def INPUT_TYPES(cls):
