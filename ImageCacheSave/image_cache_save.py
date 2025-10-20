@@ -44,7 +44,12 @@ class ImageCache:
         return {
             "required": {
                 "images": ("IMAGE", {"tooltip": "要缓存的图像"}),
-                "preview_rgba": ("BOOLEAN", {"default": True, "tooltip": "开启后预览显示RGBA格式，关闭则预览显示RGB格式"})
+            },
+            "optional": {
+                "enable_preview": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "控制是否生成缓存图像的预览"
+                })
             },
             "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
@@ -57,15 +62,15 @@ class ImageCache:
 
     def cache_images(self,
                     images: List,
-                    preview_rgba: List[bool],
                     prompt: Optional[Dict] = None,
-                    extra_pnginfo: Optional[Dict] = None) -> Dict[str, Any]:
+                    extra_pnginfo: Optional[Dict] = None,
+                    enable_preview: List[bool] = [True]) -> Dict[str, Any]:
         """
         将图像缓存到全局单通道
         """
         try:
             # 参数处理
-            processed_preview_rgba = preview_rgba[0] if isinstance(preview_rgba, list) else preview_rgba
+            processed_enable_preview = enable_preview[0] if isinstance(enable_preview, list) else enable_preview
 
             # 使用缓存管理器缓存图像（固定使用默认前缀，不清除之前缓存以支持组执行管理器）
             results = cache_manager.cache_images(
@@ -73,7 +78,7 @@ class ImageCache:
                 filename_prefix="cached_image",  # 固定使用默认前缀
                 masks=None,  # 不再处理masks
                 clear_cache=False,  # 不清除之前的缓存，支持组执行管理器中的多次获取
-                preview_rgba=processed_preview_rgba
+                preview_rgba=True  # 固定使用RGBA预览以保留透明度
             )
 
             # 发送成功toast通知
@@ -89,7 +94,10 @@ class ImageCache:
             except Exception as e:
                 print(f"[ImageCacheSave] Toast通知失败: {e}")
 
-            return {"ui": {"images": results}}
+            if processed_enable_preview:
+                return {"ui": {"images": results}}
+            else:
+                return {"ui": {"images": []}}
 
         except Exception as e:
             error_msg = f"缓存图像失败: {str(e)}"
