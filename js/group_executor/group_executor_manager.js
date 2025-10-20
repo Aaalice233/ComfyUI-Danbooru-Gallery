@@ -43,8 +43,240 @@ app.registerExtension({
     async setup(app) {
         console.log(`[GEM] ========== GroupExecutorManager Extension Setup Started ==========`);
 
-        // 初始化WebSocket事件监听器
-        await this.initializeWebSocketListeners();
+        // =================================================================
+        // 定义辅助函数（在 setup 内部，确保作用域正确）
+        // =================================================================
+
+        /**
+         * 设置指定组的激活状态（mute/unmute）
+         */
+        const setGroupActive = (groupName, isActive) => {
+            if (!app.graph || !app.graph._groups) return;
+            const group = app.graph._groups.find(g => g.title === groupName);
+            if (group) {
+                group.is_muted = !isActive;
+                console.log(`[GEM-GROUP] ${isActive ? 'Unmuting' : 'Muting'} group: ${groupName}`);
+            }
+        };
+
+        /**
+         * 更新节点状态widget
+         */
+        const updateNodeStatus = (node, statusText) => {
+            if (!node || !node.widgets) return;
+            const widget = node.widgets.find(w => w.name === "status");
+            if (widget) {
+                widget.value = statusText;
+            }
+        };
+
+        /**
+         * 更新节点进度widget
+         */
+        const updateNodeProgress = (node, progress) => {
+            if (!node || !node.widgets) return;
+            const widget = node.widgets.find(w => w.name === "progress");
+            if (widget) {
+                widget.value = progress;
+            }
+        };
+
+        /**
+         * 释放节点的执行锁
+         */
+        const releaseExecutionLock = (node) => {
+            if (node) {
+                node._executionLock = false;
+                node._executionLockStartTime = null;
+                if (node.properties) {
+                    node.properties.isExecuting = false;
+                }
+            }
+        };
+
+        /**
+         * 重置节点的执行状态
+         * 关键：会 mute 所有受控组，并重置节点状态
+         */
+        const resetExecutionState = (node) => {
+            if (!node || !node.widgets) {
+                console.warn('[GEM-RESET] 节点无效或缺少widgets，无法重置状态');
+                return;
+            }
+            console.log(`[GEM-RESET] 正在为节点 #${node.id} 重置执行状态...`);
+
+            try {
+                // 1. Mute 所有受控组
+                const configWidget = node.widgets.find(w => w.name === "group_config");
+                if (configWidget && configWidget.value) {
+                    const config = JSON.parse(configWidget.value);
+                    if (Array.isArray(config)) {
+                        for (const group of config) {
+                            if (group.group_name && group.group_name !== '__delay__') {
+                                setGroupActive(group.group_name, false); // Mute all groups
+                            }
+                        }
+                    }
+                }
+
+                // 2. 释放执行锁
+                releaseExecutionLock(node);
+
+                // 3. 更新UI
+                updateNodeStatus(node, t('idle'));
+                updateNodeProgress(node, 0);
+
+                // 4. 强制重绘
+                app.graph.setDirtyCanvas(true, true);
+
+                console.log(`[GEM-RESET] ✓ 节点 #${node.id} 状态已重置`);
+            } catch (e) {
+                console.error(`[GEM-RESET] 重置状态时出错:`, e);
+            }
+        };
+
+        // =================================================================
+        // 注册WebSocket事件监听器
+        // =================================================================
+
+        console.log(`[GEM-SETUP] 注册 'execution_interrupted' 监听器...`);
+        api.addEventListener("execution_interrupted", () => {
+            console.log("[GEM-INTERRUPT] ========== 监听到执行中断事件 ==========");
+            // 遍历所有节点，重置所有组执行管理器的状态
+            const allNodes = app.graph._nodes;
+            if (allNodes && allNodes.length > 0) {
+                for (const node of allNodes) {
+                    if (node.type === "GroupExecutorManager") {
+                        console.log(`[GEM-INTERRUPT] 正在重置节点 #${node.id} 的状态...`);
+                        resetExecutionState(node);
+                    }
+                }
+            }
+            console.log("[GEM-INTERRUPT] ✓ 所有组执行管理器节点已重置");
+        });
+        console.log(`[GEM-SETUP] ✓ 'execution_interrupted' 监听器注册成功`);
+
+        console.log(`[GEM-SETUP] 注册 'group_executor_execute' 监听器...`);
+        api.addEventListener("group_executor_execute", async ({ detail }) => {
+            console.log(`[GEM-JS] ========== WebSocket 消息到达 ==========`);
+            console.log(`[GEM-JS] detail:`, detail);
+
+            const nodeId = String(detail.node_id);
+            const node = app.graph._nodes_by_id[nodeId];
+
+            if (!node) {
+                console.error(`[GEM-JS] ✗ 未找到节点:`, nodeId);
+                return;
+            }
+
+            console.log(`[GEM-JS] ✓ 找到节点 #${nodeId}`);
+
+            // 执行前重置状态
+            console.log(`[GEM-JS] 执行前重置节点状态...`);
+            resetExecutionState(node);
+
+            // 按顺序执行组
+            const executionList = detail.execution_list;
+            console.log(`[GEM-JS] 执行列表:`, executionList.map(e => e.group_name));
+
+            try {
+                updateNodeStatus(node, t('executing'));
+
+                for (let i = 0; i < executionList.length; i++) {
+                    const item = executionList[i];
+                    const progress = (i + 1) / executionList.length;
+
+                    console.log(`[GEM-JS] [${i + 1}/${executionList.length}] 执行组: ${item.group_name}`);
+
+                    // 跳过延迟标记
+                    if (item.group_name === '__delay__') {
+                        if (item.delay_seconds > 0) {
+                            console.log(`[GEM-JS] 执行延迟 ${item.delay_seconds} 秒...`);
+                            await new Promise(resolve => setTimeout(resolve, item.delay_seconds * 1000));
+                        }
+                        continue;
+                    }
+
+                    // Unmute 当前组
+                    setGroupActive(item.group_name, true);
+                    updateNodeStatus(node, t('executingGroup', { groupName: item.group_name }));
+                    updateNodeProgress(node, progress);
+
+                    // 触发队列（执行当前 unmute 的组）
+                    console.log(`[GEM-JS] 触发队列执行组: ${item.group_name}...`);
+                    try {
+                        window.GEM_EXECUTING_GROUP = true;
+                        console.log(`[GEM-JS] 设置 GEM_EXECUTING_GROUP = true`);
+                        await app.queuePrompt(0, 1);
+                    } finally {
+                        window.GEM_EXECUTING_GROUP = false;
+                        console.log(`[GEM-JS] 设置 GEM_EXECUTING_GROUP = false`);
+                    }
+
+                    // 等待队列完成
+                    console.log(`[GEM-JS] 等待队列完成...`);
+                    await new Promise((resolve) => {
+                        let hasStarted = false; // 标记队列是否已经开始执行
+
+                        const checkQueue = () => {
+                            api.fetchApi('/queue')
+                                .then(response => response.json())
+                                .then(data => {
+                                    const isRunning = (data.queue_running || []).length > 0;
+                                    const isPending = (data.queue_pending || []).length > 0;
+
+                                    // 如果队列正在运行或有待处理项，说明已经开始了
+                                    if (isRunning || isPending) {
+                                        hasStarted = true;
+                                        console.log(`[GEM-JS] 队列正在执行... (running: ${data.queue_running?.length || 0}, pending: ${data.queue_pending?.length || 0})`);
+                                    }
+
+                                    // 只有在队列已经开始执行后，才检查是否完成
+                                    if (hasStarted && !isRunning && !isPending) {
+                                        console.log(`[GEM-JS] ✓ 队列已清空`);
+                                        setTimeout(resolve, 500); // 额外等待500ms确保完成
+                                        return;
+                                    }
+
+                                    // 继续检查
+                                    setTimeout(checkQueue, 300); // 每300ms检查一次
+                                })
+                                .catch(error => {
+                                    console.error(`[GEM-JS] 检查队列状态出错:`, error);
+                                    setTimeout(checkQueue, 1000); // 出错后1秒重试
+                                });
+                        };
+
+                        // 延迟500ms后开始检查，给队列时间启动
+                        setTimeout(checkQueue, 500);
+                    });
+
+                    console.log(`[GEM-JS] ✓ 组 "${item.group_name}" 执行完成`);
+
+                    // Mute 当前组
+                    setGroupActive(item.group_name, false);
+
+                    // 延迟
+                    if (item.delay_seconds > 0) {
+                        console.log(`[GEM-JS] 组间延迟 ${item.delay_seconds} 秒...`);
+                        await new Promise(resolve => setTimeout(resolve, item.delay_seconds * 1000));
+                    }
+                }
+
+                // 执行完成
+                console.log(`[GEM-JS] ========== 所有组执行完成 ==========`);
+                updateNodeStatus(node, t('completed'));
+                updateNodeProgress(node, 1);
+
+            } catch (error) {
+                console.error(`[GEM-JS] 执行出错:`, error);
+                updateNodeStatus(node, t('error'));
+            } finally {
+                releaseExecutionLock(node);
+                app.graph.setDirtyCanvas(true, true);
+            }
+        });
+        console.log(`[GEM-SETUP] ✓ 'group_executor_execute' 监听器注册成功`);
 
         console.log(`[GEM] ========== GroupExecutorManager Extension Setup Complete ==========`);
     },
@@ -1656,45 +1888,6 @@ app.registerExtension({
         };
 
         /**
-         * 重置节点的执行状态（简化版，不操作组状态）
-         * @param {object} node - 目标节点实例
-         */
-        const resetExecutionState = (node) => {
-            if (!node || !node.widgets) {
-                console.warn('[GEM-RESET] 节点无效或缺少widgets，无法重置状态');
-                return;
-            }
-            console.log(`[GEM-RESET] 正在为节点 #${node.id} 重置执行状态...`);
-
-            try {
-                // 释放执行锁
-                if (node._executionLock) {
-                    console.log(`[GEM-RESET] 释放执行锁...`);
-                    node._executionLock = false;
-                    node._executionLockStartTime = null;
-                }
-
-                // 重置进度条
-                const progressWidget = node.widgets.find(w => w.name === "progress");
-                if (progressWidget) {
-                    progressWidget.value = 0;
-                }
-
-                // 更新状态文本
-                const statusWidget = node.widgets.find(w => w.name === "status");
-                if (statusWidget) {
-                    statusWidget.value = t('idle');
-                }
-
-                // 强制重绘画布
-                app.graph.setDirtyCanvas(true, true);
-                console.log(`[GEM-RESET] ✓ 节点 #${node.id} 的状态已重置完成`);
-            } catch (e) {
-                console.error(`[GEM-RESET] 重置状态时出错:`, e);
-            }
-        };
-
-        /**
          * 节点被移除时清理资源 - 增强版本，确保完整的资源清理
          */
         const onRemoved = nodeType.prototype.onRemoved;
@@ -1765,711 +1958,8 @@ app.registerExtension({
             // 调用原始移除方法
             onRemoved?.apply?.(this, arguments);
         };
-
-        // 挂载颜色选择器UI
-        this.mountColorSelector(node, colorSelectorContainer);
     },
 
-    /**
-     * 初始化WebSocket事件监听器
-     */
-    async initializeWebSocketListeners() {
-        // 生成唯一的监听器 ID
-        const listenerID = `listener_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-        // 检测重复注册
-        if (!window._gemSetupCount) {
-            window._gemSetupCount = 0;
-        }
-        window._gemSetupCount++;
-
-        console.log(`[GEM-SETUP] ==================== 初始化WebSocket监听器 #${window._gemSetupCount} ====================`);
-        console.log(`[GEM-SETUP] 监听器ID: ${listenerID}`);
-        console.log(`[GEM-SETUP] 时间戳: ${new Date().toISOString()}`);
-
-        if (window._gemSetupCount > 1) {
-            console.warn(`[GEM-SETUP] ⚠️ 警告：监听器已被初始化 ${window._gemSetupCount} 次，可能存在重复监听器！`);
-        }
-
-        // 集成WebSocket诊断工具
-        if (window.gemWebSocketDiagnostic) {
-            window.gemWebSocketDiagnostic.logSetup(window._gemSetupCount, listenerID);
-        } else {
-            console.warn(`[GEM-SETUP] ⚠️ WebSocket 诊断工具未加载`);
-        }
-
-        // 全局执行计数器，用于调试和防护
-        let globalExecutionCounter = 0;
-
-        // ========== WebSocket 连接状态检查 ==========
-        console.log(`[GEM-SETUP] ========== 开始 WebSocket 连接状态检查 ==========`);
-        console.log(`[GEM-SETUP] 检查 ComfyUI API 对象...`);
-
-        // 检查 api 对象
-        if (!api) {
-            console.error(`[GEM-SETUP] ✗ API 对象不存在！`);
-            return;
-        }
-        console.log(`[GEM-SETUP] ✓ API 对象存在`);
-        console.log(`[GEM-SETUP] API 对象类型:`, typeof api);
-        console.log(`[GEM-SETUP] API 方法:`, Object.getOwnPropertyNames(api).filter(name => typeof api[name] === 'function'));
-
-        // 检查 WebSocket 相关属性
-        console.log(`[GEM-SETUP] 检查 WebSocket 连接...`);
-        if (api.socket) {
-            console.log(`[GEM-SETUP] ✓ WebSocket socket 存在`);
-            console.log(`[GEM-SETUP] Socket 状态:`, api.socket.readyState);
-            console.log(`[GEM-SETUP] Socket URL:`, api.socket.url);
-        } else {
-            console.warn(`[GEM-SETUP] ⚠️ WebSocket socket 不存在`);
-        }
-
-        // 检查 addEventListener 方法
-        if (typeof api.addEventListener === 'function') {
-            console.log(`[GEM-SETUP] ✓ addEventListener 方法存在`);
-        } else {
-            console.error(`[GEM-SETUP] ✗ addEventListener 方法不存在！`);
-            return;
-        }
-
-        // 检查是否已有事件监听器
-        console.log(`[GEM-SETUP] 检查现有事件监听器...`);
-        try {
-            // 尝试获取现有监听器信息（如果可能）
-            if (api._listeners && typeof api._listeners === 'object') {
-                const existingListeners = Object.keys(api._listeners);
-                console.log(`[GEM-SETUP] 现有监听器:`, existingListeners);
-                if (existingListeners.includes('group_executor_execute')) {
-                    console.warn(`[GEM-SETUP] ⚠️ 发现已有的 'group_executor_execute' 监听器！`);
-                }
-            } else {
-                console.log(`[GEM-SETUP] 无法访问现有监听器信息`);
-            }
-        } catch (e) {
-            console.log(`[GEM-SETUP] 检查现有监听器时出错:`, e.message);
-        }
-
-        console.log(`[GEM-SETUP] ========== WebSocket 状态检查完成 ==========`);
-        console.log(`[GEM-SETUP] 准备注册 addEventListener...`);
-
-        // 使用项目自带的toast系统
-        const showToast = (message, type = 'info', duration = 3000) => {
-            try {
-                // 将toast类型映射到项目toast管理器的等级
-                const toastLevel = type === 'error' ? 'error' :
-                    type === 'warning' ? 'warning' :
-                        type === 'success' ? 'success' : 'info';
-
-                toastManagerProxy.showToast(message, toastLevel, duration, {
-                    // 可以在这里添加特定于组执行管理器的选项
-                    container: ".gem-container"
-                });
-            } catch (e) {
-                console.warn(`[GEM-SETUP] Toast 显示失败:`, e);
-            }
-        };
-
-        // 使用项目自带的toast系统处理错误消息（简化版）
-        const showErrorDialog = (message) => {
-            try {
-                // 使用项目toast系统显示错误
-                toastManagerProxy.showToast(message, 'error', 8000, {
-                    container: ".gem-container"
-                });
-                return true; // 默认返回true，继续执行
-            } catch (e) {
-                console.warn(`[GEM-SETUP] 错误对话框显示失败:`, e);
-                return true;
-            }
-        };
-
-        // ========== 监听器注册确认机制 ==========
-        console.log(`[GEM-SETUP] ========== 开始注册事件监听器 ==========`);
-
-        /**
-         * 监听执行中断事件 (用户点击中断按钮)
-         */
-        console.log(`[GEM-SETUP] 注册 'execution_interrupted' 监听器...`);
-        try {
-            api.addEventListener("execution_interrupted", () => {
-                console.log("[GEM-INTERRUPT] 监听到执行中断事件！");
-                // 遍历所有节点，重置所有组执行管理器的状态
-                const allNodes = app.graph._nodes;
-                if (allNodes && allNodes.length > 0) {
-                    for (const node of allNodes) {
-                        if (node.type === "GroupExecutorManager") {
-                            console.log(`[GEM-INTERRUPT] 正在重置节点 #${node.id} 的状态...`);
-                            resetExecutionState(node);
-                        }
-                    }
-                }
-                console.log("[GEM-INTERRUPT] ✓ 所有组执行管理器节点已重置");
-            });
-            console.log(`[GEM-SETUP] ✓ 'execution_interrupted' 监听器注册成功`);
-            if (window.gemWebSocketDiagnostic) {
-                window.gemWebSocketDiagnostic.logListenerRegistration("execution_interrupted", true);
-            }
-        } catch (e) {
-            console.error(`[GEM-SETUP] ✗ 'execution_interrupted' 监听器注册失败:`, e);
-            if (window.gemWebSocketDiagnostic) {
-                window.gemWebSocketDiagnostic.logListenerRegistration("execution_interrupted", false, e);
-            }
-        }
-
-        /**
-         * 监听错误事件（从后端触发）
-         */
-        console.log(`[GEM-SETUP] 注册 'group_executor_error' 监听器...`);
-        try {
-            api.addEventListener("group_executor_error", ({ detail }) => {
-                console.error(`[GEM-ERROR] 收到错误信息:`, detail);
-
-                const errors = detail.errors || [];
-                if (errors.length === 0) return;
-
-                // 构建错误消息
-                const errorList = errors.map((err, idx) => `${idx + 1}. ${err}`).join('\n');
-                const errorMessage = t('configError', { errors: errorList });
-
-                // 显示错误消息
-                showErrorDialog(errorMessage);
-            });
-            console.log(`[GEM-SETUP] ✓ 'group_executor_error' 监听器注册成功`);
-            if (window.gemWebSocketDiagnostic) {
-                window.gemWebSocketDiagnostic.logListenerRegistration("group_executor_error", true);
-            }
-        } catch (e) {
-            console.error(`[GEM-SETUP] ✗ 'group_executor_error' 监听器注册失败:`, e);
-            if (window.gemWebSocketDiagnostic) {
-                window.gemWebSocketDiagnostic.logListenerRegistration("group_executor_error", false, e);
-            }
-        }
-
-        /**
-         * 监听执行事件（从后端触发）
-         */
-        console.log(`[GEM-SETUP] 注册 'group_executor_execute' 监听器...`);
-        let executeListenerRegistered = false;
-        try {
-            const executeListener = async ({ detail }) => {
-                // 在最开始就打印接收信息
-                console.log(`[GEM-JS] <<<<<<<<<< WebSocket 消息到达 >>>>>>>>>>`);
-                console.log(`[GEM-JS] 监听器ID: ${listenerID}`);
-                console.log(`[GEM-JS] 接收时间: ${new Date().toISOString()}`);
-                console.log(`[GEM-JS] detail 对象:`, JSON.parse(JSON.stringify(detail)));
-
-                // ========== 多页面执行隔离检查 ==========
-                const nodeId = String(detail.node_id);
-                if (!window.currentlyExecutingGemNodes.has(nodeId)) {
-                    console.warn(`[GEM-JS] ⚠️ 接收到来自其他页面的执行请求 (节点ID: ${nodeId})，已忽略。`);
-                    console.warn(`[GEM-JS] ⚠️ 当前页面正在等待的节点ID:`, Array.from(window.currentlyExecutingGemNodes));
-                    return;
-                }
-                console.log(`[GEM-JS] ✓ 节点ID ${nodeId} 验证通过，是当前页面发起的执行。`);
-
-                // 记录到诊断工具
-                if (window.gemWebSocketDiagnostic) {
-                    window.gemWebSocketDiagnostic.logMessageReceived("group_executor_execute", detail, listenerID);
-                }
-
-                globalExecutionCounter++;
-                const executionId = globalExecutionCounter;
-
-                console.log(`[GEM-JS] ========== 开始处理执行事件 #${executionId} ==========`);
-                console.log(`[GEM-JS] #${executionId} 节点ID:`, detail.node_id);
-                console.log(`[GEM-JS] #${executionId} Python 执行ID:`, detail.python_exec_id);
-                console.log(`[GEM-JS] #${executionId} Python 时间戳:`, detail.timestamp);
-                console.log(`[GEM-JS] #${executionId} 执行列表:`, detail.execution_list);
-                console.log(`[GEM-JS] #${executionId} 执行列表长度:`, detail.execution_list?.length);
-                console.log(`[GEM-JS] #${executionId} 组顺序:`, detail.execution_list?.map(e => e.group_name));
-
-                console.log(`[GEM-JS] #${executionId} 查找节点...`);
-                const node = app.graph._nodes_by_id[detail.node_id];
-                if (!node) {
-                    console.error(`[GEM-JS] #${executionId} ✗ 未找到节点:`, detail.node_id);
-                    console.error(`[GEM-JS] #${executionId} 可用节点ID:`, Object.keys(app.graph._nodes_by_id));
-                    return;
-                }
-                console.log(`[GEM-JS] #${executionId} ✓ 找到节点，类型:`, node.type);
-
-                // ==================== 执行前状态重置 ====================
-                // 确保每次执行都从干净的状态开始
-                console.log(`[GEM-JS] #${executionId} 开始重置节点状态...`);
-                resetExecutionState(node);
-                console.log(`[GEM-JS] #${executionId} ✓ 节点状态已重置`);
-
-                console.log(`[GEM-JS] #${executionId} 检查执行锁...`);
-                console.log(`[GEM-JS] #${executionId} 当前 isExecuting 状态:`, node.properties.isExecuting);
-                console.log(`[GEM-JS] #${executionId} 节点属性:`, {
-                    isExecuting: node.properties.isExecuting,
-                    groups: node.properties.groups?.length || 0
-                });
-
-                if (node.properties.isExecuting) {
-                    console.warn(`[GEM-JS] #${executionId} ⚠️ 节点正在执行中，检查执行锁状态...`);
-                    console.warn(`[GEM-JS] #${executionId} ⚠️ 这可能表示有重复执行的问题或执行锁卡死！`);
-                    console.warn(`[GEM-JS] #${executionId} ⚠️ 监听器ID: ${listenerID}`);
-                    console.warn(`[GEM-JS] #${executionId} ⚠️ Python 执行ID: ${detail.python_exec_id}`);
-
-                    // ========== 执行锁诊断和自动恢复 ==========
-                    console.log(`[GEM-JS] #${executionId} ========== 开始执行锁诊断 ==========`);
-
-                    // 检查执行锁是否卡死
-                    const lockCheck = this.checkExecutionLock(node, executionId);
-                    if (lockCheck.isStuck) {
-                        console.warn(`[GEM-JS] #${executionId} ⚠️ 检测到执行锁可能卡死，尝试自动恢复...`);
-
-                        // 使用官方推荐的toast API
-                        showToast(`检测到执行锁卡死，自动恢复`, 'warning', 5000);
-
-                        // 强制释放执行锁
-                        this.forceReleaseExecutionLock(node, executionId, "检测到锁卡死，自动恢复");
-
-                        // 继续执行当前请求
-                        console.log(`[GEM-JS] #${executionId} ✓ 执行锁已强制释放，继续执行当前请求`);
-                    } else {
-                        // 执行锁正常，直接返回
-                        console.warn(`[GEM-JS] #${executionId} ⚠️ 执行锁状态正常，跳过此次执行`);
-                        return;
-                    }
-                }
-
-                const executionList = detail.execution_list;
-
-                console.log(`[GEM-JS] #${executionId} ✓ 执行锁检查通过，设置执行锁...`);
-                const lockSetSuccess = this.setExecutionLock(node, executionId);
-                if (!lockSetSuccess) {
-                    console.warn(`[GEM-JS] #${executionId} ⚠️ 执行锁设置失败，跳过此次执行`);
-                    return;
-                }
-                console.log(`[GEM-JS] #${executionId} ✓ 执行锁已安全设置`);
-                console.log(`[GEM-JS] #${executionId} ========== 即将按以下顺序执行 ==========`);
-                console.log(`[GEM-JS] #${executionId} 执行顺序: ${executionList.map(e => e.group_name).join(' -> ')}`);
-
-                try {
-                    // ========== 执行前验证 ==========
-                    console.log(`[GEM-JS] #${executionId} ========== 开始执行前验证 ==========`);
-                    const validationErrors = [];
-
-                    for (let idx = 0; idx < executionList.length; idx++) {
-                        const execution = executionList[idx];
-                        const group_name = execution.group_name;
-
-                        // 跳过延迟标记
-                        if (group_name === "__delay__") continue;
-
-                        console.log(`[GEM-JS] #${executionId} 验证组 "${group_name}" (${idx + 1}/${executionList.length})`);
-
-                        // 检查组是否存在
-                        const group = app.graph._groups.find(g => g.title === group_name);
-                        if (!group) {
-                            const errorMsg = t('groupNotFound', { groupName: group_name });
-                            console.error(`[GEM-JS] #${executionId} ✗ ${errorMsg}`);
-                            validationErrors.push(errorMsg);
-                            continue;
-                        }
-
-                        // 检查组内是否有节点
-                        const groupNodes = [];
-                        for (const n of app.graph._nodes) {
-                            if (!n || !n.pos) continue;
-                            if (LiteGraph.overlapBounding(group._bounding, n.getBounding())) {
-                                groupNodes.push(n);
-                            }
-                        }
-
-                        if (groupNodes.length === 0) {
-                            const errorMsg = t('noNodesInGroup', { groupName: group_name });
-                            console.error(`[GEM-JS] #${executionId} ✗ ${errorMsg}`);
-                            validationErrors.push(errorMsg);
-                            continue;
-                        }
-
-                        // 检查组内是否有输出节点，区分mute状态
-                        const allOutputNodes = groupNodes.filter((n) =>
-                            n.constructor.nodeData?.output_node === true
-                        );
-                        const activeOutputNodes = allOutputNodes.filter((n) =>
-                            n.mode !== LiteGraph.NEVER
-                        );
-
-                        if (allOutputNodes.length === 0) {
-                            // 真正没有输出节点，这是严重错误
-                            const errorMsg = t('noOutputNodes', { groupName: group_name });
-                            console.error(`[GEM-JS] #${executionId} ✗ ${errorMsg}`);
-                            validationErrors.push(errorMsg);
-                            continue;
-                        } else if (activeOutputNodes.length === 0) {
-                            // 所有输出节点都被mute，记录跳过状态但不报错
-                            console.warn(`[GEM-JS] #${executionId} ⚠️ 组 "${group_name}" 内所有输出节点已被静音，将跳过执行`);
-                            // 在execution对象中标记跳过原因
-                            execution.skipReason = 'all_nodes_muted';
-
-                            // 使用官方推荐的toast API
-                            showToast(`组 "${group_name}" 内所有节点已被静音，跳过执行`, 'info', 3000);
-                        } else {
-                            console.log(`[GEM-JS] #${executionId} ✓ 组 "${group_name}" 验证通过 (${activeOutputNodes.length} 个活跃输出节点)`);
-                        }
-                    }
-
-                    // 如果有验证错误，显示并退出
-                    if (validationErrors.length > 0) {
-                        console.error(`[GEM-JS] #${executionId} ✗ 验证失败，发现 ${validationErrors.length} 个错误`);
-
-                        const errorList = validationErrors.map((err, idx) => `${idx + 1}. ${err}`).join('\n');
-                        const errorMessage = t('validationFailed', { errors: errorList });
-
-                        showErrorDialog(errorMessage);
-
-                        // 释放锁并退出
-                        try {
-                            const lockReleased = this.releaseExecutionLock(node, executionId);
-                            if (lockReleased) {
-                                console.error(`[GEM-JS] #${executionId} 由于验证失败，已安全释放执行锁`);
-                            } else {
-                                console.warn(`[GEM-JS] #${executionId} 验证失败后执行锁释放返回false`);
-                            }
-                        } catch (releaseError) {
-                            console.error(`[GEM-JS] #${executionId} 验证失败后执行锁释放出错:`, releaseError);
-                            // 强制清理
-                            try {
-                                node.properties.isExecuting = false;
-                                node._executionLockStartTime = null;
-                                console.error(`[GEM-JS] #${executionId} 验证失败后已强制清理执行锁`);
-                            } catch (forceError) {
-                                console.error(`[GEM-JS] #${executionId} 验证失败后强制清理也失败:`, forceError);
-                            }
-                        }
-                        return;
-                    }
-
-                    console.log(`[GEM-JS] #${executionId} ✓ 所有组验证通过`);
-                    console.log(`[GEM-JS] #${executionId} ========== 开始执行循环 ==========`);
-                    const startTime = Date.now();
-
-                    for (let idx = 0; idx < executionList.length; idx++) {
-                        const execution = executionList[idx];
-                        const group_name = execution.group_name;
-                        const delay_seconds = parseFloat(execution.delay_seconds) || 0;
-
-                        const itemStartTime = Date.now();
-                        console.log(`[GEM-JS] #${executionId} ========================================`);
-                        console.log(`[GEM-JS] #${executionId} 处理第 ${idx + 1}/${executionList.length} 项`);
-                        console.log(`[GEM-JS] #${executionId} 组名: "${group_name}"`);
-                        console.log(`[GEM-JS] #${executionId} 延迟: ${delay_seconds}秒`);
-                        console.log(`[GEM-JS] #${executionId} 执行对象:`, execution);
-
-                        // 处理延迟标记
-                        if (group_name === "__delay__") {
-                            if (delay_seconds > 0) {
-                                console.log(`[GEM-JS] #${executionId} 执行延迟等待 ${delay_seconds}秒`);
-                                await new Promise(resolve =>
-                                    setTimeout(resolve, delay_seconds * 1000)
-                                );
-                                console.log(`[GEM-JS] #${executionId} ✓ 延迟等待完成`);
-                            }
-                            continue;
-                        }
-
-                        // 检查是否需要跳过（所有输出节点被mute）
-                        if (execution.skipReason === 'all_nodes_muted') {
-                            console.log(`[GEM-JS] #${executionId} 跳过被mute的组: "${group_name}"`);
-                            continue; // 跳过该组，继续下一个
-                        }
-
-                        // 查找组
-                        console.log(`[GEM-JS] #${executionId} 查找组 "${group_name}"...`);
-                        const group = app.graph._groups.find(g => g.title === group_name);
-                        if (!group) {
-                            console.error(`[GEM-JS] #${executionId} ✗ 未找到组: "${group_name}"`);
-                            console.error(`[GEM-JS] #${executionId} 可用的组:`, app.graph._groups.map(g => g.title));
-                            throw new Error(`未找到组: ${group_name}`);
-                        }
-                        console.log(`[GEM-JS] #${executionId} ✓ 找到组 "${group_name}"`);
-
-                        // 查找组内的输出节点
-                        console.log(`[GEM-JS] #${executionId} 查找组内输出节点...`);
-                        const groupNodes = [];
-                        for (const n of app.graph._nodes) {
-                            if (!n || !n.pos) continue;
-                            if (LiteGraph.overlapBounding(group._bounding, n.getBounding())) {
-                                groupNodes.push(n);
-                            }
-                        }
-                        console.log(`[GEM-JS] #${executionId} 组内节点数: ${groupNodes.length}`);
-
-                        const outputNodes = groupNodes.filter((n) => {
-                            return n.mode !== LiteGraph.NEVER &&
-                                n.constructor.nodeData?.output_node === true;
-                        });
-                        console.log(`[GEM-JS] #${executionId} 输出节点数: ${outputNodes.length}`);
-                        console.log(`[GEM-JS] #${executionId} 输出节点:`, outputNodes.map(n => `${n.type}(${n.id})`));
-
-                        if (!outputNodes.length) {
-                            console.error(`[GEM-JS] #${executionId} ✗ 组 "${group_name}" 中没有找到输出节点`);
-                            throw new Error(`组 "${group_name}" 中没有找到输出节点`);
-                        }
-
-                        // 执行输出节点
-                        const nodeIds = outputNodes.map(n => n.id);
-                        console.log(`[GEM-JS] #${executionId} ========== 提交执行任务 ==========`);
-                        console.log(`[GEM-JS] #${executionId} 目标节点ID:`, nodeIds);
-                        console.log(`[GEM-JS] #${executionId} 提交时间:`, new Date().toISOString());
-
-                        await queueManager.queueOutputNodes(nodeIds);
-
-                        console.log(`[GEM-JS] #${executionId} ✓ 任务已提交，等待队列完成...`);
-                        // 等待执行完成
-                        await new Promise((resolve) => {
-                            const checkQueue = async () => {
-                                const response = await api.fetchApi('/queue');
-                                const data = await response.json();
-                                const isRunning = (data.queue_running || []).length > 0;
-                                const isPending = (data.queue_pending || []).length > 0;
-
-                                if (!isRunning && !isPending) {
-                                    console.log(`[GEM-JS] #${executionId} ✓ 队列已清空`);
-                                    setTimeout(resolve, 100);
-                                    return;
-                                }
-
-                                setTimeout(checkQueue, 500);
-                            };
-                            checkQueue();
-                        });
-
-                        const itemEndTime = Date.now();
-                        const itemDuration = (itemEndTime - itemStartTime) / 1000;
-                        console.log(`[GEM-JS] #${executionId} ✓ 组 "${group_name}" 执行完成，耗时: ${itemDuration.toFixed(2)}秒`);
-
-                        // 使用官方推荐的toast API显示执行完成信息
-                        showToast(`组 "${group_name}" 执行完成`, 'success', 2000);
-
-                        // 延迟（如果不是最后一个组）
-                        if (delay_seconds > 0 && idx < executionList.length - 1) {
-                            console.log(`[GEM-JS] #${executionId} 组间延迟等待 ${delay_seconds}秒`);
-                            await new Promise(resolve =>
-                                setTimeout(resolve, delay_seconds * 1000)
-                            );
-                            console.log(`[GEM-JS] #${executionId} ✓ 组间延迟完成`);
-                        }
-                    }
-
-                    const endTime = Date.now();
-                    const totalDuration = (endTime - startTime) / 1000;
-                    console.log(`[GEM-JS] #${executionId} ==================== 所有组执行完成 ====================`);
-                    console.log(`[GEM-JS] #${executionId} 总耗时: ${totalDuration.toFixed(2)}秒`);
-                    console.log(`[GEM-JS] #${executionId} 监听器ID: ${listenerID}`);
-                    console.log(`[GEM-JS] #${executionId} Python 执行ID: ${detail.python_exec_id}`);
-
-                    // 使用官方推荐的toast API显示完成信息
-                    showToast(`所有组执行完成，总耗时: ${totalDuration.toFixed(2)}秒`, 'success', 5000);
-
-                } catch (error) {
-                    console.error(`[GEM-JS] #${executionId} ==================== 执行错误 ====================`);
-                    console.error(`[GEM-JS] #${executionId} 错误类型:`, error.constructor.name);
-                    console.error(`[GEM-JS] #${executionId} 错误消息:`, error.message);
-                    console.error(`[G-JS] #${executionId} 错误堆栈:`, error.stack);
-                    console.error(`[GEM-JS] #${executionId} 监听器ID: ${listenerID}`);
-                    console.error(`[GEM-JS] #${executionId} Python 执行ID: ${detail.python_exec_id}`);
-
-                    // 使用官方推荐的toast API显示错误信息
-                    showToast(`执行过程中发生错误: ${error.message}`, 'error', 5000);
-                } finally {
-                    console.log(`[GEM-JS] #${executionId} ========== Finally 块 ==========`);
-                    console.log(`[GEM-JS] #${executionId} 确保执行锁释放...`);
-
-                    // 确保执行锁被释放的容错机制
-                    try {
-                        const lockReleased = this.releaseExecutionLock(node, executionId);
-                        if (lockReleased) {
-                            console.log(`[GEM-JS] #${executionId} ✓ 执行锁已安全释放`);
-                        } else {
-                            console.warn(`[GEM-JS] #${executionId} ⚠️ 执行锁释放操作返回false，可能锁未被正确设置`);
-                        }
-                    } catch (lockError) {
-                        console.error(`[GEM-JS] #${executionId} ✗ 执行锁释放时发生错误:`, lockError);
-                        console.error(`[GEM-JS] #${executionId} 错误详情:`, {
-                            errorType: lockError.constructor.name,
-                            errorMessage: lockError.message,
-                            nodeId: node.id,
-                            executionId: executionId,
-                            wasLocked: node.properties.isExecuting
-                        });
-
-                        // 强制清理执行锁（容错机制）
-                        try {
-                            console.warn(`[GEM-JS] #${executionId} ⚠️ 强制清理执行锁...`);
-                            node.properties.isExecuting = false;
-                            node._executionLockStartTime = null;
-                            console.log(`[GEM-JS] #${executionId} ✓ 执行锁已强制清理`);
-                        } catch (forceError) {
-                            console.error(`[G-JS] #${executionId} ✗ 强制清理执行锁也失败了:`, forceError);
-                        }
-                    }
-
-                    console.log(`[GEM-JS] #${executionId} ========== 事件处理完成 ==========`);
-                }
-            };
-
-            // 注册监听器
-            api.addEventListener("group_executor_execute", executeListener);
-            executeListenerRegistered = true;
-            console.log(`[GEM-SETUP] ✓ 'group_executor_execute' 监听器注册成功`);
-            if (window.gemWebSocketDiagnostic) {
-                window.gemWebSocketDiagnostic.logListenerRegistration("group_executor_execute", true);
-            }
-
-        } catch (e) {
-            console.error(`[GEM-SETUP] ✗ 'group_executor_execute' 监听器注册失败:`, e);
-            executeListenerRegistered = false;
-            if (window.gemWebSocketDiagnostic) {
-                window.gemWebSocketDiagnostic.logListenerRegistration("group_executor_execute", false, e);
-            }
-        }
-
-        // ========== 监听器注册后验证 ==========
-        console.log(`[GEM-SETUP] ========== 验证监听器注册状态 ==========`);
-        console.log(`[GEM-SETUP] 'group_executor_error' 监听器状态: 已注册`);
-        const listenerStatus = executeListenerRegistered ? '已注册' : '注册失败';
-        console.log(`[GEM-SETUP] 'group_executor_execute' 监听器状态: ${listenerStatus}`);
-
-        if (!executeListenerRegistered) {
-            console.error(`[GEM-SETUP] ✗ 关键监听器注册失败，尝试重试...`);
-            // 实现重试机制
-            setTimeout(() => {
-                console.log(`[GEM-SETUP] ========== 重试注册监听器 ==========`);
-                try {
-                    api.addEventListener("group_executor_execute", executeListener);
-                    console.log(`[GEM-SETUP] ✓ 重试注册 'group_executor_execute' 监听器成功`);
-                } catch (e) {
-                    console.error(`[GEM-SETUP] ✗ 重试注册 'group_executor_execute' 监听器失败:`, e);
-                }
-            }, 2000);
-        }
-
-        // ========== 添加监听器健康检查 ==========
-        console.log(`[GEM-SETUP] ========== 设置监听器健康检查 ==========`);
-        window._gemHealthCheckInterval = setInterval(() => {
-            const socketStatusText = api.socket ? `连接正常(${api.socket.readyState})` : '未连接';
-            const healthData = {
-                apiStatus: api ? '正常' : '异常',
-                webSocketStatus: socketStatusText,
-                listenerID: listenerID,
-                setupCount: window._gemSetupCount,
-                timestamp: new Date().toISOString()
-            };
-
-            console.log(`[GEM-HEALTH] 监听器健康检查 - 时间: ${healthData.timestamp}`);
-            console.log(`[GEM-HEALTH] API 状态:`, healthData.apiStatus);
-            console.log(`[GEM-HEALTH] WebSocket 状态:`, healthData.webSocketStatus);
-            console.log(`[GEM-HEALTH] 监听器ID:`, healthData.listenerID);
-            console.log(`[GEM-HEALTH] Setup 计数:`, healthData.setupCount);
-
-            // 检查所有组执行管理器节点的执行锁状态
-            if (app.graph && app.graph._nodes) {
-                const gemNodes = app.graph._nodes.filter(node =>
-                    node.type === "GroupExecutorManager" && node.properties.isExecuting
-                );
-
-                if (gemNodes.length > 0) {
-                    console.log(`[GEM-HEALTH] 发现 ${gemNodes.length} 个正在执行的组执行管理器节点`);
-
-                    gemNodes.forEach(node => {
-                        const lockAge = node._executionLockStartTime ?
-                            (Date.now() - node._executionLockStartTime) / 1000 : 0;
-
-                        console.log(`[GEM-HEALTH] 节点 ${node.id} 锁定状态:`, {
-                            nodeId: node.id,
-                            isLocked: node.properties.isExecuting,
-                            lockAge: `${lockAge.toFixed(2)}秒`,
-                            lockStartTime: node._executionLockStartTime ?
-                                new Date(node._executionLockStartTime).toISOString() : '未知'
-                        });
-
-                        // 如果锁年龄超过120秒，记录警告
-                        if (lockAge > 120) {
-                            console.warn(`[GEM-HEALTH] ⚠️ 节点 ${node.id} 执行锁可能卡死，已锁定 ${lockAge.toFixed(2)}秒`);
-
-                            // 记录到诊断工具
-                            if (window.gemWebSocketDiagnostic) {
-                                window.gemWebSocketDiagnostic.logLockRelease({
-                                    nodeId: node.id,
-                                    executionId: "HEALTH_CHECK",
-                                    reason: "健康检查发现长时间锁定",
-                                    timestamp: new Date().toISOString(),
-                                    previousLockAge: lockAge
-                                });
-                            }
-                        }
-                    });
-                }
-            }
-
-            // 记录到诊断工具
-            if (window.gemWebSocketDiagnostic) {
-                window.gemWebSocketDiagnostic.logHealthCheck(healthData);
-            }
-        }, 30000); // 每30秒检查一次
-
-        console.log(`[GEM-SETUP] ✓ addEventListener 注册完成`);
-        console.log(`[GEM-SETUP] ==================== WebSocket监听器初始化完成 ====================`);
-
-        // ========== 监听器注册 ==========
-        console.log(`[GEM-SETUP] ========== 注册监听器 ==========`);
-
-        // 为多页面执行问题添加一个全局存储
-        if (!window.hasOwnProperty('currentlyExecutingGemNodes')) {
-            window.currentlyExecutingGemNodes = new Set();
-        }
-
-        // 监听队列执行事件
-        if (!app.originalQueuePrompt) {
-            app.originalQueuePrompt = app.queuePrompt;
-            app.queuePrompt = function (...args) {
-                console.log("[GEM-JS] 监听到 queuePrompt 调用");
-                // 在执行前清空并记录当前图中的所有组管理器节点
-                window.currentlyExecutingGemNodes.clear();
-                const gemNodes = app.graph._nodes.filter(node => node.type === "GroupExecutorManager");
-                if (gemNodes.length > 0) {
-                    console.log(`[GEM-JS] 发现 ${gemNodes.length} 个组执行管理器节点，将其ID添加到执行列表:`, gemNodes.map(n => n.id));
-                    gemNodes.forEach(node => window.currentlyExecutingGemNodes.add(String(node.id)));
-                } else {
-                    console.log("[GEM-JS] 未发现组执行管理器节点");
-                }
-                // 调用原始函数，确保执行链不中断
-                return app.originalQueuePrompt.apply(this, args);
-            };
-            console.log("[GEM-JS] 已包装 app.queuePrompt 用于多页面隔离");
-        }
-
-
-        // 错误监听器
-        try {
-            api.addEventListener("group_executor_error", ({ detail }) => {
-                console.error(`[GEM-ERROR] 收到错误信息:`, detail);
-
-                const errors = detail.errors || [];
-                if (errors.length === 0) return;
-
-                // 构建错误消息
-                const errorList = errors.map((err, idx) => `${idx + 1}. ${err}`).join('\n');
-                const errorMessage = t('configError', { errors: errorList });
-
-                // 显示错误消息
-                showErrorDialog(errorMessage);
-            });
-            console.log(`[GEM-SETUP] ✓ 'group_executor_error' 监听器注册成功`);
-            if (window.gemWebSocketDiagnostic) {
-                window.gemWebSocketDiagnostic.logListenerRegistration("group_executor_error", true);
-            }
-        } catch (e) {
-            console.error(`[GEM-SETUP] ✗ 'group_executor_error' 监听器注册失败:`, e);
-            if (window.gemWebSocketDiagnostic) {
-                window.gemWebSocketDiagnostic.logListenerRegistration("group_executor_error", false, e);
-            }
-        }
-    },
 
     /**
      * 检查执行锁状态
