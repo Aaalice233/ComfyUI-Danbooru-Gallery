@@ -10,6 +10,11 @@ class QueueManager {
     constructor() {
         console.log('[GEM] 初始化队列管理器');
         this.queueNodeIds = null;
+        // 节点类型黑名单：这些节点不应该在组执行时被包含
+        this.excludedNodeTypes = [
+            'GroupExecutorManager',  // 管理器节点只在初始Queue时执行
+            'GroupExecutorTrigger'   // 触发器节点只在初始Queue时执行
+        ];
         this.initializeHooks();
     }
 
@@ -19,27 +24,10 @@ class QueueManager {
     initializeHooks() {
         const originalApiQueuePrompt = api.queuePrompt;
 
-        api.queuePrompt = async (index, prompt) => {
-            // 如果没有提供prompt，尝试生成一个
-            if (!prompt) {
-                try {
-                    const workflow = app.graph.serialize();
-                    const promptData = await app.graphToPrompt();
-
-                    // 根据官方文档构建正确的prompt对象
-                    prompt = {
-                        number: 0,
-                        workflow: workflow,
-                        output: promptData.workflow
-                    };
-
-                    console.log('[GEM] 生成prompt对象成功');
-                } catch (error) {
-                    console.error('[GEM] 生成prompt失败:', error);
-                    // 调用原始方法
-                    return originalApiQueuePrompt.call(api, index, prompt);
-                }
-            }
+        // ✅ 修复：按照文档标准实现Hook，使用.bind(this)绑定上下文
+        api.queuePrompt = async function(index, prompt) {
+            // ✅ 修复：移除prompt生成逻辑，避免重复调用导致多个队列项
+            // app.queuePrompt()会自动调用graphToPrompt()生成prompt
 
             // 如果设置了目标节点列表，过滤 prompt.output 只保留目标节点及其依赖
             if (this.queueNodeIds && this.queueNodeIds.length && prompt && prompt.output) {
@@ -73,7 +61,7 @@ class QueueManager {
                 }
 
                 // 调用原始方法，使用新的prompt对象
-                const result = originalApiQueuePrompt.call(api, index, newPrompt);
+                const result = originalApiQueuePrompt.apply(api, [index, newPrompt]);
 
                 // 清除目标节点ID
                 this.queueNodeIds = null;
@@ -81,9 +69,9 @@ class QueueManager {
                 return result;
             } else {
                 // 没有需要过滤的节点，直接调用原始方法
-                return originalApiQueuePrompt.call(api, index, prompt);
+                return originalApiQueuePrompt.apply(api, [index, prompt]);
             }
-        };
+        }.bind(this);  // ✅ 修复：绑定上下文，确保this指向QueueManager实例
 
         console.log('[GEM] Hook 已安装');
     }
@@ -93,12 +81,33 @@ class QueueManager {
      */
     recursiveAddNodes(nodeId, oldOutput, newOutput) {
         // 优化：提前检查，避免重复处理
-        if (newOutput[nodeId] != null) return;
+        if (newOutput[nodeId] != null) {
+            console.log(`[GEM] ↺ 节点 ${nodeId} 已添加，跳过重复处理`);
+            return;
+        }
 
         const currentNode = oldOutput[nodeId];
-        if (!currentNode) return;
+        if (!currentNode) {
+            console.warn(`[GEM] ✗ 节点 ${nodeId} 在oldOutput中不存在`);
+            return;
+        }
+
+        // ⚠️ 关键修复：检查节点类型是否在黑名单中
+        // 获取节点类型（class_type字段）
+        const nodeType = currentNode.class_type;
+
+        // ✅ 增强日志：记录每个节点的处理过程
+        console.log(`[GEM] 🔍 检查节点 ${nodeId}: 类型="${nodeType}"`);
+
+        // 如果节点在黑名单中，跳过它和它的依赖
+        if (this.excludedNodeTypes.includes(nodeType)) {
+            console.warn(`[GEM] ⊘⊘⊘ 跳过黑名单节点: ${nodeId} (${nodeType}) ⊘⊘⊘`);
+            console.warn(`[GEM] 黑名单列表:`, this.excludedNodeTypes);
+            return;
+        }
 
         // 添加当前节点
+        console.log(`[GEM] ✓ 添加节点 ${nodeId} (${nodeType})`);
         newOutput[nodeId] = currentNode;
 
         // 优化：使用Object.values和forEach简化循环

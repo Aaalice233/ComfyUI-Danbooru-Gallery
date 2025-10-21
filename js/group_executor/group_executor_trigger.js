@@ -7,6 +7,10 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { simplifiedQueueManager } from "./queue_manager.js";
 
+// ✅ 全局执行锁 - 防止多个触发器同时执行
+let globalIsExecuting = false;
+let globalExecutionId = 0;
+
 // 组执行触发器
 app.registerExtension({
     name: "GroupExecutorTrigger",
@@ -44,20 +48,41 @@ app.registerExtension({
                 return;
             }
 
-            // 防止重复执行
-            if (node.properties && node.properties.isExecuting) {
-                console.warn('[GET-JS] ⚠ 节点正在执行中，跳过重复执行');
+            // 初始化properties（如果不存在）
+            if (!node.properties) {
+                node.properties = { isExecuting: false };
+                console.log('[GET-JS] ✓ 初始化节点properties');
+            }
+
+            // 调试：打印当前状态
+            console.log('[GET-JS] 节点当前状态:', {
+                hasProperties: !!node.properties,
+                isExecuting: node.properties?.isExecuting,
+                nodeType: node.type,
+                nodeId: node.id
+            });
+
+            // ✅ 全局执行锁检查 - 防止多个触发器同时执行
+            if (globalIsExecuting) {
+                console.warn('[GET-JS] ⚠⚠⚠ 全局执行锁已激活，跳过重复执行 ⚠⚠⚠');
+                console.warn('[GET-JS] 当前执行ID:', globalExecutionId);
+                console.warn('[GET-JS] 这通常表明有多个Queue被触发，或前一次执行尚未完成');
                 return;
             }
 
-            // 初始化属性（如果不存在）
-            if (!node.properties) {
-                node.properties = {};
+            // 防止节点重复执行
+            if (node.properties.isExecuting === true) {
+                console.warn('[GET-JS] ⚠ 节点正在执行中，跳过重复执行');
+                console.warn('[GET-JS] 当前状态:', node.properties);
+                return;
             }
 
             // 设置执行状态锁
+            globalExecutionId++;
+            globalIsExecuting = true;
             node.properties.isExecuting = true;
-            console.log('[GET-JS] ✓ 执行状态锁已设置');
+            console.log('[GET-JS] ✓ 全局执行锁已激活，执行ID:', globalExecutionId);
+            console.log('[GET-JS] ✓ 节点执行状态锁已设置，开始执行');
 
             try {
                 // ⚠️ 关键设计：
@@ -83,8 +108,10 @@ app.registerExtension({
                 console.error('[GET-JS] 错误堆栈:', error.stack);
             } finally {
                 // 清除执行状态锁
+                globalIsExecuting = false;
                 node.properties.isExecuting = false;
-                console.log('[GET-JS] ✓ 执行状态锁已释放');
+                console.log('[GET-JS] ✓ 全局执行锁已释放，执行ID:', globalExecutionId);
+                console.log('[GET-JS] ✓ 节点执行状态锁已释放');
             }
         });
     },
@@ -376,10 +403,28 @@ app.registerExtension({
                 isExecuting: false
             };
 
+            console.log('[GET] 节点创建，初始化properties:', this.properties);
+
             // 设置节点初始大小
             this.size = [280, 60];
 
             return result;
+        };
+
+        // 反序列化节点数据（工作流加载时）
+        const onConfigure = nodeType.prototype.onConfigure;
+        nodeType.prototype.onConfigure = function (info) {
+            // 调用原始配置方法
+            onConfigure?.apply?.(this, arguments);
+
+            // ⚠️ 关键修复：强制重置执行状态为false，避免状态卡死
+            if (!this.properties) {
+                this.properties = {};
+            }
+            this.properties.isExecuting = false;
+
+            console.log('[GET] 工作流加载，强制重置isExecuting=false');
+            console.log('[GET] 当前properties:', this.properties);
         };
     }
 });

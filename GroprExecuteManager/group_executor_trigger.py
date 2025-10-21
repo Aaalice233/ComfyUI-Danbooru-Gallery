@@ -45,11 +45,10 @@ class GroupExecutorTrigger:
         logger.info(f"[GET] 节点ID: {unique_id}")
         logger.info(f"[GET] 当前线程: {__import__('threading').current_thread().name}")
 
-        # 从prompt中提取client_id（用于多窗口隔离）
-        client_id = None
-        if prompt:
-            client_id = prompt.get('client_id')
-            logger.info(f"[GET] 客户端ID: {client_id}")
+        # ✅ 修复：从PromptServer实例获取client_id（用于多窗口隔离）
+        # 根据ComfyUI execution.py的实现，client_id存储在server.client_id中
+        client_id = PromptServer.instance.client_id
+        logger.info(f"[GET] 客户端ID: {client_id}")
 
         # 验证execution_list
         if not execution_list:
