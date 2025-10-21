@@ -21,7 +21,8 @@ class GroupExecutorTrigger:
                 "execution_list": ("EXECUTION_LIST",),  # 接收上游的execution_list
             },
             "hidden": {
-                "unique_id": "UNIQUE_ID"
+                "unique_id": "UNIQUE_ID",
+                "prompt": "PROMPT"
             }
         }
 
@@ -30,19 +31,25 @@ class GroupExecutorTrigger:
     CATEGORY = "Danbooru/Execution"
     OUTPUT_NODE = True  # ✅ 这是OUTPUT_NODE，用户可以手动Queue触发
 
-    def execute(self, execution_list, unique_id):
+    def execute(self, execution_list, unique_id, prompt=None):
         """
         触发组执行 - 发送WebSocket消息到前端
 
         ⚠️ 关键设计：
         1. 本节点是OUTPUT_NODE，会在ComfyUI初始队列中执行
-        2. 立即发送WebSocket消息给前端
+        2. 立即发送WebSocket消息给前端（仅发送给当前client_id）
         3. 立即返回，不阻塞
         4. 前端收到消息时，初始队列已经完成，可以直接开始组执行
         """
         logger.info(f"[GET] ==================== 触发器开始执行 ====================")
         logger.info(f"[GET] 节点ID: {unique_id}")
         logger.info(f"[GET] 当前线程: {__import__('threading').current_thread().name}")
+
+        # 从prompt中提取client_id（用于多窗口隔离）
+        client_id = None
+        if prompt:
+            client_id = prompt.get('client_id')
+            logger.info(f"[GET] 客户端ID: {client_id}")
 
         # 验证execution_list
         if not execution_list:
@@ -71,16 +78,18 @@ class GroupExecutorTrigger:
 
         logger.info(f"[GET] 执行顺序: {' → '.join(execution_order)}")
 
-        # 构建WebSocket消息
+        # 构建WebSocket消息（包含client_id用于多窗口隔离）
         message_data = {
             "node_id": unique_id,
             "execution_list": execution_list,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "client_id": client_id  # ✅ 关键：只有匹配的窗口才会执行
         }
 
         logger.info(f"[GET] ===== 发送WebSocket消息 =====")
         logger.info(f"[GET] 目标事件: danbooru_gem_trigger_execute")
         logger.info(f"[GET] 节点ID: {unique_id}")
+        logger.info(f"[GET] 客户端ID: {client_id}")
         logger.info(f"[GET] 时间戳: {message_data['timestamp']}")
 
         try:

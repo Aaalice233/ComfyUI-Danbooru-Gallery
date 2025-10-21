@@ -26,6 +26,15 @@ app.registerExtension({
             console.log('[GET-JS] 节点ID:', detail.node_id);
             console.log('[GET-JS] 执行列表项数:', detail.execution_list?.length || 0);
             console.log('[GET-JS] 时间戳:', new Date(detail.timestamp * 1000).toLocaleTimeString());
+            console.log('[GET-JS] 消息client_id:', detail.client_id);
+            console.log('[GET-JS] 当前client_id:', api.clientId);
+
+            // ✅ 多窗口隔离：只有匹配的窗口才执行
+            if (detail.client_id && detail.client_id !== api.clientId) {
+                console.log('[GET-JS] ⊘ client_id不匹配，跳过执行（多窗口隔离）');
+                console.log('[GET-JS] ========================================');
+                return;
+            }
 
             const nodeId = String(detail.node_id);
             const node = app.graph._nodes_by_id[nodeId];
