@@ -1,6 +1,6 @@
 """
 图像缓存保存节点 - Image Cache Save Node
-将图像和遮罩数据缓存到固定单通道，供获取节点主动读取
+将图像数据缓存到指定通道，供获取节点主动读取
 """
 
 import sys
@@ -33,7 +33,7 @@ any_typ = AnyType("*")
 
 class ImageCache:
     """
-    图像缓存保存节点 - 将图像缓存到固定单通道供其他节点获取
+    图像缓存保存节点 - 将图像缓存到指定通道供其他节点获取
     """
 
     def __init__(self):
@@ -49,6 +49,10 @@ class ImageCache:
                 "enable_preview": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "控制是否生成缓存图像的预览"
+                }),
+                "clear_before_save": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "是否在保存前清空旧缓存（覆盖模式）"
                 })
             },
             "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
@@ -64,22 +68,22 @@ class ImageCache:
                     images: List,
                     prompt: Optional[Dict] = None,
                     extra_pnginfo: Optional[Dict] = None,
-                    enable_preview: List[bool] = [True]) -> Dict[str, Any]:
+                    enable_preview: List[bool] = [True],
+                    clear_before_save: List[bool] = [True]) -> Dict[str, Any]:
         """
-        将图像缓存到全局单通道
+        将图像缓存到指定通道
         """
         try:
-            import datetime
-            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-            print(f"[ImageCacheSave] ==================== 执行时间: {current_time} ====================")
-            print(f"[ImageCacheSave DEBUG] Executing save node. Using cache_manager instance ID: {id(cache_manager)}")
+            print(f"[ImageCacheSave] ┌─ 开始保存图像")
 
-            # 获取保存前的缓存状态
-            cache_info = cache_manager.get_cache_info()
-            print(f"[ImageCacheSave] 保存前缓存状态: count={cache_info['count']}, 会话次数={cache_info.get('session_count', 0)}")
-
-            # 参数处理
+            # 参数处理 - 确保正确提取参数值
             processed_enable_preview = enable_preview[0] if isinstance(enable_preview, list) else enable_preview
+            # 修复：正确处理clear_before_save参数，确保默认值True生效
+            processed_clear_before_save = (
+                clear_before_save[0] if isinstance(clear_before_save, list) and len(clear_before_save) > 0
+                else clear_before_save if clear_before_save is not None
+                else True  # 默认使用覆盖模式
+            )
 
             # 将输入的批次列表展开为单个图像张量列表
             # ComfyUI's INPUT_IS_LIST=True wraps inputs in a list.
@@ -89,25 +93,15 @@ class ImageCache:
             for batch in images:
                 unpacked_images.extend(list(batch))  # Iterating over a tensor unpacks the first dimension
 
-            # 使用缓存管理器缓存图像（固定使用默认前缀，总是追加到现有缓存）
+            # 使用缓存管理器缓存图像
             results = cache_manager.cache_images(
                 images=unpacked_images,
-                filename_prefix="cached_image",  # 固定使用默认前缀
-                preview_rgba=True  # 固定使用RGBA预览以保留透明度
+                filename_prefix="cached_image",
+                preview_rgba=True,
+                clear_before_save=processed_clear_before_save
             )
 
-            # 发送成功toast通知
-            try:
-                from server import PromptServer
-                PromptServer.instance.send_sync("image-cache-toast", {
-                    "message": f"成功缓存 {len(results)} 张图像",
-                    "type": "success",
-                    "duration": 3000
-                })
-            except ImportError:
-                print("[ImageCacheSave] 警告: 不在ComfyUI环境中，跳过toast通知")
-            except Exception as e:
-                print(f"[ImageCacheSave] Toast通知失败: {e}")
+            print(f"[ImageCacheSave] └─ 保存完成: {len(results)} 张")
 
             if processed_enable_preview:
                 return {"ui": {"images": results}}
@@ -115,23 +109,9 @@ class ImageCache:
                 return {"ui": {"images": []}}
 
         except Exception as e:
-            error_msg = f"缓存图像失败: {str(e)}"
-            print(f"[ImageCacheSave] ✗ {error_msg}")
+            print(f"[ImageCacheSave] └─ ✗ 保存失败: {str(e)}")
 
-            # 发送错误toast通知
-            try:
-                from server import PromptServer
-                PromptServer.instance.send_sync("image-cache-toast", {
-                    "message": error_msg,
-                    "type": "error",
-                    "duration": 5000
-                })
-            except ImportError:
-                print("[ImageCacheSave] 警告: 不在ComfyUI环境中，跳过toast通知")
-            except Exception as toast_e:
-                print(f"[ImageCacheSave] Toast通知失败: {toast_e}")
-
-            # 返回空结果但不要抛出异常，避免中断工作流
+            # 返回空结果但不抛出异常
             return {"ui": {"images": []}}
 
 

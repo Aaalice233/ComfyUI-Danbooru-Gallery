@@ -1,6 +1,6 @@
 """
 图像缓存获取节点 - Image Cache Get Node
-主动从单通道缓存中获取图像和遮罩数据
+主动从缓存通道中获取图像数据
 """
 
 import sys
@@ -11,7 +11,6 @@ import numpy as np
 from PIL import Image
 from typing import List, Dict, Any, Optional, Tuple
 from ..ImageCacheManager.image_cache_manager import cache_manager
-import hashlib
 
 CATEGORY_TYPE = "Danbooru/Image"
 
@@ -35,56 +34,10 @@ any_typ = AnyType("*")
 class ImageReceiver:
     """
     图像获取节点 - 主动从全局单通道缓存中获取图像数据
+
+    ✅ 已移除IS_CHANGED方法，避免与ComfyUI缓存系统和组执行管理器冲突
+    节点现在总是执行，由组执行管理器通过QueueManager控制执行时机
     """
-
-    @classmethod
-    def IS_CHANGED(cls, *args, **kwargs):
-        """
-        智能判断节点是否需要重新执行
-
-        策略：
-        1. 如果缓存管理器有有效缓存，返回稳定值，避免不必要的重复执行
-        2. 如果缓存管理器没有缓存，强制执行一次以获取默认图像
-        3. 检测是否在组执行上下文中，避免"抢跑"
-        """
-        try:
-            from ..ImageCacheManager.image_cache_manager import cache_manager
-
-            # 获取缓存信息
-            cache_info = cache_manager.get_cache_info()
-            cache_count = cache_info['count']
-            last_save_timestamp = cache_manager.last_save_timestamp
-            has_saved_this_session = cache_manager.has_saved_this_session
-
-            # 获取当前时间戳（秒级精度）
-            current_timestamp = int(time.time())
-
-            print(f"[ImageCacheGet.IS_CHANGED] ========== 智能执行判断 ==========")
-            print(f"[ImageCacheGet.IS_CHANGED] 缓存状态: count={cache_count}, has_saved={has_saved_this_session}")
-            print(f"[ImageCacheGet.IS_CHANGED] 最后保存时间: {last_save_timestamp}")
-            print(f"[ImageCacheGet.IS_CHANGED] 当前时间: {current_timestamp}")
-
-            # 如果当前有缓存，且是在本次会话中保存的，返回稳定值避免重复执行
-            if cache_count > 0 and has_saved_this_session:
-                # 使用缓存信息的哈希值，只要缓存没变化就不会重新执行
-                cache_state_str = f"{cache_count}_{last_save_timestamp}"
-                cache_hash = hashlib.sha256(cache_state_str.encode()).hexdigest()
-                print(f"[ImageCacheGet.IS_CHANGED] 缓存有效，返回稳定哈希: {cache_hash[:16]}...")
-                return cache_hash
-
-            # 如果没有缓存，或者缓存是上次会话的，需要执行一次
-            else:
-                # 生成基于时间的哈希，但使用较低的时间精度（秒级）
-                # 这样在短时间内不会重复执行，但能保证会执行一次
-                time_hash = hashlib.sha256(str(current_timestamp).encode()).hexdigest()
-                print(f"[ImageCacheGet.IS_CHANGED] 需要执行，返回时间哈希: {time_hash[:16]}...")
-                return time_hash
-
-        except Exception as e:
-            print(f"[ImageCacheGet.IS_CHANGED] 判断过程出错，使用默认策略: {str(e)}")
-            # 出错时回退到原来的策略，但使用秒级时间精度
-            current_timestamp = int(time.time())
-            return hashlib.sha256(str(current_timestamp).encode()).hexdigest()
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -120,81 +73,53 @@ class ImageReceiver:
             包含图像张量和预览信息的字典
         """
         try:
-            import datetime
-            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-            print(f"[ImageCacheGet] ==================== 执行时间: {current_time} ====================")
-            print(f"[ImageCacheGet DEBUG] Executing get node. Using cache_manager instance ID: {id(cache_manager)}")
-
-            # 获取缓存状态信息
-            cache_info = cache_manager.get_cache_info()
-            print(f"[ImageCacheGet] 当前缓存状态: count={cache_info['count']}, 会话次数={cache_info.get('session_count', 0)}")
-            if cache_info['count'] > 0:
-                print(f"[ImageCacheGet] 最后保存时间: {datetime.datetime.fromtimestamp(cache_info['timestamp']/1000).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+            start_time = time.time()
+            print(f"[ImageCacheGet] ┌─ 开始获取图像")
 
             # INPUT_IS_LIST=True时，ComfyUI会将输入包装为列表
             default_image_list = default_image if default_image is not None else []
 
-            # 首先检查缓存是否有效
-            if cache_manager.is_cache_valid():
-                print("[ImageCacheGet] 缓存有效，尝试从缓存获取图像")
-                # 使用缓存管理器获取最新图像
-                images, _ = cache_manager.get_cached_images(
-                    get_latest=True,  # 总是获取所有缓存图像
-                    index=0  # 当get_latest=False时才使用
+            # 获取当前组的缓存通道
+            current_group = cache_manager.current_group_name
+
+            # 检查当前组的缓存是否有效
+            # ✅ 修复：使用正确的属性名 cache_channels（而不是channel_caches）
+            has_cache = False
+            if current_group and current_group in cache_manager.cache_channels:
+                channel_cache = cache_manager.cache_channels[current_group]
+                cache_count = len(channel_cache.get('images', []))
+                has_cache = cache_count > 0
+                print(f"[ImageCacheGet] │  当前组: {current_group}, 缓存数量: {cache_count}")
+
+            if has_cache:
+                # 从当前组通道获取最新图像
+                images = cache_manager.get_cached_images(
+                    get_latest=True,
+                    index=0
                 )
-
-                # 发送成功toast通知
-                try:
-                    from server import PromptServer
-                    PromptServer.instance.send_sync("image-cache-toast", {
-                        "message": f"成功获取 {len(images)} 张缓存图像",
-                        "type": "success",
-                        "duration": 3000
-                    })
-                except ImportError:
-                    print("[ImageCacheGet] 警告: 不在ComfyUI环境中，跳过toast通知")
-                except Exception as e:
-                    print(f"[ImageCacheGet] Toast通知失败: {e}")
-
-                print(f"[ImageCacheGet] [SUCCESS] 成功获取 {len(images)} 张缓存图像")
-                # 返回最后一个图像张量，确保获取的是最新的缓存
+                # 返回最后一个图像（最新缓存）
                 if len(images) > 0:
                     result_image = images[-1]
-                    # 根据ComfyUI官方文档确保张量格式为 [B, H, W, C]
                     result_image = self._ensure_tensor_format(result_image, "缓存图像")
 
-                    # 生成标准ComfyUI预览（如果启用预览）
+                    # 生成预览（如果启用）
                     preview_results = []
                     if enable_preview and enable_preview[0]:
                         try:
-                            # 获取缓存信息以找到原始文件路径
-                            cache_info = cache_manager.get_cache_info()
-                            if cache_info["count"] > 0:
-                                # 从缓存数据中获取最后一个（最新的）图像文件名用于预览
-                                cached_images = cache_manager.cache_data["images"]
-                                if cached_images:
-                                    latest_image_info = cached_images[-1]
-                                    image_filename = latest_image_info["filename"]
-
-                                    # 生成标准预览信息
-                                    preview_item = {
-                                        "filename": image_filename,
-                                        "subfolder": "",
-                                        "type": "temp"
-                                    }
-                                    preview_results.append(preview_item)
-                                    print(f"[ImageCacheGet] [SUCCESS] 已生成最新图像的预览: {image_filename}")
-                                else:
-                                    print(f"[ImageCacheGet] [WARNING] 缓存数据为空，无法生成预览")
-                            else:
-                                print(f"[ImageCacheGet] [WARNING] 缓存为空，跳过预览生成")
-
+                            # ✅ 修复：使用正确的属性名 cache_channels
+                            channel_cache = cache_manager.cache_channels[current_group]
+                            cached_images = channel_cache.get('images', [])
+                            if cached_images:
+                                latest_image_info = cached_images[-1]
+                                preview_results.append({
+                                    "filename": latest_image_info["filename"],
+                                    "subfolder": "",
+                                    "type": "temp"
+                                })
                         except Exception as e:
-                            print(f"[ImageCacheGet] [FAILED] 预览生成过程中出错: {str(e)}")
-                            import traceback
-                            print(f"[ImageCacheGet] 预览生成错误堆栈:\n{traceback.format_exc()}")
-                    else:
-                        print(f"[ImageCacheGet] 预览已禁用，跳过预览生成")
+                            print(f"[ImageCacheGet] │  预览生成失败: {str(e)}")
+
+                    print(f"[ImageCacheGet] └─ 从组 '{current_group}' 获取缓存: {result_image.shape}")
 
                     # 返回标准格式：图像张量和UI预览数据
                     return {
@@ -212,49 +137,25 @@ class ImageReceiver:
                         "ui": {"images": []}
                     }
             else:
-                print("[ImageCacheGet] 缓存无效或为空，尝试使用默认图像")
-
-                # 处理默认图像
+                # 使用默认图像
                 if default_image_list and len(default_image_list) > 0:
-                    print(f"[ImageCacheGet] [SUCCESS] 使用默认图像，共 {len(default_image_list)} 张")
-
-                    # 验证和修复默认图像的张量维度
                     validated_images = []
                     for idx, img in enumerate(default_image_list):
-                        # 根据ComfyUI官方文档确保张量格式为 [B, H, W, C]
                         img = self._ensure_tensor_format(img, f"默认图像{idx+1}")
-
-                        # 验证批次大小为1（ComfyUI标准）
                         if img.shape[0] != 1:
-                            print(f"[ImageCacheGet] 警告：批次大小为 {img.shape[0]}，调整为1")
-                            img = img[:1]  # 只取第一个批次
-
+                            img = img[:1]
                         validated_images.append(img)
 
                     if not validated_images:
-                        print("[ImageCacheGet] 默认图像验证失败，使用空白图像")
                         try:
                             empty_image = torch.zeros((1, 32, 32, 3), dtype=torch.float32)
                         except Exception:
                             empty_image = torch.zeros((1, 16, 16, 3), dtype=torch.float32, device="cpu")
                         validated_images = [empty_image]
 
-                    # 发送使用默认图像的toast通知
-                    try:
-                        from server import PromptServer
-                        PromptServer.instance.send_sync("image-cache-toast", {
-                            "message": f"缓存无效，使用默认图像 ({len(validated_images)} 张)",
-                            "type": "info",
-                            "duration": 3000
-                        })
-                    except ImportError:
-                        print("[ImageCacheGet] 警告: 不在ComfyUI环境中，跳过toast通知")
-                    except Exception as e:
-                        print(f"[ImageCacheGet] Toast通知失败: {e}")
-
-                    # 返回第一个验证后的图像张量，确保与VAEEncode兼容
                     result_image = validated_images[0]
-                    print(f"[ImageCacheGet] [SUCCESS] 默认图像最终返回形状: {result_image.shape}")
+                    current_group_info = f" (组: {cache_manager.current_group_name})" if cache_manager.current_group_name else ""
+                    print(f"[ImageCacheGet] └─ 无缓存{current_group_info}，使用默认图像: {result_image.shape}")
 
                     # 默认图像不生成预览，只返回空UI
                     return {
@@ -262,32 +163,14 @@ class ImageReceiver:
                         "ui": {"images": []}
                     }
                 else:
-                    print("[ImageCacheGet] ========== 未提供默认图像或默认图像为空 ==========")
-                    print(f"[ImageCacheGet] default_image_list: {default_image_list}")
-
-                    # 发送空白图像的toast通知
+                    # 返回空白图像
                     try:
-                        from server import PromptServer
-                        PromptServer.instance.send_sync("image-cache-toast", {
-                            "message": "缓存无效且未提供默认图像，返回空白图像",
-                            "type": "warning",
-                            "duration": 3000
-                        })
-                    except ImportError:
-                        print("[ImageCacheGet] 警告: 不在ComfyUI环境中，跳过toast通知")
-                    except Exception as e:
-                        print(f"[ImageCacheGet] Toast通知失败: {e}")
-
-                    # 返回空白图像（使用更小的尺寸以减少内存使用）
-                    try:
-                        # 尝试分配较小的空白图像
                         empty_image = torch.zeros((1, 32, 32, 3), dtype=torch.float32)
-                        print(f"[ImageCacheGet] [SUCCESS] 创建小型空白图像: {empty_image.shape}")
-                    except Exception as mem_e:
-                        print(f"[ImageCacheGet] [WARNING] 内存不足，使用最小空白图像: {str(mem_e)}")
-                        # 如果连小图像都分配失败，使用CPU张量
+                    except Exception:
                         empty_image = torch.zeros((1, 16, 16, 3), dtype=torch.float32, device="cpu")
-                        print(f"[ImageCacheGet] [SUCCESS] 创建CPU空白图像: {empty_image.shape}")
+
+                    current_group_info = f" (组: {cache_manager.current_group_name})" if cache_manager.current_group_name else ""
+                    print(f"[ImageCacheGet] └─ 无缓存{current_group_info}，返回空白图像: {empty_image.shape}")
 
                     return {
                         "result": (empty_image,),
@@ -295,35 +178,15 @@ class ImageReceiver:
                     }
 
         except Exception as e:
-            print(f"[ImageCacheGet] ========== 异常发生 ==========")
-            error_msg = f"获取图像失败: {str(e)}"
-            print(f"[ImageCacheGet] [FAILED] {error_msg}")
+            print(f"[ImageCacheGet] └─ ✗ 获取失败: {str(e)}")
             import traceback
-            print(f"[ImageCacheGet] 完整堆栈追踪:\n{traceback.format_exc()}")
+            print(f"[ImageCacheGet]    {traceback.format_exc()}")
 
-            # 发送错误toast通知
+            # 返回空图像但不抛出异常
             try:
-                from server import PromptServer
-                PromptServer.instance.send_sync("image-cache-toast", {
-                    "message": error_msg,
-                    "type": "error",
-                    "duration": 5000
-                })
-            except ImportError:
-                print("[ImageCacheGet] 警告: 不在ComfyUI环境中，跳过toast通知")
-            except Exception as toast_e:
-                print(f"[ImageCacheGet] Toast通知失败: {toast_e}")
-
-            # 返回空图像但不要抛出异常，避免中断工作流
-            try:
-                # 尝试分配较小的空白图像
                 empty_image = torch.zeros((1, 32, 32, 3), dtype=torch.float32)
-                print(f"[ImageCacheGet] [SUCCESS] 异常处理：创建小型空白图像: {empty_image.shape}")
-            except Exception as mem_e:
-                print(f"[ImageCacheGet] [WARNING] 异常处理：内存不足，使用CPU空白图像: {str(mem_e)}")
-                # 如果GPU内存不足，使用CPU张量
+            except Exception:
                 empty_image = torch.zeros((1, 16, 16, 3), dtype=torch.float32, device="cpu")
-                print(f"[ImageCacheGet] [SUCCESS] 异常处理：创建CPU空白图像: {empty_image.shape}")
 
             return {
                 "result": (empty_image,),

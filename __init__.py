@@ -72,7 +72,21 @@ try:
             logger.error(f"[API] ✗ 清空缓存失败: {e}")
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
+    @PromptServer.instance.routes.post("/danbooru_gallery/set_current_group")
+    async def set_current_group(request):
+        """设置当前执行组名的API端点（由组执行管理器调用）"""
+        try:
+            data = await request.json()
+            group_name = data.get("group_name")  # 可以是字符串或None
+
+            cache_manager.set_current_group(group_name)
+            return web.json_response({"success": True, "group_name": group_name})
+        except Exception as e:
+            logger.error(f"[API] ✗ 设置当前组失败: {e}")
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
     logger.info("✓ 已注册图像缓存清空 API: /danbooru_gallery/clear_cache")
+    logger.info("✓ 已注册设置当前组 API: /danbooru_gallery/set_current_group")
 except Exception as e:
     logger.error(f"注册缓存清空 API 失败: {e}")
 
