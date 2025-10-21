@@ -74,7 +74,13 @@ class ImageReceiver:
         """
         try:
             start_time = time.time()
+            current_group = cache_manager.current_group_name or "default"
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"\n{'='*60}")
+            print(f"[ImageCacheGet] ⏰ 执行时间: {timestamp}")
+            print(f"[ImageCacheGet] 📁 当前缓存通道: '{current_group}'")
             print(f"[ImageCacheGet] ┌─ 开始获取图像")
+            print(f"{'='*60}\n")
 
             # INPUT_IS_LIST=True时，ComfyUI会将输入包装为列表
             default_image_list = default_image if default_image is not None else []
