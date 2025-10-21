@@ -119,6 +119,7 @@ app.registerExtension({
         console.log('[GET-JS] ========================================');
         console.log('[GET-JS] 总组数:', executionList.length);
         console.log('[GET-JS] 执行顺序:', executionList.map(item => item.group_name).join(' → '));
+        console.log('[GET-JS] 完整execution_list:', JSON.stringify(executionList, null, 2));
 
         const workflowStartTime = performance.now();
 

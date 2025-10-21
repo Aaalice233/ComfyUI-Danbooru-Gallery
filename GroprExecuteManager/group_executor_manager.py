@@ -59,12 +59,14 @@ class GroupExecutorManager:
 
         try:
             logger.info(f"[GEM] 开始解析JSON配置...")
+            logger.info(f"[GEM] 原始group_config字符串: {group_config[:500]}")  # 只打印前500字符避免日志过长
             execution_list = json.loads(group_config)
             if not isinstance(execution_list, list) or len(execution_list) == 0:
                 logger.error("[GEM] ✗ 错误: 配置格式错误或为空")
                 return ()
 
             logger.info(f"[GEM] ✓ JSON解析成功，共 {len(execution_list)} 项")
+            logger.info(f"[GEM] 解析后的execution_list: {execution_list}")
 
         except json.JSONDecodeError as e:
             logger.error(f"[GEM] ✗ JSON解析失败: {str(e)}")

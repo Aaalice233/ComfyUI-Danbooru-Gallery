@@ -888,6 +888,11 @@ app.registerExtension({
 
             const newConfig = JSON.stringify(this.properties.groups);
             configWidget.value = newConfig;
+
+            // ✅ 调试日志：打印配置顺序
+            console.log('[GEM-UI] ========== 同步配置到widget ==========');
+            console.log('[GEM-UI] 配置顺序:', this.properties.groups.map((g, i) => `${i+1}.${g.group_name}`).join(' → '));
+            console.log('[GEM-UI] 完整配置JSON:', newConfig);
         };
 
         // 刷新组列表下拉选项
