@@ -74,7 +74,7 @@ class ImageCache:
         将图像缓存到指定通道
         """
         try:
-            current_group = cache_manager.current_group or "default"
+            current_group = cache_manager.current_group_name or "default"
             timestamp = time.strftime("%H:%M:%S", time.localtime())
             print(f"\n{'='*60}")
             print(f"[ImageCacheSave] ⏰ 执行时间: {timestamp}")
