@@ -19,46 +19,70 @@ class QueueManager {
     initializeHooks() {
         const originalApiQueuePrompt = api.queuePrompt;
 
-        api.queuePrompt = (index, batch_count, prompt = app.graph.serialize()) => {
+        api.queuePrompt = async (index, prompt) => {
+            // 如果没有提供prompt，尝试生成一个
+            if (!prompt) {
+                try {
+                    const workflow = app.graph.serialize();
+                    const promptData = await app.graphToPrompt();
+
+                    // 根据官方文档构建正确的prompt对象
+                    prompt = {
+                        number: 0,
+                        workflow: workflow,
+                        output: promptData.workflow
+                    };
+
+                    console.log('[GEM] 生成prompt对象成功');
+                } catch (error) {
+                    console.error('[GEM] 生成prompt失败:', error);
+                    // 调用原始方法
+                    return originalApiQueuePrompt.call(api, index, prompt);
+                }
+            }
+
             // 如果设置了目标节点列表，过滤 prompt.output 只保留目标节点及其依赖
             if (this.queueNodeIds && this.queueNodeIds.length && prompt && prompt.output) {
                 console.log('[GEM] 过滤节点，只执行目标节点:', this.queueNodeIds);
 
+                // 保存原始output
                 const oldOutput = prompt.output;
                 const oldNodeIds = Object.keys(oldOutput);
                 console.log('[GEM] 过滤前节点数量:', oldNodeIds.length);
-                console.log('[GEM] 过滤前节点列表:', oldNodeIds);
 
+                // 创建新的output对象，保留所有原始属性
                 let newOutput = {};
 
                 // 使用递归依赖收集确保节点按正确顺序执行
                 for (const queueNodeId of this.queueNodeIds) {
-                    this.recursiveAddNodes(String(queueNodeId), oldOutput, newOutput);
+                    const nodeIdStr = String(queueNodeId);
+                    this.recursiveAddNodes(nodeIdStr, oldOutput, newOutput);
                 }
 
-                // 替换 prompt.output，只保留过滤后的节点
-                prompt.output = newOutput;
+                // 创建新的prompt对象，保留所有原始属性但替换output
+                const newPrompt = { ...prompt };
+                newPrompt.output = newOutput;
+
                 const newNodeIds = Object.keys(newOutput);
                 console.log('[GEM] 过滤后节点数量:', newNodeIds.length);
-                console.log('[GEM] 过滤后节点列表:', newNodeIds);
-                console.log('[GEM] 过滤完成，保留节点:', Object.keys(newOutput));
 
-                // 打印被过滤掉的节点
+                // 打印被过滤掉的节点（用于调试）
                 const filteredNodes = oldNodeIds.filter(id => !newNodeIds.includes(id));
                 if (filteredNodes.length > 0) {
                     console.log('[GEM] 被过滤掉的节点:', filteredNodes);
                 }
-            }
 
-            // 调用原始方法
-            const result = originalApiQueuePrompt.call(api, index, batch_count, prompt);
+                // 调用原始方法，使用新的prompt对象
+                const result = originalApiQueuePrompt.call(api, index, newPrompt);
 
-            // 清除目标节点ID
-            if (this.queueNodeIds) {
+                // 清除目标节点ID
                 this.queueNodeIds = null;
-            }
 
-            return result;
+                return result;
+            } else {
+                // 没有需要过滤的节点，直接调用原始方法
+                return originalApiQueuePrompt.call(api, index, prompt);
+            }
         };
 
         console.log('[GEM] Hook 已安装');
@@ -135,14 +159,17 @@ class QueueManager {
 
         // 触发队列执行
         try {
-            await api.queuePrompt();
+            console.log('[GEM] 调用app.queuePrompt，通过app层级生成正确的prompt');
+            // 关键：调用 app.queuePrompt() 而不是 api.queuePrompt()
+            // app.queuePrompt() 会自动处理 graphToPrompt 并生成正确的节点ID映射
+            await app.queuePrompt();
+            console.log('[GEM] app.queuePrompt调用成功');
         } catch (error) {
             console.error('[GEM] 队列执行失败:', error);
+            console.error('[GEM] 错误详情:', error.message);
+            console.error('[GEM] 错误堆栈:', error.stack);
             this.queueNodeIds = null;
             throw error;
-        } finally {
-            // 确保清理目标节点ID
-            this.queueNodeIds = null;
         }
     }
 }
