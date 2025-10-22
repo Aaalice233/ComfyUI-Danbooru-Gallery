@@ -56,6 +56,15 @@ if (!window.optimizedExecutionSystemLoaded) {
             });
             document.dispatchEvent(initEvent);
 
+            // 添加队列拦截钩子
+            const originalEnqueue = app.enqueue;
+            app.enqueue = function(task) {
+                console.log('[OptimizedExecutionSystem] 拦截到新任务:', task);
+                // 在这里可以添加对任务的预处理或后处理逻辑
+                return originalEnqueue.call(this, task);
+            };
+            console.log('[OptimizedExecutionSystem] ✅ 队列拦截钩子已添加');
+
         }, 1000); // 1秒延迟确保稳定性
     }
 }

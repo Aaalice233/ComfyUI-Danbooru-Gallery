@@ -197,6 +197,7 @@ class OptimizedExecutionEngine {
 
         const totalExecutionTime = Date.now() - context.startTime;
         console.log(`[OptimizedExecutionEngine] ⏱️ 总执行时间: ${totalExecutionTime}ms (${Math.round(totalExecutionTime / 1000)}秒)`);
+        window._groupExecutorActive = false; // Reset the flag
     }
 
     async executeGroup(context, groupInfo, groupIndex, totalGroups) {
@@ -529,6 +530,7 @@ class OptimizedExecutionEngine {
 
 // 创建全局实例
 window.optimizedExecutionEngine = new OptimizedExecutionEngine();
+window._groupExecutorActive = false; // Initialize the flag
 
 console.log('[OptimizedExecutionEngine] 🚀 优化执行引擎已启动');
 console.log('[OptimizedExecutionEngine] 📋 全局实例: window.optimizedExecutionEngine');

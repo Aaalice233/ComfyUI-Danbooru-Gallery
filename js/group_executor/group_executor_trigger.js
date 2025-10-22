@@ -7,9 +7,9 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { simplifiedQueueManager } from "./queue_manager.js";
 
-// ✅ 全局执行锁 - 防止多个触发器同时执行
-let globalIsExecuting = false;
-let globalExecutionId = 0;
+// ✅ 全局执行状态追踪 - 防止重复执行同一execution_id
+_execution_status_tracker = {}
+_status_lock = None
 
 // 组执行触发器
 app.registerExtension({
