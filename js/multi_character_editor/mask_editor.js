@@ -30,6 +30,9 @@ class MaskEditor {
         this.initialMaskPosition = null;
         this.initialMaskState = null;
 
+        // 🔧 新增：布局修复重试计数器，防止无限循环
+        this.layoutFixRetryCount = 0;
+        this.maxLayoutFixRetries = 3; // 最多重试3次
 
         this.init();
     }
@@ -414,6 +417,15 @@ class MaskEditor {
     // 🔧 新增：尝试自动修复布局问题
     attemptLayoutFix(issues) {
         try {
+            // 🔧 关键修复：检查重试次数，防止无限循环
+            if (this.layoutFixRetryCount >= this.maxLayoutFixRetries) {
+                console.warn('[MaskEditor] attemptLayoutFix: 已达到最大重试次数，停止修复');
+                return;
+            }
+
+            this.layoutFixRetryCount++;
+            console.log(`[MaskEditor] attemptLayoutFix: 尝试修复布局，第 ${this.layoutFixRetryCount} 次`);
+
             // 强制重新设置样式
             this.canvas.style.cssText = `
                 width: 100% !important;
@@ -455,9 +467,13 @@ class MaskEditor {
             // 重新渲染
             this.scheduleRender();
 
-            // 延迟再次诊断
+            // 延迟再次诊断，但要检查重试次数
             setTimeout(() => {
-                this.diagnoseLayoutIssues();
+                if (this.layoutFixRetryCount < this.maxLayoutFixRetries) {
+                    this.diagnoseLayoutIssues();
+                } else {
+                    console.log('[MaskEditor] 布局修复已达到最大次数，不再继续诊断');
+                }
             }, 100);
 
         } catch (error) {

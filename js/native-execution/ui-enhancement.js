@@ -45,7 +45,8 @@ export class UIEnhancementManager {
 
             if (allRegistered) {
                 console.log('[UIEnhancementManager] ✅ 所有优化节点已注册');
-                this.addNodeEnhancements();
+                // 🔧 修复：调用正确的方法名
+                this.setupOptimizedNodeEnhancements();
             } else {
                 console.log('[UIEnhancementManager] ⏳ 等待节点注册:', registeredNodes);
                 setTimeout(checkNodes, 1000);
@@ -369,6 +370,26 @@ export class UIEnhancementManager {
         };
 
         return helpContents[nodeType] || '<p>帮助内容加载中...</p>';
+    }
+
+    // 🔧 新增：缺失的方法
+    addExecutionHistoryView(nodeDef) {
+        /** 添加执行历史查看 */
+        console.log(`[UIEnhancementManager] 添加执行历史查看: ${nodeDef.type}`);
+        // 这里可以添加具体的执行历史查看功能
+    }
+
+    addCacheStatusIndicator(nodeDef) {
+        /** 添加缓存状态指示器 */
+        console.log(`[UIEnhancementManager] 添加缓存状态指示器: ${nodeDef.type}`);
+        // 复用通用的状态指示器
+        this.addStatusIndicator(nodeDef, 'cache');
+    }
+
+    addCachePreviewEnhancement(nodeDef) {
+        /** 添加缓存预览增强 */
+        console.log(`[UIEnhancementManager] 添加缓存预览增强: ${nodeDef.type}`);
+        // 这里可以添加具体的缓存预览增强功能
     }
 
     // 公共方法

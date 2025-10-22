@@ -6,6 +6,7 @@
 import json
 import time
 import uuid
+import hashlib
 from typing import Dict, Any
 
 
@@ -69,12 +70,22 @@ class GroupExecutorManager:
     @classmethod
     def IS_CHANGED(cls, **kwargs) -> str:
         """
-        基于配置变化检测 - 确保配置改变时重新执行
-        
-        注意：由于_groupConfig是运行时注入的，无法在IS_CHANGED中直接访问，
-        使用时间戳确保每次都重新计算，强制每次执行时生成新的execution_id
+        基于配置内容检测 - 只有配置改变时才重新执行
+
+        关键修复：
+        1. 使用配置内容的哈希而非时间戳，避免清空依赖节点（如checkpoint加载器）的缓存
+        2. 只有当用户修改组配置时，IS_CHANGED才返回不同的值
+        3. 这样可以保持checkpoint加载器等节点的缓存，避免每次执行都重新加载模型（8秒）
         """
-        return str(time.time())
+        # 获取当前配置
+        config_data = get_group_config()
+
+        # 基于配置内容生成哈希
+        # 将配置序列化为稳定的字符串（sorted确保顺序一致）
+        config_str = json.dumps(config_data, sort_keys=True, ensure_ascii=False)
+        config_hash = hashlib.md5(config_str.encode()).hexdigest()
+
+        return config_hash
 
     def create_execution_plan(self, unique_id=None):
         """
