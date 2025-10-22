@@ -92,6 +92,17 @@ class GroupExecutorTrigger:
         start_time = time.time()
 
         try:
+            # 📥 输入日志：显示从GroupExecutorManager接收到的内容
+            logger.info(f"\n{'='*80}")
+            logger.info(f"[GroupExecutorTrigger] 📥 接收到来自GroupExecutorManager的数据")
+            logger.info(f"[GroupExecutorTrigger] 📍 输入内容:")
+            logger.info(f"   ├─ execution_plan (STRING):")
+            logger.info(f"   │  {execution_plan[:200]}{'...' if len(execution_plan) > 200 else ''}")
+            logger.info(f"   ├─ cache_control_signal (STRING):")
+            logger.info(f"   │  {cache_control_signal[:200]}{'...' if len(cache_control_signal) > 200 else ''}")
+            logger.info(f"   └─ signal: {type(signal).__name__} = {signal}")
+            logger.info(f"{'='*80}\n")
+
             # 处理可选参数
             unique_id = unique_id or "unknown"
             
@@ -118,7 +129,6 @@ class GroupExecutorTrigger:
             execution_priority = "normal"
             execution_timeout = 300
 
-            logger.info(f"\n{'='*80}")
             logger.info(f"[GroupExecutorTrigger] ⏰ 执行时间: {time.strftime('%H:%M:%S', time.localtime())}")
             logger.info(f"[GroupExecutorTrigger] 🚀 开始执行组计划")
             logger.info(f"[GroupExecutorTrigger] 🔧 执行ID: {execution_id}")
@@ -244,7 +254,7 @@ class GroupExecutorTrigger:
         # 显示具体的组信息
         groups = execution_plan.get("groups", [])
         for i, group in enumerate(groups):
-            group_name = group.get("name", f"组{i+1}")
+            group_name = group.get("group_name", group.get("name", f"组{i+1}"))
             group_nodes = group.get("nodes", [])
             logger.info(f"   - 组{i+1}: {group_name} (包含{len(group_nodes)}个节点)")
         

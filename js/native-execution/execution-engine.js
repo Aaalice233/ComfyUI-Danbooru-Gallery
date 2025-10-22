@@ -337,16 +337,20 @@ class OptimizedExecutionEngine {
     }
 
     isNodeInGroup(node, group) {
-        /** 检查节点是否在组内 */
+        /** 检查节点是否在组内 - 使用LiteGraph碰撞检测 */
         if (!node || !node.pos || !group || !group._bounding) {
             return false;
         }
 
-        const nodeBounds = node.getBounding();
-        return nodeBounds.x >= group._bounding[0] &&
-            nodeBounds.y >= group._bounding[1] &&
-            nodeBounds.x + nodeBounds.w <= group._bounding[2] &&
-            nodeBounds.y + nodeBounds.h <= group._bounding[3];
+        // ✅ 改进：使用LiteGraph的碰撞检测，这是ComfyUI标准的组包含检测方法
+        try {
+            const nodeBounds = node.getBounding();
+            // 使用LiteGraph提供的碰撞检测
+            return LiteGraph.overlapBounding(group._bounding, nodeBounds);
+        } catch (e) {
+            console.warn(`[OptimizedExecutionEngine] ⚠️ 碰撞检测异常: ${e.message}`);
+            return false;
+        }
     }
 
     async submitToComfyUIQueue(nodeIds, context) {
@@ -365,9 +369,22 @@ class OptimizedExecutionEngine {
             console.log(`[OptimizedExecutionEngine] 📊 过滤后节点数: ${Object.keys(filteredPrompt.output || {}).length}`);
             console.log(`[OptimizedExecutionEngine] 📊 将提交的节点ID: [${Object.keys(filteredPrompt.output || {}).join(', ')}]`);
 
-            // ✅ 修复：使用正确的clientId而不是0，确保后端能获得client_id
-            // ComfyUI的queuePrompt(clientId, prompt)会自动将clientId添加到prompt
-            await api.queuePrompt(api.clientId, filteredPrompt);
+            // ✅ 修复：正确的API调用格式
+            // ComfyUI的api.queuePrompt签名是 queuePrompt(prompt, number)
+            // 其中number应该是一个数字ID（通常是0或递增的序列号）
+            // 不应该传递client_id字符串，那是后端处理的
+            const promptWithMetadata = {
+                ...filteredPrompt,
+                extra_data: {
+                    ...filteredPrompt.extra_data,
+                    execution_id: context.executionId,
+                    group_name: context.currentGroupName
+                }
+            };
+            
+            // 使用ComfyUI的标准方式提交，不传递client_id
+            // number参数会被自动转换并发送到后端的/api/prompt
+            await api.queuePrompt(promptWithMetadata);
 
             console.log(`[OptimizedExecutionEngine] ✅ 节点已提交到ComfyUI队列`);
         } catch (error) {
@@ -416,40 +433,60 @@ class OptimizedExecutionEngine {
     }
 
     async waitForComfyUIQueueCompletion(context) {
-        /** 等待ComfyUI队列完成 */
-        const maxWaitTime = context.executionTimeout || 300000; // 默认5分钟
+        /** 等待ComfyUI队列执行完成 - 改进的健壮轮询机制 */
         const startTime = Date.now();
+        const maxWaitTime = 3600000; // 1小时超时
+        const pollInterval = 500; // 改为500ms轮询间隔，更快响应
 
-        console.log('[OptimizedExecutionEngine] ⏳ 等待队列完成...');
+        console.log('[OptimizedExecutionEngine] ⏳ 开始等待队列执行完成...');
 
-        while (Date.now() - startTime < maxWaitTime) {
+        while (true) {
+            const elapsed = Date.now() - startTime;
+
+            // 检查超时
+            if (elapsed > maxWaitTime) {
+                console.warn(`[OptimizedExecutionEngine] ⏰ 队列等待超时 (${Math.round(elapsed / 1000)}秒)`);
+                throw new Error(`队列执行超时 (超过 ${Math.round(maxWaitTime / 1000)} 秒)`);
+            }
+
             try {
                 const response = await api.fetchApi('/queue');
+                if (!response.ok) {
+                    console.warn(`[OptimizedExecutionEngine] ⚠️ 无法获取队列状态: ${response.status}`);
+                    await this.delay(pollInterval);
+                    continue;
+                }
+
                 const data = await response.json();
+                const queueRunning = data.queue_running || [];
+                const queuePending = data.queue_pending || [];
 
-                const running = (data.queue_running || []).length;
-                const pending = (data.queue_pending || []).length;
+                // ✅ 改进：使用LG风格的队列判断
+                const isRunning = queueRunning.length > 0;
+                const isPending = queuePending.length > 0;
 
-                if (running === 0 && pending === 0) {
-                    console.log('[OptimizedExecutionEngine] ✅ 队列执行完成');
+                // 队列完全空闲，执行完成
+                if (!isRunning && !isPending) {
+                    console.log(`[OptimizedExecutionEngine] ✅ 队列执行完成 (耗时: ${Math.round(elapsed / 1000)}秒)`);
                     return;
                 }
 
-                // 定期报告进度
-                if (Date.now() - startTime > 5000) { // 5秒后开始报告
-                    const elapsed = Math.round((Date.now() - startTime) / 1000);
-                    console.log(`[OptimizedExecutionEngine] ⏳ 队列等待中... (${elapsed}秒): running=${running}, pending=${pending}`);
+                // 定期输出进度信息
+                if (elapsed % 5000 < pollInterval) { // 每5秒输出一次
+                    console.log(
+                        `[OptimizedExecutionEngine] ⏳ 队列等待中 (${Math.round(elapsed / 1000)}秒): ` +
+                        `运行中=${queueRunning.length}, 待执行=${queuePending.length}`
+                    );
                 }
 
             } catch (error) {
-                console.warn('[OptimizedExecutionEngine] ⚠️ 队列状态检查失败:', error);
+                console.warn(`[OptimizedExecutionEngine] ⚠️ 队列状态检查异常: ${error.message}`);
+                // 异常时也继续轮询，不中断
             }
 
-            await this.delay(1000); // 每秒检查一次
+            // 使用改进的延迟间隔
+            await this.delay(pollInterval);
         }
-
-        console.warn('[OptimizedExecutionEngine] ⚠️ 队列等待超时');
-        throw new Error('队列执行超时');
     }
 
     delay(ms) {

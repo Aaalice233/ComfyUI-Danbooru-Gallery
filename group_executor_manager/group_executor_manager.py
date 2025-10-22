@@ -21,7 +21,8 @@ any_typ = AnyType("*")
 # ✅ 全局配置存储（前后端交互的枢纽）
 _group_executor_config = {
     "groups": [],
-    "last_update": 0
+    "last_update": 0,
+    "last_workflow_groups": []  # 追踪工作流中的groups
 }
 
 def get_group_config():
@@ -33,9 +34,9 @@ def set_group_config(groups):
     global _group_executor_config
     _group_executor_config["groups"] = groups
     _group_executor_config["last_update"] = time.time()
-    print(f"[GroupExecutorManager] 配置已更新: {len(groups)} 个组")
+    print(f"\n[GroupExecutorManager] ✅ 配置已更新: {len(groups)} 个组")
     for i, group in enumerate(groups, 1):
-        print(f"   {i}. {group.get('group_name', '未命名')} ({len(group.get('nodes', []))} 节点)")
+        print(f"   {i}. {group.get('group_name', '未命名')} (延迟: {group.get('delay_seconds', 0)}s)")
 
 
 class GroupExecutorManager:
@@ -48,7 +49,10 @@ class GroupExecutorManager:
             "required": {
                 "signal": (any_typ, {}),  # ✅ 使用AnyType类而不是字符串"*"
             },
-            "optional": {}
+            "optional": {},
+            "hidden": {
+                "unique_id": "UNIQUE_ID"
+            }
         }
 
     RETURN_TYPES = ("STRING", "STRING", any_typ)
@@ -73,35 +77,45 @@ class GroupExecutorManager:
         """
         return str(time.time())
 
-    def create_execution_plan(self, signal=None):
+    def create_execution_plan(self, signal=None, unique_id=None):
         """
         创建执行计划
 
         Args:
             signal: 来自upstream节点的任意类型信号（用于建立执行依赖）
+            unique_id: 节点的唯一ID
 
         Returns:
             tuple: (执行计划, 缓存控制信号, 信号输出)
         """
         try:
-            # 从全局配置中读取配置
+            print(f"\n[GroupExecutorManager] 🎯 开始生成执行计划")
+            print(f"[GroupExecutorManager] 📍 节点ID: {unique_id}")
+            
+            # ✅ 从全局配置中读取配置
             config_data = get_group_config()
+            print(f"[GroupExecutorManager] 📦 从全局配置读取: {len(config_data)} 个组")
 
             # 如果没有UI配置，使用默认配置
             if not config_data:
+                print(f"[GroupExecutorManager] ⚠️  全局配置为空，使用默认配置")
                 default_groups = [
                     {
                         "group_name": "示例组1",
                         "nodes": ["节点1", "节点2", "节点3"],
-                        "description": "这是第一个执行组"
+                        "description": "这是第一个执行组",
+                        "delay_seconds": 0
                     },
                     {
                         "group_name": "示例组2",
                         "nodes": ["节点4", "节点5"],
-                        "description": "这是第二个执行组"
+                        "description": "这是第二个执行组",
+                        "delay_seconds": 0
                     }
                 ]
-                config_data = {"groups": default_groups}
+                config_data = default_groups
+            else:
+                print(f"[GroupExecutorManager] ✅ 使用用户配置的组")
 
             # 固定配置值（内部使用）
             execution_mode = "sequential"  # 顺序执行: sequential, 并行执行: parallel
@@ -114,7 +128,7 @@ class GroupExecutorManager:
 
             # 创建执行计划 - 包含验证器需要的所有字段
             execution_plan = {
-                "groups": config_data.get("groups", []),
+                "groups": config_data,
                 "execution_mode": execution_mode,  # ✅ 修复：改为 execution_mode
                 "cache_control_mode": cache_control_mode,  # ✅ 修复：添加 cache_control_mode
                 "execution_id": execution_id,  # ✅ 修复：生成唯一ID
@@ -134,24 +148,43 @@ class GroupExecutorManager:
                 "cache_control_mode": cache_control_mode  # ✅ 添加缓存控制模式
             }
 
-            # 📋 调试日志：显示生成的execution_id
-            print(f"[GroupExecutorManager] 📋 生成执行计划:")
-            print(f"   - 执行ID: {execution_id}")
-            print(f"   - 组数量: {len(config_data.get('groups', []))}")
-            groups = config_data.get('groups', [])
-            for i, group in enumerate(groups):
-                print(f"   - 组{i+1}: {group.get('group_name', f'组{i+1}')} (包含{len(group.get('nodes', []))}个节点)")
-            print(f"   - 执行模式: {execution_mode}")
-            print(f"   - 缓存模式: {cache_control_mode}")
+            # 📋 详细调试日志：显示生成的执行计划
+            print(f"\n[GroupExecutorManager] 📋 生成执行计划详情:")
+            print(f"   执行ID: {execution_id}")
+            print(f"   组数量: {len(config_data)}")
+            print(f"   执行模式: {execution_mode}")
+            print(f"   缓存模式: {cache_control_mode}")
+            print(f"   ")
+            
+            for i, group in enumerate(config_data, 1):
+                group_name = group.get('group_name', f'未命名组{i}')
+                delay = group.get('delay_seconds', 0)
+                print(f"   ├─ 组{i}: {group_name} (延迟{delay}s)")
+
+            print(f"\n[GroupExecutorManager] ✅ 执行计划生成完成\n")
 
             # ✅ 返回三个值：execution_plan, cache_signal, signal_output(用于建立依赖链)
-            return (json.dumps(execution_plan, ensure_ascii=False),
-                   json.dumps(cache_signal, ensure_ascii=False),
+            execution_plan_json = json.dumps(execution_plan, ensure_ascii=False)
+            cache_signal_json = json.dumps(cache_signal, ensure_ascii=False)
+            
+            # 📤 输出日志：显示将要发送给GroupExecutorTrigger的内容
+            print(f"[GroupExecutorManager] 📤 输出内容:")
+            print(f"   ├─ execution_plan (STRING):")
+            print(f"   │  {execution_plan_json}")
+            print(f"   ├─ cache_control_signal (STRING):")
+            print(f"   │  {cache_signal_json}")
+            print(f"   └─ signal_output: {type(signal).__name__}")
+            print(f"")
+            
+            return (execution_plan_json,
+                   cache_signal_json,
                    signal)  # ✅ 修复：直接返回接收到的signal，让它沿着链传递
 
         except Exception as e:
             error_msg = f"GroupExecutorManager 执行错误: {str(e)}"
-            print(error_msg)
+            print(f"\n[GroupExecutorManager] ❌ {error_msg}\n")
+            import traceback
+            traceback.print_exc()
 
             # 返回错误信息
             error_plan = {"error": error_msg, "execution_id": "error", "groups": []}
@@ -173,6 +206,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 # ✅ 添加API端点 - 用于前后端配置同步
 try:
     from server import PromptServer
+    from aiohttp import web
     
     routes = PromptServer.instance.routes
     
@@ -183,36 +217,53 @@ try:
             data = await request.json()
             groups = data.get('groups', [])
             
+            print(f"\n[GroupExecutorManager API] 📥 收到配置保存请求")
+            print(f"[GroupExecutorManager API] 📦 组数量: {len(groups)}")
+            
             # 保存到全局配置
             set_group_config(groups)
             
-            return {
+            # 立即显示保存后的配置
+            print(f"[GroupExecutorManager API] ✅ 配置已保存到全局存储")
+            for i, group in enumerate(groups, 1):
+                print(f"   {i}. {group.get('group_name', '未命名')} (延迟: {group.get('delay_seconds', 0)}s)")
+            print("")
+            
+            return web.json_response({
                 "status": "success",
                 "message": f"已保存 {len(groups)} 个组的配置"
-            }
+            })
         except Exception as e:
-            print(f"[GroupExecutorManager] 保存配置错误: {str(e)}")
-            return {
+            error_msg = f"[GroupExecutorManager API] 保存配置错误: {str(e)}"
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
+            return web.json_response({
                 "status": "error",
                 "message": str(e)
-            }, 500
+            }, status=500)
     
     @routes.get('/danbooru_gallery/group_config/load')
     async def load_group_config(request):
         """获取已保存的组配置"""
         try:
             groups = get_group_config()
-            return {
+            print(f"\n[GroupExecutorManager API] 📤 返回已保存的配置: {len(groups)} 个组")
+            
+            return web.json_response({
                 "status": "success",
                 "groups": groups,
                 "last_update": _group_executor_config.get("last_update", 0)
-            }
+            })
         except Exception as e:
-            print(f"[GroupExecutorManager] 读取配置错误: {str(e)}")
-            return {
+            error_msg = f"[GroupExecutorManager API] 读取配置错误: {str(e)}"
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
+            return web.json_response({
                 "status": "error",
                 "message": str(e)
-            }, 500
+            }, status=500)
     
-except ImportError:
-    print("[GroupExecutorManager] 警告: 无法导入PromptServer，API端点将不可用")
+except ImportError as e:
+    print(f"[GroupExecutorManager] 警告: 无法导入PromptServer或web模块，API端点将不可用: {e}")

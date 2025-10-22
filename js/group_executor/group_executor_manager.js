@@ -1005,7 +1005,7 @@ app.registerExtension({
             // 调用原始序列化方法
             const data = onSerialize?.apply?.(this, arguments);
 
-            // 保存自定义属性
+            // ✅ 改进：保存自定义属性到info对象，这些会被保存到工作流JSON
             info.groups = this.properties.groups || [];
             info.selectedColorFilter = this.properties.selectedColorFilter || '';
             info.isExecuting = this.properties.isExecuting || false;
@@ -1015,6 +1015,20 @@ app.registerExtension({
                 width: this.size[0],
                 height: this.size[1]
             };
+
+            // ✅ 新增：详细的序列化日志
+            console.log('[GEM-Serialize] 💾 保存工作流数据:');
+            console.log(`[GEM-Serialize]   节点ID: ${this.id}`);
+            console.log(`[GEM-Serialize]   组数量: ${info.groups.length}`);
+            info.groups.forEach((g, i) => {
+                console.log(`[GEM-Serialize]   ${i + 1}. ${g.group_name} (延迟: ${g.delay_seconds}s)`);
+            });
+            console.log(`[GEM-Serialize]   节点大小: ${info.gem_node_size.width}x${info.gem_node_size.height}`);
+
+            // ✅ 新增：保存时立即同步到后端，确保配置不会丢失
+            this.syncConfigToBackend().catch(err => {
+                console.warn('[GEM-Serialize] ⚠️  保存时同步配置到后端失败:', err);
+            });
 
             return data;
         };
@@ -1041,8 +1055,13 @@ app.registerExtension({
                 });
 
                 this.properties.groups = validGroups;
+                console.log('[GEM] ✅ 从工作流JSON恢复配置:', validGroups.length, '个组');
+                validGroups.forEach((g, i) => {
+                    console.log(`   ${i + 1}. ${g.group_name} (延迟: ${g.delay_seconds}s)`);
+                });
             } else {
                 this.properties.groups = [];
+                console.log('[GEM] ⚠️  工作流JSON中没有组配置');
             }
 
             // 恢复颜色过滤器
@@ -1075,6 +1094,15 @@ app.registerExtension({
                     }
                 }, 100);
             }
+
+            // ✅ 新增：工作流加载完成后，立即同步配置到后端
+            // 这是关键步骤，确保后端能够读取到工作流中保存的groups配置
+            setTimeout(async () => {
+                if (this.properties.groups && this.properties.groups.length > 0) {
+                    console.log('[GEM] 📤 工作流加载后，同步配置到后端...');
+                    await this.syncConfigToBackend();
+                }
+            }, 200);
         };
 
         // 节点被移除时清理资源
