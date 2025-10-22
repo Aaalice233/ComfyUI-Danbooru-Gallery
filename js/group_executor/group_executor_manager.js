@@ -925,6 +925,10 @@ app.registerExtension({
 
         // 同步配置到后端
         nodeType.prototype.syncConfigToBackend = async function () {
+            if (this.properties.isExecuting) {
+                console.warn('[GEM-API] 正在执行中，跳过同步配置到后端');
+                return;
+            }
             try {
                 const response = await fetch('/danbooru_gallery/group_config/save', {
                     method: 'POST',
