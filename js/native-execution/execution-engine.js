@@ -362,10 +362,10 @@ class OptimizedExecutionEngine {
             // ✅ 关键修复：使用ComfyUI原生app.queuePrompt()而不是api.queuePrompt()
             // app.queuePrompt会自动调用graphToPrompt，然后调用api.queuePrompt(index, prompt)
             // 这样可以确保所有参数都正确传递
-            
+
             // 1. 首先获取完整的prompt
             const fullPrompt = await app.graphToPrompt();
-            
+
             // 2. 过滤prompt只保留目标节点及其依赖
             const filteredPrompt = this.filterPromptNodes(fullPrompt, nodeIds, context);
 

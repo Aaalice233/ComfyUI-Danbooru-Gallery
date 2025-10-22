@@ -23,6 +23,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("OptimizedGET")
 
 
+# ✅ 全局执行状态追踪 - 防止重复执行同一execution_id
+_execution_status_tracker = {}
+_status_lock = None
+
+try:
+    import threading
+    _status_lock = threading.Lock()
+except:
+    pass
+
+
+def get_execution_status(execution_id):
+    """获取execution_id的状态"""
+    if _status_lock:
+        with _status_lock:
+            return _execution_status_tracker.get(execution_id, {})
+    return _execution_status_tracker.get(execution_id, {})
+
+
 class AnyType(str):
     """用于表示任意类型的特殊类，在类型比较时总是返回False（不相等）"""
     def __ne__(self, __value: object) -> bool:
@@ -122,6 +141,41 @@ class GroupExecutorTrigger:
             
             # ✅ 修复：覆盖execution_plan的client_id为真实值
             execution_plan_dict["client_id"] = real_client_id
+
+            # ✅ 新增：检查是否是重复的execution_id
+            # 防止同一个execution在短时间内被多次触发
+            last_status = get_execution_status(execution_id)
+            if last_status:
+                elapsed = time.time() - last_status.get("trigger_time", 0)
+                # 如果在30秒内重复触发同一个execution_id，说明是GroupExecutorTrigger被重复执行
+                # 这通常发生在GroupExecutorManager输出频繁变化时
+                if elapsed < 30:
+                    logger.warning(f"[GroupExecutorTrigger] ⚠️ 检测到重复的execution_id: {execution_id} (距离上次触发{elapsed:.1f}秒)")
+                    logger.warning(f"[GroupExecutorTrigger] ⚠️ 已存储状态: {last_status}")
+                    logger.warning(f"[GroupExecutorTrigger] ⚠️ 跳过重复执行，返回之前的状态")
+                    return (json.dumps({
+                        "status": "skipped_duplicate",
+                        "execution_id": execution_id,
+                        "message": "跳过重复的execution请求",
+                        "timestamp": time.time()
+                    }, ensure_ascii=False), signal)
+            
+            # ✅ 记录execution开始时间
+            if _status_lock:
+                with _status_lock:
+                    _execution_status_tracker[execution_id] = {
+                        "trigger_time": time.time(),
+                        "client_id": real_client_id,
+                        "status": "triggered",
+                        "groups_count": len(execution_plan_dict.get("groups", []))
+                    }
+            else:
+                _execution_status_tracker[execution_id] = {
+                    "trigger_time": time.time(),
+                    "client_id": real_client_id,
+                    "status": "triggered",
+                    "groups_count": len(execution_plan_dict.get("groups", []))
+                }
 
             # 使用默认值
             force_execution = False
