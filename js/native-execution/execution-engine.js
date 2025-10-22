@@ -354,10 +354,7 @@ class OptimizedExecutionEngine {
     }
 
     async submitToComfyUIQueue(nodeIds, context) {
-        /** 提交节点到ComfyUI队列，使用原生机制 */
-        console.log(`[OptimizedExecutionEngine] 📤 提交节点到队列: [${nodeIds.join(', ')}]`);
-        console.log(`[OptimizedExecutionEngine] 📊 待提交节点总数: ${nodeIds.length}`);
-
+        /** 提交节点到ComfyUI队列 */
         try {
             // ✅ 关键修复：使用ComfyUI原生app.queuePrompt()而不是api.queuePrompt()
             // app.queuePrompt会自动调用graphToPrompt，然后调用api.queuePrompt(index, prompt)

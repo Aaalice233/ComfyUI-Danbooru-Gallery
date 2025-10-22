@@ -87,7 +87,7 @@ class GroupExecutorTrigger:
     RETURN_NAMES = ("execution_status", "signal_output")
     FUNCTION = "trigger_optimized_execution"
     CATEGORY = "danbooru"
-    OUTPUT_NODE = True  # 保持输出节点属性以发送WebSocket消息
+    OUTPUT_NODE = False  # 保持输出节点属性以发送WebSocket消息
     OUTPUT_IS_LIST = (False, False)  # 两个输出都不是列表
 
     @classmethod
