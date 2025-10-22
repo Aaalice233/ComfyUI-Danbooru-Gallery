@@ -39,7 +39,7 @@ class PromptSelector:
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("prompt",)
     FUNCTION = "execute"
-    CATEGORY = "Danbooru" # 暂定，可以根据需要修改
+    CATEGORY = "danbooru"
 
     def __init__(self):
         # 确保预览图片目录存在

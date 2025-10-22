@@ -10,9 +10,9 @@ import torch
 import numpy as np
 from PIL import Image
 from typing import List, Dict, Any, Optional, Tuple
-from ..ImageCacheManager.image_cache_manager import cache_manager
+from ..image_cache_manager.image_cache_manager import cache_manager
 
-CATEGORY_TYPE = "Danbooru/Image"
+CATEGORY_TYPE = "danbooru"
 
 
 class AnyType(str):

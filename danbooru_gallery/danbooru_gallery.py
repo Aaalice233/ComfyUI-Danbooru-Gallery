@@ -947,7 +947,7 @@ class DanbooruGalleryNode:
     RETURN_TYPES = ("IMAGE", "STRING")
     RETURN_NAMES = ("image", "prompt")
     FUNCTION = "get_selected_data"
-    CATEGORY = "Danbooru"
+    CATEGORY = "danbooru"
     OUTPUT_NODE = True
 
     @classmethod

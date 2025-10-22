@@ -568,7 +568,7 @@ class CharacterFeatureSwapNode:
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("new_prompt",)
     FUNCTION = "execute"
-    CATEGORY = "Danbooru"
+    CATEGORY = "danbooru"
 
     async def execute(self, original_prompt, character_prompt, target_features):
         """

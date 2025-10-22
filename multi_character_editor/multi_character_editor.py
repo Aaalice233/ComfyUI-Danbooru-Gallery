@@ -268,7 +268,7 @@ class MultiCharacterEditorNode:
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("generated_prompt",)
     FUNCTION = "generate_prompt"
-    CATEGORY = "Danbooru"
+    CATEGORY = "danbooru"
     
     def __init__(self):
         pass

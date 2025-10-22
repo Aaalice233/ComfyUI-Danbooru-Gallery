@@ -1,5 +1,7 @@
 # ComfyUI节点导入问题解决指南
 
+基于ComfyUI官方文档的最佳实践
+
 ## 问题描述
 
 在ComfyUI插件开发中，节点无法在搜索中找到，日志显示导入失败错误。
@@ -15,273 +17,374 @@
 1. **复杂的跨模块依赖**：节点依赖外部模块，导入链条过长
 2. **单例模式实现错误**：试图跨模块共享单例实例
 3. **过度设计的架构**：创建了不必要的复杂文件结构
+4. **不符合官方规范**：没有遵循ComfyUI官方的节点开发标准
 
-## 正确的解决方案
+## ComfyUI官方规范要求
 
-### 1. 文件结构设计
+### 1. 标准__init__.py结构（官方推荐）
 
+```python
+# 最简单的主入口文件
+from .your_node_file import YourCustomNode
+
+NODE_CLASS_MAPPINGS = {
+    "Your Custom Node" : YourCustomNode
+}
+
+__all__ = ["NODE_CLASS_MAPPINGS"]
 ```
-ComfyUI-Danbooru-Gallery/
-├── __init__.py                    # 主入口，合并所有节点映射
-├── NodeName1/
-│   ├── __init__.py               # 简单导入映射
-│   └── node_implementation.py    # 完整节点实现
-└── NodeName2/
-    ├── __init__.py               # 简单导入映射
-    └── node_implementation.py    # 完整节点实现
-```
 
-### 2. 节点实现文件模板
+### 2. 完整的节点实现模板
 
 ```python
 """
-节点描述文档
-节点功能说明、使用方法等
+ComfyUI自定义节点标准模板
+遵循官方文档规范
 """
 
-# 1. 标准导入
-import sys
-import os
-import time
-import torch
-import numpy as np
-from PIL import Image
+import hashlib
 from typing import List, Dict, Any, Optional, Tuple
 
-# 2. 常量定义
-CATEGORY_TYPE = "Your/Category"
-
-# 3. 工具类（如果需要）
-class AnyType(str):
-    """用于表示任意类型的特殊类，在类型比较时总是返回相等"""
-    def __eq__(self, _) -> bool:
-        return True
-
-    def __ne__(self, __value: object) -> bool:
-        return False
-
-any_typ = AnyType("*")
-
-# 4. 核心管理器类（如果有共享状态，内置在文件中）
-class YourManager:
+class YourCustomNode:
     """
-    管理器类 - 单例模式
+    自定义节点类
+    必须包含以下标准方法
     """
-    _instance = None
-    _initialized = False
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self):
-        if not self._initialized:
-            # 初始化逻辑
-            self.data = {}
-            self._initialized = True
-            print(f"[{self.__class__.__name__}] 初始化管理器")
-
-    # 管理器方法
-    def clear_data(self):
-        """清空数据"""
-        self.data.clear()
-        print(f"[{self.__class__.__name__}] 数据已清空")
-
-# 5. 全局实例（模块级单例）
-manager = YourManager()
-
-# 6. 节点类实现
-class YourNode:
-    """
-    节点类描述
-    """
-
-    def __init__(self):
-        pass
 
     @classmethod
     def INPUT_TYPES(cls):
+        """定义输入参数类型和约束"""
         return {
             "required": {
-                "param1": ("TYPE", {"default": "value", "tooltip": "参数说明"}),
-                "param2": ("BOOLEAN", {"default": True, "tooltip": "布尔参数"}),
-                "param3": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1, "tooltip": "整数参数"})
+                "image": ("IMAGE", {}),
+                "strength": ("FLOAT", {
+                    "default": 1.0,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.01,
+                    "tooltip": "处理强度"
+                }),
+                "mode": (["normal", "advanced"], {
+                    "default": "normal",
+                    "tooltip": "处理模式"
+                }),
             },
             "optional": {
-                "optional_param": ("TYPE", {"tooltip": "可选参数说明"})
+                "mask": ("MASK", {
+                    "tooltip": "可选的蒙版"
+                }),
             },
-            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"}
+            "hidden": {
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO",
+                "node_id": "UNIQUE_ID"
+            }
         }
 
-    RETURN_TYPES = ("TYPE1", "TYPE2")
-    RETURN_NAMES = ("output1", "output2")
-    FUNCTION = "process"
-    CATEGORY = CATEGORY_TYPE
-    INPUT_IS_LIST = True  # 如果需要列表输入
-    OUTPUT_IS_LIST = (True, False)  # 如果需要列表输出
-    OUTPUT_NODE = True  # 如果是输出节点
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("processed_image", "status_message")
+    FUNCTION = "process_image"
+    CATEGORY = "image/processing"
+    DESCRIPTION = "图像处理节点，支持多种处理模式"
 
-    def process(self, param1, param2, param3, optional_param=None, prompt=None, extra_pnginfo=None):
-        """
-        节点处理函数
-        """
-        # 参数处理
-        processed_param1 = param1[0] if isinstance(param1, list) else param1
-        processed_param2 = param2[0] if isinstance(param2, list) else param2
-        processed_param3 = param3[0] if isinstance(param3, list) else param3
+    @classmethod
+    def IS_CHANGED(cls, image, strength=1.0, mode="normal"):
+        """优化执行性能：检测输入变化"""
+        if isinstance(image, str):
+            # 如果是文件路径，计算文件哈希
+            try:
+                import os
+                m = hashlib.sha256()
+                with open(image, 'rb') as f:
+                    m.update(f.read())
+                return m.digest().hex()
+            except:
+                pass
+        # 返回哈希值用于变化检测
+        return hashlib.sha256(f"{image}_{strength}_{mode}".encode()).hexdigest()
 
-        # 核心处理逻辑
+    def process_image(self, image, strength=1.0, mode="normal", mask=None, prompt=None, extra_pnginfo=None, node_id=None):
+        """
+        主要处理函数
+        必须返回元组格式
+        """
         try:
-            # 使用管理器
-            result = manager.some_method(processed_param1, processed_param2)
+            # 获取节点ID用于通信
+            if node_id:
+                from server import PromptServer
+                PromptServer.instance.send_sync("your.custom.message", {
+                    "node": node_id,
+                    "status": "processing"
+                })
 
-            print(f"[{self.__class__.__name__}] 处理成功")
-            return {"result": "ui_data"}
+            # 核心处理逻辑
+            processed_image = self._apply_processing(image, strength, mode, mask)
+
+            return (processed_image, "处理完成")
 
         except Exception as e:
-            print(f"[{self.__class__.__name__}] 处理失败: {str(e)}")
-            return {"result": "error_data"}
+            print(f"[YourCustomNode] 处理失败: {str(e)}")
+            return (image, f"处理失败: {str(e)}")
 
-# 7. 节点映射函数（关键！）
-def get_node_class_mappings():
-    """返回节点类映射"""
-    return {
-        "NodeClassName": YourNode
-    }
+    def _apply_processing(self, image, strength, mode, mask):
+        """实际处理逻辑"""
+        # 在这里实现你的算法
+        return image
 
-def get_node_display_name_mappings():
-    """返回节点显示名称映射"""
-    return {
-        "NodeClassName": "节点显示名称 (Node Display Name)"
-    }
+# 标准导出格式
+NODE_CLASS_MAPPINGS = {
+    "Your Custom Node": YourCustomNode,
+}
 
-# 8. 全局映射变量
-NODE_CLASS_MAPPINGS = get_node_class_mappings()
-NODE_DISPLAY_NAME_MAPPINGS = get_node_display_name_mappings()
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "Your Custom Node": "图像处理器",
+}
+
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
 ```
 
-### 3. 模块__init__.py模板
+### 3. 模块__init__.py简化模板
 
 ```python
 """
-模块描述
-Module Description
+模块入口 - 官方推荐的最简结构
 """
 
-from .node_implementation import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+from .your_node_file import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
-__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
 ```
 
-### 4. 主__init__.py导入模板
+### 4. 主__init__.py推荐结构
 
 ```python
-import logging
+"""
+ComfyUI插件主入口
+遵循官方推荐的简洁模式
+"""
 
-# 设置日志
-logger = logging.getLogger("Your-Plugin-Name")
-logger.setLevel(logging.INFO)
+# 方法1：直接导入简单节点
+from .simple_node import YourSimpleNode
 
-# 分别导入各个模块，使用try/except处理错误
+# 方法2：导入复杂模块
+from .complex_module import NODE_CLASS_MAPPINGS as complex_mappings
+from .complex_module import NODE_DISPLAY_NAME_MAPPINGS as complex_display_mappings
+
+# 合并所有节点
+NODE_CLASS_MAPPINGS = {
+    "Your Simple Node": YourSimpleNode,
+    **complex_mappings
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "Your Simple Node": "简单节点",
+    **complex_display_mappings
+}
+
+# 如果有前端JavaScript
+WEB_DIRECTORY = "./web"
+
+# 注册API路由（可选）
 try:
-    from .NodeName1 import NODE_CLASS_MAPPINGS as node1_mappings, NODE_DISPLAY_NAME_MAPPINGS as node1_display_mappings
-except Exception as e:
-    logger.error(f"导入 NodeName1 节点失败: {e}")
-    node1_mappings, node1_display_mappings = {}, {}
+    from server import PromptServer
+    from aiohttp import web
 
-try:
-    from .NodeName2 import NODE_CLASS_MAPPINGS as node2_mappings, NODE_DISPLAY_NAME_MAPPINGS as node2_display_mappings
-except Exception as e:
-    logger.error(f"导入 NodeName2 节点失败: {e}")
-    node2_mappings, node2_display_mappings = {}, {}
+    @PromptServer.instance.routes.post("/your-plugin/api")
+    async def your_api(request):
+        data = await request.json()
+        return web.json_response({"success": True, "data": data})
 
-# 合并所有节点的映射
-NODE_CLASS_MAPPINGS = {**node1_mappings, **node2_mappings}
-NODE_DISPLAY_NAME_MAPPINGS = {**node1_display_mappings, **node2_display_mappings}
-
-# 设置JavaScript文件目录（如果有）
-WEB_DIRECTORY = "./js"
+except ImportError:
+    pass
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']
 ```
 
-## 关键原则
+## pyproject.toml配置（官方规范）
 
-### 1. 简单性优先
+```toml
+[project]
+name = "your-custom-node"
+version = "1.0.0"
+description = "你的自定义节点描述"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+dependencies = [
+    # 你的依赖包
+]
+classifiers = [
+    "Operating System :: OS Independent",
+    "Environment :: GPU :: NVIDIA CUDA",
+]
+
+[project.urls]
+Repository = "https://github.com/username/your-custom-node"
+Documentation = "https://github.com/username/your-custom-node/wiki"
+"Bug Tracker" = "https://github.com/username/your-custom-node/issues"
+
+[tool.comfy]
+PublisherId = "your-github-username"
+DisplayName = "你的节点显示名称"
+Icon = "https://raw.githubusercontent.com/username/repo/main/icon.png"
+Banner = "https://raw.githubusercontent.com/username/repo/main/banner.png"
+requires-comfyui = ">=1.0.0"
+```
+
+## 国际化支持（可选）
+
+### 文件结构
+```
+your_custom_node/
+├── __init__.py
+├── your_node.py
+└── locales/
+    ├── en/
+    │   ├── nodeDefs.json
+    │   └── main.json
+    └── zh/
+        ├── nodeDefs.json
+        └── main.json
+```
+
+### nodeDefs.json示例
+```json
+{
+  "YourCustomNode": {
+    "display_name": "图像处理器",
+    "description": "支持多种模式的图像处理节点",
+    "inputs": {
+      "image": {
+        "name": "输入图像",
+        "tooltip": "需要处理的原始图像"
+      },
+      "strength": {
+        "name": "处理强度",
+        "tooltip": "控制处理效果的强度"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "处理结果",
+        "tooltip": "处理后的图像"
+      }
+    }
+  }
+}
+```
+
+## 关键原则（基于官方文档）
+
+### 1. 简单性优先（官方推荐）
 - ❌ 避免复杂的跨模块依赖
 - ✅ 每个节点文件应该是自包含的
-- ✅ 导入链条越短越可靠
+- ✅ 使用最简单的导入结构
+- ✅ 遵循官方提供的标准模板
 
-### 2. 参考现有模式
-- ✅ 学习插件中其他成功节点的结构
-- ✅ 使用相同的命名约定和文件组织方式
-- ✅ 遵循ComfyUI的节点注册标准
+### 2. 标准化命名
+- ✅ 使用小写字母和下划线的文件命名：`your_node.py`
+- ✅ 使用驼峰命名的类名：`YourCustomNode`
+- ✅ 在映射中使用清晰的显示名称
 
-### 3. 错误处理
-- ✅ 在主__init__.py中使用try/except包装每个模块导入
-- ✅ 提供有意义的错误日志
-- ✅ 确保单个模块失败不影响整个插件
+### 3. 完整的节点接口
+- ✅ 必须实现`INPUT_TYPES`类方法
+- ✅ 必须定义`RETURN_TYPES`和`RETURN_NAMES`
+- ✅ 必须指定`FUNCTION`和`CATEGORY`
+- ✅ 推荐实现`IS_CHANGED`以优化性能
 
-### 4. 单例模式正确实现
-- ❌ 避免跨模块的单例共享
-- ✅ 使用模块级变量实现单例
-- ✅ 让Python的模块系统管理单例生命周期
+### 4. 错误处理和调试
+- ✅ 在主函数中使用try/except
+- ✅ 提供有意义的错误消息
+- ✅ 使用print进行调试（避免复杂日志系统）
 
 ## 常见错误及解决方案
 
-### 错误1：跨模块导入失败
+### 错误1：节点不显示在搜索中
+**检查清单**：
+1. `NODE_CLASS_MAPPINGS`是否正确定义
+2. 主`__init__.py`是否正确导入
+3. 节点类名是否与映射键名一致
+4. 文件命名是否符合规范
+
+### 错误2：导入失败
 ```
 ModuleNotFoundError: No module named 'SomeModule'
 ```
-
 **解决方案**：
-- 将依赖的模块代码直接复制到节点文件中
-- 避免使用复杂的导入路径
+- 将依赖代码直接包含在节点文件中
+- 避免使用复杂的相对导入
+- 确保所有依赖都在requirements.txt中
 
-### 错误2：节点不在搜索结果中
-**解决方案**：
-- 检查NODE_CLASS_MAPPINGS是否正确设置
-- 确认主__init__.py正确导入了模块映射
-- 验证节点类名和映射键名一致
+### 错误3：节点执行无响应
+**检查清单**：
+1. `FUNCTION`指定的方法是否存在
+2. 返回值是否为元组格式
+3. 输入参数类型是否匹配
+4. 是否有未捕获的异常
 
-### 错误3：单例状态不共享
-**解决方案**：
-- 在每个需要共享状态的节点文件中包含相同的管理器类
-- 使用模块级变量创建单例实例
-- 依赖Python的模块机制实现状态共享
+### 错误4：性能问题
+**优化方案**：
+- 实现`IS_CHANGED`方法
+- 避免重复计算
+- 使用缓存机制
+- 优化内存使用
 
 ## 调试技巧
 
-### 1. 检查导入日志
-在ComfyUI启动日志中查看：
-```
-[Your-Plugin-Name] 导入 YourNode 节点失败: 具体错误信息
-```
-
-### 2. 验证节点注册
-在Python控制台中：
+### 1. 检查节点注册
 ```python
+# 在ComfyUI控制台中执行
 import your_plugin
-print(your_plugin.NODE_CLASS_MAPPINGS)
-print(your_plugin.NODE_DISPLAY_NAME_MAPPINGS)
+print("节点映射:", your_plugin.NODE_CLASS_MAPPINGS)
+print("显示名称映射:", your_plugin.NODE_DISPLAY_NAME_MAPPINGS)
 ```
 
-### 3. 检查文件结构
-确保所有必要的文件都存在：
-- 节点实现文件
-- 模块__init__.py文件
-- 主__init__.py文件
+### 2. 验证导入
+```python
+# 测试单个节点导入
+from your_plugin.your_node import YourCustomNode
+print("节点类:", YourCustomNode)
+print("输入类型:", YourCustomNode.INPUT_TYPES())
+```
+
+### 3. 检查前端集成
+- 确认`WEB_DIRECTORY`正确设置
+- 验证JavaScript文件路径
+- 检查API路由注册
+
+## 安装和部署
+
+### 1. 标准安装
+```bash
+# 克隆到custom_nodes目录
+cd ComfyUI/custom_nodes
+git clone https://github.com/username/your-custom-node
+
+# 安装依赖
+pip install -r your-custom-node/requirements.txt
+```
+
+### 2. 使用ComfyUI-Manager
+```bash
+# 通过CLI安装
+comfy node install your-custom-node
+
+# 或通过界面搜索安装
+```
 
 ## 最佳实践总结
 
-1. **每个节点自包含**：避免复杂的依赖关系
-2. **代码重复优于复杂架构**：可靠性比优雅更重要
-3. **遵循现有模式**：参考插件中成功实现
-4. **完善的错误处理**：使用try/except包装导入
-5. **清晰的日志输出**：便于调试问题
-6. **简单的单例实现**：利用Python模块系统
+1. **遵循官方模板**：使用文档中提供的标准结构
+2. **保持简单**：避免过度设计和复杂的依赖关系
+3. **完整实现**：确保所有必需的方法和属性都已定义
+4. **性能优化**：实现`IS_CHANGED`和合理的缓存策略
+5. **错误处理**：提供清晰的错误信息和平滑的降级
+6. **文档完整**：提供清晰的tooltip和描述
+7. **测试验证**：在各种场景下测试节点的稳定性
 
 ---
 
-**核心教训：在ComfyUI插件开发中，"别搞那么复杂"是最重要的原则。简单可靠的实现远比复杂的架构设计更有效。**
+**核心原则：遵循ComfyUI官方文档的规范，使用标准的模板和最佳实践，确保节点的可靠性和兼容性。**
+
+**参考资料：**
+- [ComfyUI官方文档 - 自定义节点开发](https://docs.comfy.org/)
+- [ComfyUI节点注册规范](https://github.com/comfy-org/docs)
