@@ -531,6 +531,7 @@ class OptimizedExecutionEngine {
 // 创建全局实例
 window.optimizedExecutionEngine = new OptimizedExecutionEngine();
 window._groupExecutorActive = false; // Initialize the flag
+window._groupExecutionPending = false; // Initialize the new flag
 
 console.log('[OptimizedExecutionEngine] 🚀 优化执行引擎已启动');
 console.log('[OptimizedExecutionEngine] 📋 全局实例: window.optimizedExecutionEngine');
