@@ -100,17 +100,27 @@ class GroupExecutorTrigger:
                                 cache_control_signal: str,
                                 signal=None,
                                 unique_id=None,
-                                client_id=None) -> dict:
+                                client_id=None):
         """
-        触发优化组执行 - 发送WebSocket消息到JavaScript引擎
+        触发优化组执行
+
+        Args:
+            execution_plan: JSON字符串格式的执行计划
+            cache_control_signal: JSON字符串格式的缓存控制信号
+            signal: 来自upstream的信号
+            unique_id: 节点唯一ID
+            client_id: WebSocket客户端ID
 
         Returns:
-            dict: 包含execution_status和signal_output的字典
+            tuple: (执行状态JSON字符串, 信号输出)
         """
-
-        start_time = time.time()
-
         try:
+            print(f"\n{'='*80}")
+            print(f"[GroupExecutorTrigger] 🎯 trigger_optimized_execution 被调用")
+            print(f"{'='*80}")
+
+            start_time = time.time()
+
             # 📥 输入日志：显示从GroupExecutorManager接收到的内容
             logger.info(f"\n{'='*80}")
             logger.info(f"[GroupExecutorTrigger] 📥 接收到来自GroupExecutorManager的数据")

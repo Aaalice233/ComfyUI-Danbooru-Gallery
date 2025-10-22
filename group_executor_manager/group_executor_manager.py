@@ -96,6 +96,9 @@ class GroupExecutorManager:
             tuple: (执行计划, 缓存控制信号, 信号输出)
         """
         try:
+            print(f"\n{'='*80}")
+            print(f"[GroupExecutorManager] 🎯 create_execution_plan 被调用")
+            print(f"{'='*80}")
             print(f"\n[GroupExecutorManager] 🎯 开始生成执行计划")
             print(f"[GroupExecutorManager] 📍 节点ID: {unique_id}")
             
