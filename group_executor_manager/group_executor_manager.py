@@ -42,10 +42,10 @@ class GroupExecutorManager:
         }
 
     RETURN_TYPES = ("STRING", "STRING")
-RETURN_NAMES = ("execution_plan", "cache_control_signal")
-FUNCTION = "create_execution_plan"
-CATEGORY = "danbooru"
-DESCRIPTION = "组执行管理器，用于管理和控制节点组的执行顺序和缓存策略"
+    RETURN_NAMES = ("execution_plan", "cache_control_signal")
+    FUNCTION = "create_execution_plan"
+    CATEGORY = "danbooru"
+    DESCRIPTION = "组执行管理器，用于管理和控制节点组的执行顺序和缓存策略"
 
     def create_execution_plan(self, group_config, execution_mode, enable_cache=True, debug_mode=False, prompt=None, extra_pnginfo=None, unique_id=None):
         """
