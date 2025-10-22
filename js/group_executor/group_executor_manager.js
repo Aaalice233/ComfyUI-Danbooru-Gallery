@@ -312,8 +312,8 @@ app.registerExtension({
 
                 .gem-group-name-select {
                     flex: 1;
-                    background: rgba(0, 0, 0, 0.2);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    background: rgba(116, 55, 149, 0.3);
+                    border: 1px solid rgba(116, 55, 149, 0.5);
                     border-radius: 6px;
                     padding: 6px 10px;
                     color: #E0E0E0;
@@ -322,10 +322,15 @@ app.registerExtension({
                     cursor: pointer;
                 }
 
+                .gem-group-name-select option {
+                    background: rgba(42, 42, 62, 0.95);
+                    color: #E0E0E0;
+                }
+
                 .gem-group-name-select:focus {
                     outline: none;
-                    border-color: #743795;
-                    background: rgba(0, 0, 0, 0.3);
+                    border-color: #8b4ba8;
+                    background: rgba(116, 55, 149, 0.4);
                 }
 
                 .gem-delay-container {

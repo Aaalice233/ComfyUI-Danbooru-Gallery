@@ -42,10 +42,10 @@ class ImageCacheGet:
                 }),
             },
             "optional": {
-                "show_preview": ("BOOLEAN", {
+                "enable_preview": ("BOOLEAN", {
                     "default": True,
-                    "label_on": "📷 显示预览",
-                    "label_off": "🚫 隐藏预览",
+                    "label_on": "true",
+                    "label_off": "false",
                     "tooltip": "切换图像预览显示/隐藏"
                 }),
             },
@@ -62,7 +62,7 @@ class ImageCacheGet:
     OUTPUT_NODE = True
 
     @classmethod
-    def IS_CHANGED(cls, default_image=None, show_preview: bool = True, **kwargs) -> str:
+    def IS_CHANGED(cls, default_image=None, enable_preview: bool = True, **kwargs) -> str:
         """
         基于缓存状态生成变化检测哈希
         确保缓存更新时节点重新执行
@@ -73,38 +73,38 @@ class ImageCacheGet:
             cache_timestamp = cache_manager.last_save_timestamp if cache_manager else 0
             cache_count = len(cache_manager.cache_data.get("images", [])) if cache_manager else 0
             current_group = cache_manager.current_group_name if cache_manager else None
-            hash_input = f"{show_preview}_{cache_timestamp}_{cache_count}_{current_group}"
+            hash_input = f"{enable_preview}_{cache_timestamp}_{cache_count}_{current_group}"
         except Exception:
             # 回退到基本检测
-            hash_input = f"{show_preview}_{hash(str(default_image))}"
-        
+            hash_input = f"{enable_preview}_{hash(str(default_image))}"
+
         return hashlib.md5(hash_input.encode()).hexdigest()
 
     def get_cached_image(self,
                         default_image: List[torch.Tensor],
-                        show_preview: List[bool] = [True],
+                        enable_preview: List[bool] = [True],
                         unique_id: str = "unknown") -> Dict[str, Any]:
         """
         获取缓存的图像
-        
+
         Args:
             default_image: 默认图像列表
-            show_preview: 是否显示预览列表
+            enable_preview: 是否显示预览列表
             unique_id: 节点ID
-            
+
         Returns:
             包含图像和预览的字典
         """
         start_time = time.time()
-        
+
         try:
             # 参数提取
-            show_preview = show_preview[0] if show_preview else True
-            
+            enable_preview = enable_preview[0] if enable_preview else True
+
             logger.info(f"\n{'='*60}")
             logger.info(f"[ImageCacheGet] ⏰ 执行时间: {time.strftime('%H:%M:%S', time.localtime())}")
             logger.info(f"[ImageCacheGet] 🎯 节点ID: {unique_id}")
-            logger.info(f"[ImageCacheGet] 📷 显示预览: {show_preview}")
+            logger.info(f"[ImageCacheGet] 📷 显示预览: {enable_preview}")
             logger.info(f"{'='*60}\n")
             
             # 获取缓存的图像
@@ -114,16 +114,18 @@ class ImageCacheGet:
             else:
                 try:
                     # 从缓存管理器获取最新的缓存图像
-                    cached_images = cache_manager.get_all_cached_images()
+                    cached_images = cache_manager.get_cached_images(get_latest=True)
                     if cached_images and len(cached_images) > 0:
                         # 获取最后一个缓存的图像
                         cached_image = cached_images[-1]
-                        logger.info(f"[ImageCacheGet] ✅ 成功获取缓存图像")
+                        logger.info(f"[ImageCacheGet] ✅ 成功获取缓存图像 (共{len(cached_images)}张)")
                     else:
                         logger.info(f"[ImageCacheGet] 📌 缓存为空，使用默认图像")
                         cached_image = default_image[0] if default_image else torch.zeros((1, 64, 64, 3))
                 except Exception as e:
                     logger.warning(f"[ImageCacheGet] ⚠️ 缓存获取失败: {str(e)}")
+                    import traceback
+                    logger.warning(traceback.format_exc())
                     cached_image = default_image[0] if default_image else torch.zeros((1, 64, 64, 3))
             
             # 确保图像是正确的格式
@@ -136,11 +138,23 @@ class ImageCacheGet:
             logger.info(f"[ImageCacheGet] ⏱️ 执行耗时: {execution_time:.3f}秒\n")
             
             # 返回标准格式：(图像张量,) 和 ui 数据
-            # 如果启用预览，返回预览数据；否则返回空
+            # 如果启用预览，从缓存通道获取图像文件信息
             ui_data = {}
-            if show_preview:
-                ui_data = {"images": []}
-            
+            if enable_preview and cache_manager is not None:
+                try:
+                    # 获取当前通道的缓存图像文件信息
+                    cache_channel = cache_manager.get_cache_channel()
+                    if cache_channel and "images" in cache_channel and cache_channel["images"]:
+                        # 返回缓存的图像文件信息用于预览
+                        ui_data = {"images": cache_channel["images"]}
+                        logger.info(f"[ImageCacheGet] ✅ 预览数据已准备: {len(cache_channel['images'])}张图像")
+                    else:
+                        logger.info(f"[ImageCacheGet] 📌 缓存通道无图像，不显示预览")
+                        ui_data = {"images": []}
+                except Exception as e:
+                    logger.warning(f"[ImageCacheGet] ⚠️ 获取预览数据失败: {str(e)}")
+                    ui_data = {"images": []}
+
             return {
                 "result": (result_image,),
                 "ui": ui_data
@@ -165,5 +179,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ImageCacheGet": "📦 获取缓存图像 (Image Cache Get)",
+    "ImageCacheGet": "获取缓存图像 (Image Cache Get)",
 }
