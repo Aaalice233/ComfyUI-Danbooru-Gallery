@@ -11,7 +11,6 @@ from .image_cache_get import NODE_CLASS_MAPPINGS as cache_get_mappings, NODE_DIS
 # 导入优化执行系统
 from .group_executor_manager import Manager as GroupExecutorManager
 from .group_executor_trigger import GroupExecutorTrigger
-from .image_cache_manager import ImageCacheManager
 
 # 优化执行系统映射
 opt_mappings = {
