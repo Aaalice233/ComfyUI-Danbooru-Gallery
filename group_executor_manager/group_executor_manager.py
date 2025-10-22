@@ -25,6 +25,13 @@ _group_executor_config = {
     "last_workflow_groups": []  # 追踪工作流中的groups
 }
 
+# ✅ 全局execution状态追踪 - 防止在同一执行周期内多次生成execution_id
+_execution_context = {
+    "current_execution_id": None,
+    "last_signal": None,  # 追踪上次的signal值
+    "signal_change_count": 0  # 只在signal真正改变时增加
+}
+
 def get_group_config():
     """获取当前保存的组配置"""
     return _group_executor_config.get("groups", [])
@@ -123,8 +130,17 @@ class GroupExecutorManager:
             enable_cache = True
             debug_mode = False
 
-            # ✅ 修复：生成唯一的execution_id - 每次执行时都生成新的ID
-            execution_id = f"exec_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+            # ✅ 防止无限队列：只在signal改变时生成新execution_id
+            global _execution_context
+            if _execution_context["last_signal"] != signal:
+                _execution_context["last_signal"] = signal
+                _execution_context["signal_change_count"] += 1
+                execution_id = f"exec_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                _execution_context["current_execution_id"] = execution_id
+            else:
+                execution_id = _execution_context["current_execution_id"] or f"exec_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                if not _execution_context["current_execution_id"]:
+                    _execution_context["current_execution_id"] = execution_id
 
             # 创建执行计划 - 包含验证器需要的所有字段
             execution_plan = {
