@@ -136,14 +136,18 @@ class GroupExecutorManager:
             # ✅ 防止无限队列：只在signal改变时生成新execution_id
             global _execution_context
             if _execution_context["last_signal"] != signal:
+                print(f"[GroupExecutorManager] 🔄 信号已改变，生成新的execution_id")
                 _execution_context["last_signal"] = signal
                 _execution_context["signal_change_count"] += 1
                 execution_id = f"exec_{int(time.time())}_{uuid.uuid4().hex[:8]}"
                 _execution_context["current_execution_id"] = execution_id
+                print(f"[GroupExecutorManager] ✅ 生成新的execution_id: {execution_id}")
             else:
+                print(f"[GroupExecutorManager] ✅ 信号未改变，重用现有的execution_id")
                 execution_id = _execution_context["current_execution_id"] or f"exec_{int(time.time())}_{uuid.uuid4().hex[:8]}"
                 if not _execution_context["current_execution_id"]:
                     _execution_context["current_execution_id"] = execution_id
+                print(f"[GroupExecutorManager] ✅ 重用现有的execution_id: {execution_id}")
 
             # 创建执行计划 - 包含验证器需要的所有字段
             execution_plan = {
