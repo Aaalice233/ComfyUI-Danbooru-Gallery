@@ -66,15 +66,10 @@ class GroupExecutorTrigger:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "execution_plan": ("STRING", {
+                "execution_data": ("STRING", {
                     "forceInput": True,
-                    "tooltip": "从GroupExecutorManager接收的执行计划"
+                    "tooltip": "从GroupExecutorManager接收的执行数据（包含执行计划和缓存控制信号）"
                 }),
-                "cache_control_signal": ("STRING", {
-                    "forceInput": True,
-                    "tooltip": "从GroupExecutorManager接收的缓存控制信号"
-                }),
-                "signal": (any_typ, {}),  # ✅ 按官方文档格式：("*", {})
             },
             "optional": {},
             "hidden": {
@@ -96,23 +91,19 @@ class GroupExecutorTrigger:
         return True
 
     def trigger_optimized_execution(self,
-                                execution_plan: str,
-                                cache_control_signal: str,
-                                signal=None,
+                                execution_data: str,
                                 unique_id=None,
                                 client_id=None):
         """
         触发优化组执行
 
         Args:
-            execution_plan: JSON字符串格式的执行计划
-            cache_control_signal: JSON字符串格式的缓存控制信号
-            signal: 来自upstream的信号
+            execution_data: JSON字符串格式的执行数据（包含执行计划和缓存控制信号）
             unique_id: 节点唯一ID
             client_id: WebSocket客户端ID
 
         Returns:
-            tuple: (执行状态JSON字符串, 信号输出)
+            tuple: 空元组（防止ComfyUI触发依赖执行）
         """
         try:
             print(f"\n{'='*80}")
@@ -125,16 +116,13 @@ class GroupExecutorTrigger:
             logger.info(f"\n{'='*80}")
             logger.info(f"[GroupExecutorTrigger] 📥 接收到来自GroupExecutorManager的数据")
             logger.info(f"[GroupExecutorTrigger] 📍 输入内容:")
-            logger.info(f"   ├─ execution_plan (STRING):")
-            logger.info(f"   │  {execution_plan[:200]}{'...' if len(execution_plan) > 200 else ''}")
-            logger.info(f"   ├─ cache_control_signal (STRING):")
-            logger.info(f"   │  {cache_control_signal[:200]}{'...' if len(cache_control_signal) > 200 else ''}")
-            logger.info(f"   └─ signal: {type(signal).__name__} = {signal}")
+            logger.info(f"   └─ execution_data (STRING):")
+            logger.info(f"      {execution_data[:200]}{'...' if len(execution_data) > 200 else ''}")
             logger.info(f"{'='*80}\n")
 
             # 处理可选参数
             unique_id = unique_id or "unknown"
-            
+
             # ✅ 修复：直接从PromptServer.instance获取真实client_id
             # 不依赖hidden参数（CLIENT_ID可能不被支持）
             # 因为execute_async已经在execution.py中设置了client_id
@@ -143,9 +131,10 @@ class GroupExecutorTrigger:
                 # 如果获取失败，尝试使用传入的参数
                 real_client_id = client_id or "unknown"
 
-            # 1. 解析执行计划和控制信号
-            execution_plan_dict = json.loads(execution_plan)
-            cache_control_signal_dict = json.loads(cache_control_signal)
+            # 1. 解析execution_data
+            execution_data_dict = json.loads(execution_data)
+            execution_plan_dict = execution_data_dict.get("execution_plan", {})
+            cache_control_signal_dict = execution_data_dict.get("cache_control_signal", {})
 
             execution_id = execution_plan_dict.get("execution_id", "unknown")
             
@@ -163,12 +152,7 @@ class GroupExecutorTrigger:
                     logger.warning(f"[GroupExecutorTrigger] ⚠️ 检测到重复的execution_id: {execution_id} (距离上次触发{elapsed:.1f}秒)")
                     logger.warning(f"[GroupExecutorTrigger] ⚠️ 已存储状态: {last_status}")
                     logger.warning(f"[GroupExecutorTrigger] ⚠️ 跳过重复执行，返回之前的状态")
-                    return (json.dumps({
-                        "status": "skipped_duplicate",
-                        "execution_id": execution_id,
-                        "message": "跳过重复的execution请求",
-                        "timestamp": time.time()
-                    }, ensure_ascii=False), signal)
+                    return ()
             
             # ✅ 记录execution开始时间
             if _status_lock:
@@ -205,13 +189,13 @@ class GroupExecutorTrigger:
             if not validation_result["valid"]:
                 error_msg = f"执行计划验证失败: {validation_result['errors']}"
                 logger.error(f"[GroupExecutorTrigger] ❌ {error_msg}")
-                return self.create_error_status(execution_id, error_msg, start_time, signal)
+                return self.create_error_status(execution_id, error_msg, start_time)
 
             # 3. 检查执行权限和强制执行标志
             if not force_execution and not self.check_execution_permission(cache_control_signal_dict, execution_id):
                 warning_msg = "执行权限不足，需要强制执行或等待缓存控制信号"
                 logger.warning(f"[GroupExecutorTrigger] ⚠️ {warning_msg}")
-                return self.create_warning_status(execution_id, warning_msg, start_time, signal)
+                return self.create_warning_status(execution_id, warning_msg, start_time)
 
             # 4. 发送WebSocket消息给JavaScript引擎
             message_data = {
@@ -241,35 +225,8 @@ class GroupExecutorTrigger:
             PromptServer.instance.send_sync("danbooru_optimized_execution", message_data, PromptServer.instance.client_id)
 
             logger.info(f"[GroupExecutorTrigger] ✅ WebSocket消息发送成功")
-            logger.info(f"[GroupExecutorTrigger] ⏳ JavaScript引擎将异步执行组列表\n")
-
-            # 6. 创建UI数据并存储到节点
-            ui_data = {
-                "current_group": execution_plan_dict.get("groups", [{}])[0].get("name", "未开始"),
-                "group_list": [group.get("name", f"组 {i+1}") for i, group in enumerate(execution_plan_dict.get("groups", []))],
-                "current_nodes": execution_plan_dict.get("groups", [{}])[0].get("nodes", []),
-                "execution_mode": execution_plan_dict.get("mode", "sequential"),
-                "status": "executing",
-                "execution_id": execution_id
-            }
-
-            # 将UI数据存储到节点属性，供UI组件使用
-            self._ui_data = ui_data
-
-            # 7. 创建执行状态日志
-            execution_status = {
-                "status": "triggered",
-                "execution_id": execution_id,
-                "message": "执行已触发，等待JavaScript引擎处理",
-                "timestamp": start_time,
-                "client_id": real_client_id,
-                "node_id": unique_id,
-                "execution_priority": execution_priority,
-                "execution_timeout": execution_timeout
-            }
-
-            logger.info(f"[GroupExecutorTrigger] 📊 UI数据已准备就绪，当前组: {ui_data['current_group']}")
-            logger.info(f"[GroupExecutorTrigger] ✅ 执行触发完成，返回空元组（防止ComfyUI触发依赖执行）")
+            logger.info(f"[GroupExecutorTrigger] ⏳ JavaScript引擎将异步执行组列表")
+            logger.info(f"[GroupExecutorTrigger] ✅ 执行触发完成，返回空元组（防止ComfyUI触发依赖执行）\n")
 
             # ✅ 关键修复：返回空元组，参考LG_GroupExecutor模式
             # 这样ComfyUI不会因为返回值触发依赖链执行，避免提交所有24个节点
@@ -278,14 +235,14 @@ class GroupExecutorTrigger:
         except json.JSONDecodeError as e:
             error_msg = f"JSON解析失败: {str(e)}"
             logger.error(f"[GroupExecutorTrigger] ❌ {error_msg}")
-            return self.create_error_status("unknown", error_msg, start_time, signal)
+            return self.create_error_status("unknown", error_msg, time.time())
 
         except Exception as e:
             error_msg = f"触发执行失败: {str(e)}"
             logger.error(f"[GroupExecutorTrigger] ❌ {error_msg}")
             import traceback
             logger.error(f"[GroupExecutorTrigger] 错误堆栈:\n{traceback.format_exc()}")
-            return self.create_error_status("unknown", error_msg, start_time, signal)
+            return self.create_error_status("unknown", error_msg, time.time())
 
     def validate_execution_plan(self, execution_plan: Dict, cache_control_signal: Dict, client_id: str) -> Dict[str, Any]:
         """
@@ -413,7 +370,7 @@ class GroupExecutorTrigger:
         logger.info(f"[GroupExecutorTrigger] ✅ 所有权限检查通过！")
         return True
 
-    def create_error_status(self, execution_id: str, error_message: str, timestamp: float, signal) -> tuple:
+    def create_error_status(self, execution_id: str, error_message: str, timestamp: float) -> tuple:
         """
         创建错误状态返回值
 
@@ -421,7 +378,6 @@ class GroupExecutorTrigger:
             execution_id: 执行ID
             error_message: 错误消息
             timestamp: 时间戳
-            signal: 信号（保留参数以兼容调用）
 
         Returns:
             空元组（参考LG_GroupExecutor模式）
@@ -438,7 +394,7 @@ class GroupExecutorTrigger:
         # ✅ 关键修复：返回空元组，防止ComfyUI触发依赖执行
         return ()
 
-    def create_warning_status(self, execution_id: str, warning_message: str, timestamp: float, signal):
+    def create_warning_status(self, execution_id: str, warning_message: str, timestamp: float):
         """
         创建警告状态返回值
 
@@ -446,7 +402,6 @@ class GroupExecutorTrigger:
             execution_id: 执行ID
             warning_message: 警告消息
             timestamp: 时间戳
-            signal: 信号（保留参数以兼容调用）
 
         Returns:
             空元组（参考LG_GroupExecutor模式）

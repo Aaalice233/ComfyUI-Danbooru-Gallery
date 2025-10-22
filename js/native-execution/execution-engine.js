@@ -359,16 +359,16 @@ class OptimizedExecutionEngine {
         try {
             // ✅ 关键修复：采用LG_GroupExecutor的方法
             // 设置_queueNodeIds，让Hook中的api.queuePrompt过滤prompt
-            
+
             console.log(`[OptimizedExecutionEngine] 🔗 设置待提交节点ID: [${nodeIds.join(', ')}]`);
             window._queueNodeIds = nodeIds;
-            
+
             // 直接调用api.queuePrompt，由Hook中的过滤逻辑处理
             const fullPrompt = await app.graphToPrompt();
-            
+
             console.log(`[OptimizedExecutionEngine] 📊 完整prompt节点数: ${Object.keys(fullPrompt.output || {}).length}`);
             console.log(`[OptimizedExecutionEngine] 📋 将由Hook过滤后提交的节点ID: [${nodeIds.join(', ')}]`);
-            
+
             // 调用api.queuePrompt，Hook会自动过滤
             await api.queuePrompt(0, fullPrompt);
 

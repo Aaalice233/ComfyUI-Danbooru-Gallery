@@ -22,6 +22,80 @@ if (!window.optimizedExecutionSystemLoaded) {
         console.log('[OptimizedExecutionSystem] Version: 2.0.0');
         console.log('[OptimizedExecutionSystem] Based on LG_GroupExecutor pattern');
 
+        // CRITICAL FIX: Install Hook immediately (no setTimeout delay)
+        // This ensures the hook is ready before any queue submissions
+        try {
+            if (api && !api._originalQueuePrompt) {
+                console.log('[OptimizedExecutionSystem] Installing api.queuePrompt hook...');
+
+                api._originalQueuePrompt = api.queuePrompt;
+                window._queueNodeIds = null;
+
+                api.queuePrompt = async function (index, prompt) {
+                    console.log('[OptimizedExecutionSystem] api.queuePrompt called');
+
+                    // CRITICAL FIX: When workflow contains GroupExecutorTrigger and this is a native queue (not group execution)
+                    // Only submit Manager and Trigger nodes, block all other nodes
+                    if (!window._queueNodeIds && prompt.output) {
+                        // Find GroupExecutorTrigger node
+                        const triggerNodeEntry = Object.entries(prompt.output).find(([id, node]) => {
+                            return node.class_type === 'GroupExecutorTrigger';
+                        });
+
+                        if (triggerNodeEntry) {
+                            const [triggerNodeId, triggerNode] = triggerNodeEntry;
+                            console.log('[OptimizedExecutionSystem] 🎯 Detected GroupExecutorTrigger in workflow');
+                            console.log('[OptimizedExecutionSystem] 🎯 Filtering to Manager + Trigger only');
+
+                            const oldOutput = prompt.output;
+                            let newOutput = {};
+
+                            // Recursively add Trigger node and its dependencies (which includes Manager)
+                            recursiveAddNodes(String(triggerNodeId), oldOutput, newOutput);
+
+                            prompt.output = newOutput;
+                            console.log('[OptimizedExecutionSystem] Original nodes:', Object.keys(oldOutput).length);
+                            console.log('[OptimizedExecutionSystem] Filtered to Manager + Trigger:', Object.keys(newOutput).length);
+                            console.log('[OptimizedExecutionSystem] Node IDs:', Object.keys(newOutput).join(', '));
+                            console.log('[OptimizedExecutionSystem] ✅ Group execution will be controlled by frontend engine');
+                        }
+                    }
+
+                    // Filter prompt if _queueNodeIds is set (group execution in progress)
+                    if (window._queueNodeIds && window._queueNodeIds.length && prompt.output) {
+                        console.log('[OptimizedExecutionSystem] Filtering to nodes:', window._queueNodeIds);
+
+                        const oldOutput = prompt.output;
+                        let newOutput = {};
+
+                        // Recursively add specified nodes and dependencies
+                        for (const queueNodeId of window._queueNodeIds) {
+                            recursiveAddNodes(String(queueNodeId), oldOutput, newOutput);
+                        }
+
+                        prompt.output = newOutput;
+                        console.log('[OptimizedExecutionSystem] Original nodes:', Object.keys(oldOutput).length);
+                        console.log('[OptimizedExecutionSystem] Filtered nodes:', Object.keys(newOutput).length);
+                        console.log('[OptimizedExecutionSystem] Final node IDs:', Object.keys(newOutput).join(', '));
+                    }
+
+                    // Call original method
+                    const response = api._originalQueuePrompt.apply(this, [index, prompt]);
+
+                    // Reset queue node IDs
+                    window._queueNodeIds = null;
+                    console.log('[OptimizedExecutionSystem] api.queuePrompt completed, reset _queueNodeIds');
+
+                    return response;
+                };
+                console.log('[OptimizedExecutionSystem] api.queuePrompt hook installed successfully');
+            }
+        } catch (error) {
+            console.warn('[OptimizedExecutionSystem] Hook installation failed:', error);
+            console.error(error.stack);
+        }
+
+        // Load UI enhancements (can be delayed)
         try {
             import('./ui-enhancement.js');
             console.log('[OptimizedExecutionSystem] UI Enhancement loaded');
@@ -29,71 +103,23 @@ if (!window.optimizedExecutionSystemLoaded) {
             console.warn('[OptimizedExecutionSystem] UI Enhancement load failed:', error);
         }
 
-        setTimeout(() => {
-            console.log('[OptimizedExecutionSystem] Initialization complete');
-            console.log('[OptimizedExecutionSystem] Components loaded:');
-            console.log('[OptimizedExecutionSystem]   - OptimizedExecutionEngine');
-            console.log('[OptimizedExecutionSystem]   - CacheControlEvents');
-            console.log('[OptimizedExecutionSystem]   - UIEnhancementManager');
+        // Mark as loaded and dispatch event
+        window.optimizedExecutionSystemLoaded = true;
 
-            window.optimizedExecutionSystemLoaded = true;
+        console.log('[OptimizedExecutionSystem] Initialization complete');
+        console.log('[OptimizedExecutionSystem] Components loaded:');
+        console.log('[OptimizedExecutionSystem]   - OptimizedExecutionEngine');
+        console.log('[OptimizedExecutionSystem]   - CacheControlEvents');
+        console.log('[OptimizedExecutionSystem]   - UIEnhancementManager');
 
-            const initEvent = new CustomEvent('optimizedExecutionSystemReady', {
-                detail: {
-                    version: '2.0.0',
-                    timestamp: Date.now(),
-                    components: ['OptimizedExecutionEngine', 'CacheControlEvents', 'UIEnhancementManager']
-                }
-            });
-            document.dispatchEvent(initEvent);
-
-            // CRITICAL FIX: Hook api.queuePrompt() to filter prompt nodes
-            // This follows the LG_GroupExecutor pattern
-            try {
-                if (api && !api._originalQueuePrompt) {
-                    console.log('[OptimizedExecutionSystem] Installing api.queuePrompt hook...');
-                    
-                    api._originalQueuePrompt = api.queuePrompt;
-                    window._queueNodeIds = null;
-                    
-                    api.queuePrompt = async function(index, prompt) {
-                        console.log('[OptimizedExecutionSystem] api.queuePrompt called');
-                        
-                        // Filter prompt if _queueNodeIds is set
-                        if (window._queueNodeIds && window._queueNodeIds.length && prompt.output) {
-                            console.log('[OptimizedExecutionSystem] Filtering to nodes:', window._queueNodeIds);
-                            
-                            const oldOutput = prompt.output;
-                            let newOutput = {};
-                            
-                            // Recursively add specified nodes and dependencies
-                            for (const queueNodeId of window._queueNodeIds) {
-                                recursiveAddNodes(String(queueNodeId), oldOutput, newOutput);
-                            }
-                            
-                            prompt.output = newOutput;
-                            console.log('[OptimizedExecutionSystem] Original nodes:', Object.keys(oldOutput).length);
-                            console.log('[OptimizedExecutionSystem] Filtered nodes:', Object.keys(newOutput).length);
-                            console.log('[OptimizedExecutionSystem] Final node IDs:', Object.keys(newOutput).join(', '));
-                        }
-                        
-                        // Call original method
-                        const response = api._originalQueuePrompt.apply(this, [index, prompt]);
-                        
-                        // Reset queue node IDs
-                        window._queueNodeIds = null;
-                        console.log('[OptimizedExecutionSystem] api.queuePrompt completed, reset _queueNodeIds');
-                        
-                        return response;
-                    };
-                    console.log('[OptimizedExecutionSystem] api.queuePrompt hook installed successfully');
-                }
-            } catch (error) {
-                console.warn('[OptimizedExecutionSystem] Hook installation failed:', error);
-                console.error(error.stack);
+        const initEvent = new CustomEvent('optimizedExecutionSystemReady', {
+            detail: {
+                version: '2.0.0',
+                timestamp: Date.now(),
+                components: ['OptimizedExecutionEngine', 'CacheControlEvents', 'UIEnhancementManager']
             }
-
-        }, 1000);
+        });
+        document.dispatchEvent(initEvent);
     }
 }
 
@@ -102,14 +128,14 @@ function recursiveAddNodes(nodeId, oldOutput, newOutput) {
     if (newOutput[nodeId] != null) {
         return;
     }
-    
+
     const currentNode = oldOutput[nodeId];
     if (!currentNode) {
         return;
     }
-    
+
     newOutput[nodeId] = currentNode;
-    
+
     // Recursively add dependent nodes
     Object.values(currentNode.inputs || {}).forEach(inputValue => {
         if (Array.isArray(inputValue)) {

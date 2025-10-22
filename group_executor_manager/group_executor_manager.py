@@ -25,13 +25,6 @@ _group_executor_config = {
     "last_workflow_groups": []  # 追踪工作流中的groups
 }
 
-# ✅ 全局execution状态追踪 - 防止在同一执行周期内多次生成execution_id
-_execution_context = {
-    "current_execution_id": None,
-    "last_signal": None,  # 追踪上次的signal值
-    "signal_change_count": 0  # 只在signal真正改变时增加
-}
-
 def get_group_config():
     """获取当前保存的组配置"""
     return _group_executor_config.get("groups", [])
@@ -53,21 +46,19 @@ class GroupExecutorManager:
     def INPUT_TYPES(cls):
         """定义输入参数类型 - 纯自定义UI版本"""
         return {
-            "required": {
-                "signal": (any_typ, {}),  # ✅ 使用AnyType类而不是字符串"*"
-            },
+            "required": {},
             "optional": {},
             "hidden": {
                 "unique_id": "UNIQUE_ID"
             }
         }
 
-    RETURN_TYPES = ("STRING", "STRING", any_typ)
-    RETURN_NAMES = ("execution_plan", "cache_control_signal", "signal_output")
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("execution_data",)
     FUNCTION = "create_execution_plan"
     CATEGORY = "danbooru"
     DESCRIPTION = "组执行管理器，用于管理和控制节点组的执行顺序和缓存策略"
-    OUTPUT_IS_LIST = (False, False, False)  # 三个输出都不是列表
+    OUTPUT_IS_LIST = (False,)
     OUTPUT_NODE = True
 
     @classmethod
@@ -85,16 +76,15 @@ class GroupExecutorManager:
         """
         return str(time.time())
 
-    def create_execution_plan(self, signal=None, unique_id=None):
+    def create_execution_plan(self, unique_id=None):
         """
         创建执行计划
 
         Args:
-            signal: 来自upstream节点的任意类型信号（用于建立执行依赖）
             unique_id: 节点的唯一ID
 
         Returns:
-            tuple: (执行计划, 缓存控制信号, 信号输出)
+            tuple: (execution_data,) - 包含执行计划和缓存控制信号的JSON字符串
         """
         try:
             print(f"\n{'='*80}")
@@ -134,21 +124,9 @@ class GroupExecutorManager:
             enable_cache = True
             debug_mode = False
 
-            # ✅ 防止无限队列：只在signal改变时生成新execution_id
-            global _execution_context
-            if _execution_context["last_signal"] != signal:
-                print(f"[GroupExecutorManager] 🔄 信号已改变，生成新的execution_id")
-                _execution_context["last_signal"] = signal
-                _execution_context["signal_change_count"] += 1
-                execution_id = f"exec_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-                _execution_context["current_execution_id"] = execution_id
-                print(f"[GroupExecutorManager] ✅ 生成新的execution_id: {execution_id}")
-            else:
-                print(f"[GroupExecutorManager] ✅ 信号未改变，重用现有的execution_id")
-                execution_id = _execution_context["current_execution_id"] or f"exec_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-                if not _execution_context["current_execution_id"]:
-                    _execution_context["current_execution_id"] = execution_id
-                print(f"[GroupExecutorManager] ✅ 重用现有的execution_id: {execution_id}")
+            # ✅ 每次执行都生成新的execution_id
+            execution_id = f"exec_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+            print(f"[GroupExecutorManager] ✅ 生成新的execution_id: {execution_id}")
 
             # 创建执行计划 - 包含验证器需要的所有字段
             execution_plan = {
@@ -187,22 +165,20 @@ class GroupExecutorManager:
 
             print(f"\n[GroupExecutorManager] ✅ 执行计划生成完成\n")
 
-            # ✅ 返回三个值：execution_plan, cache_signal, signal_output(用于建立依赖链)
-            execution_plan_json = json.dumps(execution_plan, ensure_ascii=False)
-            cache_signal_json = json.dumps(cache_signal, ensure_ascii=False)
-            
+            # ✅ 合并为单个execution_data输出
+            execution_data = {
+                "execution_plan": execution_plan,
+                "cache_control_signal": cache_signal
+            }
+            execution_data_json = json.dumps(execution_data, ensure_ascii=False)
+
             # 📤 输出日志：显示将要发送给GroupExecutorTrigger的内容
             print(f"[GroupExecutorManager] 📤 输出内容:")
-            print(f"   ├─ execution_plan (STRING):")
-            print(f"   │  {execution_plan_json}")
-            print(f"   ├─ cache_control_signal (STRING):")
-            print(f"   │  {cache_signal_json}")
-            print(f"   └─ signal_output: {type(signal).__name__}")
+            print(f"   └─ execution_data (STRING):")
+            print(f"      {execution_data_json[:200]}...")
             print(f"")
-            
-            return (execution_plan_json,
-                   cache_signal_json,
-                   signal)  # ✅ 修复：直接返回接收到的signal，让它沿着链传递
+
+            return (execution_data_json,)
 
         except Exception as e:
             error_msg = f"GroupExecutorManager 执行错误: {str(e)}"
@@ -211,12 +187,12 @@ class GroupExecutorManager:
             traceback.print_exc()
 
             # 返回错误信息
-            error_plan = {"error": error_msg, "execution_id": "error", "groups": []}
-            error_signal = {"clear_cache": True, "error": True}
+            error_data = {
+                "execution_plan": {"error": error_msg, "execution_id": "error", "groups": []},
+                "cache_control_signal": {"clear_cache": True, "error": True}
+            }
 
-            return (json.dumps(error_plan, ensure_ascii=False),
-                   json.dumps(error_signal, ensure_ascii=False),
-                   "error")
+            return (json.dumps(error_data, ensure_ascii=False),)
 
 # 节点映射 - 用于ComfyUI注册
 NODE_CLASS_MAPPINGS = {
