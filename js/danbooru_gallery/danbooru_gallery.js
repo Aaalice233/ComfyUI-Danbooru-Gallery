@@ -31,6 +31,23 @@ app.registerExtension({
                 }
             };
 
+            // 比较两个标签字符串是否相同（忽略标签顺序）
+            const compareTagStrings = (str1, str2) => {
+                // 处理null、undefined和空字符串的情况
+                if (!str1 && !str2) return true;
+                if (!str1 || !str2) return false;
+
+                // 分割、排序、比较
+                const tags1 = str1.trim().split(/\s+/).filter(t => t).sort();
+                const tags2 = str2.trim().split(/\s+/).filter(t => t).sort();
+
+                // 数量不同直接返回false
+                if (tags1.length !== tags2.length) return false;
+
+                // 逐个比较标签
+                return tags1.every((tag, index) => tag === tags2[index]);
+            };
+
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
