@@ -269,5 +269,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ImageCacheGet": "获取缓存图像 (Image Cache Get)",
+    "ImageCacheGet": "图像缓存获取 (Image Cache Get)",
 }
