@@ -68,7 +68,7 @@ class GroupExecutorManager:
     CATEGORY = "danbooru"
     DESCRIPTION = "组执行管理器，用于管理和控制节点组的执行顺序和缓存策略"
     OUTPUT_IS_LIST = (False, False, False)  # 三个输出都不是列表
-    OUTPUT_NODE = False
+    OUTPUT_NODE = True
 
     @classmethod
     def VALIDATE_INPUTS(cls, input_types):
