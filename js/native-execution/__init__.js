@@ -56,6 +56,27 @@ if (!window.optimizedExecutionSystemLoaded) {
             });
             document.dispatchEvent(initEvent);
 
+            // ✅ 关键修复：Hook app.queuePrompt() 防止ComfyUI原生队列
+            try {
+                if (app && !app._originalQueuePrompt) {
+                    app._originalQueuePrompt = app.queuePrompt;
+                    app.queuePrompt = async function() {
+                        // 当GroupExecutor在控制时，阻止原生队列提交
+                        if (window._groupExecutorActive) {
+                            console.log('[OptimizedExecutionSystem] 🚫 阻止ComfyUI原生队列提交（GroupExecutor控制中）');
+                            return;  // 阻止ComfyUI提交
+                        }
+                        // 否则正常执行
+                        return app._originalQueuePrompt.apply(this, arguments);
+                    };
+                    console.log('[OptimizedExecutionSystem] ✅ 已拦截 app.queuePrompt()');
+                }
+            } catch (error) {
+                console.warn('[OptimizedExecutionSystem] ⚠️ Hook queuePrompt 失败:', error);
+            }
+
+            // ✅ 关键修复：Hook app.queuePrompt() 防止ComfyUI原生队列
+
             // 添加队列拦截钩子
             const originalEnqueue = app.enqueue;
             app.enqueue = function(task) {
