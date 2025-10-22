@@ -56,41 +56,37 @@ if (!window.optimizedExecutionSystemLoaded) {
             });
             document.dispatchEvent(initEvent);
 
-            // ✅ 关键修复：Hook app.queuePrompt() 和 api.queuePrompt()
-            // 参考 ComfyUI-LG_GroupExecutor 的实现方式
+            // ✅ 关键修复：Hook app.queuePrompt() 防止ComfyUI原生队列
             try {
-                if (app && !app._originalQueuePrompt && api) {
-                    console.log('[OptimizedExecutionSystem] 🔧 开始拦截队列方法...');
-                    
-                    // 保存原始方法
+                if (app && !app._originalQueuePrompt) {
                     app._originalQueuePrompt = app.queuePrompt;
-                    api._originalApiQueuePrompt = api.queuePrompt;
-                    
-                    // Hook app.queuePrompt() - 防止ComfyUI原生队列提交
-                    app.queuePrompt = async function() {
+                    app.queuePrompt = async function () {
+                        // 检查是否有GroupExecutor节点
+                        const hasGroupExecutor = app.graph._nodes.some(node =>
+                            node.type === 'GroupExecutorManager' ||
+                            node.type === 'GroupExecutorTrigger'
+                        );
+
+                        if (!hasGroupExecutor) {
+                            // 没有GroupExecutor，正常执行
+                            return app._originalQueuePrompt.apply(this, arguments);
+                        }
+
                         if (window._groupExecutorActive) {
-                            console.log('[OptimizedExecutionSystem] 🚫 已阻止ComfyUI原生队列提交（GroupExecutor控制中）');
+                            // GroupExecutor已在处理，阻止重复提交
                             return Promise.resolve();
                         }
-                        console.log('[OptimizedExecutionSystem] ✅ 允许app.queuePrompt()继续执行');
+
+                        // 标记GroupExecutor激活
+                        window._groupExecutorActive = true;
+
+                        // 继续原生执行（安全的）
                         return app._originalQueuePrompt.apply(this, arguments);
                     };
-                    
-                    // Hook api.queuePrompt() - 防止API直接队列提交
-                    api.queuePrompt = async function(index, prompt) {
-                        if (window._groupExecutorActive) {
-                            console.log('[OptimizedExecutionSystem] 🚫 已阻止api.queuePrompt()（GroupExecutor控制中）');
-                            return Promise.resolve();
-                        }
-                        console.log('[OptimizedExecutionSystem] ✅ 允许api.queuePrompt()继续执行');
-                        return api._originalApiQueuePrompt.apply(this, [index, prompt]);
-                    };
-                    
-                    console.log('[OptimizedExecutionSystem] ✅ 已成功拦截 app.queuePrompt() 和 api.queuePrompt()');
+                    console.log('[OptimizedExecutionSystem] ✅ 已拦截 app.queuePrompt()');
                 }
             } catch (error) {
-                console.warn('[OptimizedExecutionSystem] ⚠️ 拦截队列方法失败:', error);
-                console.error(error.stack);
+                console.warn('[OptimizedExecutionSystem] ⚠️ Hook queuePrompt 失败:', error);
             }
 
         }, 1000); // 1秒延迟确保稳定性
