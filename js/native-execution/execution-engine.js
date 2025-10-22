@@ -359,32 +359,25 @@ class OptimizedExecutionEngine {
         console.log(`[OptimizedExecutionEngine] 📊 待提交节点总数: ${nodeIds.length}`);
 
         try {
-            // 使用ComfyUI原生graphToPrompt生成prompt
-            const prompt = await app.graphToPrompt();
+            // ✅ 关键修复：使用ComfyUI原生app.queuePrompt()而不是api.queuePrompt()
+            // app.queuePrompt会自动调用graphToPrompt，然后调用api.queuePrompt(index, prompt)
+            // 这样可以确保所有参数都正确传递
+            
+            // 1. 首先获取完整的prompt
+            const fullPrompt = await app.graphToPrompt();
+            
+            // 2. 过滤prompt只保留目标节点及其依赖
+            const filteredPrompt = this.filterPromptNodes(fullPrompt, nodeIds, context);
 
-            // 过滤prompt只保留目标节点及其依赖
-            const filteredPrompt = this.filterPromptNodes(prompt, nodeIds, context);
-
-            console.log(`[OptimizedExecutionEngine] 📊 过滤前节点数: ${Object.keys(prompt.output || {}).length}`);
+            console.log(`[OptimizedExecutionEngine] 📊 过滤前节点数: ${Object.keys(fullPrompt.output || {}).length}`);
             console.log(`[OptimizedExecutionEngine] 📊 过滤后节点数: ${Object.keys(filteredPrompt.output || {}).length}`);
             console.log(`[OptimizedExecutionEngine] 📊 将提交的节点ID: [${Object.keys(filteredPrompt.output || {}).join(', ')}]`);
 
-            // ✅ 修复：正确的API调用格式
-            // ComfyUI的api.queuePrompt签名是 queuePrompt(prompt, number)
-            // 其中number应该是一个数字ID（通常是0或递增的序列号）
-            // 不应该传递client_id字符串，那是后端处理的
-            const promptWithMetadata = {
-                ...filteredPrompt,
-                extra_data: {
-                    ...filteredPrompt.extra_data,
-                    execution_id: context.executionId,
-                    group_name: context.currentGroupName
-                }
-            };
-            
-            // 使用ComfyUI的标准方式提交，不传递client_id
-            // number参数会被自动转换并发送到后端的/api/prompt
-            await api.queuePrompt(promptWithMetadata);
+            // 3. 使用标准的ComfyUI API调用
+            // 由于我们需要过滤prompt，不能直接用app.queuePrompt()
+            // 而需要直接调用api.queuePrompt(index, prompt)
+            // 确保以正确的参数顺序调用
+            await api.queuePrompt(0, filteredPrompt);
 
             console.log(`[OptimizedExecutionEngine] ✅ 节点已提交到ComfyUI队列`);
         } catch (error) {
