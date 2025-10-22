@@ -34,7 +34,7 @@ export class UIEnhancementManager {
         /** 增强现有的ComfyUI节点 */
         const targetNodeTypes = [
             'GroupExecutorManager',
-            'GroupExecutorTrigger',
+            // 'GroupExecutorTrigger',  // ⚠️ 已禁用：触发器不需要UI增强
             'ImageCacheGet'
         ];
 
@@ -61,8 +61,8 @@ export class UIEnhancementManager {
 
         // 为GroupExecutorManager添加增强
         this.addManagerNodeEnhancement('GroupExecutorManager');
-        // 为GroupExecutorTrigger添加增强
-        this.addTriggerNodeEnhancement('GroupExecutorTrigger');
+        // ⚠️ 已禁用：触发器不需要UI增强
+        // this.addTriggerNodeEnhancement('GroupExecutorTrigger');
         // 为ImageCacheGet添加增强
         this.addCacheNodeEnhancement('ImageCacheGet');
     }

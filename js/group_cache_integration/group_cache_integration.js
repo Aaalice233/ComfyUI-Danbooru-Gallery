@@ -8,7 +8,7 @@
  */
 
 import { api } from "../../scripts/api.js";
-import { globalToastManager } from "./global/toast_manager.js";
+import { globalToastManager } from "../global/toast_manager.js";
 
 class GroupCacheIntegration {
     constructor() {
@@ -18,6 +18,33 @@ class GroupCacheIntegration {
         console.log("[GroupCacheIntegration] 缓存通道切换已集成到组执行管理器中");
 
         this.checkForGroupExecutorManager();
+        this.setupWebSocketListener();
+    }
+
+    /**
+     * 设置WebSocket监听器，用于接收后端警告
+     */
+    setupWebSocketListener() {
+        try {
+            if (api && api.addEventListener) {
+                // 监听缓存节点缺少组执行管理器的警告
+                api.addEventListener("cache-node-no-manager-warning", (event) => {
+                    console.warn("[GroupCacheIntegration] 收到警告:", event.detail);
+
+                    const { node_type, message } = event.detail;
+
+                    // 显示toast警告（双语）
+                    globalToastManager.showToast(
+                        message || "图像缓存节点需要配合组执行管理器使用，请添加组执行管理器和触发器后刷新网页\nImage cache nodes require Group Executor Manager. Please add Manager and Trigger, then refresh.",
+                        "warning",
+                        10000  // 延长显示时间到10秒，因为是双语消息
+                    );
+                });
+                console.log("[GroupCacheIntegration] ✓ WebSocket监听器已设置");
+            }
+        } catch (error) {
+            console.error("[GroupCacheIntegration] WebSocket监听器设置失败:", error);
+        }
     }
 
     /**

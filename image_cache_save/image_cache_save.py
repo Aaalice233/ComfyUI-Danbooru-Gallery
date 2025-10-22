@@ -36,8 +36,72 @@ class ImageCache:
     图像缓存保存节点 - 将图像缓存到指定通道供其他节点获取
     """
 
+    # 类级别的缓存：存储检测结果，所有实例共享
+    _has_manager_cache = None  # None表示未检测，True/False表示检测结果
+    _warning_sent_cache = False  # 类级别的警告发送标志
+
     def __init__(self):
         pass
+
+    @classmethod
+    def _check_for_group_executor_manager(cls, prompt: Optional[Dict]) -> bool:
+        """
+        检测工作流中是否有GroupExecutorManager节点
+        使用类级别缓存，只在第一次执行时检测
+
+        Args:
+            prompt: 工作流数据
+
+        Returns:
+            bool: 是否存在GroupExecutorManager节点
+        """
+        # 如果已经缓存了检测结果，直接返回
+        if cls._has_manager_cache is not None:
+            return cls._has_manager_cache
+
+        # 第一次检测
+        if not prompt:
+            cls._has_manager_cache = False
+            return False
+
+        try:
+            # prompt是一个列表，第一个元素是工作流数据字典
+            workflow_data = prompt[0] if isinstance(prompt, list) and len(prompt) > 0 else prompt
+
+            # 遍历工作流中的所有节点
+            if isinstance(workflow_data, dict):
+                for node_id, node_data in workflow_data.items():
+                    if isinstance(node_data, dict) and node_data.get("class_type") == "GroupExecutorManager":
+                        print(f"[ImageCacheSave] ✓ 检测到GroupExecutorManager节点（已缓存）")
+                        cls._has_manager_cache = True
+                        return True
+
+            print(f"[ImageCacheSave] ⚠ 未检测到GroupExecutorManager节点（已缓存）")
+            cls._has_manager_cache = False
+            return False
+        except Exception as e:
+            print(f"[ImageCacheSave] 检测GroupExecutorManager失败: {str(e)}")
+            cls._has_manager_cache = False
+            return False
+
+    @classmethod
+    def _send_no_manager_warning(cls):
+        """发送WebSocket警告到前端（类级别，只发送一次）"""
+        if cls._warning_sent_cache:
+            return  # 避免重复发送
+
+        try:
+            from server import PromptServer
+            PromptServer.instance.send_sync("cache-node-no-manager-warning", {
+                "node_type": "ImageCacheSave",
+                "message": "图像缓存节点需要配合组执行管理器使用，请添加组执行管理器和触发器后刷新网页\nImage cache nodes require Group Executor Manager. Please add Manager and Trigger, then refresh."
+            })
+            cls._warning_sent_cache = True
+            print(f"[ImageCacheSave] 已发送WebSocket警告")
+        except ImportError:
+            print("[ImageCacheSave] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+        except Exception as e:
+            print(f"[ImageCacheSave] WebSocket警告发送失败: {e}")
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -49,10 +113,6 @@ class ImageCache:
                 "enable_preview": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "控制是否生成缓存图像的预览"
-                }),
-                "clear_before_save": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "是否在保存前清空旧缓存（覆盖模式）"
                 })
             },
             "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
@@ -68,29 +128,37 @@ class ImageCache:
                     images: List,
                     prompt: Optional[Dict] = None,
                     extra_pnginfo: Optional[Dict] = None,
-                    enable_preview: List[bool] = [True],
-                    clear_before_save: List[bool] = [True]) -> Dict[str, Any]:
+                    enable_preview: List[bool] = [True]) -> Dict[str, Any]:
         """
-        将图像缓存到指定通道
+        将图像缓存到全局缓存（配合GroupExecutorManager使用）
+
+        重要：此节点必须配合GroupExecutorManager使用
+        - 保存前固定清空所有缓存
+        - 保存到全局缓存（不使用通道隔离）
+        - 执行顺序由GroupExecutorManager控制
         """
         try:
-            current_group = cache_manager.current_group_name or "default"
             timestamp = time.strftime("%H:%M:%S", time.localtime())
             print(f"\n{'='*60}")
             print(f"[ImageCacheSave] ⏰ 执行时间: {timestamp}")
             print(f"[ImageCacheSave] 🔍 当前组名: {cache_manager.current_group_name}")
-            print(f"[ImageCacheSave] 📁 当前缓存通道: '{current_group}'")
+            print(f"[ImageCacheSave] 📁 使用全局缓存（不隔离通道）")
             print(f"[ImageCacheSave] ┌─ 开始保存图像")
             print(f"{'='*60}\n")
 
+            # ✅ 检测工作流中是否有GroupExecutorManager节点（使用缓存，只检测一次）
+            has_manager = ImageCache._check_for_group_executor_manager(prompt)
+            if not has_manager:
+                # 发送WebSocket事件到前端显示toast（只发送一次）
+                ImageCache._send_no_manager_warning()
+
             # 参数处理 - 确保正确提取参数值
             processed_enable_preview = enable_preview[0] if isinstance(enable_preview, list) else enable_preview
-            # 修复：正确处理clear_before_save参数，确保默认值True生效
-            processed_clear_before_save = (
-                clear_before_save[0] if isinstance(clear_before_save, list) and len(clear_before_save) > 0
-                else clear_before_save if clear_before_save is not None
-                else True  # 默认使用覆盖模式
-            )
+
+            # ✅ 保存前固定清空所有缓存
+            # 因为此节点必须配合GroupExecutorManager使用，每个组保存时都应清空前一个组的缓存
+            print(f"[ImageCacheSave] 🗑️ 清空所有缓存通道（强制执行）")
+            cache_manager.clear_cache(channel_name=None)  # None表示清空所有通道
 
             # 将输入的批次列表展开为单个图像张量列表
             # ComfyUI's INPUT_IS_LIST=True wraps inputs in a list.
@@ -100,12 +168,14 @@ class ImageCache:
             for batch in images:
                 unpacked_images.extend(list(batch))  # Iterating over a tensor unpacks the first dimension
 
-            # 使用缓存管理器缓存图像
+            # ✅ 关键修复：保存到全局默认通道（channel_name="__global__"）而非组名通道
+            # 这样所有组都从同一个缓存读写，由GroupExecutorManager控制执行顺序
             results = cache_manager.cache_images(
                 images=unpacked_images,
                 filename_prefix="cached_image",
                 preview_rgba=True,
-                clear_before_save=processed_clear_before_save
+                clear_before_save=False,  # 已经在上面清空过了
+                channel_name="__global__"  # 使用全局通道
             )
 
             print(f"[ImageCacheSave] └─ 保存完成: {len(results)} 张")
@@ -117,6 +187,8 @@ class ImageCache:
 
         except Exception as e:
             print(f"[ImageCacheSave] └─ ✗ 保存失败: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
 
             # 返回空结果但不抛出异常
             return {"ui": {"images": []}}

@@ -8,7 +8,7 @@ import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
 
 import('./ui-enhancement.js');
-import('./migration-helper.js');
+// migration-helper.js 已删除，不再需要
 
 if (!window.optimizedExecutionSystemLoaded) {
     if (document.readyState === 'loading') {
