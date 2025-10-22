@@ -16,12 +16,39 @@ class OptimizedExecutionEngine {
     constructor() {
         this.executionContexts = new Map(); // execution_id -> ExecutionContext
         this.cacheControlStates = new Map(); // execution_id -> cache control states
+        this.cancelledExecutions = new Set(); // 记录被取消的执行ID
         this.setupEventListeners();
+        this.setupCancelHandler();
         this.debugMode = true;
 
         console.log('[OptimizedExecutionEngine] ✅ 优化执行引擎已初始化');
         console.log('[OptimizedExecutionEngine] 🔧 基于ComfyUI原生机制');
         console.log('[OptimizedExecutionEngine] 🎯 版本: 2.0.0');
+    }
+
+    setupCancelHandler() {
+        // Hook api.interrupt方法，当用户点击取消时触发
+        if (api && api.interrupt) {
+            const originalInterrupt = api.interrupt.bind(api);
+            api.interrupt = async () => {
+                console.log('[OptimizedExecutionEngine] 🛑 检测到用户取消操作');
+
+                // 取消所有正在执行的组执行管理器任务
+                if (this.executionContexts.size > 0) {
+                    console.log(`[OptimizedExecutionEngine] 🛑 取消所有正在执行的组 (共${this.executionContexts.size}个)`);
+
+                    // 标记所有执行为已取消
+                    for (const executionId of this.executionContexts.keys()) {
+                        this.cancelledExecutions.add(executionId);
+                        console.log(`[OptimizedExecutionEngine] 🛑 标记执行为已取消: ${executionId}`);
+                    }
+                }
+
+                // 调用原始的interrupt方法
+                return await originalInterrupt();
+            };
+            console.log('[OptimizedExecutionEngine] ✅ 取消处理器已设置');
+        }
     }
 
     setupEventListeners() {
@@ -54,8 +81,13 @@ class OptimizedExecutionEngine {
                 await this.executeOptimizedSequentialGroups(context);
                 console.log(`[OptimizedExecutionEngine] ✅ 执行完成: ${execution_id}`);
             } catch (error) {
-                console.error(`[OptimizedExecutionEngine] ❌ 执行失败: ${execution_id}`, error);
-                this.handleExecutionError(execution_id, error);
+                // 检查是否是用户取消
+                if (this.cancelledExecutions.has(execution_id)) {
+                    console.log(`[OptimizedExecutionEngine] 🛑 执行已被用户取消: ${execution_id}`);
+                } else {
+                    console.error(`[OptimizedExecutionEngine] ❌ 执行失败: ${execution_id}`, error);
+                    this.handleExecutionError(execution_id, error);
+                }
             } finally {
                 // 清理执行上下文
                 this.cleanupExecutionContext(execution_id);
@@ -136,6 +168,12 @@ class OptimizedExecutionEngine {
         const groups = context.executionPlan?.groups || [];
 
         for (let i = 0; i < groups.length; i++) {
+            // ✅ 检查是否被取消
+            if (this.cancelledExecutions.has(context.executionId)) {
+                console.log(`[OptimizedExecutionEngine] 🛑 检测到取消信号，终止执行: ${context.executionId}`);
+                throw new Error('执行已被用户取消');
+            }
+
             const groupInfo = groups[i];
 
             console.log(`[OptimizedExecutionEngine] ====================`);
@@ -427,6 +465,12 @@ class OptimizedExecutionEngine {
         console.log('[OptimizedExecutionEngine] ⏳ 开始等待队列执行完成...');
 
         while (true) {
+            // ✅ 检查是否被取消
+            if (this.cancelledExecutions.has(context.executionId)) {
+                console.log(`[OptimizedExecutionEngine] 🛑 等待队列时检测到取消信号: ${context.executionId}`);
+                throw new Error('执行已被用户取消');
+            }
+
             const elapsed = Date.now() - startTime;
 
             // 检查超时
@@ -476,8 +520,29 @@ class OptimizedExecutionEngine {
     }
 
     delay(ms) {
-        /** 延迟函数 */
-        return new Promise(resolve => setTimeout(resolve, ms));
+        /** 延迟函数，支持取消检查 */
+        return new Promise((resolve) => {
+            const checkInterval = 100; // 每100ms检查一次是否取消
+            let elapsed = 0;
+
+            const intervalId = setInterval(() => {
+                elapsed += checkInterval;
+
+                // 检查所有执行上下文是否被取消
+                for (const executionId of this.executionContexts.keys()) {
+                    if (this.cancelledExecutions.has(executionId)) {
+                        clearInterval(intervalId);
+                        resolve();
+                        return;
+                    }
+                }
+
+                if (elapsed >= ms) {
+                    clearInterval(intervalId);
+                    resolve();
+                }
+            }, checkInterval);
+        });
     }
 
     handleExecutionError(executionId, error) {
@@ -501,6 +566,7 @@ class OptimizedExecutionEngine {
         /** 清理执行上下文 */
         this.executionContexts.delete(executionId);
         this.cacheControlStates.delete(executionId);
+        this.cancelledExecutions.delete(executionId);  // 清理取消标记
         console.log(`[OptimizedExecutionEngine] 🧹 清理执行上下文: ${executionId}`);
     }
 
