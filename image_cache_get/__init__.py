@@ -1,10 +1,8 @@
-from .image_cache_get import ImageCacheGet
+"""
+图像缓存获取节点模块
+Image Cache Get Module
+"""
 
-# 节点映射
-NODE_CLASS_MAPPINGS = {
-    "ImageCacheGet": ImageCacheGet,
-}
+from .image_cache_get import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "ImageCacheGet": "图像缓存获取 v2.0 (Image Cache Get)",
-}
+__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']

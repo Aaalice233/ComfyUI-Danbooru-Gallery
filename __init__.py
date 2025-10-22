@@ -19,7 +19,7 @@ opt_mappings = {
     **group_manager_mappings
 }
 opt_display_mappings = {
-    "GroupExecutorTrigger": "组执行触发器 v2.0",
+    "GroupExecutorTrigger": "组执行触发器 (Group Executor Trigger)",
     **group_manager_display_mappings
 }
 

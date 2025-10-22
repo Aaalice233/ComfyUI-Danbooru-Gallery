@@ -881,5 +881,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "CharacterFeatureSwapNode": "人物特征替换 (Character Feature Swap)"
+    "CharacterFeatureSwapNode": "角色特征交换 (Character Feature Swap)"
 }

@@ -72,15 +72,16 @@ class OptimizedExecutionEngine {
     }
 
     validateClientContext(client_id, execution_id) {
-        /** 验证客户端上下文隔离 */
-        if (!client_id || client_id !== api.clientId) {
-            console.warn(`[OptimizedExecutionEngine] ⚠️ 客户端ID不匹配: received=${client_id}, current=${api.clientId}`);
-            return false;
-        }
-
+        /** 验证执行上下文隔离 */
         // 检查是否有重复的执行
         if (this.executionContexts.has(execution_id)) {
             console.warn(`[OptimizedExecutionEngine] ⚠️ 重复的执行ID: ${execution_id}`);
+            return false;
+        }
+
+        // ✅ 修复：严格检查client_id（通过send_sync的sid参数隔离）
+        if (!client_id || client_id !== api.clientId) {
+            console.warn(`[OptimizedExecutionEngine] ⚠️ 客户端ID不匹配: received=${client_id}, current=${api.clientId}`);
             return false;
         }
 
@@ -190,6 +191,10 @@ class OptimizedExecutionEngine {
         }
 
         console.log(`[OptimizedExecutionEngine] 🎉 所有组执行完成: ${context.executionId}`);
+
+        // ✅ 清除当前缓存组，防止后续操作使用旧的组名
+        await this.setCurrentCacheGroup(null);
+
         const totalExecutionTime = Date.now() - context.startTime;
         console.log(`[OptimizedExecutionEngine] ⏱️ 总执行时间: ${totalExecutionTime}ms (${Math.round(totalExecutionTime / 1000)}秒)`);
     }
@@ -199,6 +204,17 @@ class OptimizedExecutionEngine {
         const groupName = groupInfo.group_name;
 
         console.log(`[OptimizedExecutionEngine] 🎯 开始执行组: ${groupName}`);
+
+        // ✅ 增强日志：显示当前执行进度和组信息
+        console.log(`[OptimizedExecutionEngine] 📍 执行进度: ${groupIndex}/${totalGroups}`);
+        const nodeIds = groupInfo.nodes || [];
+        console.log(`[OptimizedExecutionEngine] 📋 组内节点数: ${nodeIds.length}`);
+        if (nodeIds.length > 0) {
+            console.log(`[OptimizedExecutionEngine] 🔗 节点列表: [${nodeIds.join(', ')}]`);
+        }
+
+        // ✅ 设置当前缓存组，通知Python后端更新cache_manager.current_group_name
+        await this.setCurrentCacheGroup(groupName);
 
         // 1. 更新缓存控制状态
         if (context.cacheControlMode === "block_until_allowed") {
@@ -226,6 +242,29 @@ class OptimizedExecutionEngine {
         }
 
         console.log(`[OptimizedExecutionEngine] ✅ 组执行完成: ${groupName}`);
+    }
+
+    async setCurrentCacheGroup(groupName) {
+        /** 设置当前缓存组（调用Python API设置cache_manager的current_group_name） */
+        try {
+            const response = await api.fetchApi("/danbooru_gallery/set_current_group", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ group_name: groupName })
+            });
+
+            if (!response.ok) {
+                console.warn(`[OptimizedExecutionEngine] ⚠️ 设置缓存组失败: ${groupName}`);
+                return false;
+            }
+
+            const result = await response.json();
+            console.log(`[OptimizedExecutionEngine] ✅ 缓存组已设置: ${groupName}`);
+            return result.success;
+        } catch (error) {
+            console.error(`[OptimizedExecutionEngine] ❌ 设置缓存组异常:`, error);
+            return false;
+        }
     }
 
     setGroupCacheControl(executionId, groupName, enabled) {
@@ -285,7 +324,7 @@ class OptimizedExecutionEngine {
         // 找到输出节点
         const outputNodes = groupNodes.filter(node => {
             const isOutputNode = node.mode !== 2 && // 不是Never模式
-                                    node.constructor?.nodeData?.output_node === true;
+                node.constructor?.nodeData?.output_node === true;
 
             if (isOutputNode) {
                 console.log(`[OptimizedExecutionEngine] ✅ 输出节点: ${node.id} (${node.type})`);
@@ -305,14 +344,15 @@ class OptimizedExecutionEngine {
 
         const nodeBounds = node.getBounding();
         return nodeBounds.x >= group._bounding[0] &&
-               nodeBounds.y >= group._bounding[1] &&
-               nodeBounds.x + nodeBounds.w <= group._bounding[2] &&
-               nodeBounds.y + nodeBounds.h <= group._bounding[3];
+            nodeBounds.y >= group._bounding[1] &&
+            nodeBounds.x + nodeBounds.w <= group._bounding[2] &&
+            nodeBounds.y + nodeBounds.h <= group._bounding[3];
     }
 
     async submitToComfyUIQueue(nodeIds, context) {
         /** 提交节点到ComfyUI队列，使用原生机制 */
         console.log(`[OptimizedExecutionEngine] 📤 提交节点到队列: [${nodeIds.join(', ')}]`);
+        console.log(`[OptimizedExecutionEngine] 📊 待提交节点总数: ${nodeIds.length}`);
 
         try {
             // 使用ComfyUI原生graphToPrompt生成prompt
@@ -323,9 +363,11 @@ class OptimizedExecutionEngine {
 
             console.log(`[OptimizedExecutionEngine] 📊 过滤前节点数: ${Object.keys(prompt.output || {}).length}`);
             console.log(`[OptimizedExecutionEngine] 📊 过滤后节点数: ${Object.keys(filteredPrompt.output || {}).length}`);
+            console.log(`[OptimizedExecutionEngine] 📊 将提交的节点ID: [${Object.keys(filteredPrompt.output || {}).join(', ')}]`);
 
-            // 使用ComfyUI原生queuePrompt提交
-            await api.queuePrompt(0, filteredPrompt);
+            // ✅ 修复：使用正确的clientId而不是0，确保后端能获得client_id
+            // ComfyUI的queuePrompt(clientId, prompt)会自动将clientId添加到prompt
+            await api.queuePrompt(api.clientId, filteredPrompt);
 
             console.log(`[OptimizedExecutionEngine] ✅ 节点已提交到ComfyUI队列`);
         } catch (error) {

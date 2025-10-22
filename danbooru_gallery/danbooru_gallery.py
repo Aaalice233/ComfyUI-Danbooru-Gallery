@@ -1061,7 +1061,7 @@ def get_node_class_mappings():
 
 def get_node_display_name_mappings():
     return {
-        "DanbooruGalleryNode": "Danbooru Image Gallery"
+        "DanbooruGalleryNode": "图库选择器 (Danbooru Gallery)"
     }
 
 NODE_CLASS_MAPPINGS = get_node_class_mappings()

@@ -867,5 +867,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "MultiCharacterEditorNode": "多人角色提示词编辑器 (Multi Character Editor)"
+    "MultiCharacterEditorNode": "多角色编辑器 (Multi Character Editor)"
 }

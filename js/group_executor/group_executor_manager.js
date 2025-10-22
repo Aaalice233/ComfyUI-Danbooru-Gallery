@@ -111,6 +111,11 @@ app.registerExtension({
                     this.loadConfigFromWidget();
                 }, 100);
 
+                // 从后端API加载配置
+                setTimeout(() => {
+                    this.loadConfigFromBackend();
+                }, 150);
+
                 // 监听图表变化，自动刷新组列表
                 this.setupGraphChangeListener();
 
@@ -878,6 +883,26 @@ app.registerExtension({
             }
         };
 
+        // 从后端API加载配置
+        nodeType.prototype.loadConfigFromBackend = async function () {
+            try {
+                const response = await fetch('/danbooru_gallery/group_config/load');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const result = await response.json();
+                if (result.status === 'success' && result.groups) {
+                    this.properties.groups = result.groups;
+                    this.updateGroupsList();
+                    console.log('[GEM-API] 从后端加载配置成功');
+                } else {
+                    console.warn('[GEM-API] 从后端加载配置失败或未获取到组数据:', result.message);
+                }
+            } catch (error) {
+                console.error('[GEM-API] 从后端加载配置出错:', error);
+            }
+        };
+
         // 同步配置到widget
         nodeType.prototype.syncConfig = function () {
             const configWidget = this.widgets?.find(w => w.name === "group_config");
@@ -891,8 +916,35 @@ app.registerExtension({
 
             // ✅ 调试日志：打印配置顺序
             console.log('[GEM-UI] ========== 同步配置到widget ==========');
-            console.log('[GEM-UI] 配置顺序:', this.properties.groups.map((g, i) => `${i+1}.${g.group_name}`).join(' → '));
+            console.log('[GEM-UI] 配置顺序:', this.properties.groups.map((g, i) => `${i + 1}.${g.group_name}`).join(' → '));
             console.log('[GEM-UI] 完整配置JSON:', newConfig);
+
+            // ✅ 新增：同步配置到后端API
+            this.syncConfigToBackend();
+        };
+
+        // 同步配置到后端
+        nodeType.prototype.syncConfigToBackend = async function () {
+            try {
+                const response = await fetch('/danbooru_gallery/group_config/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        groups: this.properties.groups
+                    })
+                });
+
+                const result = await response.json();
+                if (result.status === 'success') {
+                    console.log('[GEM-API] 配置已同步到后端:', result.message);
+                } else {
+                    console.error('[GEM-API] 同步配置失败:', result.message);
+                }
+            } catch (error) {
+                console.error('[GEM-API] 同步配置到后端出错:', error);
+            }
         };
 
         // 刷新组列表下拉选项

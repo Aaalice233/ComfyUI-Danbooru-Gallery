@@ -78,6 +78,7 @@ class ImageCache:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
             print(f"\n{'='*60}")
             print(f"[ImageCacheSave] ⏰ 执行时间: {timestamp}")
+            print(f"[ImageCacheSave] 🔍 当前组名: {cache_manager.current_group_name}")
             print(f"[ImageCacheSave] 📁 当前缓存通道: '{current_group}'")
             print(f"[ImageCacheSave] ┌─ 开始保存图像")
             print(f"{'='*60}\n")

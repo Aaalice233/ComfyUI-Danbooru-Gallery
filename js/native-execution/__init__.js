@@ -59,41 +59,6 @@ if (!window.optimizedExecutionSystemLoaded) {
         }, 1000); // 1秒延迟确保稳定性
     }
 }
-    // 等待DOM加载完成
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializeOptimizedExecutionSystem);
-    } else {
-        initializeOptimizedExecutionSystem();
-    }
-
-    function initializeOptimizedExecutionSystem() {
-        console.log('[OptimizedExecutionSystem] 🚀 开始初始化优化执行系统');
-        console.log('[OptimizedExecutionSystem] 🔧 版本: 2.0.0');
-        console.log('[OptimizedExecutionSystem] 🎛️ 基于ComfyUI原生机制');
-
-        // 延迟初始化，确保所有模块都加载完成
-        setTimeout(() => {
-            console.log('[OptimizedExecutionSystem] ✅ 优化执行系统初始化完成');
-            console.log('[OptimizedExecutionSystem] 📋 已加载组件:');
-            console.log('[OptimizedExecutionSystem]   - OptimizedExecutionEngine: 组顺序执行引擎');
-            console.log('[OptimizedExecutionSystem]   - CacheControlEvents: 缓存控制事件系统');
-
-            // 设置全局标志，防止重复初始化
-            window.optimizedExecutionSystemLoaded = true;
-
-            // 触发初始化完成事件
-            const initEvent = new CustomEvent('optimizedExecutionSystemReady', {
-                detail: {
-                    version: '2.0.0',
-                    timestamp: Date.now(),
-                    components: ['OptimizedExecutionEngine', 'CacheControlEvents']
-                }
-            });
-            document.dispatchEvent(initEvent);
-
-        }, 1000); // 1秒延迟确保稳定性
-    }
-}
 
 // 导出配置
 export const OPTIMIZED_EXECUTION_CONFIG = {
