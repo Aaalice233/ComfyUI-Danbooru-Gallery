@@ -14,6 +14,8 @@
   - [🔄 人物特征替换 (Character Feature Swap)](#-人物特征替换-character-feature-swap)
   - [📚 提示词选择器 (Prompt Selector)](#-提示词选择器-prompt-selector)
   - [👥 多人角色提示词编辑器 (Multi Character Editor)](#-多人角色提示词编辑器-multi-character-editor)
+  - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
+  - [🖼️ 图像缓存节点 (Image Cache Nodes)](#-图像缓存节点-image-cache-nodes)
 - [安装说明](#安装说明)
 - [系统要求](#系统要求)
 - [高级功能](#高级功能)
@@ -28,6 +30,8 @@
   - [🔄 Character Feature Swap](#-character-feature-swap)
   - [📚 Prompt Selector](#-prompt-selector)
   - [👥 Multi Character Editor](#-multi-character-editor)
+  - [⚡ Group Executor Manager](#-group-executor-manager)
+  - [🖼️ Image Cache Nodes](#-image-cache-nodes)
 - [Installation](#installation)
 - [System Requirements](#system-requirements-1)
 - [Advanced Features](#advanced-features)
@@ -192,6 +196,116 @@ portrait scene FILL() COUPLE MASK(0.00 0.50, 0.00 1.00, 1.00) beautiful woman wi
 ```
 fantasy forest AND elf archer MASK(0.00 0.33, 0.00 1.00, 1.00) FEATHER(8) AND dwarf warrior MASK(0.33 0.66, 0.00 1.00, 1.00) FEATHER(8) AND wizard MASK(0.66 1.00, 0.00 1.00, 1.00) FEATHER(8)
 ```
+
+---
+
+### ⚡ 组执行管理器 (Group Executor Manager)
+
+**高效的批量工作流执行节点**
+
+组执行管理器允许你将工作流分成多个组，按顺序或并行执行，配合图像缓存节点实现高效的批量生成。
+
+#### 核心功能
+- 🎯 **分组执行**: 将节点分成多个执行组，灵活控制执行流程
+- 🔄 **顺序/并行模式**: 支持顺序执行和并行执行两种模式
+- 💾 **智能缓存**: 配合图像缓存节点实现中间结果缓存
+- ⏱️ **延迟控制**: 设置组间延迟时间，避免资源冲突
+- 🛡️ **错误处理**: 完善的错误处理和重试机制
+- 📊 **执行监控**: 实时显示执行进度和状态
+- 🎛️ **可视化配置**: 直观的UI配置界面
+
+#### 使用场景
+- **批量生成**: 生成大量图像时分批执行，避免内存溢出
+- **复杂工作流**: 将复杂工作流拆分成多个阶段执行
+- **资源优化**: 合理安排执行顺序，优化GPU/内存使用
+- **中间缓存**: 缓存中间结果，避免重复计算
+
+#### 使用方法
+1. 添加 `Danbooru > 组执行管理器 (Group Executor Manager)` 节点
+2. 双击打开配置界面
+3. 创建执行组并添加节点
+4. 配置执行模式（sequential/parallel）和延迟时间
+5. 添加 `组执行触发器 (Group Executor Trigger)` 节点开始执行
+
+#### 配置示例
+```json
+{
+  "groups": [
+    {
+      "name": "组1-文生图",
+      "nodes": [1, 2, 3, 4],
+      "delay": 0
+    },
+    {
+      "name": "组2-图生图",
+      "nodes": [5, 6, 7],
+      "delay": 2
+    },
+    {
+      "name": "组3-后处理",
+      "nodes": [8, 9, 10],
+      "delay": 1
+    }
+  ],
+  "mode": "sequential"
+}
+```
+
+---
+
+### 🖼️ 图像缓存节点 (Image Cache Nodes)
+
+**智能图像缓存和获取节点组**
+
+图像缓存节点提供了强大的图像缓存和获取功能，配合组执行管理器实现高效的批量工作流。
+
+#### 节点类型
+
+**1. 图像缓存保存 (Image Cache Save)**
+- 💾 **自动缓存**: 自动保存图像到缓存系统
+- 🏷️ **前缀管理**: 支持自定义缓存前缀分类
+- 📊 **缓存统计**: 实时显示缓存数量和状态
+- 🔄 **自动更新**: 缓存更新时自动通知相关节点
+
+**2. 图像缓存获取 (Image Cache Get)**
+- 🔍 **智能获取**: 根据前缀和索引获取缓存图像
+- 🔄 **Fallback模式**: 支持多种缓存未命中处理方式
+  - `blank`: 返回空白图像
+  - `default`: 返回默认占位图像
+  - `error`: 抛出错误停止执行
+  - `passthrough`: 跳过缓存检查
+- 📋 **批量获取**: 支持批量获取多张缓存图像
+- ⏱️ **自动重试**: 缓存未就绪时自动重试
+- 👁️ **预览功能**: 可选的缓存图像预览
+
+#### 核心功能
+- 🚀 **高性能**: 基于内存的快速缓存系统
+- 🔐 **权限控制**: 配合组执行管理器的权限系统
+- 🎯 **精确定位**: 支持前缀+索引精确获取
+- 📊 **实时通知**: WebSocket实时缓存更新通知
+- 💡 **智能清理**: 自动清理过期缓存
+
+#### 使用方法
+
+**基础流程**：
+1. 在第一组中添加 `图像缓存保存 (Image Cache Save)` 节点
+2. 连接要缓存的图像输出
+3. 设置缓存前缀（如 "base_image"）
+4. 在后续组中添加 `图像缓存获取 (Image Cache Get)` 节点
+5. 使用相同的前缀和索引获取缓存图像
+
+**配合组执行示例**：
+```
+组1: 文生图 → 缓存保存(prefix="txt2img")
+组2: 缓存获取(prefix="txt2img") → 图生图 → 缓存保存(prefix="img2img")
+组3: 缓存获取(prefix="img2img") → 后处理 → 输出
+```
+
+#### 应用场景
+- **多阶段生成**: 文生图 → 图生图 → 放大 → 后处理
+- **批量处理**: 大量图像的分批处理
+- **实验对比**: 保存中间结果用于不同参数对比
+- **内存优化**: 避免同时加载所有中间结果
 
 ---
 
@@ -487,6 +601,116 @@ fantasy forest AND elf archer MASK(0.00 0.33, 0.00 1.00, 1.00) FEATHER(8) AND dw
 
 ---
 
+### ⚡ Group Executor Manager
+
+**Efficient Batch Workflow Execution Node**
+
+Group Executor Manager allows you to divide your workflow into multiple groups and execute them sequentially or in parallel, working with Image Cache nodes for efficient batch generation.
+
+#### Core Features
+- 🎯 **Group Execution**: Divide nodes into execution groups with flexible flow control
+- 🔄 **Sequential/Parallel Modes**: Support for both sequential and parallel execution
+- 💾 **Smart Caching**: Work with Image Cache nodes for intermediate result caching
+- ⏱️ **Delay Control**: Set inter-group delays to avoid resource conflicts
+- 🛡️ **Error Handling**: Comprehensive error handling and retry mechanisms
+- 📊 **Execution Monitoring**: Real-time execution progress and status display
+- 🎛️ **Visual Configuration**: Intuitive UI configuration interface
+
+#### Use Cases
+- **Batch Generation**: Execute in batches when generating large numbers of images to avoid memory overflow
+- **Complex Workflows**: Split complex workflows into multiple execution stages
+- **Resource Optimization**: Arrange execution order to optimize GPU/memory usage
+- **Intermediate Caching**: Cache intermediate results to avoid redundant calculations
+
+#### Usage
+1. Add `Danbooru > Group Executor Manager` node
+2. Double-click to open configuration interface
+3. Create execution groups and add nodes
+4. Configure execution mode (sequential/parallel) and delay times
+5. Add `Group Executor Trigger` node to start execution
+
+#### Configuration Example
+```json
+{
+  "groups": [
+    {
+      "name": "Group1-Text2Image",
+      "nodes": [1, 2, 3, 4],
+      "delay": 0
+    },
+    {
+      "name": "Group2-Image2Image",
+      "nodes": [5, 6, 7],
+      "delay": 2
+    },
+    {
+      "name": "Group3-PostProcess",
+      "nodes": [8, 9, 10],
+      "delay": 1
+    }
+  ],
+  "mode": "sequential"
+}
+```
+
+---
+
+### 🖼️ Image Cache Nodes
+
+**Smart Image Caching and Retrieval Node Group**
+
+Image Cache nodes provide powerful image caching and retrieval functionality, working with Group Executor Manager for efficient batch workflows.
+
+#### Node Types
+
+**1. Image Cache Save**
+- 💾 **Auto Caching**: Automatically save images to cache system
+- 🏷️ **Prefix Management**: Support custom cache prefix classification
+- 📊 **Cache Statistics**: Real-time display of cache count and status
+- 🔄 **Auto Update**: Automatically notify related nodes when cache updates
+
+**2. Image Cache Get**
+- 🔍 **Smart Retrieval**: Get cached images by prefix and index
+- 🔄 **Fallback Modes**: Multiple cache miss handling modes
+  - `blank`: Return blank image
+  - `default`: Return default placeholder image
+  - `error`: Throw error and stop execution
+  - `passthrough`: Skip cache check
+- 📋 **Batch Retrieval**: Support batch retrieval of multiple cached images
+- ⏱️ **Auto Retry**: Automatically retry when cache not ready
+- 👁️ **Preview Feature**: Optional cached image preview
+
+#### Core Features
+- 🚀 **High Performance**: Fast memory-based caching system
+- 🔐 **Permission Control**: Work with Group Executor Manager's permission system
+- 🎯 **Precise Positioning**: Support prefix + index for precise retrieval
+- 📊 **Real-time Notification**: WebSocket real-time cache update notifications
+- 💡 **Smart Cleanup**: Automatically clean expired cache
+
+#### Usage
+
+**Basic Flow**:
+1. Add `Image Cache Save` node in the first group
+2. Connect image output to be cached
+3. Set cache prefix (e.g., "base_image")
+4. Add `Image Cache Get` node in subsequent groups
+5. Use the same prefix and index to retrieve cached images
+
+**Group Execution Example**:
+```
+Group1: Text2Image → Cache Save(prefix="txt2img")
+Group2: Cache Get(prefix="txt2img") → Image2Image → Cache Save(prefix="img2img")
+Group3: Cache Get(prefix="img2img") → PostProcess → Output
+```
+
+#### Application Scenarios
+- **Multi-stage Generation**: Text2Image → Image2Image → Upscale → PostProcess
+- **Batch Processing**: Batch processing of large numbers of images
+- **Experiment Comparison**: Save intermediate results for different parameter comparisons
+- **Memory Optimization**: Avoid loading all intermediate results simultaneously
+
+---
+
 ## Installation
 
 ### Method 1: ComfyUI Manager Installation (Recommended)
@@ -652,6 +876,10 @@ MIT License
 - 感谢 Danbooru 提供优秀的 API | Thanks to Danbooru for the excellent API
 - 感谢 ComfyUI 社区 | Thanks to the ComfyUI community
 - 参考了 ComfyUI_Civitai_Gallery 项目 | Inspired by ComfyUI_Civitai_Gallery project
+
+### 核心功能参考 | Core Feature References
+
+- [Comfyui-LG_GroupExecutor](https://github.com/LAOGOU-666/Comfyui-LG_GroupExecutor) - 组执行管理器和图像缓存节点的设计思路来源 | Design inspiration for Group Executor Manager and Image Cache nodes
 
 ### 翻译文件来源 | Translation Data Sources
 
