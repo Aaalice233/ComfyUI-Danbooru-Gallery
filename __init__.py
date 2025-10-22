@@ -9,17 +9,18 @@ from .image_cache_save import NODE_CLASS_MAPPINGS as cache_save_mappings, NODE_D
 from .image_cache_get import NODE_CLASS_MAPPINGS as cache_get_mappings, NODE_DISPLAY_NAME_MAPPINGS as cache_get_display_mappings
 
 # 导入优化执行系统
-from .group_executor_manager import Manager as GroupExecutorManager
+from .group_executor_manager import NODE_CLASS_MAPPINGS as group_manager_mappings
+from .group_executor_manager import NODE_DISPLAY_NAME_MAPPINGS as group_manager_display_mappings
 from .group_executor_trigger import GroupExecutorTrigger
 
 # 优化执行系统映射
 opt_mappings = {
-    "GroupExecutorManager": GroupExecutorManager,
     "GroupExecutorTrigger": GroupExecutorTrigger,
+    **group_manager_mappings
 }
 opt_display_mappings = {
-    "GroupExecutorManager": "组执行管理器 v2.0",
     "GroupExecutorTrigger": "组执行触发器 v2.0",
+    **group_manager_display_mappings
 }
 
 # 合并所有节点映射
