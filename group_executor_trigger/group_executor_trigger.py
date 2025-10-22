@@ -83,12 +83,12 @@ class GroupExecutorTrigger:
             }
         }
 
-    RETURN_TYPES = ("STRING", any_typ)  # ✅ 修复：返回STRING和任意类型信号用于建立执行依赖
-    RETURN_NAMES = ("execution_status", "signal_output")
+    RETURN_TYPES = ()  # ✅ 关键修复：空返回防止ComfyUI触发依赖执行（参考LG_GroupExecutor）
+    RETURN_NAMES = ()
     FUNCTION = "trigger_optimized_execution"
     CATEGORY = "danbooru"
-    OUTPUT_NODE = True  # 保持输出节点属性以发送WebSocket消息
-    OUTPUT_IS_LIST = (False, False)  # 两个输出都不是列表
+    OUTPUT_NODE = True  # 必须为True才能让ComfyUI执行此节点
+    OUTPUT_IS_LIST = ()  # 空元组
 
     @classmethod
     def VALIDATE_INPUTS(cls, input_types):
@@ -269,17 +269,11 @@ class GroupExecutorTrigger:
             }
 
             logger.info(f"[GroupExecutorTrigger] 📊 UI数据已准备就绪，当前组: {ui_data['current_group']}")
+            logger.info(f"[GroupExecutorTrigger] ✅ 执行触发完成，返回空元组（防止ComfyUI触发依赖执行）")
 
-            # ✅ 修复：返回execution_status字符串用于建立执行依赖
-            status_json = json.dumps({
-                "status": "triggered",
-                "execution_id": execution_id,
-                "timestamp": start_time
-            }, ensure_ascii=False)
-
-            # ✅ 修复：直接返回元组，让signal沿链传递
-            # 当OUTPUT_NODE=True时，ComfyUI会自动处理ui显示
-            return (status_json, signal)
+            # ✅ 关键修复：返回空元组，参考LG_GroupExecutor模式
+            # 这样ComfyUI不会因为返回值触发依赖链执行，避免提交所有24个节点
+            return ()
 
         except json.JSONDecodeError as e:
             error_msg = f"JSON解析失败: {str(e)}"
@@ -427,9 +421,10 @@ class GroupExecutorTrigger:
             execution_id: 执行ID
             error_message: 错误消息
             timestamp: 时间戳
+            signal: 信号（保留参数以兼容调用）
 
         Returns:
-            包含错误状态JSON的元组
+            空元组（参考LG_GroupExecutor模式）
         """
         error_status = {
             "status": "error",
@@ -439,9 +434,9 @@ class GroupExecutorTrigger:
             "error_type": "validation_error"
         }
 
-        status_json = json.dumps(error_status, ensure_ascii=False)
-        # ✅ 修复：返回元组格式，第二个元素为None表示传递中断
-        return (status_json, signal)
+        logger.error(f"[GroupExecutorTrigger] ❌ 错误状态: {json.dumps(error_status, ensure_ascii=False)}")
+        # ✅ 关键修复：返回空元组，防止ComfyUI触发依赖执行
+        return ()
 
     def create_warning_status(self, execution_id: str, warning_message: str, timestamp: float, signal):
         """
@@ -451,9 +446,10 @@ class GroupExecutorTrigger:
             execution_id: 执行ID
             warning_message: 警告消息
             timestamp: 时间戳
+            signal: 信号（保留参数以兼容调用）
 
         Returns:
-            包含警告状态JSON的元组
+            空元组（参考LG_GroupExecutor模式）
         """
         warning_status = {
             "status": "warning",
@@ -463,9 +459,9 @@ class GroupExecutorTrigger:
             "warning_type": "permission_denied"
         }
 
-        status_json = json.dumps(warning_status, ensure_ascii=False)
-        # ✅ 修复：返回元组格式，第二个元素为None表示未能通过权限检查
-        return (status_json, signal)
+        logger.warning(f"[GroupExecutorTrigger] ⚠️ 警告状态: {json.dumps(warning_status, ensure_ascii=False)}")
+        # ✅ 关键修复：返回空元组，防止ComfyUI触发依赖执行
+        return ()
 
 # 节点映射导出函数
 def get_node_class_mappings():
