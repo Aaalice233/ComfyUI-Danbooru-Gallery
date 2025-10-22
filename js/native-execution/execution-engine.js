@@ -357,25 +357,20 @@ class OptimizedExecutionEngine {
     async submitToComfyUIQueue(nodeIds, context) {
         /** 提交节点到ComfyUI队列 */
         try {
-            // ✅ 关键修复：使用ComfyUI原生app.queuePrompt()而不是api.queuePrompt()
-            // app.queuePrompt会自动调用graphToPrompt，然后调用api.queuePrompt(index, prompt)
-            // 这样可以确保所有参数都正确传递
-
-            // 1. 首先获取完整的prompt
+            // ✅ 关键修复：采用LG_GroupExecutor的方法
+            // 设置_queueNodeIds，让Hook中的api.queuePrompt过滤prompt
+            
+            console.log(`[OptimizedExecutionEngine] 🔗 设置待提交节点ID: [${nodeIds.join(', ')}]`);
+            window._queueNodeIds = nodeIds;
+            
+            // 直接调用api.queuePrompt，由Hook中的过滤逻辑处理
             const fullPrompt = await app.graphToPrompt();
-
-            // 2. 过滤prompt只保留目标节点及其依赖
-            const filteredPrompt = this.filterPromptNodes(fullPrompt, nodeIds, context);
-
-            console.log(`[OptimizedExecutionEngine] 📊 过滤前节点数: ${Object.keys(fullPrompt.output || {}).length}`);
-            console.log(`[OptimizedExecutionEngine] 📊 过滤后节点数: ${Object.keys(filteredPrompt.output || {}).length}`);
-            console.log(`[OptimizedExecutionEngine] 📊 将提交的节点ID: [${Object.keys(filteredPrompt.output || {}).join(', ')}]`);
-
-            // 3. 使用标准的ComfyUI API调用
-            // 由于我们需要过滤prompt，不能直接用app.queuePrompt()
-            // 而需要直接调用api.queuePrompt(index, prompt)
-            // 确保以正确的参数顺序调用
-            await api.queuePrompt(0, filteredPrompt);
+            
+            console.log(`[OptimizedExecutionEngine] 📊 完整prompt节点数: ${Object.keys(fullPrompt.output || {}).length}`);
+            console.log(`[OptimizedExecutionEngine] 📋 将由Hook过滤后提交的节点ID: [${nodeIds.join(', ')}]`);
+            
+            // 调用api.queuePrompt，Hook会自动过滤
+            await api.queuePrompt(0, fullPrompt);
 
             console.log(`[OptimizedExecutionEngine] ✅ 节点已提交到ComfyUI队列`);
         } catch (error) {
