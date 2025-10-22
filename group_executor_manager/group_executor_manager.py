@@ -41,30 +41,11 @@ class GroupExecutorManager:
             }
         }
 
-    @classmethod
-    def RETURN_TYPES(cls):
-        """定义返回类型"""
-        return ("STRING", "STRING")
-
-    @classmethod
-    def RETURN_NAMES(cls):
-        """定义返回名称"""
-        return ("execution_plan", "cache_control_signal")
-
-    @classmethod
-    def FUNCTION(cls):
-        """定义执行函数名"""
-        return "create_execution_plan"
-
-    @classmethod
-    def CATEGORY(cls):
-        """定义节点分类"""
-        return "utils"
-
-    @classmethod
-    def DESCRIPTION(cls):
-        """节点描述"""
-        return "组执行管理器，用于管理和控制节点组的执行顺序和缓存策略"
+    RETURN_TYPES = ("STRING", "STRING")
+RETURN_NAMES = ("execution_plan", "cache_control_signal")
+FUNCTION = "create_execution_plan"
+CATEGORY = "utils"
+DESCRIPTION = "组执行管理器，用于管理和控制节点组的执行顺序和缓存策略"
 
     def create_execution_plan(self, group_config, execution_mode, enable_cache=True, debug_mode=False, prompt=None, extra_pnginfo=None, unique_id=None):
         """
