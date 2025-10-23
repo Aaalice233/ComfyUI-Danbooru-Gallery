@@ -9,6 +9,11 @@ import uuid
 import hashlib
 from typing import Dict, Any
 
+# 导入debug配置
+from ..utils.debug_config import debug_print
+
+COMPONENT_NAME = "group_executor_manager"
+
 
 class AnyType(str):
     """用于表示任意类型的特殊类，在类型比较时总是返回False（不相等）"""
@@ -35,9 +40,9 @@ def set_group_config(groups):
     global _group_executor_config
     _group_executor_config["groups"] = groups
     _group_executor_config["last_update"] = time.time()
-    print(f"\n[GroupExecutorManager] ✅ 配置已更新: {len(groups)} 个组")
+    debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager] ✅ 配置已更新: {len(groups)} 个组")
     for i, group in enumerate(groups, 1):
-        print(f"   {i}. {group.get('group_name', '未命名')} (延迟: {group.get('delay_seconds', 0)}s)")
+        debug_print(COMPONENT_NAME, f"   {i}. {group.get('group_name', '未命名')} (延迟: {group.get('delay_seconds', 0)}s)")
 
 
 class GroupExecutorManager:
@@ -98,19 +103,19 @@ class GroupExecutorManager:
             tuple: (execution_data,) - 包含执行计划和缓存控制信号的JSON字符串
         """
         try:
-            print(f"\n{'='*80}")
-            print(f"[GroupExecutorManager] 🎯 create_execution_plan 被调用")
-            print(f"{'='*80}")
-            print(f"\n[GroupExecutorManager] 🎯 开始生成执行计划")
-            print(f"[GroupExecutorManager] 📍 节点ID: {unique_id}")
+            debug_print(COMPONENT_NAME, f"\n{'='*80}")
+            debug_print(COMPONENT_NAME, f"[GroupExecutorManager] 🎯 create_execution_plan 被调用")
+            debug_print(COMPONENT_NAME, f"{'='*80}")
+            debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager] 🎯 开始生成执行计划")
+            debug_print(COMPONENT_NAME, f"[GroupExecutorManager] 📍 节点ID: {unique_id}")
 
             # ✅ 从全局配置中读取配置
             config_data = get_group_config()
-            print(f"[GroupExecutorManager] 📦 从全局配置读取: {len(config_data)} 个组")
+            debug_print(COMPONENT_NAME, f"[GroupExecutorManager] 📦 从全局配置读取: {len(config_data)} 个组")
 
             # ✅ 新增：检测配置是否为空，如果为空则返回禁用状态
             if not config_data or len(config_data) == 0:
-                print(f"[GroupExecutorManager] ⚠️  配置为空，返回禁用状态")
+                debug_print(COMPONENT_NAME, f"[GroupExecutorManager] ⚠️  配置为空，返回禁用状态")
                 disabled_data = {
                     "execution_plan": {
                         "disabled": True,
@@ -136,11 +141,11 @@ class GroupExecutorManager:
                         "disabled_reason": "empty_groups"
                     }
                 }
-                print(f"[GroupExecutorManager] 🚫 已禁用组执行功能（原因：配置为空）\n")
+                debug_print(COMPONENT_NAME, f"[GroupExecutorManager] 🚫 已禁用组执行功能（原因：配置为空）\n")
                 return (json.dumps(disabled_data, ensure_ascii=False),)
 
             # ✅ 有有效配置，继续生成执行计划
-            print(f"[GroupExecutorManager] ✅ 使用用户配置的组")
+            debug_print(COMPONENT_NAME, f"[GroupExecutorManager] ✅ 使用用户配置的组")
 
             # 固定配置值（内部使用）
             execution_mode = "sequential"  # 顺序执行: sequential, 并行执行: parallel
@@ -150,7 +155,7 @@ class GroupExecutorManager:
 
             # ✅ 每次执行都生成新的execution_id
             execution_id = f"exec_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-            print(f"[GroupExecutorManager] ✅ 生成新的execution_id: {execution_id}")
+            debug_print(COMPONENT_NAME, f"[GroupExecutorManager] ✅ 生成新的execution_id: {execution_id}")
 
             # 创建执行计划 - 包含验证器需要的所有字段
             execution_plan = {
@@ -175,19 +180,19 @@ class GroupExecutorManager:
             }
 
             # 📋 详细调试日志：显示生成的执行计划
-            print(f"\n[GroupExecutorManager] 📋 生成执行计划详情:")
-            print(f"   执行ID: {execution_id}")
-            print(f"   组数量: {len(config_data)}")
-            print(f"   执行模式: {execution_mode}")
-            print(f"   缓存模式: {cache_control_mode}")
-            print(f"   ")
-            
+            debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager] 📋 生成执行计划详情:")
+            debug_print(COMPONENT_NAME, f"   执行ID: {execution_id}")
+            debug_print(COMPONENT_NAME, f"   组数量: {len(config_data)}")
+            debug_print(COMPONENT_NAME, f"   执行模式: {execution_mode}")
+            debug_print(COMPONENT_NAME, f"   缓存模式: {cache_control_mode}")
+            debug_print(COMPONENT_NAME, f"   ")
+
             for i, group in enumerate(config_data, 1):
                 group_name = group.get('group_name', f'未命名组{i}')
                 delay = group.get('delay_seconds', 0)
-                print(f"   ├─ 组{i}: {group_name} (延迟{delay}s)")
+                debug_print(COMPONENT_NAME, f"   ├─ 组{i}: {group_name} (延迟{delay}s)")
 
-            print(f"\n[GroupExecutorManager] ✅ 执行计划生成完成\n")
+            debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager] ✅ 执行计划生成完成\n")
 
             # ✅ 合并为单个execution_data输出
             execution_data = {
@@ -197,16 +202,16 @@ class GroupExecutorManager:
             execution_data_json = json.dumps(execution_data, ensure_ascii=False)
 
             # 📤 输出日志：显示将要发送给GroupExecutorTrigger的内容
-            print(f"[GroupExecutorManager] 📤 输出内容:")
-            print(f"   └─ execution_data (STRING):")
-            print(f"      {execution_data_json[:200]}...")
-            print(f"")
+            debug_print(COMPONENT_NAME, f"[GroupExecutorManager] 📤 输出内容:")
+            debug_print(COMPONENT_NAME, f"   └─ execution_data (STRING):")
+            debug_print(COMPONENT_NAME, f"      {execution_data_json[:200]}...")
+            debug_print(COMPONENT_NAME, f"")
 
             return (execution_data_json,)
 
         except Exception as e:
             error_msg = f"GroupExecutorManager 执行错误: {str(e)}"
-            print(f"\n[GroupExecutorManager] ❌ {error_msg}\n")
+            debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager] ❌ {error_msg}\n")
             import traceback
             traceback.print_exc()
 
@@ -240,18 +245,18 @@ try:
         try:
             data = await request.json()
             groups = data.get('groups', [])
-            
-            print(f"\n[GroupExecutorManager API] 📥 收到配置保存请求")
-            print(f"[GroupExecutorManager API] 📦 组数量: {len(groups)}")
-            
+
+            debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager API] 📥 收到配置保存请求")
+            debug_print(COMPONENT_NAME, f"[GroupExecutorManager API] 📦 组数量: {len(groups)}")
+
             # 保存到全局配置
             set_group_config(groups)
-            
+
             # 立即显示保存后的配置
-            print(f"[GroupExecutorManager API] ✅ 配置已保存到全局存储")
+            debug_print(COMPONENT_NAME, f"[GroupExecutorManager API] ✅ 配置已保存到全局存储")
             for i, group in enumerate(groups, 1):
-                print(f"   {i}. {group.get('group_name', '未命名')} (延迟: {group.get('delay_seconds', 0)}s)")
-            print("")
+                debug_print(COMPONENT_NAME, f"   {i}. {group.get('group_name', '未命名')} (延迟: {group.get('delay_seconds', 0)}s)")
+            debug_print(COMPONENT_NAME, "")
             
             return web.json_response({
                 "status": "success",
@@ -272,7 +277,7 @@ try:
         """获取已保存的组配置"""
         try:
             groups = get_group_config()
-            print(f"\n[GroupExecutorManager API] 📤 返回已保存的配置: {len(groups)} 个组")
+            debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager API] 📤 返回已保存的配置: {len(groups)} 个组")
             
             return web.json_response({
                 "status": "success",

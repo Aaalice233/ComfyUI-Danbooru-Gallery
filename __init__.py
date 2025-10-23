@@ -58,6 +58,7 @@ try:
     from server import PromptServer
     from aiohttp import web
     from .image_cache_manager.image_cache_manager import cache_manager
+    from .utils import debug_config
 
     @PromptServer.instance.routes.post("/danbooru_gallery/clear_cache")
     async def clear_image_cache(request):
@@ -78,6 +79,29 @@ try:
             return web.json_response({"success": True, "group_name": group_name})
         except Exception as e:
             return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    @PromptServer.instance.routes.get("/danbooru_gallery/get_debug_config")
+    async def get_debug_config(request):
+        """获取debug配置的API端点"""
+        try:
+            config = debug_config.get_all_debug_config()
+            return web.json_response({"status": "success", "debug": config})
+        except Exception as e:
+            return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+    @PromptServer.instance.routes.post("/danbooru_gallery/update_debug_config")
+    async def update_debug_config(request):
+        """更新debug配置的API端点"""
+        try:
+            data = await request.json()
+            new_config = data.get("debug", {})
+            success = debug_config.save_config(new_config)
+            if success:
+                return web.json_response({"status": "success", "message": "配置已更新"})
+            else:
+                return web.json_response({"status": "error", "message": "配置更新失败"}, status=500)
+        except Exception as e:
+            return web.json_response({"status": "error", "error": str(e)}, status=500)
 
 except ImportError:
     # ComfyUI 环境不可用时的静默处理

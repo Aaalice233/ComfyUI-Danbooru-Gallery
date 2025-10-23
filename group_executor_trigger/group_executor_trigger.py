@@ -18,6 +18,11 @@ try:
 except ImportError:
     PromptServer = None
 
+# 导入debug配置
+from ..utils.debug_config import should_debug
+
+COMPONENT_NAME = "group_executor_trigger"
+
 # 设置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("OptimizedGET")
@@ -106,19 +111,21 @@ class GroupExecutorTrigger:
             tuple: 空元组（防止ComfyUI触发依赖执行）
         """
         try:
-            print(f"\n{'='*80}")
-            print(f"[GroupExecutorTrigger] 🎯 trigger_optimized_execution 被调用")
-            print(f"{'='*80}")
+            if should_debug(COMPONENT_NAME):
+                print(f"\n{'='*80}")
+                print(f"[GroupExecutorTrigger] 🎯 trigger_optimized_execution 被调用")
+                print(f"{'='*80}")
 
             start_time = time.time()
 
             # 📥 输入日志：显示从GroupExecutorManager接收到的内容
-            logger.info(f"\n{'='*80}")
-            logger.info(f"[GroupExecutorTrigger] 📥 接收到来自GroupExecutorManager的数据")
-            logger.info(f"[GroupExecutorTrigger] 📍 输入内容:")
-            logger.info(f"   └─ execution_data (STRING):")
-            logger.info(f"      {execution_data[:200]}{'...' if len(execution_data) > 200 else ''}")
-            logger.info(f"{'='*80}\n")
+            if should_debug(COMPONENT_NAME):
+                logger.info(f"\n{'='*80}")
+                logger.info(f"[GroupExecutorTrigger] 📥 接收到来自GroupExecutorManager的数据")
+                logger.info(f"[GroupExecutorTrigger] 📍 输入内容:")
+                logger.info(f"   └─ execution_data (STRING):")
+                logger.info(f"      {execution_data[:200]}{'...' if len(execution_data) > 200 else ''}")
+                logger.info(f"{'='*80}\n")
 
             # 处理可选参数
             unique_id = unique_id or "unknown"
@@ -142,10 +149,11 @@ class GroupExecutorTrigger:
             if execution_plan_dict.get("disabled", False):
                 disabled_reason = execution_plan_dict.get("disabled_reason", "unknown")
                 disabled_message = execution_plan_dict.get("message", "组执行功能已禁用")
-                logger.warning(f"[GroupExecutorTrigger] 🚫 执行计划已禁用")
-                logger.warning(f"[GroupExecutorTrigger] 🚫 原因: {disabled_reason}")
-                logger.warning(f"[GroupExecutorTrigger] 🚫 信息: {disabled_message}")
-                logger.warning(f"[GroupExecutorTrigger] ✅ 跳过执行，返回空元组\n")
+                if should_debug(COMPONENT_NAME):
+                    logger.warning(f"[GroupExecutorTrigger] 🚫 执行计划已禁用")
+                    logger.warning(f"[GroupExecutorTrigger] 🚫 原因: {disabled_reason}")
+                    logger.warning(f"[GroupExecutorTrigger] 🚫 信息: {disabled_message}")
+                    logger.warning(f"[GroupExecutorTrigger] ✅ 跳过执行，返回空元组\n")
                 return ()
 
             # ✅ 修复：覆盖execution_plan的client_id为真实值
@@ -159,9 +167,10 @@ class GroupExecutorTrigger:
                 # 如果在30秒内重复触发同一个execution_id，说明是GroupExecutorTrigger被重复执行
                 # 这通常发生在GroupExecutorManager输出频繁变化时
                 if elapsed < 30:
-                    logger.warning(f"[GroupExecutorTrigger] ⚠️ 检测到重复的execution_id: {execution_id} (距离上次触发{elapsed:.1f}秒)")
-                    logger.warning(f"[GroupExecutorTrigger] ⚠️ 已存储状态: {last_status}")
-                    logger.warning(f"[GroupExecutorTrigger] ⚠️ 跳过重复执行，返回之前的状态")
+                    if should_debug(COMPONENT_NAME):
+                        logger.warning(f"[GroupExecutorTrigger] ⚠️ 检测到重复的execution_id: {execution_id} (距离上次触发{elapsed:.1f}秒)")
+                        logger.warning(f"[GroupExecutorTrigger] ⚠️ 已存储状态: {last_status}")
+                        logger.warning(f"[GroupExecutorTrigger] ⚠️ 跳过重复执行，返回之前的状态")
                     return ()
             
             # ✅ 记录execution开始时间
@@ -187,12 +196,13 @@ class GroupExecutorTrigger:
             execution_priority = "normal"
             execution_timeout = 300
 
-            logger.info(f"[GroupExecutorTrigger] ⏰ 执行时间: {time.strftime('%H:%M:%S', time.localtime())}")
-            logger.info(f"[GroupExecutorTrigger] 🚀 开始执行组计划")
-            logger.info(f"[GroupExecutorTrigger] 🔧 执行ID: {execution_id}")
-            logger.info(f"[GroupExecutorTrigger] 🖥️  客户端ID: {real_client_id}")
-            logger.info(f"[GroupExecutorTrigger] 📋 节点ID: {unique_id}")
-            logger.info(f"{'='*80}\n")
+            if should_debug(COMPONENT_NAME):
+                logger.info(f"[GroupExecutorTrigger] ⏰ 执行时间: {time.strftime('%H:%M:%S', time.localtime())}")
+                logger.info(f"[GroupExecutorTrigger] 🚀 开始执行组计划")
+                logger.info(f"[GroupExecutorTrigger] 🔧 执行ID: {execution_id}")
+                logger.info(f"[GroupExecutorTrigger] 🖥️  客户端ID: {real_client_id}")
+                logger.info(f"[GroupExecutorTrigger] 📋 节点ID: {unique_id}")
+                logger.info(f"{'='*80}\n")
 
             # 2. 验证执行计划
             validation_result = self.validate_execution_plan(execution_plan_dict, cache_control_signal_dict, real_client_id)
@@ -224,19 +234,21 @@ class GroupExecutorTrigger:
                 "timestamp": start_time
             }
 
-            logger.info(f"[GroupExecutorTrigger] 📡 发送WebSocket消息:")
-            logger.info(f"   - 事件类型: {message_data['type']}")
-            logger.info(f"   - 执行ID: {execution_id}")
-            logger.info(f"   - 组数量: {len(execution_plan_dict.get('groups', []))}")
-            logger.info(f"   - 客户端ID: {real_client_id}")
-            logger.info(f"   - 强制执行: {force_execution}")
+            if should_debug(COMPONENT_NAME):
+                logger.info(f"[GroupExecutorTrigger] 📡 发送WebSocket消息:")
+                logger.info(f"   - 事件类型: {message_data['type']}")
+                logger.info(f"   - 执行ID: {execution_id}")
+                logger.info(f"   - 组数量: {len(execution_plan_dict.get('groups', []))}")
+                logger.info(f"   - 客户端ID: {real_client_id}")
+                logger.info(f"   - 强制执行: {force_execution}")
 
             # 5. 发送消息到前端JavaScript引擎
             PromptServer.instance.send_sync("danbooru_optimized_execution", message_data, PromptServer.instance.client_id)
 
-            logger.info(f"[GroupExecutorTrigger] ✅ WebSocket消息发送成功")
-            logger.info(f"[GroupExecutorTrigger] ⏳ JavaScript引擎将异步执行组列表")
-            logger.info(f"[GroupExecutorTrigger] ✅ 执行触发完成，返回空元组（防止ComfyUI触发依赖执行）\n")
+            if should_debug(COMPONENT_NAME):
+                logger.info(f"[GroupExecutorTrigger] ✅ WebSocket消息发送成功")
+                logger.info(f"[GroupExecutorTrigger] ⏳ JavaScript引擎将异步执行组列表")
+                logger.info(f"[GroupExecutorTrigger] ✅ 执行触发完成，返回空元组（防止ComfyUI触发依赖执行）\n")
 
             # ✅ 关键修复：返回空元组，参考LG_GroupExecutor模式
             # 这样ComfyUI不会因为返回值触发依赖链执行，避免提交所有24个节点
@@ -269,27 +281,28 @@ class GroupExecutorTrigger:
         errors = []
 
         # 📋 输出执行计划和缓存信号内容
-        logger.info(f"[GroupExecutorTrigger] 📋 执行计划内容:")
-        logger.info(f"   - 执行ID: {execution_plan.get('execution_id')}")
-        logger.info(f"   - 组数量: {len(execution_plan.get('groups', []))}")
-        logger.info(f"   - 执行模式: {execution_plan.get('execution_mode')}")
-        logger.info(f"   - 缓存控制模式: {execution_plan.get('cache_control_mode')}")
-        logger.info(f"   - 客户端ID: {execution_plan.get('client_id')}")
-        
-        # 显示具体的组信息
-        groups = execution_plan.get("groups", [])
-        for i, group in enumerate(groups):
-            group_name = group.get("group_name", group.get("name", f"组{i+1}"))
-            group_nodes = group.get("nodes", [])
-            logger.info(f"   - 组{i+1}: {group_name} (包含{len(group_nodes)}个节点)")
-        
-        logger.info(f"[GroupExecutorTrigger] 📋 缓存信号内容:")
-        logger.info(f"   - 执行ID: {cache_control_signal.get('execution_id')}")
-        logger.info(f"   - 缓存控制模式: {cache_control_signal.get('cache_control_mode')}")
-        logger.info(f"   - 启用缓存: {cache_control_signal.get('enable_cache')}")
-        logger.info(f"   - 启用执行(enabled): {cache_control_signal.get('enabled')}")
-        logger.info(f"   - 时间戳: {cache_control_signal.get('timestamp')}")
-        logger.info(f"   - 所有字段: {list(cache_control_signal.keys())}")
+        if should_debug(COMPONENT_NAME):
+            logger.info(f"[GroupExecutorTrigger] 📋 执行计划内容:")
+            logger.info(f"   - 执行ID: {execution_plan.get('execution_id')}")
+            logger.info(f"   - 组数量: {len(execution_plan.get('groups', []))}")
+            logger.info(f"   - 执行模式: {execution_plan.get('execution_mode')}")
+            logger.info(f"   - 缓存控制模式: {execution_plan.get('cache_control_mode')}")
+            logger.info(f"   - 客户端ID: {execution_plan.get('client_id')}")
+
+            # 显示具体的组信息
+            groups = execution_plan.get("groups", [])
+            for i, group in enumerate(groups):
+                group_name = group.get("group_name", group.get("name", f"组{i+1}"))
+                group_nodes = group.get("nodes", [])
+                logger.info(f"   - 组{i+1}: {group_name} (包含{len(group_nodes)}个节点)")
+
+            logger.info(f"[GroupExecutorTrigger] 📋 缓存信号内容:")
+            logger.info(f"   - 执行ID: {cache_control_signal.get('execution_id')}")
+            logger.info(f"   - 缓存控制模式: {cache_control_signal.get('cache_control_mode')}")
+            logger.info(f"   - 启用缓存: {cache_control_signal.get('enable_cache')}")
+            logger.info(f"   - 启用执行(enabled): {cache_control_signal.get('enabled')}")
+            logger.info(f"   - 时间戳: {cache_control_signal.get('timestamp')}")
+            logger.info(f"   - 所有字段: {list(cache_control_signal.keys())}")
 
         # 检查必需字段
         required_fields = ["execution_id", "groups", "execution_mode", "cache_control_mode"]
@@ -343,9 +356,10 @@ class GroupExecutorTrigger:
         Returns:
             是否允许执行
         """
-        logger.info(f"[GroupExecutorTrigger] 🔐 开始检查执行权限...")
-        logger.info(f"   - 期望执行ID: {execution_id}")
-        logger.info(f"   - 缓存信号内容: {cache_control_signal}")
+        if should_debug(COMPONENT_NAME):
+            logger.info(f"[GroupExecutorTrigger] 🔐 开始检查执行权限...")
+            logger.info(f"   - 期望执行ID: {execution_id}")
+            logger.info(f"   - 缓存信号内容: {cache_control_signal}")
         
         # 检查控制信号有效性
         if not cache_control_signal.get("valid", True):
@@ -360,7 +374,8 @@ class GroupExecutorTrigger:
 
         # 检查启用状态
         enabled = cache_control_signal.get("enabled", False)
-        logger.info(f"   - 启用状态(enabled): {enabled}")
+        if should_debug(COMPONENT_NAME):
+            logger.info(f"   - 启用状态(enabled): {enabled}")
         if not enabled:
             logger.warning(f"[GroupExecutorTrigger] ⚠️ 缓存控制信号禁用执行")
             return False
@@ -369,15 +384,17 @@ class GroupExecutorTrigger:
         signal_timestamp = cache_control_signal.get("timestamp", 0)
         current_time = time.time()
         time_diff = current_time - signal_timestamp
-        logger.info(f"   - 信号时间戳: {signal_timestamp}")
-        logger.info(f"   - 当前时间: {current_time}")
-        logger.info(f"   - 时间差: {time_diff:.1f}秒")
+        if should_debug(COMPONENT_NAME):
+            logger.info(f"   - 信号时间戳: {signal_timestamp}")
+            logger.info(f"   - 当前时间: {current_time}")
+            logger.info(f"   - 时间差: {time_diff:.1f}秒")
         
         if time_diff > 600:  # 10分钟超时
             logger.warning(f"[GroupExecutorTrigger] ⏰ 缓存控制信号过期: {time_diff:.1f}秒 > 600秒")
             return False
         
-        logger.info(f"[GroupExecutorTrigger] ✅ 所有权限检查通过！")
+        if should_debug(COMPONENT_NAME):
+            logger.info(f"[GroupExecutorTrigger] ✅ 所有权限检查通过！")
         return True
 
     def create_error_status(self, execution_id: str, error_message: str, timestamp: float) -> tuple:

@@ -20,7 +20,11 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ImageCacheGet")
 
+# 导入debug配置
+from ..utils.debug_config import should_debug
+
 CATEGORY_TYPE = "danbooru"
+COMPONENT_NAME = "image_cache_get"
 
 
 class ImageCacheGet:
@@ -177,13 +181,14 @@ class ImageCacheGet:
             # 参数提取
             enable_preview = enable_preview[0] if enable_preview else True
 
-            logger.info(f"\n{'='*60}")
-            logger.info(f"[ImageCacheGet] ⏰ 执行时间: {time.strftime('%H:%M:%S', time.localtime())}")
-            logger.info(f"[ImageCacheGet] 🎯 节点ID: {unique_id}")
-            logger.info(f"[ImageCacheGet] 📷 显示预览: {enable_preview}")
-            logger.info(f"[ImageCacheGet] 🔍 当前组名: {cache_manager.current_group_name if cache_manager else 'N/A'}")
-            logger.info(f"[ImageCacheGet] 📁 使用全局缓存（不隔离通道）")
-            logger.info(f"{'='*60}\n")
+            if should_debug(COMPONENT_NAME):
+                logger.info(f"\n{'='*60}")
+                logger.info(f"[ImageCacheGet] ⏰ 执行时间: {time.strftime('%H:%M:%S', time.localtime())}")
+                logger.info(f"[ImageCacheGet] 🎯 节点ID: {unique_id}")
+                logger.info(f"[ImageCacheGet] 📷 显示预览: {enable_preview}")
+                logger.info(f"[ImageCacheGet] 🔍 当前组名: {cache_manager.current_group_name if cache_manager else 'N/A'}")
+                logger.info(f"[ImageCacheGet] 📁 使用全局缓存（不隔离通道）")
+                logger.info(f"{'='*60}\n")
 
             # ✅ 检测工作流中是否有GroupExecutorManager节点（使用缓存，只检测一次）
             has_manager = ImageCacheGet._check_for_group_executor_manager(prompt)
@@ -208,9 +213,11 @@ class ImageCacheGet:
                         # cached_images是列表，每个元素shape为(1, H, W, C)
                         # 需要合并成(N, H, W, C)的批次张量
                         cached_image = torch.cat(cached_images, dim=0)
-                        logger.info(f"[ImageCacheGet] ✅ 成功获取全局缓存图像 (共{len(cached_images)}张，批次shape: {cached_image.shape})")
+                        if should_debug(COMPONENT_NAME):
+                            logger.info(f"[ImageCacheGet] ✅ 成功获取全局缓存图像 (共{len(cached_images)}张，批次shape: {cached_image.shape})")
                     else:
-                        logger.info(f"[ImageCacheGet] 📌 全局缓存为空，使用默认图像")
+                        if should_debug(COMPONENT_NAME):
+                            logger.info(f"[ImageCacheGet] 📌 全局缓存为空，使用默认图像")
                         cached_image = default_image[0] if default_image else torch.zeros((1, 64, 64, 3))
                 except Exception as e:
                     logger.warning(f"[ImageCacheGet] ⚠️ 缓存获取失败: {str(e)}")
@@ -225,7 +232,8 @@ class ImageCacheGet:
                 result_image = default_image[0] if default_image else torch.zeros((1, 64, 64, 3))
 
             execution_time = time.time() - start_time
-            logger.info(f"[ImageCacheGet] ⏱️ 执行耗时: {execution_time:.3f}秒\n")
+            if should_debug(COMPONENT_NAME):
+                logger.info(f"[ImageCacheGet] ⏱️ 执行耗时: {execution_time:.3f}秒\n")
 
             # 返回标准格式：(图像张量,) 和 ui 数据
             # 如果启用预览，从全局缓存通道获取图像文件信息
@@ -237,9 +245,11 @@ class ImageCacheGet:
                     if cache_channel and "images" in cache_channel and cache_channel["images"]:
                         # 返回缓存的图像文件信息用于预览
                         ui_data = {"images": cache_channel["images"]}
-                        logger.info(f"[ImageCacheGet] ✅ 预览数据已准备: {len(cache_channel['images'])}张图像")
+                        if should_debug(COMPONENT_NAME):
+                            logger.info(f"[ImageCacheGet] ✅ 预览数据已准备: {len(cache_channel['images'])}张图像")
                     else:
-                        logger.info(f"[ImageCacheGet] 📌 全局缓存无图像，不显示预览")
+                        if should_debug(COMPONENT_NAME):
+                            logger.info(f"[ImageCacheGet] 📌 全局缓存无图像，不显示预览")
                         ui_data = {"images": []}
                 except Exception as e:
                     logger.warning(f"[ImageCacheGet] ⚠️ 获取预览数据失败: {str(e)}")

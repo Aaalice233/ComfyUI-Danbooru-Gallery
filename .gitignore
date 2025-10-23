@@ -1,9 +1,11 @@
 # 本地配置文件
 settings.json
-config.json
 user_settings.json
 *_config.json
 *_settings.json
+
+# Debug配置文件（需要提交）
+# config.json - 已从忽略列表移除
 
 # Claude相关文件
 .claude/

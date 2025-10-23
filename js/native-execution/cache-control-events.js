@@ -9,6 +9,14 @@
  * 4. 增强调试和状态监控
  */
 
+// Debug辅助函数
+const COMPONENT_NAME = 'cache_control_events';
+const debugLog = (...args) => {
+    if (window.shouldDebug && window.shouldDebug(COMPONENT_NAME)) {
+        console.log(...args);
+    }
+};
+
 class CacheControlEvents {
     constructor() {
         this.cacheSignals = new Map(); // executionId_groupName -> control signal
@@ -16,9 +24,9 @@ class CacheControlEvents {
         this.setupEventListeners();
         this.debugMode = true;
 
-        console.log('[CacheControlEvents] ✅ 缓存控制事件系统已初始化');
-        console.log('[CacheControlEvents] 🔧 版本: 2.0.0');
-        console.log('[CacheControlEvents] 🎛️ 基于ComfyUI原生机制');
+        debugLog('[CacheControlEvents] ✅ 缓存控制事件系统已初始化');
+        debugLog('[CacheControlEvents] 🔧 版本: 2.0.0');
+        debugLog('[CacheControlEvents] 🎛️ 基于ComfyUI原生机制');
     }
 
     setupEventListeners() {

@@ -12,7 +12,11 @@ from PIL import Image
 from typing import List, Dict, Any, Optional, Tuple
 from ..image_cache_manager.image_cache_manager import cache_manager
 
+# 导入debug配置
+from ..utils.debug_config import debug_print
+
 CATEGORY_TYPE = "danbooru"
+COMPONENT_NAME = "image_cache_save"
 
 
 class AnyType(str):
@@ -139,12 +143,12 @@ class ImageCache:
         """
         try:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"\n{'='*60}")
-            print(f"[ImageCacheSave] ⏰ 执行时间: {timestamp}")
-            print(f"[ImageCacheSave] 🔍 当前组名: {cache_manager.current_group_name}")
-            print(f"[ImageCacheSave] 📁 使用全局缓存（不隔离通道）")
-            print(f"[ImageCacheSave] ┌─ 开始保存图像")
-            print(f"{'='*60}\n")
+            debug_print(COMPONENT_NAME, f"\n{'='*60}")
+            debug_print(COMPONENT_NAME, f"[ImageCacheSave] ⏰ 执行时间: {timestamp}")
+            debug_print(COMPONENT_NAME, f"[ImageCacheSave] 🔍 当前组名: {cache_manager.current_group_name}")
+            debug_print(COMPONENT_NAME, f"[ImageCacheSave] 📁 使用全局缓存（不隔离通道）")
+            debug_print(COMPONENT_NAME, f"[ImageCacheSave] ┌─ 开始保存图像")
+            debug_print(COMPONENT_NAME, f"{'='*60}\n")
 
             # ✅ 检测工作流中是否有GroupExecutorManager节点（使用缓存，只检测一次）
             has_manager = ImageCache._check_for_group_executor_manager(prompt)
@@ -157,7 +161,7 @@ class ImageCache:
 
             # ✅ 保存前固定清空所有缓存
             # 因为此节点必须配合GroupExecutorManager使用，每个组保存时都应清空前一个组的缓存
-            print(f"[ImageCacheSave] 🗑️ 清空所有缓存通道（强制执行）")
+            debug_print(COMPONENT_NAME, f"[ImageCacheSave] 🗑️ 清空所有缓存通道（强制执行）")
             cache_manager.clear_cache(channel_name=None)  # None表示清空所有通道
 
             # 将输入的批次列表展开为单个图像张量列表
@@ -178,7 +182,7 @@ class ImageCache:
                 channel_name="__global__"  # 使用全局通道
             )
 
-            print(f"[ImageCacheSave] └─ 保存完成: {len(results)} 张")
+            debug_print(COMPONENT_NAME, f"[ImageCacheSave] └─ 保存完成: {len(results)} 张")
 
             if processed_enable_preview:
                 return {"ui": {"images": results}}
@@ -186,9 +190,9 @@ class ImageCache:
                 return {"ui": {"images": []}}
 
         except Exception as e:
-            print(f"[ImageCacheSave] └─ ✗ 保存失败: {str(e)}")
+            debug_print(COMPONENT_NAME, f"[ImageCacheSave] └─ ✗ 保存失败: {str(e)}")
             import traceback
-            print(traceback.format_exc())
+            debug_print(COMPONENT_NAME, traceback.format_exc())
 
             # 返回空结果但不抛出异常
             return {"ui": {"images": []}}

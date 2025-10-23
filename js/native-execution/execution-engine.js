@@ -12,6 +12,14 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
+// Debug辅助函数
+const COMPONENT_NAME = 'execution_engine';
+const debugLog = (...args) => {
+    if (window.shouldDebug && window.shouldDebug(COMPONENT_NAME)) {
+        console.log(...args);
+    }
+};
+
 class OptimizedExecutionEngine {
     constructor() {
         this.executionContexts = new Map(); // execution_id -> ExecutionContext
@@ -21,9 +29,9 @@ class OptimizedExecutionEngine {
         this.setupCancelHandler();
         this.debugMode = true;
 
-        console.log('[OptimizedExecutionEngine] ✅ 优化执行引擎已初始化');
-        console.log('[OptimizedExecutionEngine] 🔧 基于ComfyUI原生机制');
-        console.log('[OptimizedExecutionEngine] 🎯 版本: 2.0.0');
+        debugLog('[OptimizedExecutionEngine] ✅ 优化执行引擎已初始化');
+        debugLog('[OptimizedExecutionEngine] 🔧 基于ComfyUI原生机制');
+        debugLog('[OptimizedExecutionEngine] 🎯 版本: 2.0.0');
     }
 
     setupCancelHandler() {

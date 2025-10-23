@@ -5,12 +5,20 @@
 
 import { app } from "/scripts/app.js";
 
+// Debug辅助函数
+const COMPONENT_NAME = 'group_executor_manager';
+const debugLog = (...args) => {
+    if (window.shouldDebug && window.shouldDebug(COMPONENT_NAME)) {
+        console.log(...args);
+    }
+};
+
 // 组执行管理器（配置节点）
 app.registerExtension({
     name: "GroupExecutorManager",
 
     async init(app) {
-        console.log('[GEM-UI] 初始化组执行管理器配置界面');
+        debugLog('[GEM-UI] 初始化组执行管理器配置界面');
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
