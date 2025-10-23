@@ -440,7 +440,6 @@ app.registerExtension({
 
                 .gmm-target-select,
                 .gmm-action-select {
-                    flex: 1;
                     background: rgba(0, 0, 0, 0.2);
                     border: 1px solid rgba(255, 255, 255, 0.1);
                     border-radius: 6px;
@@ -451,10 +450,27 @@ app.registerExtension({
                     cursor: pointer;
                 }
 
+                .gmm-target-select {
+                    flex: 1;
+                    min-width: 0;
+                    max-width: 250px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .gmm-action-select {
+                    flex-shrink: 0;
+                    width: 80px;
+                }
+
                 .gmm-target-select option,
                 .gmm-action-select option {
                     background: rgba(42, 42, 62, 0.95);
                     color: #E0E0E0;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    max-width: 100%;
                 }
 
                 .gmm-target-select:focus,
@@ -845,6 +861,12 @@ app.registerExtension({
             });
         };
 
+        // 截断文本辅助函数
+        nodeType.prototype.truncateText = function (text, maxLength = 30) {
+            if (!text || text.length <= maxLength) return text;
+            return text.substring(0, maxLength) + '...';
+        };
+
         // 创建规则项
         nodeType.prototype.createRuleItem = function (dialog, config, type, rule, index) {
             const item = document.createElement('div');
@@ -857,7 +879,8 @@ app.registerExtension({
 
             const groupOptions = availableGroups.map(name => {
                 const selected = name === rule.target_group ? 'selected' : '';
-                return `<option value="${name}" ${selected}>${name}</option>`;
+                const displayName = this.truncateText(name, 30);
+                return `<option value="${name}" ${selected} title="${name}">${displayName}</option>`;
             }).join('');
 
             item.innerHTML = `
