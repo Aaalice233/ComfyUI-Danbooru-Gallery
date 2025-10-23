@@ -15,6 +15,7 @@
   - [📚 提示词选择器 (Prompt Selector)](#-提示词选择器-prompt-selector)
   - [👥 多人角色提示词编辑器 (Multi Character Editor)](#-多人角色提示词编辑器-multi-character-editor)
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
+  - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
   - [🖼️ 图像缓存节点 (Image Cache Nodes)](#-图像缓存节点-image-cache-nodes)
 - [安装说明](#安装说明)
 - [系统要求](#系统要求)
@@ -31,6 +32,7 @@
   - [📚 Prompt Selector](#-prompt-selector)
   - [👥 Multi Character Editor](#-multi-character-editor)
   - [⚡ Group Executor Manager](#-group-executor-manager)
+  - [🔇 Group Mute Manager](#-group-mute-manager)
   - [🖼️ Image Cache Nodes](#-image-cache-nodes)
 - [Installation](#installation)
 - [System Requirements](#system-requirements-1)
@@ -253,6 +255,65 @@ fantasy forest AND elf archer MASK(0.00 0.33, 0.00 1.00, 1.00) FEATHER(8) AND dw
 
 ---
 
+### 🔇 组静音管理器 (Group Mute Manager)
+
+**可视化组静音状态管理和联动配置节点**
+
+组静音管理器提供了一个直观的界面来管理工作流中所有组的静音（mute）状态，并支持配置组间联动规则，实现复杂的工作流控制。
+
+#### 核心功能
+- 🎛️ **可视化管理**: 直观的UI界面管理所有组的静音状态
+- 🔗 **组间联动**: 配置组开启/关闭时自动控制其他组
+- 🎨 **颜色过滤**: 按ComfyUI内置颜色过滤显示特定组
+- 🔄 **原生集成**: 使用ComfyUI原生mute功能（ALWAYS/NEVER模式）
+- 🛡️ **防循环机制**: 智能检测并防止循环联动
+- 💾 **持久化配置**: 配置保存到workflow JSON
+- 🎯 **精确控制**: 独立控制每个组的静音状态
+
+#### 联动规则
+组静音管理器支持两种联动触发条件：
+- **组开启时**: 当组被开启（unmute）时触发的联动规则
+- **组关闭时**: 当组被关闭（mute）时触发的联动规则
+
+每个联动规则可以：
+- 选择目标组
+- 选择操作（开启/关闭）
+
+#### 使用方法
+1. 添加 `Danbooru > 组静音管理器 (Group Mute Manager)` 节点
+2. 双击打开管理界面
+3. 使用开关按钮控制组的静音状态
+4. 点击齿轮按钮配置组的联动规则
+5. 可选择颜色过滤器只显示特定颜色的组
+
+#### 使用场景
+- **工作流调试**: 快速启用/禁用工作流的不同部分
+- **条件执行**: 根据需求动态控制执行哪些组
+- **批量管理**: 通过联动规则批量控制多个组
+- **复杂流程**: 实现复杂的条件执行逻辑
+
+#### 示例配置
+```json
+{
+  "group_name": "主生成组",
+  "enabled": true,
+  "linkage": {
+    "on_enable": [
+      {"target_group": "预处理组", "action": "enable"},
+      {"target_group": "调试组", "action": "disable"}
+    ],
+    "on_disable": [
+      {"target_group": "预处理组", "action": "disable"}
+    ]
+  }
+}
+```
+
+**防循环示例**：
+如果配置了"组A开启时→开启组B"，"组B开启时→开启组A"，系统会自动检测并终止循环。
+
+---
+
 ### 🖼️ 图像缓存节点 (Image Cache Nodes)
 
 **智能图像缓存和获取节点组**
@@ -408,6 +469,23 @@ ComfyUI-Danbooru-Gallery/
 │       ├── editor_settings.json
 │       ├── presets.json
 │       └── preset_images/
+├── group_executor_manager/         # 组执行管理器
+│   ├── __init__.py
+│   └── group_executor_manager.py
+├── group_executor_trigger/         # 组执行触发器
+│   └── group_executor_trigger.py
+├── group_mute_manager/             # 组静音管理器
+│   ├── __init__.py
+│   └── group_mute_manager.py
+├── image_cache_save/               # 图像缓存保存节点
+│   ├── __init__.py
+│   └── image_cache_save.py
+├── image_cache_get/                # 图像缓存获取节点
+│   ├── __init__.py
+│   └── image_cache_get.py
+├── image_cache_manager/            # 图像缓存管理器
+│   ├── __init__.py
+│   └── image_cache_manager.py
 ├── install.py                      # 智能安装脚本
 ├── requirements.txt                # 依赖清单
 ├── js/
@@ -421,6 +499,14 @@ ComfyUI-Danbooru-Gallery/
 │   │   ├── output_area.js
 │   │   ├── preset_manager.js
 │   │   └── settings_menu.js
+│   ├── native-execution/           # 组执行系统前端
+│   │   ├── __init__.js
+│   │   ├── cache-control-events.js
+│   │   └── optimized-execution-engine.js
+│   ├── group_executor_manager/     # 组执行管理器前端
+│   │   └── group_executor_manager.js
+│   ├── group_mute_manager/         # 组静音管理器前端
+│   │   └── group_mute_manager.js
 │   └── global/                     # 全局共享组件
 │       ├── autocomplete_cache.js
 │       ├── autocomplete_ui.js
@@ -655,6 +741,65 @@ Group Executor Manager allows you to divide your workflow into multiple groups a
 
 ---
 
+### 🔇 Group Mute Manager
+
+**Visual Group Mute Status Management and Linkage Configuration Node**
+
+Group Mute Manager provides an intuitive interface to manage the mute status of all groups in your workflow, with support for configuring inter-group linkage rules for complex workflow control.
+
+#### Core Features
+- 🎛️ **Visual Management**: Intuitive UI for managing all group mute states
+- 🔗 **Inter-Group Linkage**: Configure automatic control of other groups when a group is enabled/disabled
+- 🎨 **Color Filtering**: Filter and display specific groups by ComfyUI built-in colors
+- 🔄 **Native Integration**: Uses ComfyUI native mute functionality (ALWAYS/NEVER mode)
+- 🛡️ **Anti-Loop Mechanism**: Intelligent detection and prevention of circular linkages
+- 💾 **Persistent Configuration**: Configuration saved to workflow JSON
+- 🎯 **Precise Control**: Independent control of each group's mute status
+
+#### Linkage Rules
+Group Mute Manager supports two types of linkage triggers:
+- **On Enable**: Linkage rules triggered when a group is enabled (unmuted)
+- **On Disable**: Linkage rules triggered when a group is disabled (muted)
+
+Each linkage rule can:
+- Select target group
+- Select action (enable/disable)
+
+#### Usage
+1. Add `Danbooru > Group Mute Manager` node
+2. Double-click to open management interface
+3. Use toggle buttons to control group mute status
+4. Click gear button to configure group linkage rules
+5. Optionally select color filter to show only specific color groups
+
+#### Use Cases
+- **Workflow Debugging**: Quickly enable/disable different parts of workflow
+- **Conditional Execution**: Dynamically control which groups execute based on needs
+- **Batch Management**: Batch control multiple groups through linkage rules
+- **Complex Flows**: Implement complex conditional execution logic
+
+#### Example Configuration
+```json
+{
+  "group_name": "Main Generation Group",
+  "enabled": true,
+  "linkage": {
+    "on_enable": [
+      {"target_group": "Preprocessing Group", "action": "enable"},
+      {"target_group": "Debug Group", "action": "disable"}
+    ],
+    "on_disable": [
+      {"target_group": "Preprocessing Group", "action": "disable"}
+    ]
+  }
+}
+```
+
+**Anti-Loop Example**:
+If configured with "Group A enable → enable Group B" and "Group B enable → enable Group A", the system will automatically detect and terminate the loop.
+
+---
+
 ### 🖼️ Image Cache Nodes
 
 **Smart Image Caching and Retrieval Node Group**
@@ -810,6 +955,23 @@ ComfyUI-Danbooru-Gallery/
 │       ├── editor_settings.json
 │       ├── presets.json
 │       └── preset_images/
+├── group_executor_manager/         # Group Executor Manager
+│   ├── __init__.py
+│   └── group_executor_manager.py
+├── group_executor_trigger/         # Group Executor Trigger
+│   └── group_executor_trigger.py
+├── group_mute_manager/             # Group Mute Manager
+│   ├── __init__.py
+│   └── group_mute_manager.py
+├── image_cache_save/               # Image Cache Save node
+│   ├── __init__.py
+│   └── image_cache_save.py
+├── image_cache_get/                # Image Cache Get node
+│   ├── __init__.py
+│   └── image_cache_get.py
+├── image_cache_manager/            # Image Cache Manager
+│   ├── __init__.py
+│   └── image_cache_manager.py
 ├── install.py                      # Smart installation script
 ├── requirements.txt                # Dependency list
 ├── js/
@@ -823,6 +985,14 @@ ComfyUI-Danbooru-Gallery/
 │   │   ├── output_area.js
 │   │   ├── preset_manager.js
 │   │   └── settings_menu.js
+│   ├── native-execution/           # Group Execution System frontend
+│   │   ├── __init__.js
+│   │   ├── cache-control-events.js
+│   │   └── optimized-execution-engine.js
+│   ├── group_executor_manager/     # Group Executor Manager frontend
+│   │   └── group_executor_manager.js
+│   ├── group_mute_manager/         # Group Mute Manager frontend
+│   │   └── group_mute_manager.js
 │   └── global/                     # Global shared components
 │       ├── autocomplete_cache.js
 │       ├── autocomplete_ui.js
@@ -880,6 +1050,7 @@ MIT License
 ### 核心功能参考 | Core Feature References
 
 - [Comfyui-LG_GroupExecutor](https://github.com/LAOGOU-666/Comfyui-LG_GroupExecutor) - 组执行管理器和图像缓存节点的设计思路来源 | Design inspiration for Group Executor Manager and Image Cache nodes
+- [rgthree-comfy](https://github.com/rgthree/rgthree-comfy) - 组静音管理器的核心代码参考 | Core code reference for Group Mute Manager
 
 ### 翻译文件来源 | Translation Data Sources
 
