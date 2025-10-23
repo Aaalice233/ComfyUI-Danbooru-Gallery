@@ -4,15 +4,6 @@
 """
 
 
-class AnyType(str):
-    """用于表示任意类型的特殊类，在类型比较时总是返回False（不相等）"""
-    def __ne__(self, __value: object) -> bool:
-        return False
-
-
-any_typ = AnyType("*")
-
-
 class GroupMuteManager:
     """组静音管理器节点"""
 
@@ -27,12 +18,12 @@ class GroupMuteManager:
             }
         }
 
-    RETURN_TYPES = (any_typ,)
-    RETURN_NAMES = ("connection",)
+    RETURN_TYPES = ()
+    RETURN_NAMES = ()
     FUNCTION = "execute"
     CATEGORY = "danbooru"
     DESCRIPTION = "组静音管理器，用于可视化管理组的 mute 状态和配置组间联动规则"
-    OUTPUT_NODE = False
+    OUTPUT_NODE = True  # 改为输出节点，防止ComfyUI触发依赖执行
 
     @classmethod
     def VALIDATE_INPUTS(cls, input_types):
@@ -47,13 +38,13 @@ class GroupMuteManager:
             unique_id: 节点的唯一ID
 
         Returns:
-            tuple: (None,) - 可选的连接输出
+            tuple: 空元组 - 无输出
         """
         # 虚拟节点，仅用于UI控制，不执行任何操作
         print(f"\n[GroupMuteManager] 节点ID: {unique_id}")
         print(f"[GroupMuteManager] 组静音管理器已加载（虚拟节点）\n")
 
-        return (None,)
+        return ()
 
 
 # 节点映射 - 用于ComfyUI注册

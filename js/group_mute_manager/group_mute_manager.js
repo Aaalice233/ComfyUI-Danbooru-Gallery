@@ -248,6 +248,10 @@ app.registerExtension({
                     color: #E0E0E0;
                     font-size: 13px;
                     font-weight: 500;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    min-width: 0;
                 }
 
                 .gmm-switch {
