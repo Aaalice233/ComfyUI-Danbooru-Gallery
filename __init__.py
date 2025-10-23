@@ -13,14 +13,20 @@ from .group_executor_manager import NODE_CLASS_MAPPINGS as group_manager_mapping
 from .group_executor_manager import NODE_DISPLAY_NAME_MAPPINGS as group_manager_display_mappings
 from .group_executor_trigger import GroupExecutorTrigger
 
+# 导入组静音管理器
+from .group_mute_manager import NODE_CLASS_MAPPINGS as group_mute_mappings
+from .group_mute_manager import NODE_DISPLAY_NAME_MAPPINGS as group_mute_display_mappings
+
 # 优化执行系统映射
 opt_mappings = {
     "GroupExecutorTrigger": GroupExecutorTrigger,
-    **group_manager_mappings
+    **group_manager_mappings,
+    **group_mute_mappings
 }
 opt_display_mappings = {
     "GroupExecutorTrigger": "组执行触发器 (Group Executor Trigger)",
-    **group_manager_display_mappings
+    **group_manager_display_mappings,
+    **group_mute_display_mappings
 }
 
 # 合并所有节点映射
