@@ -7,6 +7,7 @@ from .prompt_selector import NODE_CLASS_MAPPINGS as ps_mappings, NODE_DISPLAY_NA
 from .multi_character_editor import NODE_CLASS_MAPPINGS as mce_mappings, NODE_DISPLAY_NAME_MAPPINGS as mce_display_mappings
 from .image_cache_save import NODE_CLASS_MAPPINGS as cache_save_mappings, NODE_DISPLAY_NAME_MAPPINGS as cache_save_display_mappings
 from .image_cache_get import NODE_CLASS_MAPPINGS as cache_get_mappings, NODE_DISPLAY_NAME_MAPPINGS as cache_get_display_mappings
+from .resolution_master_simplify import NODE_CLASS_MAPPINGS as rms_mappings, NODE_DISPLAY_NAME_MAPPINGS as rms_display_mappings
 
 # 导入优化执行系统
 from .group_executor_manager import NODE_CLASS_MAPPINGS as group_manager_mappings
@@ -37,6 +38,7 @@ NODE_CLASS_MAPPINGS = {
     **mce_mappings,
     **cache_save_mappings,
     **cache_get_mappings,
+    **rms_mappings,
     **opt_mappings
 }
 
@@ -47,6 +49,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **mce_display_mappings,
     **cache_save_display_mappings,
     **cache_get_display_mappings,
+    **rms_display_mappings,
     **opt_display_mappings
 }
 

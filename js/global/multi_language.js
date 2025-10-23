@@ -221,12 +221,14 @@ import { danbooruTranslations } from './translations/danbooru_translations.js';
 import { promptSelectorTranslations } from './translations/prompt_selector_translations.js';
 import { charSwapTranslations } from './translations/char_swap_translations.js';
 import { gemTranslations } from './translations/gem_translations.js';
+import { resolutionSimplifyTranslations } from './translations/resolution_simplify_translations.js';
 
 globalMultiLanguageManager.registerTranslations('mce', mceTranslations);
 globalMultiLanguageManager.registerTranslations('danbooru', danbooruTranslations);
 globalMultiLanguageManager.registerTranslations('prompt_selector', promptSelectorTranslations);
 globalMultiLanguageManager.registerTranslations('char_swap', charSwapTranslations);
 globalMultiLanguageManager.registerTranslations('gem', gemTranslations);
+globalMultiLanguageManager.registerTranslations('resolution_simplify', resolutionSimplifyTranslations);
 
 // 导出类和全局实例
 export { GlobalMultiLanguageManager, globalMultiLanguageManager };
