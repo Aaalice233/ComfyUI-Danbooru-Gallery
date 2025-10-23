@@ -364,6 +364,12 @@ app.registerExtension({
                     font-size: 16px;
                     font-weight: 600;
                     color: #E0E0E0;
+                    flex: 1;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    min-width: 0;
+                    padding-right: 12px;
                 }
 
                 .gmm-dialog-close {
@@ -453,14 +459,14 @@ app.registerExtension({
                 .gmm-target-select {
                     flex: 1;
                     min-width: 0;
-                    max-width: 250px;
                     overflow: hidden;
                     text-overflow: ellipsis;
+                    white-space: nowrap;
                 }
 
                 .gmm-action-select {
                     flex-shrink: 0;
-                    width: 80px;
+                    width: 70px;
                 }
 
                 .gmm-target-select option,
@@ -767,9 +773,12 @@ app.registerExtension({
             const dialog = document.createElement('div');
             dialog.className = 'gmm-linkage-dialog';
 
+            const displayName = this.truncateText(groupConfig.group_name, 25);
+            const fullName = groupConfig.group_name || '';
+
             dialog.innerHTML = `
                 <div class="gmm-dialog-header">
-                    <h3>联动配置：${groupConfig.group_name}</h3>
+                    <h3 title="${fullName}">联动配置：${displayName}</h3>
                     <button class="gmm-dialog-close">×</button>
                 </div>
 
