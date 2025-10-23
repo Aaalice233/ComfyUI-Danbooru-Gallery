@@ -328,11 +328,18 @@ app.registerExtension({
                     font-size: 13px;
                     transition: all 0.2s ease;
                     cursor: pointer;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    min-width: 0;
                 }
 
                 .gem-group-name-select option {
                     background: rgba(42, 42, 62, 0.95);
                     color: #E0E0E0;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
                 }
 
                 .gem-group-name-select:focus {
@@ -783,6 +790,12 @@ app.registerExtension({
             return brightness > 128 ? '#000000' : '#FFFFFF';
         };
 
+        // 截断文本辅助函数
+        nodeType.prototype.truncateText = function (text, maxLength = 30) {
+            if (!text || text.length <= maxLength) return text;
+            return text.substring(0, maxLength) + '...';
+        };
+
         // 创建组项元素
         nodeType.prototype.createGroupItem = function (group, index) {
             const item = document.createElement('div');
@@ -795,7 +808,8 @@ app.registerExtension({
             const groupOptions = availableGroups.map(name => {
                 const isSelected = name === group.group_name;
                 const selectedAttr = isSelected ? 'selected' : '';
-                return `<option value="${name}" ${selectedAttr}>${name}</option>`;
+                const displayName = this.truncateText(name, 30);
+                return `<option value="${name}" ${selectedAttr} title="${name}">${displayName}</option>`;
             }).join('');
 
             item.innerHTML = `
@@ -986,7 +1000,8 @@ app.registerExtension({
                 const groupOptions = availableGroups.map(name => {
                     const isSelected = name === currentValue;
                     const selectedAttr = isSelected ? 'selected' : '';
-                    return `<option value="${name}" ${selectedAttr}>${name}</option>`;
+                    const displayName = this.truncateText(name, 30);
+                    return `<option value="${name}" ${selectedAttr} title="${name}">${displayName}</option>`;
                 }).join('');
 
                 select.innerHTML = `<option value="">选择组</option>${groupOptions}`;

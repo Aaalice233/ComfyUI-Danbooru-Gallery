@@ -637,15 +637,24 @@ app.registerExtension({
             return group.nodes || [];
         };
 
+        // 截断文本辅助函数
+        nodeType.prototype.truncateText = function (text, maxLength = 30) {
+            if (!text || text.length <= maxLength) return text;
+            return text.substring(0, maxLength) + '...';
+        };
+
         // 创建组项元素
         nodeType.prototype.createGroupItem = function (groupConfig, group) {
             const item = document.createElement('div');
             item.className = 'gmm-group-item';
             item.dataset.groupName = groupConfig.group_name;
 
+            const displayName = this.truncateText(groupConfig.group_name, 30);
+            const fullName = groupConfig.group_name || '';
+
             item.innerHTML = `
                 <div class="gmm-group-header">
-                    <span class="gmm-group-name">${groupConfig.group_name}</span>
+                    <span class="gmm-group-name" title="${fullName}">${displayName}</span>
                     <div class="gmm-switch ${groupConfig.enabled ? 'active' : ''}">
                         <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
