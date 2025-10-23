@@ -103,31 +103,44 @@ class GroupExecutorManager:
             print(f"{'='*80}")
             print(f"\n[GroupExecutorManager] 🎯 开始生成执行计划")
             print(f"[GroupExecutorManager] 📍 节点ID: {unique_id}")
-            
+
             # ✅ 从全局配置中读取配置
             config_data = get_group_config()
             print(f"[GroupExecutorManager] 📦 从全局配置读取: {len(config_data)} 个组")
 
-            # 如果没有UI配置，使用默认配置
-            if not config_data:
-                print(f"[GroupExecutorManager] ⚠️  全局配置为空，使用默认配置")
-                default_groups = [
-                    {
-                        "group_name": "示例组1",
-                        "nodes": ["节点1", "节点2", "节点3"],
-                        "description": "这是第一个执行组",
-                        "delay_seconds": 0
+            # ✅ 新增：检测配置是否为空，如果为空则返回禁用状态
+            if not config_data or len(config_data) == 0:
+                print(f"[GroupExecutorManager] ⚠️  配置为空，返回禁用状态")
+                disabled_data = {
+                    "execution_plan": {
+                        "disabled": True,
+                        "disabled_reason": "empty_groups",
+                        "message": "组执行管理器配置为空，已自动禁用",
+                        "groups": [],
+                        "execution_id": f"disabled_{int(time.time())}_{uuid.uuid4().hex[:8]}",
+                        "execution_mode": "sequential",
+                        "cache_control_mode": "conditional",
+                        "client_id": None,
+                        "cache_enabled": False,
+                        "debug_mode": False
                     },
-                    {
-                        "group_name": "示例组2",
-                        "nodes": ["节点4", "节点5"],
-                        "description": "这是第二个执行组",
-                        "delay_seconds": 0
+                    "cache_control_signal": {
+                        "execution_id": f"disabled_{int(time.time())}_{uuid.uuid4().hex[:8]}",
+                        "enabled": False,
+                        "timestamp": time.time(),
+                        "enable_cache": False,
+                        "cache_key": "disabled",
+                        "clear_cache": False,
+                        "cache_control_mode": "conditional",
+                        "disabled": True,
+                        "disabled_reason": "empty_groups"
                     }
-                ]
-                config_data = default_groups
-            else:
-                print(f"[GroupExecutorManager] ✅ 使用用户配置的组")
+                }
+                print(f"[GroupExecutorManager] 🚫 已禁用组执行功能（原因：配置为空）\n")
+                return (json.dumps(disabled_data, ensure_ascii=False),)
+
+            # ✅ 有有效配置，继续生成执行计划
+            print(f"[GroupExecutorManager] ✅ 使用用户配置的组")
 
             # 固定配置值（内部使用）
             execution_mode = "sequential"  # 顺序执行: sequential, 并行执行: parallel

@@ -360,6 +360,18 @@ class OptimizedExecutionEngine {
 
         console.log(`[OptimizedExecutionEngine] 🔍 组 ${groupName} 内找到 ${groupNodes.length} 个节点`);
 
+        // ✅ 新增：检查组内是否所有节点都被禁用
+        if (groupNodes.length > 0) {
+            const allDisabled = groupNodes.every(node =>
+                node.mode === 2 || node.mode === 4  // mute(2) 或 bypass(4)
+            );
+
+            if (allDisabled) {
+                console.log(`[OptimizedExecutionEngine] ⏭️ 组 ${groupName} 的所有节点都被禁用(mute/bypass)，跳过执行`);
+                return [];
+            }
+        }
+
         // 找到输出节点
         const outputNodes = groupNodes.filter(node => {
             const isOutputNode = node.mode !== 2 && // 不是Never模式

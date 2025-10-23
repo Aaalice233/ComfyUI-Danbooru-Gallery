@@ -137,7 +137,17 @@ class GroupExecutorTrigger:
             cache_control_signal_dict = execution_data_dict.get("cache_control_signal", {})
 
             execution_id = execution_plan_dict.get("execution_id", "unknown")
-            
+
+            # ✅ 新增：检测执行计划是否被禁用
+            if execution_plan_dict.get("disabled", False):
+                disabled_reason = execution_plan_dict.get("disabled_reason", "unknown")
+                disabled_message = execution_plan_dict.get("message", "组执行功能已禁用")
+                logger.warning(f"[GroupExecutorTrigger] 🚫 执行计划已禁用")
+                logger.warning(f"[GroupExecutorTrigger] 🚫 原因: {disabled_reason}")
+                logger.warning(f"[GroupExecutorTrigger] 🚫 信息: {disabled_message}")
+                logger.warning(f"[GroupExecutorTrigger] ✅ 跳过执行，返回空元组\n")
+                return ()
+
             # ✅ 修复：覆盖execution_plan的client_id为真实值
             execution_plan_dict["client_id"] = real_client_id
 
