@@ -17,6 +17,7 @@
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
   - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
   - [🖼️ 图像缓存节点 (Image Cache Nodes)](#-图像缓存节点-image-cache-nodes)
+  - [📐 分辨率大师简化版 (Resolution Master Simplify)](#-分辨率大师简化版-resolution-master-simplify)
 - [安装说明](#安装说明)
 - [系统要求](#系统要求)
 - [高级功能](#高级功能)
@@ -34,6 +35,7 @@
   - [⚡ Group Executor Manager](#-group-executor-manager)
   - [🔇 Group Mute Manager](#-group-mute-manager)
   - [🖼️ Image Cache Nodes](#-image-cache-nodes)
+  - [📐 Resolution Master Simplify](#-resolution-master-simplify)
 - [Installation](#installation)
 - [System Requirements](#system-requirements-1)
 - [Advanced Features](#advanced-features)
@@ -370,6 +372,53 @@ fantasy forest AND elf archer MASK(0.00 0.33, 0.00 1.00, 1.00) FEATHER(8) AND dw
 
 ---
 
+### 📐 分辨率大师简化版 (Resolution Master Simplify)
+
+**可视化分辨率控制节点**
+
+基于 Resolution Master 的简化版本，提供直观的 2D 画布交互式分辨率控制，专注于核心功能。
+
+#### 核心功能
+- 🎨 **2D 交互画布**: 可视化拖拽调整分辨率
+- 🎯 **三控制点系统**:
+  - 白色主控制点 - 同时控制宽度和高度
+  - 蓝色宽度控制 - 独立调整宽度
+  - 粉色高度控制 - 独立调整高度
+- 🧲 **画布吸附**: 默认吸附到网格点，按住 Ctrl 键精细调整
+- 📋 **SDXL 预设**: 9 个内置 SDXL 分辨率预设（按大小排序）
+- 💾 **自定义预设**: 保存和管理自定义分辨率预设
+- 📊 **实时显示**: 输出引脚显示当前分辨率（颜色区分宽高）
+- 📐 **分辨率范围**: 64×64 至 2048×2048
+
+#### 主要特点
+- ✨ **完全照抄原版样式**: 保持与 Resolution Master 一致的视觉风格
+- 🎯 **简化设计**: 移除 Actions、Scaling、Auto-Detect 等复杂功能
+- 🚀 **轻量高效**: 专注核心分辨率控制，界面简洁
+- 🎨 **视觉反馈**: 蓝色/粉色输出数字对应控制点颜色
+
+#### 使用方法
+1. 添加 `Danbooru > 分辨率大师简化版 (Resolution Master Simplify)` 节点
+2. 在 2D 画布上拖拽控制点调整分辨率：
+   - 拖拽白色主控制点：同时调整宽高
+   - 拖拽蓝色控制点：只调整宽度
+   - 拖拽粉色控制点：只调整高度
+3. 点击预设下拉框选择常用分辨率
+4. 点击💾按钮保存当前分辨率为自定义预设
+5. 连接 `width` 和 `height` 输出到其他节点
+
+#### 内置预设列表
+- 768×1024 (0.79 MP)
+- 640×1536 (0.98 MP)
+- 832×1216 (1.01 MP)
+- 896×1152 (1.03 MP)
+- 768×1344 (1.03 MP)
+- 915×1144 (1.05 MP)
+- 1254×836 (1.05 MP)
+- 1024×1024 (1.05 MP)
+- 1024×1536 (1.57 MP)
+
+---
+
 ## 安装说明
 
 ### 方法一：ComfyUI Manager 安装（推荐）
@@ -486,6 +535,10 @@ ComfyUI-Danbooru-Gallery/
 ├── image_cache_manager/            # 图像缓存管理器
 │   ├── __init__.py
 │   └── image_cache_manager.py
+├── resolution_master_simplify/     # 分辨率大师简化版
+│   ├── __init__.py
+│   ├── resolution_master_simplify.py
+│   └── settings.json
 ├── install.py                      # 智能安装脚本
 ├── requirements.txt                # 依赖清单
 ├── js/
@@ -507,6 +560,8 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── group_executor_manager.js
 │   ├── group_mute_manager/         # 组静音管理器前端
 │   │   └── group_mute_manager.js
+│   ├── resolution_master_simplify/ # 分辨率大师简化版前端
+│   │   └── resolution_master_simplify.js
 │   └── global/                     # 全局共享组件
 │       ├── autocomplete_cache.js
 │       ├── autocomplete_ui.js
@@ -514,6 +569,8 @@ ComfyUI-Danbooru-Gallery/
 │       ├── multi_language.js
 │       ├── toast_manager.js
 │       └── translations/
+│           ├── resolution_simplify_translations.js
+│           └── ...
 ├── danbooru_gallery/zh_cn/         # 中文翻译数据
 │   ├── all_tags_cn.json
 │   ├── danbooru.csv
@@ -856,6 +913,53 @@ Group3: Cache Get(prefix="img2img") → PostProcess → Output
 
 ---
 
+### 📐 Resolution Master Simplify
+
+**Visual Resolution Control Node**
+
+A simplified version based on Resolution Master, providing intuitive 2D canvas interactive resolution control focused on core functionality.
+
+#### Core Features
+- 🎨 **2D Interactive Canvas**: Visual drag-and-drop resolution adjustment
+- 🎯 **Three Control Points System**:
+  - White main control point - Controls both width and height
+  - Blue width control - Adjusts width independently
+  - Pink height control - Adjusts height independently
+- 🧲 **Canvas Snapping**: Default snap to grid, hold Ctrl for fine adjustment
+- 📋 **SDXL Presets**: 9 built-in SDXL resolution presets (sorted by size)
+- 💾 **Custom Presets**: Save and manage custom resolution presets
+- 📊 **Real-time Display**: Output pins show current resolution (color-coded for width/height)
+- 📐 **Resolution Range**: 64×64 to 2048×2048
+
+#### Key Features
+- ✨ **Exact Original Styling**: Maintains consistent visual style with Resolution Master
+- 🎯 **Simplified Design**: Removes complex features like Actions, Scaling, Auto-Detect
+- 🚀 **Lightweight & Efficient**: Focuses on core resolution control with clean interface
+- 🎨 **Visual Feedback**: Blue/pink output numbers match control point colors
+
+#### Usage
+1. Add `Danbooru > Resolution Master Simplify` node
+2. Drag control points on 2D canvas to adjust resolution:
+   - Drag white main control: Adjust both width and height
+   - Drag blue control: Adjust width only
+   - Drag pink control: Adjust height only
+3. Click preset dropdown to select common resolutions
+4. Click 💾 button to save current resolution as custom preset
+5. Connect `width` and `height` outputs to other nodes
+
+#### Built-in Preset List
+- 768×1024 (0.79 MP)
+- 640×1536 (0.98 MP)
+- 832×1216 (1.01 MP)
+- 896×1152 (1.03 MP)
+- 768×1344 (1.03 MP)
+- 915×1144 (1.05 MP)
+- 1254×836 (1.05 MP)
+- 1024×1024 (1.05 MP)
+- 1024×1536 (1.57 MP)
+
+---
+
 ## Installation
 
 ### Method 1: ComfyUI Manager Installation (Recommended)
@@ -972,6 +1076,10 @@ ComfyUI-Danbooru-Gallery/
 ├── image_cache_manager/            # Image Cache Manager
 │   ├── __init__.py
 │   └── image_cache_manager.py
+├── resolution_master_simplify/     # Resolution Master Simplify
+│   ├── __init__.py
+│   ├── resolution_master_simplify.py
+│   └── settings.json
 ├── install.py                      # Smart installation script
 ├── requirements.txt                # Dependency list
 ├── js/
@@ -993,6 +1101,8 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── group_executor_manager.js
 │   ├── group_mute_manager/         # Group Mute Manager frontend
 │   │   └── group_mute_manager.js
+│   ├── resolution_master_simplify/ # Resolution Master Simplify frontend
+│   │   └── resolution_master_simplify.js
 │   └── global/                     # Global shared components
 │       ├── autocomplete_cache.js
 │       ├── autocomplete_ui.js
@@ -1000,6 +1110,8 @@ ComfyUI-Danbooru-Gallery/
 │       ├── multi_language.js
 │       ├── toast_manager.js
 │       └── translations/
+│           ├── resolution_simplify_translations.js
+│           └── ...
 ├── danbooru_gallery/zh_cn/         # Chinese translation data
 │   ├── all_tags_cn.json
 │   ├── danbooru.csv
@@ -1051,6 +1163,7 @@ MIT License
 
 - [Comfyui-LG_GroupExecutor](https://github.com/LAOGOU-666/Comfyui-LG_GroupExecutor) - 组执行管理器和图像缓存节点的设计思路来源 | Design inspiration for Group Executor Manager and Image Cache nodes
 - [rgthree-comfy](https://github.com/rgthree/rgthree-comfy) - 组静音管理器的核心代码参考 | Core code reference for Group Mute Manager
+- [Comfyui-Resolution-Master](https://github.com/Azornes/Comfyui-Resolution-Master) - 分辨率大师简化版的原版参考 | Original reference for Resolution Master Simplify
 
 ### 翻译文件来源 | Translation Data Sources
 
