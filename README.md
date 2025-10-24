@@ -14,6 +14,7 @@
   - [🔄 人物特征替换 (Character Feature Swap)](#-人物特征替换-character-feature-swap)
   - [📚 提示词选择器 (Prompt Selector)](#-提示词选择器-prompt-selector)
   - [👥 多人角色提示词编辑器 (Multi Character Editor)](#-多人角色提示词编辑器-multi-character-editor)
+  - [🧹 提示词清洁女仆 (Prompt Cleaning Maid)](#-提示词清洁女仆-prompt-cleaning-maid)
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
   - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
   - [🖼️ 图像缓存节点 (Image Cache Nodes)](#-图像缓存节点-image-cache-nodes)
@@ -32,6 +33,7 @@
   - [🔄 Character Feature Swap](#-character-feature-swap)
   - [📚 Prompt Selector](#-prompt-selector)
   - [👥 Multi Character Editor](#-multi-character-editor)
+  - [🧹 Prompt Cleaning Maid](#-prompt-cleaning-maid)
   - [⚡ Group Executor Manager](#-group-executor-manager)
   - [🔇 Group Mute Manager](#-group-mute-manager)
   - [🖼️ Image Cache Nodes](#-image-cache-nodes)
@@ -199,6 +201,88 @@ portrait scene FILL() COUPLE MASK(0.00 0.50, 0.00 1.00, 1.00) beautiful woman wi
 **三角色场景（Regional Prompts）**：
 ```
 fantasy forest AND elf archer MASK(0.00 0.33, 0.00 1.00, 1.00) FEATHER(8) AND dwarf warrior MASK(0.33 0.66, 0.00 1.00, 1.00) FEATHER(8) AND wizard MASK(0.66 1.00, 0.00 1.00, 1.00) FEATHER(8)
+```
+
+---
+
+### 🧹 提示词清洁女仆 (Prompt Cleaning Maid)
+
+**智能提示词清理和格式化节点**
+
+提示词清洁女仆是一个专业的提示词清理工具，能够自动清理提示词中的多余符号、空白和格式问题，让提示词更加规范和整洁。
+
+#### 核心功能
+- 🧹 **逗号清理**: 自动移除多余的逗号（连续逗号、首尾逗号）
+- ⚡ **空白规范**: 清理首尾空白和多余的空格/制表符
+- 🏷️ **LoRA标签管理**: 可选择性移除字符串中的 `<lora:xxx>` 标签
+- 📄 **换行处理**: 将换行符替换为空格或逗号
+- 🔧 **括号修复**: 自动移除不匹配的圆括号 `()` 或方括号 `[]`
+- 🔄 **智能清理**: 多阶段清理流程，确保提示词格式正确
+
+#### 清理选项
+
+**1. 清理逗号 (cleanup_commas)**
+- 移除开头的逗号
+- 移除结尾的逗号
+- 合并连续的逗号为单个逗号
+- 示例: `, , tag1, , tag2, ,` → `tag1, tag2`
+
+**2. 清理空白 (cleanup_whitespace)**
+- 清理首尾的空格和制表符
+- 合并多个连续空格为单个空格
+- 规范逗号周围的空格
+- 示例: `  tag1  ,   tag2   ` → `tag1, tag2`
+
+**3. 移除LoRA标签 (remove_lora_tags)**
+- 完全移除字符串中的 LoRA 标签
+- 支持各种 LoRA 格式: `<lora:name:weight>`
+- 示例: `1girl, <lora:style:0.8>, smile` → `1girl, smile`
+
+**4. 清理换行 (cleanup_newlines)**
+- **否 (false)**: 保留换行符
+- **空格 (space)**: 将 `\n` 替换为空格
+- **逗号 (comma)**: 将 `\n` 替换为 `, `
+- 示例 (逗号): `tag1\ntag2` → `tag1, tag2`
+
+**5. 修复括号 (fix_brackets)**
+- **否 (false)**: 不修复括号
+- **圆括号 (parenthesis)**: 移除不匹配的 `()`
+- **方括号 (brackets)**: 移除不匹配的 `[]`
+- **两者 (both)**: 同时修复圆括号和方括号
+- 示例: `((tag1) tag2))` → `(tag1) tag2`
+
+#### 使用方法
+1. 添加 `Danbooru > 提示词清洁女仆 (Prompt Cleaning Maid)` 节点
+2. 连接上游节点的字符串输出到 `string` 输入
+3. 根据需要启用/禁用各项清理选项
+4. 获取清理后的 `string` 输出
+
+#### 应用场景
+- **提示词规范化**: 统一提示词格式，方便管理和复用
+- **自动化清理**: 批量清理从各种来源获取的提示词
+- **格式转换**: 将多行提示词转换为单行，或调整分隔符
+- **LoRA管理**: 快速移除或保留 LoRA 标签
+- **括号修复**: 修复复制粘贴时产生的括号不匹配问题
+
+#### 清理流程
+提示词清洁女仆按照以下顺序进行清理，确保最佳效果：
+1. **Stage 1**: 移除 LoRA 标签（如果启用）
+2. **Stage 2**: 替换换行符（如果启用）
+3. **Stage 3**: 清理多余逗号（如果启用）
+4. **Stage 4**: 修复不匹配的括号（如果启用）
+5. **Stage 5**: 清理多余空白（如果启用）
+
+#### 示例
+
+**输入提示词**:
+```
+, , 1girl, blue eyes,  , <lora:style:0.8>,
+smile, ((long hair),  beautiful
+```
+
+**清理后** (所有选项启用，换行→逗号，括号→两者):
+```
+1girl, blue eyes, smile, (long hair), beautiful
 ```
 
 ---
@@ -518,6 +602,9 @@ ComfyUI-Danbooru-Gallery/
 │       ├── editor_settings.json
 │       ├── presets.json
 │       └── preset_images/
+├── prompt_cleaning_maid/           # 提示词清洁女仆
+│   ├── __init__.py
+│   └── prompt_cleaning_maid.py
 ├── group_executor_manager/         # 组执行管理器
 │   ├── __init__.py
 │   └── group_executor_manager.py
@@ -740,6 +827,88 @@ portrait scene FILL() COUPLE MASK(0.00 0.50, 0.00 1.00, 1.00) beautiful woman wi
 **Three-Character Scene (Regional Prompts)**:
 ```
 fantasy forest AND elf archer MASK(0.00 0.33, 0.00 1.00, 1.00) FEATHER(8) AND dwarf warrior MASK(0.33 0.66, 0.00 1.00, 1.00) FEATHER(8) AND wizard MASK(0.66 1.00, 0.00 1.00, 1.00) FEATHER(8)
+```
+
+---
+
+### 🧹 Prompt Cleaning Maid
+
+**Intelligent Prompt Cleaning and Formatting Node**
+
+Prompt Cleaning Maid is a professional prompt cleaning tool that automatically removes redundant symbols, whitespace, and formatting issues, making prompts more standardized and clean.
+
+#### Core Features
+- 🧹 **Comma Cleanup**: Automatically remove redundant commas (consecutive commas, leading/trailing commas)
+- ⚡ **Whitespace Normalization**: Clean leading/trailing whitespace and excessive spaces/tabs
+- 🏷️ **LoRA Tag Management**: Optionally remove `<lora:xxx>` tags from strings
+- 📄 **Newline Handling**: Replace newline characters with spaces or commas
+- 🔧 **Bracket Fixing**: Automatically remove unmatched parentheses `()` or brackets `[]`
+- 🔄 **Smart Cleaning**: Multi-stage cleaning process ensures correct prompt formatting
+
+#### Cleaning Options
+
+**1. Cleanup Commas (cleanup_commas)**
+- Remove leading commas
+- Remove trailing commas
+- Merge consecutive commas into single comma
+- Example: `, , tag1, , tag2, ,` → `tag1, tag2`
+
+**2. Cleanup Whitespace (cleanup_whitespace)**
+- Clean leading/trailing spaces and tabs
+- Merge multiple consecutive spaces into single space
+- Normalize spacing around commas
+- Example: `  tag1  ,   tag2   ` → `tag1, tag2`
+
+**3. Remove LoRA Tags (remove_lora_tags)**
+- Completely remove LoRA tags from strings
+- Supports various LoRA formats: `<lora:name:weight>`
+- Example: `1girl, <lora:style:0.8>, smile` → `1girl, smile`
+
+**4. Cleanup Newlines (cleanup_newlines)**
+- **False**: Preserve newline characters
+- **Space**: Replace `\n` with space
+- **Comma**: Replace `\n` with `, `
+- Example (comma): `tag1\ntag2` → `tag1, tag2`
+
+**5. Fix Brackets (fix_brackets)**
+- **False**: Don't fix brackets
+- **Parenthesis**: Remove unmatched `()`
+- **Brackets**: Remove unmatched `[]`
+- **Both**: Fix both parentheses and brackets
+- Example: `((tag1) tag2))` → `(tag1) tag2`
+
+#### Usage
+1. Add `Danbooru > Prompt Cleaning Maid` node
+2. Connect upstream node's string output to `string` input
+3. Enable/disable cleaning options as needed
+4. Get cleaned `string` output
+
+#### Use Cases
+- **Prompt Standardization**: Unify prompt format for easy management and reuse
+- **Automated Cleaning**: Batch clean prompts from various sources
+- **Format Conversion**: Convert multi-line prompts to single line or adjust delimiters
+- **LoRA Management**: Quickly remove or retain LoRA tags
+- **Bracket Fixing**: Fix bracket mismatches from copy-paste operations
+
+#### Cleaning Process
+Prompt Cleaning Maid performs cleaning in the following order for optimal results:
+1. **Stage 1**: Remove LoRA tags (if enabled)
+2. **Stage 2**: Replace newlines (if enabled)
+3. **Stage 3**: Clean redundant commas (if enabled)
+4. **Stage 4**: Fix unmatched brackets (if enabled)
+5. **Stage 5**: Clean redundant whitespace (if enabled)
+
+#### Example
+
+**Input Prompt**:
+```
+, , 1girl, blue eyes,  , <lora:style:0.8>,
+smile, ((long hair),  beautiful
+```
+
+**After Cleaning** (all options enabled, newlines→comma, brackets→both):
+```
+1girl, blue eyes, smile, (long hair), beautiful
 ```
 
 ---
@@ -1059,6 +1228,9 @@ ComfyUI-Danbooru-Gallery/
 │       ├── editor_settings.json
 │       ├── presets.json
 │       └── preset_images/
+├── prompt_cleaning_maid/           # Prompt Cleaning Maid
+│   ├── __init__.py
+│   └── prompt_cleaning_maid.py
 ├── group_executor_manager/         # Group Executor Manager
 │   ├── __init__.py
 │   └── group_executor_manager.py
@@ -1164,6 +1336,7 @@ MIT License
 - [Comfyui-LG_GroupExecutor](https://github.com/LAOGOU-666/Comfyui-LG_GroupExecutor) - 组执行管理器和图像缓存节点的设计思路来源 | Design inspiration for Group Executor Manager and Image Cache nodes
 - [rgthree-comfy](https://github.com/rgthree/rgthree-comfy) - 组静音管理器的核心代码参考 | Core code reference for Group Mute Manager
 - [Comfyui-Resolution-Master](https://github.com/Azornes/Comfyui-Resolution-Master) - 分辨率大师简化版的原版参考 | Original reference for Resolution Master Simplify
+- [comfyui-adaptiveprompts](https://github.com/Alectriciti/comfyui-adaptiveprompts) - 提示词清洁女仆节点的代码来源 | Source code for Prompt Cleaning Maid node
 
 ### 翻译文件来源 | Translation Data Sources
 
