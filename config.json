@@ -3,7 +3,7 @@
     "group_executor_manager": false,
     "group_executor_trigger": false,
     "image_cache_save": false,
-    "image_cache_get": true,
+    "image_cache_get": false,
     "execution_engine": false,
     "cache_control_events": false,
     "resolution_master_simplify": false
