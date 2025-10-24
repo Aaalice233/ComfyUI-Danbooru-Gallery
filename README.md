@@ -4,6 +4,13 @@
 
 ---
 
+> [!NOTE]
+> **项目说明 | Project Notice**
+> 本项目是专为 [ShiQi_Workflow](https://github.com/Aaalice233/ShiQi_Workflow) 工作流定制开发的一系列ComfyUI节点。
+> This project is a collection of ComfyUI nodes custom-developed specifically for the [ShiQi_Workflow](https://github.com/Aaalice233/ShiQi_Workflow).
+
+---
+
 ## 目录 | Table of Contents
 
 ### 中文版本
