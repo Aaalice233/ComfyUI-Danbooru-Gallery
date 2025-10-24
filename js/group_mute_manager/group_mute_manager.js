@@ -21,6 +21,9 @@ app.registerExtension({
         nodeType.prototype.onNodeCreated = function () {
             const result = onNodeCreated?.apply(this, arguments);
 
+            // 为节点分配唯一实例ID（用于区分事件源）
+            this._gmmInstanceId = `gmm_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
             // 初始化节点属性
             this.properties = {
                 groups: [],  // 组配置列表
@@ -32,6 +35,18 @@ app.registerExtension({
 
             // 创建自定义UI
             this.createCustomUI();
+
+            // 添加全局事件监听器，用于同步其他节点的状态变化
+            this._gmmEventHandler = (e) => {
+                // 只响应其他节点触发的事件，避免重复刷新
+                if (e.detail && e.detail.sourceId !== this._gmmInstanceId) {
+                    console.log('[GMM] 收到其他节点的状态变化事件，刷新UI');
+                    this.updateGroupsList();
+                }
+            };
+
+            // 监听组静音状态变化事件（使用 window 对象）
+            window.addEventListener('group-mute-changed', this._gmmEventHandler);
 
             return result;
         };
@@ -765,6 +780,18 @@ app.registerExtension({
 
             // 刷新画布
             app.graph.setDirtyCanvas(true, true);
+
+            // 广播状态变化事件，通知其他节点刷新UI（使用 window 对象）
+            const event = new CustomEvent('group-mute-changed', {
+                detail: {
+                    sourceId: this._gmmInstanceId,
+                    groupName: groupName,
+                    enabled: enable,
+                    timestamp: Date.now()
+                }
+            });
+            window.dispatchEvent(event);
+            console.log('[GMM] 已广播状态变化事件');
         };
 
         // 应用联动规则（带防循环）
@@ -1152,6 +1179,13 @@ app.registerExtension({
         const onRemoved = nodeType.prototype.onRemoved;
         nodeType.prototype.onRemoved = function () {
             console.log('[GMM] 清理节点资源:', this.id);
+
+            // 移除事件监听器（使用 window 对象）
+            if (this._gmmEventHandler) {
+                window.removeEventListener('group-mute-changed', this._gmmEventHandler);
+                this._gmmEventHandler = null;
+                console.log('[GMM] 已移除事件监听器');
+            }
 
             // 清理自定义属性
             this.properties = { groups: [], selectedColorFilter: '' };
