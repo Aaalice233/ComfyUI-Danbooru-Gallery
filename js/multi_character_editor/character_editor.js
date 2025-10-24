@@ -2306,7 +2306,8 @@ class CharacterEditor {
 
             weightInput.addEventListener('input', () => {
                 const value = parseFloat(weightInput.value);
-                if (!isNaN(value) && value >= 0.1 && value <= 2.0) {
+                // 🔧 修复：权重范围应该与HTML定义一致，是 0-1.0，而不是 0.1-2.0
+                if (!isNaN(value) && value >= 0 && value <= 1.0) {
                     weightSlider.value = value;
                 }
             });
@@ -2323,7 +2324,8 @@ class CharacterEditor {
 
             featherInput.addEventListener('input', () => {
                 const value = parseFloat(featherInput.value);
-                if (!isNaN(value) && value >= 0 && value <= 1.0) {
+                // 🔧 修复：羽化范围应该是 0-50，而不是 0-1.0
+                if (!isNaN(value) && value >= 0 && value <= 50) {
                     featherSlider.value = value;
                 }
             });
