@@ -83,8 +83,35 @@ if (!window.optimizedExecutionSystemLoaded) {
                             if (managerNodeId) {
                                 const managerGraphNode = app.graph._nodes.find(n => String(n.id) === String(managerNodeId));
                                 if (managerGraphNode && managerGraphNode.properties && managerGraphNode.properties.groups) {
-                                    if (Array.isArray(managerGraphNode.properties.groups) && managerGraphNode.properties.groups.length === 0) {
+                                    const groups = managerGraphNode.properties.groups;
+
+                                    // 情况1: groups数组为空
+                                    if (Array.isArray(groups) && groups.length === 0) {
                                         console.log('[OptimizedExecutionSystem] 🚫 GroupExecutorManager 配置为空（0个组），跳过组执行');
+                                        console.log('[OptimizedExecutionSystem] ✅ 将正常提交所有节点');
+                                        // 不进行过滤，让ComfyUI正常处理
+                                        return api._originalQueuePrompt.apply(this, [index, prompt]);
+                                    }
+
+                                    // 情况2: 检查配置的组是否都被静音或不存在
+                                    const allGroupsMutedOrInvalid = groups.every(g => {
+                                        const groupName = g.group_name;
+                                        if (!groupName) return true; // 未选择组名，视为无效
+
+                                        // 在工作流中查找对应的组
+                                        const workflowGroup = app.graph._groups.find(wg => wg.title === groupName);
+                                        if (!workflowGroup) return true; // 组不存在，视为无效
+
+                                        // 检查组内的节点是否都被静音
+                                        const nodesInGroup = app.graph._nodes.filter(node => isNodeInGroup(node, workflowGroup));
+                                        if (nodesInGroup.length === 0) return true; // 组内无节点，视为无效
+
+                                        // 检查所有节点是否都被静音 (mode === 2 表示mute)
+                                        return nodesInGroup.every(node => node.mode === 2);
+                                    });
+
+                                    if (allGroupsMutedOrInvalid) {
+                                        console.log('[OptimizedExecutionSystem] 🚫 所有配置的组都被静音或无效，跳过组执行');
                                         console.log('[OptimizedExecutionSystem] ✅ 将正常提交所有节点');
                                         // 不进行过滤，让ComfyUI正常处理
                                         return api._originalQueuePrompt.apply(this, [index, prompt]);
