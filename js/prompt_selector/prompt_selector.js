@@ -1094,6 +1094,17 @@ app.registerExtension({
                                 if (category) {
                                     const index = category.prompts.findIndex(p => p.id === prompt.id);
                                     if (index !== -1) {
+                                        // 保存前检查提示词是否被修改，如果修改了且原来是选中的，需要更新选中状态
+                                        const oldPromptValue = prompt.prompt;
+                                        const newPromptValue = updatedPrompt.prompt;
+                                        const categorySelections = this.selectedPrompts[categoryName];
+
+                                        if (oldPromptValue !== newPromptValue && categorySelections?.has(oldPromptValue)) {
+                                            // 从选中集合中删除旧的提示词内容，添加新的提示词内容
+                                            categorySelections.delete(oldPromptValue);
+                                            categorySelections.add(newPromptValue);
+                                        }
+
                                         category.prompts[index] = updatedPrompt;
                                     }
                                 }
