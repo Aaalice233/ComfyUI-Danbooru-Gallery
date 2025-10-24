@@ -10,6 +10,7 @@ import torch
 import numpy as np
 from PIL import Image
 from typing import Dict, Any, List, Optional
+import os
 
 try:
     from ..image_cache_manager.image_cache_manager import cache_manager
@@ -108,11 +109,11 @@ class ImageCacheGet:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "default_image": ("IMAGE", {
-                    "tooltip": "当缓存无效时使用的默认图像"
-                }),
             },
             "optional": {
+                "default_image": ("IMAGE", {
+                    "tooltip": "当缓存无效时使用的默认图像（可选）"
+                }),
                 "enable_preview": ("BOOLEAN", {
                     "default": True,
                     "label_on": "true",
@@ -153,7 +154,7 @@ class ImageCacheGet:
         return hashlib.md5(hash_input.encode()).hexdigest()
 
     def get_cached_image(self,
-                        default_image: List[torch.Tensor],
+                        default_image: Optional[List[torch.Tensor]] = None,
                         enable_preview: List[bool] = [True],
                         unique_id: str = "unknown",
                         prompt: Optional[Dict] = None,
@@ -181,6 +182,32 @@ class ImageCacheGet:
             # 参数提取
             enable_preview = enable_preview[0] if enable_preview else True
 
+            # ✅ 安全提取默认图像
+            # 调试日志：查看传入的 default_image 参数
+            logger.info(f"[ImageCacheGet] 🔍 DEBUG - default_image 参数类型: {type(default_image)}")
+            logger.info(f"[ImageCacheGet] 🔍 DEBUG - default_image 是否为None: {default_image is None}")
+            if default_image is not None:
+                logger.info(f"[ImageCacheGet] 🔍 DEBUG - default_image 长度: {len(default_image)}")
+                if len(default_image) > 0:
+                    logger.info(f"[ImageCacheGet] 🔍 DEBUG - default_image[0] 类型: {type(default_image[0])}")
+                    logger.info(f"[ImageCacheGet] 🔍 DEBUG - default_image[0] 是否为None: {default_image[0] is None}")
+                    if default_image[0] is not None and hasattr(default_image[0], 'shape'):
+                        logger.info(f"[ImageCacheGet] 🔍 DEBUG - default_image[0] shape: {default_image[0].shape}")
+
+            # 检查列表非空 且 第一个元素有效
+            safe_default_image = None
+            has_user_default = False  # 标记是否有用户提供的默认图
+
+            if default_image and len(default_image) > 0 and default_image[0] is not None:
+                safe_default_image = default_image[0]
+                has_user_default = True
+                logger.info(f"[ImageCacheGet] ✅ DEBUG - 使用用户提供的默认图像，shape: {safe_default_image.shape}")
+            else:
+                # 只有在没有传入任何默认图像时，才使用黑色占位图
+                safe_default_image = torch.zeros((1, 64, 64, 3))
+                has_user_default = False
+                logger.info(f"[ImageCacheGet] ⚠️ DEBUG - 未传入有效默认图像，使用黑色占位图 shape: {safe_default_image.shape}")
+
             if should_debug(COMPONENT_NAME):
                 logger.info(f"\n{'='*60}")
                 logger.info(f"[ImageCacheGet] ⏰ 执行时间: {time.strftime('%H:%M:%S', time.localtime())}")
@@ -197,9 +224,14 @@ class ImageCacheGet:
                 ImageCacheGet._send_no_manager_warning()
 
             # 获取缓存的图像
+            # ✅ 添加标志追踪是否使用了默认图像
+            using_default_image = False
+
             if cache_manager is None:
                 logger.warning("[ImageCacheGet] ⚠️ 缓存管理器不可用，使用默认图像")
-                cached_image = default_image[0] if default_image else torch.zeros((1, 64, 64, 3))
+                cached_image = safe_default_image
+                using_default_image = True
+                logger.info(f"[ImageCacheGet] 🔍 DEBUG - 缓存管理器不可用，使用 safe_default_image，shape: {cached_image.shape}")
             else:
                 try:
                     # ✅ 关键修复：从全局通道获取所有缓存图像
@@ -213,46 +245,106 @@ class ImageCacheGet:
                         # cached_images是列表，每个元素shape为(1, H, W, C)
                         # 需要合并成(N, H, W, C)的批次张量
                         cached_image = torch.cat(cached_images, dim=0)
+                        using_default_image = False
                         if should_debug(COMPONENT_NAME):
                             logger.info(f"[ImageCacheGet] ✅ 成功获取全局缓存图像 (共{len(cached_images)}张，批次shape: {cached_image.shape})")
+                        logger.info(f"[ImageCacheGet] 🔍 DEBUG - 从缓存获取图像，shape: {cached_image.shape}")
                     else:
-                        if should_debug(COMPONENT_NAME):
-                            logger.info(f"[ImageCacheGet] 📌 全局缓存为空，使用默认图像")
-                        cached_image = default_image[0] if default_image else torch.zeros((1, 64, 64, 3))
+                        logger.info(f"[ImageCacheGet] 📌 全局缓存为空，使用默认图像")
+                        cached_image = safe_default_image
+                        using_default_image = True
+                        logger.info(f"[ImageCacheGet] 🔍 DEBUG - 全局缓存为空，使用 safe_default_image，shape: {cached_image.shape}")
                 except Exception as e:
                     logger.warning(f"[ImageCacheGet] ⚠️ 缓存获取失败: {str(e)}")
                     import traceback
                     logger.warning(traceback.format_exc())
-                    cached_image = default_image[0] if default_image else torch.zeros((1, 64, 64, 3))
+                    cached_image = safe_default_image
+                    using_default_image = True
+                    logger.info(f"[ImageCacheGet] 🔍 DEBUG - 缓存获取异常，使用 safe_default_image，shape: {cached_image.shape}")
 
             # 确保图像是正确的格式
             if isinstance(cached_image, torch.Tensor):
                 result_image = cached_image
+                logger.info(f"[ImageCacheGet] 🔍 DEBUG - cached_image 是 Tensor，result_image shape: {result_image.shape}")
             else:
-                result_image = default_image[0] if default_image else torch.zeros((1, 64, 64, 3))
+                result_image = safe_default_image
+                logger.info(f"[ImageCacheGet] 🔍 DEBUG - cached_image 不是 Tensor，使用 safe_default_image，shape: {result_image.shape}")
 
             execution_time = time.time() - start_time
             if should_debug(COMPONENT_NAME):
                 logger.info(f"[ImageCacheGet] ⏱️ 执行耗时: {execution_time:.3f}秒\n")
 
+            # 返回前最终确认
+            logger.info(f"[ImageCacheGet] 🔍 DEBUG - 最终返回的 result_image shape: {result_image.shape}")
+            logger.info(f"[ImageCacheGet] 🔍 DEBUG - result_image 最小值: {result_image.min():.4f}, 最大值: {result_image.max():.4f}")
+
             # 返回标准格式：(图像张量,) 和 ui 数据
             # 如果启用预览，从全局缓存通道获取图像文件信息
             ui_data = {}
-            if enable_preview and cache_manager is not None:
+            if enable_preview:
                 try:
-                    # ✅ 关键修复：从全局通道获取预览数据
-                    cache_channel = cache_manager.get_cache_channel(channel_name="__global__")
-                    if cache_channel and "images" in cache_channel and cache_channel["images"]:
-                        # 返回缓存的图像文件信息用于预览
-                        ui_data = {"images": cache_channel["images"]}
-                        if should_debug(COMPONENT_NAME):
-                            logger.info(f"[ImageCacheGet] ✅ 预览数据已准备: {len(cache_channel['images'])}张图像")
+                    # ✅ 如果使用了默认图像，需要保存为临时文件以显示预览
+                    if using_default_image:
+                        # 区分是用户提供的默认图还是黑色占位图
+                        if has_user_default:
+                            logger.info(f"[ImageCacheGet] 📸 使用用户提供的默认图像，生成预览...")
+                        else:
+                            logger.info(f"[ImageCacheGet] 📸 使用黑色占位图，生成预览...")
+
+                        # 将默认图像保存为临时文件
+                        try:
+                            import folder_paths
+                            output_dir = folder_paths.get_temp_directory()
+                        except:
+                            import tempfile
+                            output_dir = tempfile.gettempdir()
+
+                        # 转换张量为PIL图像并保存
+                        preview_images = []
+                        for i in range(result_image.shape[0]):
+                            # 将张量转换为numpy数组 (H, W, C)
+                            img_array = (result_image[i].cpu().numpy() * 255).astype(np.uint8)
+                            pil_img = Image.fromarray(img_array)
+
+                            # 生成临时文件名（区分用户默认图和黑色占位图）
+                            prefix = "user_default" if has_user_default else "black_placeholder"
+                            filename = f"{prefix}_{int(time.time())}_{i}.png"
+                            filepath = os.path.join(output_dir, filename)
+
+                            # 保存图像
+                            pil_img.save(filepath, compress_level=1)
+
+                            preview_images.append({
+                                "filename": filename,
+                                "subfolder": "",
+                                "type": "temp"
+                            })
+
+                        ui_data = {"images": preview_images}
+                        if has_user_default:
+                            logger.info(f"[ImageCacheGet] ✅ 用户默认图像预览已生成: {len(preview_images)}张图像")
+                        else:
+                            logger.info(f"[ImageCacheGet] ✅ 黑色占位图预览已生成: {len(preview_images)}张图像")
+
+                    # ✅ 否则从缓存获取预览数据
+                    elif cache_manager is not None:
+                        cache_channel = cache_manager.get_cache_channel(channel_name="__global__")
+                        if cache_channel and "images" in cache_channel and cache_channel["images"]:
+                            # 返回缓存的图像文件信息用于预览
+                            ui_data = {"images": cache_channel["images"]}
+                            if should_debug(COMPONENT_NAME):
+                                logger.info(f"[ImageCacheGet] ✅ 预览数据已准备: {len(cache_channel['images'])}张图像")
+                        else:
+                            if should_debug(COMPONENT_NAME):
+                                logger.info(f"[ImageCacheGet] 📌 全局缓存无图像，不显示预览")
+                            ui_data = {"images": []}
                     else:
-                        if should_debug(COMPONENT_NAME):
-                            logger.info(f"[ImageCacheGet] 📌 全局缓存无图像，不显示预览")
                         ui_data = {"images": []}
+
                 except Exception as e:
                     logger.warning(f"[ImageCacheGet] ⚠️ 获取预览数据失败: {str(e)}")
+                    import traceback
+                    logger.warning(traceback.format_exc())
                     ui_data = {"images": []}
 
             return {
@@ -265,10 +357,13 @@ class ImageCacheGet:
             import traceback
             logger.error(traceback.format_exc())
 
-            # 返回默认图像
-            default_img = default_image[0] if default_image else torch.zeros((1, 64, 64, 3))
+            # 返回默认图像（如果有）或黑色占位图
+            # 注意：这里需要重新安全提取，因为可能在参数提取阶段就出错了
+            fallback_image = torch.zeros((1, 64, 64, 3))
+            if default_image and len(default_image) > 0 and default_image[0] is not None:
+                fallback_image = default_image[0]
             return {
-                "result": (default_img,),
+                "result": (fallback_image,),
                 "ui": {}
             }
 

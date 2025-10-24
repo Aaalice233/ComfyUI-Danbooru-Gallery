@@ -343,9 +343,9 @@ class ImageCacheManager:
 
             # 检查缓存中是否有图像
             if not cache_channel["images"]:
-                print(f"[ImageCacheManager] └─ 缓存为空，返回空白图像")
-                empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-                return [empty_image]
+                print(f"[ImageCacheManager] └─ 缓存为空，返回空列表")
+                # ✅ 修复：返回空列表，让调用者决定使用默认图像
+                return []
 
             try:
                 # 延迟导入folder_paths

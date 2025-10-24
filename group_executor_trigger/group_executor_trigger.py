@@ -18,6 +18,12 @@ try:
 except ImportError:
     PromptServer = None
 
+# 导入缓存管理器
+try:
+    from ..image_cache_manager.image_cache_manager import cache_manager
+except ImportError:
+    cache_manager = None
+
 # 导入debug配置
 from ..utils.debug_config import should_debug
 
@@ -117,6 +123,14 @@ class GroupExecutorTrigger:
                 print(f"{'='*80}")
 
             start_time = time.time()
+
+            # ✅ 在工作流执行前清空所有缓存
+            if cache_manager is not None:
+                logger.info(f"[GroupExecutorTrigger] 🗑️ 清空所有缓存（工作流执行前）")
+                cache_manager.clear_cache(channel_name=None)  # None表示清空所有通道
+                logger.info(f"[GroupExecutorTrigger] ✅ 缓存已清空")
+            else:
+                logger.warning(f"[GroupExecutorTrigger] ⚠️ 缓存管理器不可用，跳过清空缓存")
 
             # 📥 输入日志：显示从GroupExecutorManager接收到的内容
             if should_debug(COMPONENT_NAME):

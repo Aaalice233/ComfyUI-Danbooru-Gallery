@@ -31,7 +31,7 @@ class ResolutionMasterSimplifyCanvas {
             '768×1344': { width: 768, height: 1344 },      // 1,032,192
             '915×1144': { width: 915, height: 1144 },      // 1,046,760
             '1254×836': { width: 1254, height: 836 },      // 1,048,344
-            '1024×1024': { width: 1024, height: 1024 },    // 1,048,576
+            '1024×1024': { width: 1024, height: 1024 },    // 1,048,576 
             '1024×1536': { width: 1024, height: 1536 }     // 1,572,864
         };
 
@@ -271,7 +271,7 @@ class ResolutionMasterSimplifyCanvas {
             ctx.lineWidth = 1.5;
             ctx.beginPath();
             ctx.rect(offsetX, offsetY + canvasH * (1 - node.intpos.y),
-                    canvasW * node.intpos.x, canvasH * node.intpos.y);
+                canvasW * node.intpos.x, canvasH * node.intpos.y);
             ctx.fill();
             ctx.stroke();
         }
