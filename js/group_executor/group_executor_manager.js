@@ -522,15 +522,57 @@ app.registerExtension({
             });
         };
 
-        // 获取工作流中的所有组（支持颜色过滤）
+        // 获取工作流中的所有组（支持颜色过滤 - 采用rgthree-comfy的简洁实现）
         nodeType.prototype.getAvailableGroups = function () {
             if (!app.graph || !app.graph._groups) return [];
 
             let groups = app.graph._groups.filter(g => g && g.title);
 
-            // 应用颜色过滤
+            // 应用颜色过滤（采用rgthree-comfy的简洁方法）
             if (this.properties.selectedColorFilter) {
-                groups = groups.filter(g => this.matchesGroupColor(g, this.properties.selectedColorFilter));
+                // 标准化过滤器颜色
+                let filterColor = this.properties.selectedColorFilter.trim().toLowerCase();
+
+                // 如果是颜色名称，从LGraphCanvas转换为groupcolor十六进制值
+                if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
+                    if (LGraphCanvas.node_colors[filterColor]) {
+                        filterColor = LGraphCanvas.node_colors[filterColor].groupcolor;
+                    } else {
+                        // Fallback: 尝试用下划线替换空格（处理 'pale blue' -> 'pale_blue' 的情况）
+                        const underscoreColor = filterColor.replace(/\s+/g, '_');
+                        if (LGraphCanvas.node_colors[underscoreColor]) {
+                            filterColor = LGraphCanvas.node_colors[underscoreColor].groupcolor;
+                        } else {
+                            // 第二次fallback: 尝试去掉空格
+                            const spacelessColor = filterColor.replace(/\s+/g, '');
+                            if (LGraphCanvas.node_colors[spacelessColor]) {
+                                filterColor = LGraphCanvas.node_colors[spacelessColor].groupcolor;
+                            }
+                        }
+                    }
+                }
+
+                // 标准化为6位小写十六进制 (#f55 -> #ff5555)
+                filterColor = filterColor.replace("#", "").toLowerCase();
+                if (filterColor.length === 3) {
+                    filterColor = filterColor.replace(/(.)(.)(.)/, "$1$1$2$2$3$3");
+                }
+                filterColor = `#${filterColor}`;
+
+                // 过滤组
+                groups = groups.filter(g => {
+                    if (!g.color) return false;
+
+                    // 标准化组颜色
+                    let groupColor = g.color.replace("#", "").trim().toLowerCase();
+                    if (groupColor.length === 3) {
+                        groupColor = groupColor.replace(/(.)(.)(.)/, "$1$1$2$2$3$3");
+                    }
+                    groupColor = `#${groupColor}`;
+
+                    // 简单匹配
+                    return groupColor === filterColor;
+                });
             }
 
             return groups
@@ -549,167 +591,7 @@ app.registerExtension({
             return builtinColors;
         };
 
-        // 检查组是否匹配指定颜色
-        nodeType.prototype.matchesGroupColor = function (group, filterColor) {
-            if (!group) return false;
-            if (!filterColor || filterColor === '') return true;
-
-            // 如果组没有颜色，不匹配任何特定颜色
-            if (!group.color) return false;
-
-            // 处理内置颜色名称
-            const builtinColors = ['red', 'brown', 'green', 'blue', 'pale blue', 'cyan', 'purple', 'yellow', 'black'];
-            const normalizedFilterColor = filterColor.toLowerCase();
-
-            if (builtinColors.includes(normalizedFilterColor)) {
-                // 方法1: 尝试通过十六进制值匹配
-                const expectedHex = this.getComfyUIColorHex(filterColor);
-                const actualHex = this.normalizeColor(group.color);
-
-                // 方法2: 尝试通过颜色名称直接匹配
-                const isNameMatch = this.matchColorByName(group.color, normalizedFilterColor);
-
-                // 方法3: 容错匹配 - 允许颜色值在一定范围内匹配
-                const isHexMatch = expectedHex === actualHex;
-                const isColorClose = this.isColorClose(expectedHex, actualHex);
-
-                return isHexMatch || isNameMatch || isColorClose;
-            }
-
-            return false;
-        };
-
-        // 标准化颜色格式
-        nodeType.prototype.normalizeColor = function (color) {
-            if (!color) return '';
-
-            let normalizedColor = color.replace('#', '').trim().toLowerCase();
-
-            // 转换 ComfyUI 内置颜色名称为十六进制值
-            if (LGraphCanvas.node_colors && LGraphCanvas.node_colors[normalizedColor]) {
-                normalizedColor = LGraphCanvas.node_colors[normalizedColor].groupcolor;
-            }
-
-            // 标准化十六进制格式
-            normalizedColor = normalizedColor.replace('#', '').toLowerCase();
-
-            // 将 3 位十六进制转换为 6 位 (#RGB -> #RRGGBB)
-            if (normalizedColor.length === 3) {
-                normalizedColor = normalizedColor.replace(/(.)(.)(.)/, '$1$1$2$2$3$3');
-            }
-
-            return `#${normalizedColor}`;
-        };
-
-        // 获取ComfyUI内置颜色的十六进制值
-        nodeType.prototype.getComfyUIColorHex = function (colorName) {
-            if (!colorName) return null;
-
-            const normalizedColor = colorName.replace('#', '').trim().toLowerCase();
-
-            // 尝试从LGraphCanvas获取颜色（优先级最高）
-            if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
-                // 直接查找
-                if (LGraphCanvas.node_colors[normalizedColor]) {
-                    const groupColor = LGraphCanvas.node_colors[normalizedColor].groupcolor;
-                    const hexColor = this.normalizeColor(groupColor);
-                    return hexColor;
-                }
-
-                // 尝试移除空格查找
-                const spacelessColor = normalizedColor.replace(/\s+/g, '');
-                if (LGraphCanvas.node_colors[spacelessColor]) {
-                    const groupColor = LGraphCanvas.node_colors[spacelessColor].groupcolor;
-                    const hexColor = this.normalizeColor(groupColor);
-                    return hexColor;
-                }
-            }
-
-            // 改进的硬编码ComfyUI默认颜色值（更准确的值）
-            const defaultColors = {
-                'red': '#f55',
-                'brown': '#a63',
-                'green': '#5a5',
-                'blue': '#55a',
-                'pale blue': '#3f789e', // 使用实际观测到的颜色值
-                'cyan': '#5aa',
-                'purple': '#a5a',
-                'yellow': '#aa5',
-                'black': '#222'
-            };
-
-            if (defaultColors[normalizedColor]) {
-                return defaultColors[normalizedColor];
-            }
-
-            // 尝试移除空格匹配默认颜色
-            const spacelessMatch = normalizedColor.replace(/\s+/g, '');
-            if (defaultColors[spacelessMatch]) {
-                return defaultColors[spacelessMatch];
-            }
-
-            return null;
-        };
-
-        // 通过颜色名称匹配（检查ComfyUI内置颜色映射）
-        nodeType.prototype.matchColorByName = function (groupColor, filterColorName) {
-            if (!groupColor || !filterColorName) return false;
-
-            // 标准化组颜色
-            const normalizedGroupColor = groupColor.replace('#', '').trim().toLowerCase();
-
-            // 检查ComfyUI内置颜色映射
-            if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
-                for (const [colorName, colorData] of Object.entries(LGraphCanvas.node_colors)) {
-                    if (colorName === filterColorName) {
-                        const expectedColor = this.normalizeColor(colorData.groupcolor);
-                        const actualColor = this.normalizeColor(groupColor);
-                        return expectedColor === actualColor;
-                    }
-                }
-            }
-
-            // 检查组的颜色值是否直接包含颜色名称
-            return normalizedGroupColor.includes(filterColorName.replace(' ', ''));
-        };
-
-        // 检查两个颜色是否相近（容差匹配）
-        nodeType.prototype.isColorClose = function (color1, color2, tolerance = 50) {
-            if (!color1 || !color2) return false;
-
-            try {
-                // 移除#号并标准化
-                const hex1 = color1.replace('#', '').toLowerCase();
-                const hex2 = color2.replace('#', '').toLowerCase();
-
-                // 确保是6位十六进制
-                const c1 = hex1.length === 3 ? hex1.replace(/(.)(.)(.)/, '$1$1$2$2$3$3') : hex1;
-                const c2 = hex2.length === 3 ? hex2.replace(/(.)(.)(.)/, '$1$1$2$2$3$3') : hex2;
-
-                // 转换为RGB
-                const r1 = parseInt(c1.substr(0, 2), 16);
-                const g1 = parseInt(c1.substr(2, 2), 16);
-                const b1 = parseInt(c1.substr(4, 2), 16);
-
-                const r2 = parseInt(c2.substr(0, 2), 16);
-                const g2 = parseInt(c2.substr(2, 2), 16);
-                const b2 = parseInt(c2.substr(4, 2), 16);
-
-                // 计算欧几里得距离
-                const distance = Math.sqrt(
-                    Math.pow(r1 - r2, 2) +
-                    Math.pow(g1 - g2, 2) +
-                    Math.pow(b1 - b2, 2)
-                );
-
-                return distance <= tolerance;
-            } catch (error) {
-                console.warn('[SimplifiedGEM] 颜色比较失败:', error);
-                return false;
-            }
-        };
-
-        // 刷新颜色过滤器选项
+        // 刷新颜色过滤器选项（简化版 - 直接从LGraphCanvas获取颜色）
         nodeType.prototype.refreshColorFilter = function () {
             const colorFilter = this.customUI.querySelector('#gem-color-filter');
             if (!colorFilter) return;
@@ -724,19 +606,37 @@ app.registerExtension({
 
             // 添加ComfyUI内置颜色选项
             builtinColors.forEach(colorName => {
-                const hexColor = this.getComfyUIColorHex(colorName);
-                // 如果无法获取十六进制值，仍然显示颜色名称（用于节点刚创建时）
+                const displayName = this.getColorDisplayName(colorName);
+                const isSelected = currentValue === colorName;
+                const selectedAttr = isSelected ? 'selected' : '';
+
+                // 直接从LGraphCanvas获取groupcolor十六进制值
+                let hexColor = null;
+                if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
+                    const normalizedName = colorName.toLowerCase();
+                    if (LGraphCanvas.node_colors[normalizedName]) {
+                        hexColor = LGraphCanvas.node_colors[normalizedName].groupcolor;
+                    } else {
+                        // Fallback: 尝试用下划线替换空格（处理 'pale blue' -> 'pale_blue' 的情况）
+                        const underscoreColor = normalizedName.replace(/\s+/g, '_');
+                        if (LGraphCanvas.node_colors[underscoreColor]) {
+                            hexColor = LGraphCanvas.node_colors[underscoreColor].groupcolor;
+                        } else {
+                            // 第二次fallback: 尝试去掉空格
+                            const spacelessColor = normalizedName.replace(/\s+/g, '');
+                            if (LGraphCanvas.node_colors[spacelessColor]) {
+                                hexColor = LGraphCanvas.node_colors[spacelessColor].groupcolor;
+                            }
+                        }
+                    }
+                }
+
+                // 如果获取到颜色值，添加背景色样式
                 if (hexColor) {
-                    const displayName = this.getColorDisplayName(colorName);
-                    const isSelected = currentValue === colorName || currentValue === hexColor;
-                    const selectedAttr = isSelected ? 'selected' : '';
                     options.push(`<option value="${colorName}" ${selectedAttr} style="background-color: ${hexColor}; color: ${this.getContrastColor(hexColor)};">${displayName}</option>`);
                 } else {
                     // 如果无法获取颜色值，只显示名称
-                    const displayName = this.getColorDisplayName(colorName);
-                    const isSelected = currentValue === colorName;
-                    const selectedAttr2 = isSelected ? 'selected' : '';
-                    options.push(`<option value="${colorName}" ${selectedAttr2}>${displayName}</option>`);
+                    options.push(`<option value="${colorName}" ${selectedAttr}>${displayName}</option>`);
                 }
             });
 

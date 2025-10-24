@@ -576,12 +576,47 @@ app.registerExtension({
             // 获取工作流中的所有组（未过滤）
             const allWorkflowGroups = this.getWorkflowGroups();
 
-            // 应用颜色过滤用于显示
+            // 应用颜色过滤用于显示 (rgthree-comfy approach)
             let displayGroups = allWorkflowGroups;
             if (this.properties.selectedColorFilter) {
-                displayGroups = allWorkflowGroups.filter(group =>
-                    this.matchesGroupColor(group, this.properties.selectedColorFilter)
-                );
+                let filterColor = this.properties.selectedColorFilter.trim().toLowerCase();
+
+                // Convert color name to groupcolor hex
+                if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
+                    if (LGraphCanvas.node_colors[filterColor]) {
+                        filterColor = LGraphCanvas.node_colors[filterColor].groupcolor;
+                    } else {
+                        // Fallback: 尝试用下划线替换空格（处理 'pale blue' -> 'pale_blue' 的情况）
+                        const underscoreColor = filterColor.replace(/\s+/g, '_');
+                        if (LGraphCanvas.node_colors[underscoreColor]) {
+                            filterColor = LGraphCanvas.node_colors[underscoreColor].groupcolor;
+                        } else {
+                            // 第二次fallback: 尝试去掉空格
+                            const spacelessColor = filterColor.replace(/\s+/g, '');
+                            if (LGraphCanvas.node_colors[spacelessColor]) {
+                                filterColor = LGraphCanvas.node_colors[spacelessColor].groupcolor;
+                            }
+                        }
+                    }
+                }
+
+                // Normalize to 6-digit lowercase hex
+                filterColor = filterColor.replace("#", "").toLowerCase();
+                if (filterColor.length === 3) {
+                    filterColor = filterColor.replace(/(.)(.)(.)/, "$1$1$2$2$3$3");
+                }
+                filterColor = `#${filterColor}`;
+
+                // Filter groups
+                displayGroups = allWorkflowGroups.filter(group => {
+                    if (!group.color) return false;
+                    let groupColor = group.color.replace("#", "").trim().toLowerCase();
+                    if (groupColor.length === 3) {
+                        groupColor = groupColor.replace(/(.)(.)(.)/, "$1$1$2$2$3$3");
+                    }
+                    groupColor = `#${groupColor}`;
+                    return groupColor === filterColor;
+                });
             }
 
             // 为每个显示的组创建UI
@@ -979,143 +1014,6 @@ app.registerExtension({
             return builtinColors;
         };
 
-        // 检查组是否匹配指定颜色
-        nodeType.prototype.matchesGroupColor = function (group, filterColor) {
-            if (!group) return false;
-            if (!filterColor || filterColor === '') return true;
-
-            if (!group.color) return false;
-
-            const builtinColors = ['red', 'brown', 'green', 'blue', 'pale blue', 'cyan', 'purple', 'yellow', 'black'];
-            const normalizedFilterColor = filterColor.toLowerCase();
-
-            if (builtinColors.includes(normalizedFilterColor)) {
-                const expectedHex = this.getComfyUIColorHex(filterColor);
-                const actualHex = this.normalizeColor(group.color);
-                const isNameMatch = this.matchColorByName(group.color, normalizedFilterColor);
-                const isHexMatch = expectedHex === actualHex;
-                const isColorClose = this.isColorClose(expectedHex, actualHex);
-
-                return isHexMatch || isNameMatch || isColorClose;
-            }
-
-            return false;
-        };
-
-        // 标准化颜色格式
-        nodeType.prototype.normalizeColor = function (color) {
-            if (!color) return '';
-
-            let normalizedColor = color.replace('#', '').trim().toLowerCase();
-
-            if (LGraphCanvas.node_colors && LGraphCanvas.node_colors[normalizedColor]) {
-                normalizedColor = LGraphCanvas.node_colors[normalizedColor].groupcolor;
-            }
-
-            normalizedColor = normalizedColor.replace('#', '').toLowerCase();
-
-            if (normalizedColor.length === 3) {
-                normalizedColor = normalizedColor.replace(/(.)(.)(.)/, '$1$1$2$2$3$3');
-            }
-
-            return `#${normalizedColor}`;
-        };
-
-        // 获取ComfyUI内置颜色的十六进制值
-        nodeType.prototype.getComfyUIColorHex = function (colorName) {
-            if (!colorName) return null;
-
-            const normalizedColor = colorName.replace('#', '').trim().toLowerCase();
-
-            if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
-                if (LGraphCanvas.node_colors[normalizedColor]) {
-                    const groupColor = LGraphCanvas.node_colors[normalizedColor].groupcolor;
-                    const hexColor = this.normalizeColor(groupColor);
-                    return hexColor;
-                }
-
-                const spacelessColor = normalizedColor.replace(/\s+/g, '');
-                if (LGraphCanvas.node_colors[spacelessColor]) {
-                    const groupColor = LGraphCanvas.node_colors[spacelessColor].groupcolor;
-                    const hexColor = this.normalizeColor(groupColor);
-                    return hexColor;
-                }
-            }
-
-            const defaultColors = {
-                'red': '#f55',
-                'brown': '#a63',
-                'green': '#5a5',
-                'blue': '#55a',
-                'pale blue': '#3f789e',
-                'cyan': '#5aa',
-                'purple': '#a5a',
-                'yellow': '#aa5',
-                'black': '#222'
-            };
-
-            if (defaultColors[normalizedColor]) {
-                return defaultColors[normalizedColor];
-            }
-
-            const spacelessMatch = normalizedColor.replace(/\s+/g, '');
-            if (defaultColors[spacelessMatch]) {
-                return defaultColors[spacelessMatch];
-            }
-
-            return null;
-        };
-
-        // 通过颜色名称匹配
-        nodeType.prototype.matchColorByName = function (groupColor, filterColorName) {
-            if (!groupColor || !filterColorName) return false;
-
-            const normalizedGroupColor = groupColor.replace('#', '').trim().toLowerCase();
-
-            if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
-                for (const [colorName, colorData] of Object.entries(LGraphCanvas.node_colors)) {
-                    if (colorName === filterColorName) {
-                        const expectedColor = this.normalizeColor(colorData.groupcolor);
-                        const actualColor = this.normalizeColor(groupColor);
-                        return expectedColor === actualColor;
-                    }
-                }
-            }
-
-            return normalizedGroupColor.includes(filterColorName.replace(' ', ''));
-        };
-
-        // 检查两个颜色是否相近
-        nodeType.prototype.isColorClose = function (color1, color2, tolerance = 50) {
-            if (!color1 || !color2) return false;
-
-            try {
-                const hex1 = color1.replace('#', '').toLowerCase();
-                const hex2 = color2.replace('#', '').toLowerCase();
-
-                const c1 = hex1.length === 3 ? hex1.replace(/(.)(.)(.)/, '$1$1$2$2$3$3') : hex1;
-                const c2 = hex2.length === 3 ? hex2.replace(/(.)(.)(.)/, '$1$1$2$2$3$3') : hex2;
-
-                const r1 = parseInt(c1.substr(0, 2), 16);
-                const g1 = parseInt(c1.substr(2, 2), 16);
-                const b1 = parseInt(c1.substr(4, 2), 16);
-
-                const r2 = parseInt(c2.substr(0, 2), 16);
-                const g2 = parseInt(c2.substr(2, 2), 16);
-                const b2 = parseInt(c2.substr(4, 2), 16);
-
-                const distance = Math.sqrt(
-                    Math.pow(r1 - r2, 2) +
-                    Math.pow(g1 - g2, 2) +
-                    Math.pow(b1 - b2, 2)
-                );
-
-                return distance <= tolerance;
-            } catch (error) {
-                console.warn('[GMM] 颜色比较失败:', error);
-                return false;
-            }
-        };
 
         // 刷新颜色过滤器选项
         nodeType.prototype.refreshColorFilter = function () {
@@ -1129,16 +1027,34 @@ app.registerExtension({
             let options = [];
 
             builtinColors.forEach(colorName => {
-                const hexColor = this.getComfyUIColorHex(colorName);
+                const displayName = this.getColorDisplayName(colorName);
+                const isSelected = currentValue === colorName;
+                const selectedAttr = isSelected ? 'selected' : '';
+
+                // Direct LGraphCanvas lookup
+                let hexColor = null;
+                if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
+                    const normalizedName = colorName.toLowerCase();
+                    if (LGraphCanvas.node_colors[normalizedName]) {
+                        hexColor = LGraphCanvas.node_colors[normalizedName].groupcolor;
+                    } else {
+                        // Fallback: 尝试用下划线替换空格（处理 'pale blue' -> 'pale_blue' 的情况）
+                        const underscoreColor = normalizedName.replace(/\s+/g, '_');
+                        if (LGraphCanvas.node_colors[underscoreColor]) {
+                            hexColor = LGraphCanvas.node_colors[underscoreColor].groupcolor;
+                        } else {
+                            // 第二次fallback: 尝试去掉空格
+                            const spacelessColor = normalizedName.replace(/\s+/g, '');
+                            if (LGraphCanvas.node_colors[spacelessColor]) {
+                                hexColor = LGraphCanvas.node_colors[spacelessColor].groupcolor;
+                            }
+                        }
+                    }
+                }
+
                 if (hexColor) {
-                    const displayName = this.getColorDisplayName(colorName);
-                    const isSelected = currentValue === colorName || currentValue === hexColor;
-                    const selectedAttr = isSelected ? 'selected' : '';
                     options.push(`<option value="${colorName}" ${selectedAttr} style="background-color: ${hexColor}; color: ${this.getContrastColor(hexColor)};">${displayName}</option>`);
                 } else {
-                    const displayName = this.getColorDisplayName(colorName);
-                    const isSelected = currentValue === colorName;
-                    const selectedAttr = isSelected ? 'selected' : '';
                     options.push(`<option value="${colorName}" ${selectedAttr}>${displayName}</option>`);
                 }
             });
