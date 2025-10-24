@@ -9,6 +9,7 @@ from .image_cache_save import NODE_CLASS_MAPPINGS as cache_save_mappings, NODE_D
 from .image_cache_get import NODE_CLASS_MAPPINGS as cache_get_mappings, NODE_DISPLAY_NAME_MAPPINGS as cache_get_display_mappings
 from .resolution_master_simplify import NODE_CLASS_MAPPINGS as rms_mappings, NODE_DISPLAY_NAME_MAPPINGS as rms_display_mappings
 from .prompt_cleaning_maid import NODE_CLASS_MAPPINGS as pcm_mappings, NODE_DISPLAY_NAME_MAPPINGS as pcm_display_mappings
+from .simple_image_compare import NODE_CLASS_MAPPINGS as sic_mappings, NODE_DISPLAY_NAME_MAPPINGS as sic_display_mappings
 
 # 导入优化执行系统
 from .group_executor_manager import NODE_CLASS_MAPPINGS as group_manager_mappings
@@ -41,6 +42,7 @@ NODE_CLASS_MAPPINGS = {
     **cache_get_mappings,
     **rms_mappings,
     **pcm_mappings,
+    **sic_mappings,
     **opt_mappings
 }
 
@@ -53,6 +55,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **cache_get_display_mappings,
     **rms_display_mappings,
     **pcm_display_mappings,
+    **sic_display_mappings,
     **opt_display_mappings
 }
 
