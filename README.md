@@ -27,6 +27,7 @@
   - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
   - [🖼️ 图像缓存节点 (Image Cache Nodes)](#-图像缓存节点-image-cache-nodes)
   - [📐 分辨率大师简化版 (Resolution Master Simplify)](#-分辨率大师简化版-resolution-master-simplify)
+  - [📦 简易Checkpoint加载器 (Simple Checkpoint Loader)](#-简易checkpoint加载器-simple-checkpoint-loader)
 - [安装说明](#安装说明)
 - [系统要求](#系统要求)
 - [高级功能](#高级功能)
@@ -47,6 +48,7 @@
   - [🔇 Group Mute Manager](#-group-mute-manager)
   - [🖼️ Image Cache Nodes](#-image-cache-nodes)
   - [📐 Resolution Master Simplify](#-resolution-master-simplify)
+  - [📦 Simple Checkpoint Loader](#-simple-checkpoint-loader)
 - [Installation](#installation)
 - [System Requirements](#system-requirements-1)
 - [Advanced Features](#advanced-features)
@@ -554,6 +556,43 @@ smile, ((long hair),  beautiful
 
 ---
 
+### 📦 简易Checkpoint加载器 (Simple Checkpoint Loader)
+
+**支持自定义VAE的Checkpoint加载器**
+
+基于ComfyUI_Mira的Checkpoint Loader with Name节点，增加了ComfyUI-Easy-Use简易加载器的VAE选择功能，让用户可以选择使用模型内置VAE或自定义VAE文件。
+
+#### 核心功能
+- 📦 **Checkpoint加载**: 加载diffusion模型checkpoint
+- 🎨 **VAE选择**: 支持使用内置VAE或选择自定义VAE文件
+- 📝 **模型名称输出**: 返回模型名称用于后续节点
+- 🔄 **完整输出**: 返回MODEL、CLIP、VAE和模型名称
+
+#### 使用方法
+1. 添加 `danbooru > 简易Checkpoint加载器 (Simple Checkpoint Loader)` 节点
+2. 从下拉列表选择要加载的checkpoint模型
+3. 选择VAE选项:
+   - **Baked VAE**: 使用checkpoint内置的VAE（默认）
+   - **自定义VAE**: 从VAE列表中选择其他VAE文件
+4. 连接输出到其他节点:
+   - `MODEL`: 用于采样的模型
+   - `CLIP`: 用于文本编码的CLIP模型
+   - `VAE`: 用于编码/解码的VAE模型
+   - `model_name`: 模型名称字符串
+
+#### 应用场景
+- **快速加载**: 简化checkpoint加载流程
+- **VAE实验**: 快速测试不同VAE对生成效果的影响
+- **工作流优化**: 统一的加载接口，便于工作流管理
+- **模型对比**: 配合模型名称输出，方便记录使用的模型
+
+#### 代码来源
+本节点代码参考自：
+- [ComfyUI_Mira](https://github.com/mirabarukaso/ComfyUI_Mira) - Checkpoint Loader with Name节点
+- [ComfyUI-Easy-Use](https://github.com/yolain/ComfyUI-Easy-Use) - 简易加载器的VAE选择功能
+
+---
+
 ## 安装说明
 
 ### 方法一：ComfyUI Manager 安装（推荐）
@@ -680,6 +719,9 @@ ComfyUI-Danbooru-Gallery/
 │   ├── __init__.py
 │   ├── resolution_master_simplify.py
 │   └── settings.json
+├── simple_checkpoint_loader_with_name/  # 简易Checkpoint加载器
+│   ├── __init__.py
+│   └── simple_checkpoint_loader_with_name.py
 ├── install.py                      # 智能安装脚本
 ├── requirements.txt                # 依赖清单
 ├── js/
@@ -705,6 +747,7 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── resolution_master_simplify.js
 │   ├── simple_image_compare/       # 简易图像对比前端
 │   │   └── simple_image_compare.js
+│   ├── simple_checkpoint_loader_with_name/  # 简易Checkpoint加载器前端（预留）
 │   └── global/                     # 全局共享组件
 │       ├── autocomplete_cache.js
 │       ├── autocomplete_ui.js
@@ -1227,6 +1270,43 @@ A simplified version based on Resolution Master, providing intuitive 2D canvas i
 
 ---
 
+### 📦 Simple Checkpoint Loader
+
+**Checkpoint Loader with Custom VAE Support**
+
+Based on ComfyUI_Mira's Checkpoint Loader with Name node, enhanced with VAE selection functionality from ComfyUI-Easy-Use's simple loader, allowing users to choose between built-in VAE or custom VAE files.
+
+#### Core Features
+- 📦 **Checkpoint Loading**: Load diffusion model checkpoints
+- 🎨 **VAE Selection**: Support for built-in VAE or custom VAE files
+- 📝 **Model Name Output**: Returns model name for downstream nodes
+- 🔄 **Complete Outputs**: Returns MODEL, CLIP, VAE, and model name
+
+#### Usage
+1. Add `danbooru > Simple Checkpoint Loader` node
+2. Select checkpoint model from dropdown list
+3. Choose VAE option:
+   - **Baked VAE**: Use checkpoint's built-in VAE (default)
+   - **Custom VAE**: Select from available VAE files
+4. Connect outputs to other nodes:
+   - `MODEL`: Model for sampling
+   - `CLIP`: CLIP model for text encoding
+   - `VAE`: VAE model for encoding/decoding
+   - `model_name`: Model name string
+
+#### Use Cases
+- **Quick Loading**: Simplified checkpoint loading workflow
+- **VAE Experimentation**: Quickly test different VAEs' effects on generation
+- **Workflow Optimization**: Unified loading interface for workflow management
+- **Model Comparison**: Track used models with model name output
+
+#### Code Sources
+This node is based on code from:
+- [ComfyUI_Mira](https://github.com/mirabarukaso/ComfyUI_Mira) - Checkpoint Loader with Name node
+- [ComfyUI-Easy-Use](https://github.com/yolain/ComfyUI-Easy-Use) - VAE selection functionality from simple loader
+
+---
+
 ## Installation
 
 ### Method 1: ComfyUI Manager Installation (Recommended)
@@ -1350,6 +1430,9 @@ ComfyUI-Danbooru-Gallery/
 │   ├── __init__.py
 │   ├── resolution_master_simplify.py
 │   └── settings.json
+├── simple_checkpoint_loader_with_name/  # Simple Checkpoint Loader
+│   ├── __init__.py
+│   └── simple_checkpoint_loader_with_name.py
 ├── install.py                      # Smart installation script
 ├── requirements.txt                # Dependency list
 ├── js/
@@ -1373,6 +1456,7 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── group_mute_manager.js
 │   ├── resolution_master_simplify/ # Resolution Master Simplify frontend
 │   │   └── resolution_master_simplify.js
+│   ├── simple_checkpoint_loader_with_name/  # Simple Checkpoint Loader frontend (reserved)
 │   └── global/                     # Global shared components
 │       ├── autocomplete_cache.js
 │       ├── autocomplete_ui.js
@@ -1435,6 +1519,8 @@ MIT License
 - [rgthree-comfy](https://github.com/rgthree/rgthree-comfy) - 组静音管理器和简易图像对比节点的核心代码参考 | Core code reference for Group Mute Manager and Simple Image Compare node
 - [Comfyui-Resolution-Master](https://github.com/Azornes/Comfyui-Resolution-Master) - 分辨率大师简化版的原版参考 | Original reference for Resolution Master Simplify
 - [comfyui-adaptiveprompts](https://github.com/Alectriciti/comfyui-adaptiveprompts) - 提示词清洁女仆节点的代码来源 | Source code for Prompt Cleaning Maid node
+- [ComfyUI_Mira](https://github.com/mirabarukaso/ComfyUI_Mira) - 简易Checkpoint加载器的基础代码来源 | Base code source for Simple Checkpoint Loader
+- [ComfyUI-Easy-Use](https://github.com/yolain/ComfyUI-Easy-Use) - 简易Checkpoint加载器的VAE选择功能参考 | VAE selection functionality reference for Simple Checkpoint Loader
 
 ### 翻译文件来源 | Translation Data Sources
 
