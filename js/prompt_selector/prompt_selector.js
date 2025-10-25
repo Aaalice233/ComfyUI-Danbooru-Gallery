@@ -4815,9 +4815,12 @@ app.registerExtension({
                    .ps-btn:focus {
                        outline: none;
                    }
-                   input:focus,
-                   textarea:focus,
-                   select:focus {
+                   .ps-library-modal input:focus,
+                   .ps-library-modal textarea:focus,
+                   .ps-library-modal select:focus,
+                   .prompt-selector-main-container input:focus,
+                   .prompt-selector-main-container textarea:focus,
+                   .prompt-selector-main-container select:focus {
                        outline: 2px solid var(--ps-theme-color-secondary);
                        outline-offset: 2px;
                    }
