@@ -336,6 +336,37 @@ app.registerExtension({
                     stroke: #E0E0E0;
                 }
 
+                .gmm-navigate-button {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 50%;
+                    background: rgba(74, 144, 226, 0.2);
+                    border: 1px solid rgba(74, 144, 226, 0.3);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: all 0.2s ease;
+                    cursor: pointer;
+                    flex-shrink: 0;
+                }
+
+                .gmm-navigate-button svg {
+                    width: 14px;
+                    height: 14px;
+                    stroke: #4A90E2;
+                    transition: all 0.2s ease;
+                }
+
+                .gmm-navigate-button:hover {
+                    background: rgba(74, 144, 226, 0.4);
+                    border-color: rgba(74, 144, 226, 0.6);
+                    transform: scale(1.15);
+                }
+
+                .gmm-navigate-button:hover svg {
+                    stroke: #6FA8E8;
+                }
+
                 @keyframes gmmFadeIn {
                     from {
                         opacity: 0;
@@ -723,6 +754,11 @@ app.registerExtension({
                             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                         </svg>
                     </div>
+                    <div class="gmm-navigate-button" title="跳转到组">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 12h14m-7-7l7 7-7 7"/>
+                        </svg>
+                    </div>
                 </div>
             `;
 
@@ -739,6 +775,15 @@ app.registerExtension({
                 e.stopPropagation();
                 this.showLinkageDialog(groupConfig);
             });
+
+            // 绑定跳转按钮点击事件
+            const navigateBtn = item.querySelector('.gmm-navigate-button');
+            if (navigateBtn) {
+                navigateBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.navigateToGroup(groupConfig.group_name);
+                });
+            }
 
             return item;
         };
@@ -792,6 +837,38 @@ app.registerExtension({
             });
             window.dispatchEvent(event);
             console.log('[GMM] 已广播状态变化事件');
+        };
+
+        // 跳转到指定组
+        nodeType.prototype.navigateToGroup = function (groupName) {
+            console.log('[GMM] 跳转到组:', groupName);
+
+            const group = app.graph._groups.find(g => g.title === groupName);
+            if (!group) {
+                console.warn('[GMM] 未找到组:', groupName);
+                return;
+            }
+
+            const canvas = app.canvas;
+
+            // 居中到组
+            canvas.centerOnNode(group);
+
+            // 计算合适的缩放比例
+            const zoomCurrent = canvas.ds?.scale || 1;
+            const zoomX = canvas.canvas.width / group._size[0] - 0.02;
+            const zoomY = canvas.canvas.height / group._size[1] - 0.02;
+
+            // 设置缩放（不超过当前缩放，确保能看到完整的组）
+            canvas.setZoom(Math.min(zoomCurrent, zoomX, zoomY), [
+                canvas.canvas.width / 2,
+                canvas.canvas.height / 2,
+            ]);
+
+            // 刷新画布
+            canvas.setDirty(true, true);
+
+            console.log('[GMM] 跳转完成');
         };
 
         // 应用联动规则（带防循环）
