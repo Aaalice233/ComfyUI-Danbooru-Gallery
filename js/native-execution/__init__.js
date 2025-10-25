@@ -119,15 +119,9 @@ if (!window.optimizedExecutionSystemLoaded) {
                                 }
                             }
 
-                            // ✅ 新增：找出未配置组的节点
-                            const unconfiguredNodeIds = findUnconfiguredGroupNodes(managerNodeId);
-
-                            if (unconfiguredNodeIds.length > 0) {
-                                console.log(`[OptimizedExecutionSystem] 📋 检测到 ${unconfiguredNodeIds.length} 个未配置组的节点`);
-                                console.log('[OptimizedExecutionSystem] ✅ 这些节点将与Manager+Trigger一起提交，保持依赖关系');
-                            }
-
-                            console.log('[OptimizedExecutionSystem] 🎯 Filtering to Manager + Trigger + Unconfigured Groups');
+                            // ✅ 只提交 Manager + Trigger 节点
+                            // 所有组（包括未配置组）的执行将由前端执行引擎完全控制
+                            console.log('[OptimizedExecutionSystem] 🎯 Filtering to Manager + Trigger only');
 
                             const oldOutput = prompt.output;
                             let newOutput = {};
@@ -135,16 +129,11 @@ if (!window.optimizedExecutionSystemLoaded) {
                             // Recursively add Trigger node and its dependencies (which includes Manager)
                             recursiveAddNodes(String(triggerNodeId), oldOutput, newOutput);
 
-                            // ✅ 新增：添加未配置组的节点
-                            for (const nodeId of unconfiguredNodeIds) {
-                                recursiveAddNodes(String(nodeId), oldOutput, newOutput);
-                            }
-
                             prompt.output = newOutput;
                             console.log('[OptimizedExecutionSystem] Original nodes:', Object.keys(oldOutput).length);
                             console.log('[OptimizedExecutionSystem] Filtered to Manager + Trigger:', Object.keys(newOutput).length);
                             console.log('[OptimizedExecutionSystem] Node IDs:', Object.keys(newOutput).join(', '));
-                            console.log('[OptimizedExecutionSystem] ✅ Group execution will be controlled by frontend engine');
+                            console.log('[OptimizedExecutionSystem] ✅ All groups (including unconfigured) will be controlled by frontend engine');
                         }
                     }
 

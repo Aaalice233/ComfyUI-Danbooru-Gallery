@@ -173,7 +173,43 @@ class OptimizedExecutionEngine {
         console.log(`[OptimizedExecutionEngine] 📋 执行模式: ${context.executionMode}`);
         console.log(`[OptimizedExecutionEngine] 🎛️ 缓存控制: ${context.cacheControlMode}`);
 
-        const groups = context.executionPlan?.groups || [];
+        const configuredGroups = context.executionPlan?.groups || [];
+
+        // ✅ 新增：找出未配置的组，它们将在已配置组之前执行
+        const unconfiguredGroupNames = this.findUnconfiguredGroups(configuredGroups);
+
+        // 构建完整的执行列表：未配置组 + 已配置组
+        const allGroupsToExecute = [];
+
+        // 1. 先添加未配置的组
+        if (unconfiguredGroupNames.length > 0) {
+            console.log(`[OptimizedExecutionEngine] 📋 检测到 ${unconfiguredGroupNames.length} 个未配置的组`);
+            console.log(`[OptimizedExecutionEngine] 📍 未配置的组: [${unconfiguredGroupNames.join(', ')}]`);
+            console.log(`[OptimizedExecutionEngine] ⚡ 这些组将在已配置组之前自动执行`);
+
+            for (const groupName of unconfiguredGroupNames) {
+                allGroupsToExecute.push({
+                    group_name: groupName,
+                    delay_seconds: 0,
+                    nodes: [],  // 将在executeGroup中动态查找
+                    is_unconfigured: true  // 标记为未配置组
+                });
+            }
+        }
+
+        // 2. 再添加已配置的组
+        if (configuredGroups.length > 0) {
+            console.log(`[OptimizedExecutionEngine] 📋 已配置的组: [${configuredGroups.map(g => g.group_name).join(', ')}]`);
+            allGroupsToExecute.push(...configuredGroups.map(g => ({ ...g, is_unconfigured: false })));
+        }
+
+        console.log(`[OptimizedExecutionEngine] 📊 总执行顺序 (${allGroupsToExecute.length} 个组):`);
+        allGroupsToExecute.forEach((g, i) => {
+            const label = g.is_unconfigured ? '(未配置-自动)' : '(已配置)';
+            console.log(`   ${i + 1}. ${g.group_name} ${label}`);
+        });
+
+        const groups = allGroupsToExecute;
 
         for (let i = 0; i < groups.length; i++) {
             // ✅ 检查是否被取消
@@ -244,6 +280,30 @@ class OptimizedExecutionEngine {
         const totalExecutionTime = Date.now() - context.startTime;
         console.log(`[OptimizedExecutionEngine] ⏱️ 总执行时间: ${totalExecutionTime}ms (${Math.round(totalExecutionTime / 1000)}秒)`);
         window._groupExecutorActive = false; // Reset the flag
+    }
+
+    findUnconfiguredGroups(configuredGroups) {
+        /** 找出未配置的组 */
+        if (!app.graph || !app.graph._groups) {
+            console.warn('[OptimizedExecutionEngine] ⚠️ 无法访问图数据');
+            return [];
+        }
+
+        // 获取所有组
+        const allGroups = app.graph._groups || [];
+        if (allGroups.length === 0) {
+            return [];
+        }
+
+        // 提取已配置组的名称
+        const configuredGroupNames = configuredGroups.map(g => g.group_name);
+
+        // 找出未配置的组
+        const unconfiguredGroupNames = allGroups
+            .filter(g => !configuredGroupNames.includes(g.title))
+            .map(g => g.title);
+
+        return unconfiguredGroupNames;
     }
 
     async executeGroup(context, groupInfo, groupIndex, totalGroups) {
