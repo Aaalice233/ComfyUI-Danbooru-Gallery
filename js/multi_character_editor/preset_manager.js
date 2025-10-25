@@ -8,6 +8,46 @@ import { globalToastManager as toastManagerProxy } from '../global/toast_manager
 import { AutocompleteUI } from '../global/autocomplete_ui.js';
 import '../global/color_manager.js';
 
+/**
+ * 根据画廊设置格式化标签
+ * 从localStorage读取格式化设置并应用
+ */
+const formatTagWithGallerySettings = (tag) => {
+    // 默认设置
+    let formattingSettings = {
+        escapeBrackets: true,
+        replaceUnderscores: true
+    };
+
+    // 尝试从localStorage读取设置
+    try {
+        const savedFormatting = localStorage.getItem('formatting');
+        if (savedFormatting) {
+            const parsed = JSON.parse(savedFormatting);
+            if (parsed && typeof parsed === 'object') {
+                formattingSettings = { ...formattingSettings, ...parsed };
+            }
+        }
+    } catch (e) {
+        console.warn('[PresetManager] 读取格式化设置失败:', e);
+    }
+
+    // 应用格式化规则
+    let processedTag = tag;
+
+    // 替换下划线为空格
+    if (formattingSettings.replaceUnderscores) {
+        processedTag = processedTag.replace(/_/g, ' ');
+    }
+
+    // 转义括号
+    if (formattingSettings.escapeBrackets) {
+        processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
+    }
+
+    return processedTag;
+};
+
 class PresetManager {
     constructor(editor) {
         this.editor = editor;
@@ -1415,6 +1455,7 @@ class PresetManager {
                     debounceDelay: 200,
                     minQueryLength: 1,
                     customClass: 'mce-autocomplete',
+                    formatTag: formatTagWithGallerySettings,
                     onSelect: (tag) => {
                         // 标签已选择
                     }
@@ -2164,6 +2205,7 @@ class PresetManager {
                     debounceDelay: 200,
                     minQueryLength: 2,
                     customClass: 'mce-autocomplete',
+                    formatTag: formatTagWithGallerySettings,
                     onSelect: (tag) => {
                         // 标签已选择
                     }
@@ -2199,6 +2241,7 @@ class PresetManager {
                     debounceDelay: 200,
                     minQueryLength: 1,
                     customClass: 'mce-autocomplete',
+                    formatTag: formatTagWithGallerySettings,
                     onSelect: (tag) => {
                         // 标签已选择
                     }

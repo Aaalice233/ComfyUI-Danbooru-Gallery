@@ -2720,6 +2720,17 @@ app.registerExtension({
                                         language: globalMultiLanguageManager.getLanguage(),
                                         maxSuggestions: uiSettings.autocomplete_max_results || 20,
                                         customClass: 'danbooru-tag-editor-autocomplete',
+                                        formatTag: (tag) => {
+                                            // 应用格式化设置
+                                            let processedTag = tag;
+                                            if (uiSettings.formatting && uiSettings.formatting.replaceUnderscores) {
+                                                processedTag = processedTag.replace(/_/g, ' ');
+                                            }
+                                            if (uiSettings.formatting && uiSettings.formatting.escapeBrackets) {
+                                                processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
+                                            }
+                                            return processedTag;
+                                        },
                                         onSelect: (selectedTag) => {
                                             const newTag = selectedTag.trim().replace(/\s/g, '_');
                                             if (newTag) {
@@ -3362,6 +3373,17 @@ app.registerExtension({
                     language: globalMultiLanguageManager.getLanguage(),
                     maxSuggestions: uiSettings.autocomplete_max_results || 20,
                     customClass: 'danbooru-gallery-autocomplete',
+                    formatTag: (tag) => {
+                        // 应用格式化设置
+                        let processedTag = tag;
+                        if (uiSettings.formatting && uiSettings.formatting.replaceUnderscores) {
+                            processedTag = processedTag.replace(/_/g, ' ');
+                        }
+                        if (uiSettings.formatting && uiSettings.formatting.escapeBrackets) {
+                            processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
+                        }
+                        return processedTag;
+                    },
                     onSelect: (tag) => {
                         // 选择建议后保存
                         saveToLocalStorage('searchValue', searchInput.value);

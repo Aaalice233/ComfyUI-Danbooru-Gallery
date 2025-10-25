@@ -1368,6 +1368,30 @@ class CharacterEditor {
 
         const currentLang = this.editor.languageManager ? this.editor.languageManager.getLanguage() : 'zh';
 
+        // 创建通用格式化函数
+        const formatTagWithGallerySettings = (tag) => {
+            let formattingSettings = { escapeBrackets: true, replaceUnderscores: true };
+            try {
+                const savedFormatting = localStorage.getItem('formatting');
+                if (savedFormatting) {
+                    const parsed = JSON.parse(savedFormatting);
+                    if (parsed && typeof parsed === 'object') {
+                        formattingSettings = { ...formattingSettings, ...parsed };
+                    }
+                }
+            } catch (e) {
+                console.warn('[CharacterEditor] 读取格式化设置失败:', e);
+            }
+            let processedTag = tag;
+            if (formattingSettings.replaceUnderscores) {
+                processedTag = processedTag.replace(/_/g, ' ');
+            }
+            if (formattingSettings.escapeBrackets) {
+                processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
+            }
+            return processedTag;
+        };
+
         // 延迟初始化
         setTimeout(() => {
             try {
@@ -1378,6 +1402,7 @@ class CharacterEditor {
                     debounceDelay: 200,
                     minQueryLength: 2,
                     customClass: 'mce-autocomplete',
+                    formatTag: formatTagWithGallerySettings,
                     onSelect: (tag) => {
                         console.log('[CharacterEditor] 内联编辑选择标签:', tag);
                     }
@@ -1542,6 +1567,7 @@ class CharacterEditor {
                     debounceDelay: 150,
                     minQueryLength: 1,
                     customClass: 'mce-autocomplete',
+                    formatTag: formatTagWithGallerySettings,
                     onSelect: (tag) => {
                         console.log('[CharacterEditor] 全局提示词选择标签:', tag);
                     }
@@ -2391,6 +2417,7 @@ class CharacterEditor {
                         debounceDelay: 200, // 增加防抖延迟，减少卡顿
                         minQueryLength: 2, // 增加最小查询长度，减少不必要的查询
                         customClass: 'mce-autocomplete',
+                        formatTag: formatTagWithGallerySettings,
                         onSelect: (tag) => {
                             console.log('[CharacterEditor] 选择标签:', tag);
                         }

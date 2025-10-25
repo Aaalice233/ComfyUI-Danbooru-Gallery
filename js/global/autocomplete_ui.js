@@ -17,6 +17,7 @@ class AutocompleteUI {
         this.minQueryLength = options.minQueryLength || 2; // 最小查询长度（提高到2字符，减少无效请求）
         this.onSelect = options.onSelect || null; // 选择回调
         this.customClass = options.customClass || ''; // 自定义样式类
+        this.formatTag = options.formatTag || null; // 标签格式化回调
 
         // 状态
         this.isActive = false;
@@ -404,6 +405,12 @@ class AutocompleteUI {
      * 选择建议
      */
     selectSuggestion(tag) {
+        // 应用格式化回调（如果提供）
+        let formattedTag = tag;
+        if (this.formatTag && typeof this.formatTag === 'function') {
+            formattedTag = this.formatTag(tag);
+        }
+
         const value = this.inputElement.value;
         const cursorPosition = this.inputElement.selectionStart;
         const textBeforeCursor = value.substring(0, cursorPosition);
@@ -413,7 +420,7 @@ class AutocompleteUI {
         const lastWordStart = textBeforeCursor.lastIndexOf(this.lastQuery);
         if (lastWordStart !== -1) {
             // 在标签后添加逗号和空格
-            const tagWithSeparator = tag + ', ';
+            const tagWithSeparator = formattedTag + ', ';
             const newTextBefore = textBeforeCursor.substring(0, lastWordStart) + tagWithSeparator;
             const newValue = newTextBefore + textAfterCursor;
 
@@ -429,7 +436,7 @@ class AutocompleteUI {
 
         // 调用选择回调
         if (this.onSelect) {
-            this.onSelect(tag);
+            this.onSelect(formattedTag);
         }
 
         this.hide();
