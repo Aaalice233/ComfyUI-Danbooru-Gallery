@@ -286,12 +286,18 @@ app.registerExtension({
                     margin-bottom: 8px;
                     transition: all 0.2s ease;
                     cursor: move;
+                    position: relative;
+                    z-index: 1;
                 }
 
                 .gem-group-item:hover {
                     border-color: rgba(116, 55, 149, 0.5);
                     box-shadow: 0 2px 8px rgba(116, 55, 149, 0.2);
                     transform: translateY(-1px);
+                }
+
+                .gem-group-item.dropdown-active {
+                    z-index: 9999;
                 }
 
                 .gem-group-item.dragging {
@@ -346,6 +352,194 @@ app.registerExtension({
                     outline: none;
                     border-color: #8b4ba8;
                     background: rgba(116, 55, 149, 0.4);
+                }
+
+                /* 下拉框容器 */
+                .gem-dropdown-container {
+                    flex: 1;
+                    min-width: 0;
+                    display: flex;
+                }
+
+                /* 可搜索下拉框样式 */
+                .gem-searchable-dropdown {
+                    flex: 1;
+                    position: relative;
+                    min-width: 0;
+                    outline: none;
+                }
+
+                .gem-dropdown-display {
+                    background: rgba(116, 55, 149, 0.3);
+                    border: 1px solid rgba(116, 55, 149, 0.5);
+                    border-radius: 6px;
+                    padding: 6px 28px 6px 10px;
+                    color: #E0E0E0;
+                    font-size: 13px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    position: relative;
+                    user-select: none;
+                }
+
+                .gem-dropdown-display:hover {
+                    border-color: #8b4ba8;
+                    background: rgba(116, 55, 149, 0.4);
+                }
+
+                .gem-dropdown-display.active {
+                    border-color: #8b4ba8;
+                    background: rgba(116, 55, 149, 0.4);
+                    border-bottom-left-radius: 0;
+                    border-bottom-right-radius: 0;
+                }
+
+                .gem-dropdown-display.placeholder {
+                    color: #B0B0B0;
+                }
+
+                .gem-dropdown-arrow {
+                    position: absolute;
+                    right: 8px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    width: 0;
+                    height: 0;
+                    border-left: 4px solid transparent;
+                    border-right: 4px solid transparent;
+                    border-top: 5px solid #E0E0E0;
+                    transition: transform 0.2s ease;
+                }
+
+                .gem-dropdown-display.active .gem-dropdown-arrow {
+                    transform: translateY(-50%) rotate(180deg);
+                }
+
+                .gem-dropdown-panel {
+                    position: absolute;
+                    top: 100%;
+                    left: 0;
+                    right: 0;
+                    background: rgba(30, 30, 46, 1);
+                    border: 1px solid rgba(116, 55, 149, 0.5);
+                    border-top: none;
+                    border-radius: 0 0 6px 6px;
+                    max-height: 350px;
+                    overflow: hidden;
+                    z-index: 10000;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                    display: none;
+                    outline: none;
+                }
+
+                .gem-dropdown-panel.active {
+                    display: block;
+                    animation: gemDropdownFadeIn 0.15s ease-out;
+                }
+
+                @keyframes gemDropdownFadeIn {
+                    from {
+                        opacity: 0;
+                        transform: translateY(-5px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+
+                .gem-dropdown-search {
+                    padding: 8px;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                    position: sticky;
+                    top: 0;
+                    background: rgba(30, 30, 46, 1);
+                    z-index: 10001;
+                    outline: none;
+                }
+
+                .gem-dropdown-search-input {
+                    width: 100%;
+                    background: rgba(0, 0, 0, 0.3);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 4px;
+                    padding: 6px 8px;
+                    color: #E0E0E0;
+                    font-size: 12px;
+                    outline: none;
+                    transition: all 0.2s ease;
+                }
+
+                .gem-dropdown-search-input:focus {
+                    border-color: #743795;
+                    background: rgba(0, 0, 0, 0.4);
+                }
+
+                .gem-dropdown-search-input::placeholder {
+                    color: #B0B0B0;
+                }
+
+                .gem-dropdown-list {
+                    max-height: 300px;
+                    overflow-y: auto;
+                    outline: none;
+                }
+
+                .gem-dropdown-list::-webkit-scrollbar {
+                    width: 6px;
+                }
+
+                .gem-dropdown-list::-webkit-scrollbar-track {
+                    background: rgba(0, 0, 0, 0.1);
+                }
+
+                .gem-dropdown-list::-webkit-scrollbar-thumb {
+                    background: rgba(116, 55, 149, 0.5);
+                    border-radius: 3px;
+                }
+
+                .gem-dropdown-list::-webkit-scrollbar-thumb:hover {
+                    background: rgba(116, 55, 149, 0.7);
+                }
+
+                .gem-dropdown-item {
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    transition: all 0.1s ease;
+                    color: #E0E0E0;
+                    font-size: 13px;
+                    outline: none;
+                    background: #1e1e2e;
+                }
+
+                .gem-dropdown-item:hover {
+                    background: linear-gradient(135deg, #5a3776 0%, #6d4489 100%);
+                }
+
+                .gem-dropdown-item.selected {
+                    background: linear-gradient(135deg, #743795 0%, #8b4ba8 100%);
+                    font-weight: 500;
+                }
+
+                .gem-dropdown-item.highlight {
+                    background: linear-gradient(135deg, #684184 0%, #7c4e98 100%);
+                }
+
+                .gem-dropdown-item mark {
+                    background: rgba(255, 215, 0, 0.3);
+                    color: #FFD700;
+                    padding: 0 2px;
+                    border-radius: 2px;
+                }
+
+                .gem-dropdown-empty {
+                    padding: 12px;
+                    text-align: center;
+                    color: #B0B0B0;
+                    font-size: 12px;
                 }
 
                 .gem-delay-container {
@@ -696,6 +890,241 @@ app.registerExtension({
             return text.substring(0, maxLength) + '...';
         };
 
+        // 创建可搜索下拉框
+        nodeType.prototype.createSearchableDropdown = function (options, currentValue, onChange) {
+            const container = document.createElement('div');
+            container.className = 'gem-searchable-dropdown';
+
+            // 保存节点引用和父元素引用
+            const node = this;
+            let parentItem = null;
+
+            // 创建显示框
+            const display = document.createElement('div');
+            display.className = 'gem-dropdown-display';
+            if (!currentValue) {
+                display.classList.add('placeholder');
+            }
+            display.textContent = currentValue || '选择组';
+            display.title = currentValue || '选择组';
+
+            // 添加下拉箭头
+            const arrow = document.createElement('div');
+            arrow.className = 'gem-dropdown-arrow';
+            display.appendChild(arrow);
+
+            // 创建下拉面板
+            const panel = document.createElement('div');
+            panel.className = 'gem-dropdown-panel';
+
+            // 创建搜索框
+            const searchContainer = document.createElement('div');
+            searchContainer.className = 'gem-dropdown-search';
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.className = 'gem-dropdown-search-input';
+            searchInput.placeholder = '搜索组名...';
+            searchContainer.appendChild(searchInput);
+            panel.appendChild(searchContainer);
+
+            // 创建列表容器
+            const listContainer = document.createElement('div');
+            listContainer.className = 'gem-dropdown-list';
+            panel.appendChild(listContainer);
+
+            // 渲染列表项
+            const renderList = (filterText = '') => {
+                listContainer.innerHTML = '';
+                const normalizedFilter = filterText.toLowerCase().trim();
+
+                // 过滤选项
+                const filteredOptions = options.filter(opt =>
+                    opt.toLowerCase().includes(normalizedFilter)
+                );
+
+                if (filteredOptions.length === 0) {
+                    const emptyDiv = document.createElement('div');
+                    emptyDiv.className = 'gem-dropdown-empty';
+                    emptyDiv.textContent = '没有匹配的组';
+                    listContainer.appendChild(emptyDiv);
+                    return;
+                }
+
+                // 创建列表项
+                filteredOptions.forEach(option => {
+                    const item = document.createElement('div');
+                    item.className = 'gem-dropdown-item';
+                    if (option === currentValue) {
+                        item.classList.add('selected');
+                    }
+
+                    // 高亮匹配文本
+                    if (normalizedFilter) {
+                        const regex = new RegExp(`(${normalizedFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                        item.innerHTML = option.replace(regex, '<mark>$1</mark>');
+                    } else {
+                        item.textContent = option;
+                    }
+
+                    // 点击选择
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        currentValue = option;
+                        display.textContent = option;
+                        display.title = option;
+                        display.classList.remove('placeholder');
+                        closePanel();
+                        onChange(option);
+                    });
+
+                    listContainer.appendChild(item);
+                });
+            };
+
+            // 打开/关闭面板
+            const openPanel = () => {
+                // 先关闭所有其他下拉框
+                if (node.closeAllDropdowns) {
+                    node.closeAllDropdowns();
+                }
+
+                display.classList.add('active');
+                panel.classList.add('active');
+                searchInput.value = '';
+                searchInput.focus();
+                renderList();
+
+                // 给父元素添加 dropdown-active 类以提高 z-index
+                if (parentItem) {
+                    parentItem.classList.add('dropdown-active');
+                }
+            };
+
+            const closePanel = () => {
+                display.classList.remove('active');
+                panel.classList.remove('active');
+
+                // 移除父元素的 dropdown-active 类
+                if (parentItem) {
+                    parentItem.classList.remove('dropdown-active');
+                }
+            };
+
+            // 绑定事件
+            display.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (panel.classList.contains('active')) {
+                    closePanel();
+                } else {
+                    openPanel();
+                }
+            });
+
+            // 搜索输入事件
+            searchInput.addEventListener('input', () => {
+                renderList(searchInput.value);
+            });
+
+            // 阻止搜索框点击事件冒泡
+            searchInput.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+
+            // 点击外部关闭
+            document.addEventListener('click', (e) => {
+                if (!container.contains(e.target)) {
+                    closePanel();
+                }
+            });
+
+            // 键盘导航
+            searchInput.addEventListener('keydown', (e) => {
+                const items = Array.from(listContainer.querySelectorAll('.gem-dropdown-item'));
+                const highlightedItem = listContainer.querySelector('.gem-dropdown-item.highlight');
+                let currentIndex = highlightedItem ? items.indexOf(highlightedItem) : -1;
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    currentIndex = Math.min(currentIndex + 1, items.length - 1);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    currentIndex = Math.max(currentIndex - 1, 0);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (highlightedItem) {
+                        highlightedItem.click();
+                    } else if (items.length > 0) {
+                        items[0].click();
+                    }
+                    return;
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closePanel();
+                    return;
+                } else {
+                    return; // 其他按键不处理高亮
+                }
+
+                // 更新高亮
+                items.forEach((item, index) => {
+                    if (index === currentIndex) {
+                        item.classList.add('highlight');
+                        item.scrollIntoView({ block: 'nearest' });
+                    } else {
+                        item.classList.remove('highlight');
+                    }
+                });
+            });
+
+            container.appendChild(display);
+            container.appendChild(panel);
+
+            // 提供更新方法
+            container.updateValue = (newValue) => {
+                currentValue = newValue;
+                display.textContent = newValue || '选择组';
+                display.title = newValue || '选择组';
+                if (newValue) {
+                    display.classList.remove('placeholder');
+                } else {
+                    display.classList.add('placeholder');
+                }
+            };
+
+            // 提供更新选项方法
+            container.updateOptions = (newOptions) => {
+                options = newOptions;
+                if (panel.classList.contains('active')) {
+                    renderList(searchInput.value);
+                }
+            };
+
+            // 暴露 closePanel 方法供外部调用
+            container.closePanel = closePanel;
+
+            // 提供设置父元素的方法
+            container.setParentItem = (item) => {
+                parentItem = item;
+            };
+
+            return container;
+        };
+
+        // 关闭所有打开的下拉框
+        nodeType.prototype.closeAllDropdowns = function () {
+            if (!this.customUI) return;
+
+            const groupItems = this.customUI.querySelectorAll('.gem-group-item');
+            groupItems.forEach(item => {
+                const dropdown = item._searchableDropdown;
+                if (dropdown && dropdown.closePanel) {
+                    dropdown.closePanel();
+                }
+                // 确保移除 dropdown-active 类
+                item.classList.remove('dropdown-active');
+            });
+        };
+
         // 创建组项元素
         nodeType.prototype.createGroupItem = function (group, index) {
             const item = document.createElement('div');
@@ -705,20 +1134,12 @@ app.registerExtension({
 
             // 获取可用的组列表
             const availableGroups = this.getAvailableGroups();
-            const groupOptions = availableGroups.map(name => {
-                const isSelected = name === group.group_name;
-                const selectedAttr = isSelected ? 'selected' : '';
-                const displayName = this.truncateText(name, 30);
-                return `<option value="${name}" ${selectedAttr} title="${name}">${displayName}</option>`;
-            }).join('');
 
+            // 创建HTML结构（用占位容器替换select元素）
             item.innerHTML = `
                 <div class="gem-group-header">
                     <div class="gem-group-number">${index + 1}</div>
-                    <select class="gem-group-name-select">
-                        <option value="">选择组</option>
-                        ${groupOptions}
-                    </select>
+                    <div class="gem-dropdown-container"></div>
                     <div class="gem-delay-container">
                         <label class="gem-delay-label">延迟:</label>
                         <input type="number"
@@ -737,12 +1158,25 @@ app.registerExtension({
                 </div>
             `;
 
-            // 绑定事件
-            const nameSelect = item.querySelector('.gem-group-name-select');
-            nameSelect.addEventListener('change', (e) => {
-                group.group_name = e.target.value;
-                this.syncConfig();
-            });
+            // 创建可搜索下拉框
+            const dropdownContainer = item.querySelector('.gem-dropdown-container');
+            const searchableDropdown = this.createSearchableDropdown(
+                availableGroups,
+                group.group_name,
+                (selectedValue) => {
+                    group.group_name = selectedValue;
+                    this.syncConfig();
+                }
+            );
+            dropdownContainer.appendChild(searchableDropdown);
+
+            // 保存下拉框引用到item上，方便后续刷新
+            item._searchableDropdown = searchableDropdown;
+
+            // 设置下拉框的父元素引用（用于 dropdown-active 类管理）
+            if (searchableDropdown.setParentItem) {
+                searchableDropdown.setParentItem(item);
+            }
 
             const delayInput = item.querySelector('.gem-delay-input');
             delayInput.addEventListener('change', (e) => {
@@ -885,31 +1319,22 @@ app.registerExtension({
 
             const availableGroups = this.getAvailableGroups();
 
-            // 更新所有组项的下拉选择框
+            // 更新所有组项的可搜索下拉框
             this.properties.groups.forEach((group, index) => {
                 const groupItem = this.customUI.querySelectorAll('.gem-group-item')[index];
                 if (!groupItem) return;
 
-                const select = groupItem.querySelector('.gem-group-name-select');
-                if (!select) return;
+                // 获取可搜索下拉框引用
+                const searchableDropdown = groupItem._searchableDropdown;
+                if (!searchableDropdown) return;
 
-                // 保存当前选中的值
-                const currentValue = select.value;
-
-                // 重新生成选项
-                const groupOptions = availableGroups.map(name => {
-                    const isSelected = name === currentValue;
-                    const selectedAttr = isSelected ? 'selected' : '';
-                    const displayName = this.truncateText(name, 30);
-                    return `<option value="${name}" ${selectedAttr} title="${name}">${displayName}</option>`;
-                }).join('');
-
-                select.innerHTML = `<option value="">选择组</option>${groupOptions}`;
+                // 更新下拉框选项
+                searchableDropdown.updateOptions(availableGroups);
 
                 // 如果当前值不在新的组列表中，清空选择
-                if (currentValue && !availableGroups.includes(currentValue)) {
-                    select.value = '';
+                if (group.group_name && !availableGroups.includes(group.group_name)) {
                     group.group_name = '';
+                    searchableDropdown.updateValue('');
                     this.syncConfig();
                 }
             });
