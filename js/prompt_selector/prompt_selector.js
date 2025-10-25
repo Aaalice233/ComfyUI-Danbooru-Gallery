@@ -75,6 +75,8 @@ app.registerExtension({
                 this.selectedForBatch = new Set(); // 批量操作选中的提示词ID
                 this.currentFilter = { favorites: false, tags: [], search: "" }; // 当前过滤条件
                 this.draggedItem = null; // 拖拽的项目
+                this.searchTerm = ""; // 主界面搜索关键词
+                this.mainSearchAutocomplete = null; // 主搜索框的自动补全实例
 
                 // 获取隐藏的输出小部件
                 const outputWidget = this.widgets.find(w => w.name === "selected_prompts");
@@ -107,6 +109,15 @@ app.registerExtension({
                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-book-2"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M19 4v16h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h12z" /><path d="M19 16h-12a2 2 0 0 0 -2 2" /><path d="M9 8h6" /></svg>
                            <span>${t('library')}</span>
                         </button>
+                    </div>
+                    <div class="header-controls-center">
+                        <div class="ps-search-container">
+                            <svg class="ps-search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+                            <input type="text" id="ps-main-search-input" class="ps-search-input" placeholder="搜索..." />
+                            <button class="ps-btn ps-btn-icon ps-search-clear-btn" id="ps-search-clear-btn" style="display: none;" title="清除搜索">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </div>
                     </div>
                     <div class="header-controls-right">
                         <button class="ps-btn ps-btn-icon" id="ps-toggle-select-all-btn" title="${t('select_all')}">
@@ -293,7 +304,7 @@ app.registerExtension({
 
                 // Re-add hover preview to the main category button
                 // categoryBtn.addEventListener("mouseenter", (e) => {
-                //     
+                //
                 //     if (this.hidePreviewTimeout) {
                 //         clearTimeout(this.hidePreviewTimeout);
                 //         this.hidePreviewTimeout = null;
@@ -308,6 +319,83 @@ app.registerExtension({
                 //         this.hideActivePromptsPreview();
                 //     }, 100);
                 // });
+
+                // --- 主搜索框事件监听器 ---
+                const mainSearchInput = header.querySelector("#ps-main-search-input");
+                const searchClearBtn = header.querySelector("#ps-search-clear-btn");
+
+                // 创建标签格式化函数
+                const formatTagWithGallerySettings = (tag) => {
+                    // 从localStorage读取画廊的格式化设置
+                    let formattingSettings = { escapeBrackets: true, replaceUnderscores: true };
+                    try {
+                        const savedFormatting = localStorage.getItem('formatting');
+                        if (savedFormatting) {
+                            const parsed = JSON.parse(savedFormatting);
+                            if (parsed && typeof parsed === 'object') {
+                                formattingSettings = { ...formattingSettings, ...parsed };
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[PromptSelector] 读取格式化设置失败:', e);
+                    }
+
+                    // 应用格式化逻辑
+                    let processedTag = tag;
+                    if (formattingSettings.replaceUnderscores) {
+                        processedTag = processedTag.replace(/_/g, ' ');
+                    }
+                    if (formattingSettings.escapeBrackets) {
+                        processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
+                    }
+                    return processedTag;
+                };
+
+                // 创建AutocompleteUI实例
+                this.mainSearchAutocomplete = new AutocompleteUI({
+                    inputElement: mainSearchInput,
+                    language: globalMultiLanguageManager.getLanguage(),
+                    maxSuggestions: 10,
+                    customClass: 'prompt-selector-main-search-autocomplete',
+                    formatTag: formatTagWithGallerySettings
+                });
+
+                // 搜索框输入事件（使用防抖）
+                let searchTimeout;
+                mainSearchInput.addEventListener('input', (e) => {
+                    clearTimeout(searchTimeout);
+                    searchTimeout = setTimeout(() => {
+                        this.searchTerm = e.target.value.toLowerCase();
+                        this.renderContent();
+
+                        // 显示/隐藏清除按钮
+                        if (this.searchTerm) {
+                            searchClearBtn.style.display = 'flex';
+                        } else {
+                            searchClearBtn.style.display = 'none';
+                        }
+                    }, 300);
+                });
+
+                // 清除搜索按钮
+                searchClearBtn.addEventListener('click', () => {
+                    mainSearchInput.value = '';
+                    this.searchTerm = '';
+                    searchClearBtn.style.display = 'none';
+                    this.renderContent();
+                    mainSearchInput.focus();
+                });
+
+                // ESC键清除搜索
+                mainSearchInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && this.searchTerm) {
+                        e.preventDefault();
+                        mainSearchInput.value = '';
+                        this.searchTerm = '';
+                        searchClearBtn.style.display = 'none';
+                        this.renderContent();
+                    }
+                });
 
 
                 const importBtn = footer.querySelector("#ps-import-btn");
@@ -419,10 +507,31 @@ app.registerExtension({
                         return;
                     }
 
+                    // 应用搜索过滤
+                    let promptsToShow = category.prompts;
+                    if (this.searchTerm && this.searchTerm.trim()) {
+                        const searchLower = this.searchTerm.trim();
+                        promptsToShow = category.prompts.filter(p => {
+                            const searchInAlias = (p.alias || '').toLowerCase().includes(searchLower);
+                            const searchInPrompt = (p.prompt || '').toLowerCase().includes(searchLower);
+                            return searchInAlias || searchInPrompt;
+                        });
+                    }
+
+                    // 如果搜索后没有结果
+                    if (promptsToShow.length === 0) {
+                        if (this.searchTerm && this.searchTerm.trim()) {
+                            contentArea.innerHTML = `<p style="color: #555; text-align: center;">未找到匹配的提示词</p>`;
+                        } else {
+                            contentArea.innerHTML = `<p style="color: #555; text-align: center;">${t('no_prompts')}</p>`;
+                        }
+                        return;
+                    }
+
                     const list = document.createElement("ul");
                     list.className = "prompt-list";
 
-                    category.prompts.forEach((p, index) => {
+                    promptsToShow.forEach((p, index) => {
                         const item = document.createElement("li");
                         item.className = "prompt-item";
                         item.draggable = true; // 允许拖动
@@ -990,7 +1099,8 @@ app.registerExtension({
                         inputElement: promptTextarea,
                         language: globalMultiLanguageManager.getLanguage(),
                         maxSuggestions: 20,
-                        customClass: 'prompt-selector-autocomplete'
+                        customClass: 'prompt-selector-autocomplete',
+                        formatTag: formatTagWithGallerySettings
                     });
 
                     // 点击上传区域触发文件选择
@@ -3072,6 +3182,74 @@ app.registerExtension({
                         align-items: center;
                         gap: 8px;
                     }
+                    .header-controls-center {
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        padding: 0 12px;
+                    }
+                    .ps-search-container {
+                        position: relative;
+                        display: flex;
+                        align-items: center;
+                        width: 180px;
+                    }
+                    .ps-search-icon {
+                        position: absolute;
+                        left: 12px;
+                        width: 18px;
+                        height: 18px;
+                        stroke: #999;
+                        pointer-events: none;
+                        z-index: 1;
+                    }
+                    .ps-search-input {
+                        width: 100%;
+                        background-color: #2a2a2a;
+                        color: #e0e0e0;
+                        border: 1px solid #444;
+                        border-radius: 8px;
+                        padding: 10px 40px 10px 38px;
+                        font-size: 14px;
+                        outline: none;
+                        transition: all 0.2s ease;
+                        min-height: 40px;
+                    }
+                    .ps-search-input:focus {
+                        border-color: var(--ps-theme-color-secondary);
+                        background-color: #333;
+                        box-shadow: 0 0 0 2px color-mix(in srgb, var(--ps-theme-color-secondary) 20%, transparent);
+                    }
+                    .ps-search-input::placeholder {
+                        color: #666;
+                    }
+                    .ps-search-clear-btn {
+                        position: absolute !important;
+                        right: 8px !important;
+                        top: 50% !important;
+                        margin-top: -10px !important;
+                        width: 20px !important;
+                        height: 20px !important;
+                        padding: 0 !important;
+                        background-color: rgba(255, 255, 255, 0.05) !important;
+                        border: none !important;
+                        border-radius: 50% !important;
+                        cursor: pointer;
+                        transition: all 0.2s ease !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                    }
+                    .ps-search-clear-btn:hover {
+                        background-color: rgba(255, 255, 255, 0.2) !important;
+                        transform: scale(1.1) !important;
+                        box-shadow: none !important;
+                    }
+                    .ps-search-clear-btn svg {
+                        width: 12px !important;
+                        height: 12px !important;
+                        stroke: #999;
+                    }
                     .prompt-selector-content-area {
                         flex-grow: 1;
                         overflow-y: auto;
@@ -3604,12 +3782,6 @@ app.registerExtension({
                    /* 新增样式 */
 
                    .ps-header-controls {
-                       display: flex;
-                       gap: 8px;
-                       align-items: center;
-                   }
-
-                   .ps-search-container {
                        display: flex;
                        gap: 8px;
                        align-items: center;
