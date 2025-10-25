@@ -211,69 +211,6 @@ function recursiveAddNodes(nodeId, oldOutput, newOutput) {
     });
 }
 
-// Helper function: find nodes in unconfigured groups
-function findUnconfiguredGroupNodes(managerNodeId) {
-    /** 找出未配置组的所有节点 */
-    if (!app.graph || !app.graph._nodes || !app.graph._groups) {
-        console.warn('[OptimizedExecutionSystem] ⚠️ 无法访问图数据');
-        return [];
-    }
-
-    // 1. 获取所有组
-    const allGroups = app.graph._groups || [];
-    if (allGroups.length === 0) {
-        return [];
-    }
-
-    // 2. 获取Manager节点配置的组名
-    const managerNode = app.graph._nodes.find(n => String(n.id) === String(managerNodeId));
-    if (!managerNode || !managerNode.properties || !managerNode.properties.groups) {
-        // Manager没有配置或没有groups属性，所有组都是未配置的
-        console.log('[OptimizedExecutionSystem] 📋 Manager没有配置，所有组都视为未配置');
-        return getAllGroupNodeIds(allGroups);
-    }
-
-    const configuredGroupNames = managerNode.properties.groups.map(g => g.group_name);
-    console.log('[OptimizedExecutionSystem] 📋 已配置的组:', configuredGroupNames.join(', '));
-
-    // 3. 找出未配置的组
-    const unconfiguredGroups = allGroups.filter(g => !configuredGroupNames.includes(g.title));
-    if (unconfiguredGroups.length === 0) {
-        console.log('[OptimizedExecutionSystem] ✅ 所有组都已配置');
-        return [];
-    }
-
-    console.log('[OptimizedExecutionSystem] 📋 未配置的组:', unconfiguredGroups.map(g => g.title).join(', '));
-
-    // 4. 找出这些组内的所有节点
-    const unconfiguredNodeIds = [];
-    for (const group of unconfiguredGroups) {
-        const nodesInGroup = app.graph._nodes.filter(node => {
-            return isNodeInGroup(node, group);
-        });
-
-        const nodeIds = nodesInGroup.map(n => String(n.id));
-        unconfiguredNodeIds.push(...nodeIds);
-
-        console.log(`[OptimizedExecutionSystem] 📍 组"${group.title}"包含 ${nodeIds.length} 个节点`);
-    }
-
-    return unconfiguredNodeIds;
-}
-
-// Helper function: get all node IDs from all groups
-function getAllGroupNodeIds(groups) {
-    /** 获取所有组的所有节点ID */
-    const allNodeIds = [];
-    for (const group of groups) {
-        const nodesInGroup = app.graph._nodes.filter(node => {
-            return isNodeInGroup(node, group);
-        });
-        allNodeIds.push(...nodesInGroup.map(n => String(n.id)));
-    }
-    return allNodeIds;
-}
-
 // Helper function: check if node is in group
 function isNodeInGroup(node, group) {
     /** 检查节点是否在组内 - 使用LiteGraph碰撞检测 */
