@@ -370,12 +370,64 @@ class OptimizedExecutionEngine {
             return [];
         }
 
-        // 查找组内的所有节点
-        const groupNodes = app.graph._nodes.filter(node => {
-            if (!node || !node.pos) return false;
-            return this.isNodeInGroup(node, group);
-        });
+        // ✅ 调试日志：打印组和工作流信息
+        console.log(`[OptimizedExecutionEngine] 🔍 开始检测组: ${groupName}`);
+        console.log(`[OptimizedExecutionEngine] 📊 工作流总节点数: ${app.graph._nodes.length}`);
+        console.log(`[OptimizedExecutionEngine] 📦 组边界: [${group._bounding.join(', ')}]`);
 
+        // ✅ 调试日志：统计过滤原因
+        let statsNoNode = 0;
+        let statsNoPos = 0;
+        let statsGetBoundingFailed = 0;
+        let statsNotInGroup = 0;
+        let statsInGroup = 0;
+
+        // 查找组内的所有节点
+        const groupNodes = [];
+        for (const node of app.graph._nodes) {
+            if (!node) {
+                statsNoNode++;
+                continue;
+            }
+
+            if (!node.pos) {
+                console.log(`[OptimizedExecutionEngine] ⚠️ 节点 ${node.id} (${node.type || '未知'}) 没有pos属性`);
+                statsNoPos++;
+                continue;
+            }
+
+            // 尝试获取节点边界
+            let nodeBounds;
+            try {
+                nodeBounds = node.getBounding();
+            } catch (e) {
+                console.log(`[OptimizedExecutionEngine] ⚠️ 节点 ${node.id} (${node.type || '未知'}) getBounding()失败: ${e.message}`);
+                statsGetBoundingFailed++;
+                continue;
+            }
+
+            // 碰撞检测
+            const isInGroup = this.isNodeInGroup(node, group);
+            if (isInGroup) {
+                groupNodes.push(node);
+                statsInGroup++;
+                console.log(`[OptimizedExecutionEngine] ✅ 节点 ${node.id} (${node.type || '未知'}) 在组内 - 边界: [${nodeBounds.join(', ')}]`);
+            } else {
+                statsNotInGroup++;
+                // 只在前5个不在组内的节点打印详细信息，避免刷屏
+                if (statsNotInGroup <= 5) {
+                    console.log(`[OptimizedExecutionEngine] ❌ 节点 ${node.id} (${node.type || '未知'}) 不在组内 - 边界: [${nodeBounds.join(', ')}]`);
+                }
+            }
+        }
+
+        // ✅ 打印统计信息
+        console.log(`[OptimizedExecutionEngine] 📊 节点检测统计:`);
+        console.log(`   - 在组内: ${statsInGroup} 个`);
+        console.log(`   - 不在组内: ${statsNotInGroup} 个`);
+        console.log(`   - 无node对象: ${statsNoNode} 个`);
+        console.log(`   - 无pos属性: ${statsNoPos} 个`);
+        console.log(`   - getBounding失败: ${statsGetBoundingFailed} 个`);
         console.log(`[OptimizedExecutionEngine] 🔍 组 ${groupName} 内找到 ${groupNodes.length} 个节点`);
 
         // ✅ 新增：检查组内是否所有节点都被禁用
@@ -391,16 +443,20 @@ class OptimizedExecutionEngine {
         }
 
         // 找到输出节点
+        console.log(`[OptimizedExecutionEngine] 🔍 开始查找输出节点...`);
         const outputNodes = groupNodes.filter(node => {
             const isOutputNode = node.mode !== 2 && // 不是Never模式
                 node.constructor?.nodeData?.output_node === true;
 
-            if (isOutputNode) {
-                console.log(`[OptimizedExecutionEngine] ✅ 输出节点: ${node.id} (${node.type})`);
-            }
+            console.log(`[OptimizedExecutionEngine] 🔍 检查节点 ${node.id} (${node.type}): mode=${node.mode}, output_node=${node.constructor?.nodeData?.output_node}, 是输出节点=${isOutputNode}`);
 
             return isOutputNode;
         });
+
+        console.log(`[OptimizedExecutionEngine] 📊 输出节点统计: 找到 ${outputNodes.length} 个`);
+        if (outputNodes.length > 0) {
+            console.log(`[OptimizedExecutionEngine] ✅ 输出节点ID列表: [${outputNodes.map(n => `${n.id}(${n.type})`).join(', ')}]`);
+        }
 
         return outputNodes.map(node => node.id);
     }
