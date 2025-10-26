@@ -1,4 +1,4 @@
-# D站画廊（Danbooru Gallery）
+# Aaalice的定制节点 (Aaalice's Custom Nodes)
 
 <img width="966" height="830" alt="image" src="https://github.com/user-attachments/assets/e2a5d34e-0001-417e-bf8e-7753521ea0d3" />
 
