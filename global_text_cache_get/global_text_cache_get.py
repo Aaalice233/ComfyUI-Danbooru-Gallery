@@ -36,29 +36,16 @@ class GlobalTextCacheGet:
 
     @classmethod
     def INPUT_TYPES(cls):
-        # 动态获取通道列表
-        def get_channel_options():
-            channels = text_cache_manager.get_all_channels()
-            # 添加空选项和已有通道
-            return [""] + channels
+        # 动态获取通道列表（INPUT_TYPES每次被调用时都会执行）
+        channels = text_cache_manager.get_all_channels()
+        channel_options = [""] + sorted(channels)
 
         return {
             "required": {},
             "optional": {
-                "channel_name": (get_channel_options(), {
+                "channel_name": (channel_options, {
                     "default": "",
                     "tooltip": "从下拉菜单选择已定义的通道，或手动输入新通道名（留空则使用'default'通道）"
-                }),
-                "enable_preview": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "true",
-                    "label_off": "false",
-                    "tooltip": "切换文本预览显示/隐藏"
-                }),
-                "default_text": ("STRING", {
-                    "default": "",
-                    "multiline": True,
-                    "tooltip": "当缓存为空或不存在时使用的默认文本"
                 }),
             },
             "hidden": {
@@ -67,6 +54,16 @@ class GlobalTextCacheGet:
                 "extra_pnginfo": "EXTRA_PNGINFO"
             }
         }
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, channel_name=None, **kwargs):
+        """
+        验证输入参数
+        允许任何通道名通过验证，即使不在当前的通道列表中
+        这确保了工作流中保存的通道名在加载时不会被重置
+        """
+        # 始终返回True，允许任何通道名
+        return True
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("text",)
@@ -77,7 +74,7 @@ class GlobalTextCacheGet:
     DESCRIPTION = "从指定通道获取缓存的文本，支持动态通道选择和默认文本"
 
     @classmethod
-    def IS_CHANGED(cls, channel_name=None, enable_preview: bool = True, default_text=None, **kwargs) -> str:
+    def IS_CHANGED(cls, channel_name=None, **kwargs) -> str:
         """
         基于缓存状态生成变化检测哈希
         确保缓存更新时节点重新执行
@@ -93,7 +90,7 @@ class GlobalTextCacheGet:
             # 包含缓存管理器的状态
             cache_timestamp = text_cache_manager.last_save_timestamp
             channel_exists = text_cache_manager.channel_exists(actual_channel)
-            hash_input = f"{enable_preview}_{cache_timestamp}_{actual_channel}_{channel_exists}"
+            hash_input = f"{cache_timestamp}_{actual_channel}_{channel_exists}"
         except Exception:
             # 回退到基本检测
             hash_input = f"{time.time()}"
@@ -102,8 +99,6 @@ class GlobalTextCacheGet:
 
     def get_cached_text(self,
                         channel_name: Optional[List[str]] = None,
-                        enable_preview: List[bool] = [True],
-                        default_text: Optional[List[str]] = None,
                         unique_id: str = "unknown",
                         prompt: Optional[Dict] = None,
                         extra_pnginfo: Optional[Dict] = None) -> Dict[str, Any]:
@@ -112,14 +107,12 @@ class GlobalTextCacheGet:
 
         Args:
             channel_name: 缓存通道名称列表
-            enable_preview: 是否显示预览列表
-            default_text: 默认文本列表
             unique_id: 节点ID
             prompt: 工作流数据
             extra_pnginfo: 额外信息
 
         Returns:
-            包含文本和预览的字典
+            包含文本和预览数据的字典
         """
         start_time = time.time()
 
@@ -131,19 +124,14 @@ class GlobalTextCacheGet:
             else:
                 processed_channel = "default"
 
-            processed_enable_preview = enable_preview[0] if isinstance(enable_preview, list) and len(enable_preview) > 0 else True
-
-            # 安全提取默认文本
+            # 固定使用空字符串作为默认文本
             processed_default_text = ""
-            if default_text and isinstance(default_text, list) and len(default_text) > 0:
-                processed_default_text = default_text[0] if default_text[0] else ""
 
             if should_debug(COMPONENT_NAME):
                 logger.info(f"\n{'='*60}")
                 logger.info(f"[GlobalTextCacheGet] ⏰ 执行时间: {time.strftime('%H:%M:%S', time.localtime())}")
                 logger.info(f"[GlobalTextCacheGet] 🎯 节点ID: {unique_id}")
                 logger.info(f"[GlobalTextCacheGet] 📁 通道: {processed_channel}")
-                logger.info(f"[GlobalTextCacheGet] 📷 显示预览: {processed_enable_preview}")
                 logger.info(f"{'='*60}\n")
 
             # 获取缓存的文本
@@ -173,21 +161,19 @@ class GlobalTextCacheGet:
             if should_debug(COMPONENT_NAME):
                 logger.info(f"[GlobalTextCacheGet] ⏱️ 执行耗时: {execution_time:.3f}秒\n")
 
-            # 返回标准格式：(文本,) 和 ui 数据
-            ui_data = {}
-            if processed_enable_preview:
-                try:
-                    # 限制预览长度
-                    preview_text = cached_text[:500] + "..." if len(cached_text) > 500 else cached_text
-                    ui_data = {
-                        "text": [preview_text],
-                        "channel": [processed_channel],
-                        "length": [len(cached_text)],
-                        "using_default": [using_default_text]
-                    }
-                except Exception as e:
-                    logger.warning(f"[GlobalTextCacheGet] ⚠️ 生成预览数据失败: {str(e)}")
-                    ui_data = {}
+            # 固定返回标准格式：(文本,) 和 ui 预览数据
+            try:
+                # 限制预览长度
+                preview_text = cached_text[:500] + "..." if len(cached_text) > 500 else cached_text
+                ui_data = {
+                    "text": [preview_text],
+                    "channel": [processed_channel],
+                    "length": [len(cached_text)],
+                    "using_default": [using_default_text]
+                }
+            except Exception as e:
+                logger.warning(f"[GlobalTextCacheGet] ⚠️ 生成预览数据失败: {str(e)}")
+                ui_data = {}
 
             return {
                 "result": (cached_text,),
@@ -199,13 +185,9 @@ class GlobalTextCacheGet:
             import traceback
             logger.error(traceback.format_exc())
 
-            # 返回默认文本或空字符串
-            fallback_text = ""
-            if default_text and isinstance(default_text, list) and len(default_text) > 0:
-                fallback_text = default_text[0] if default_text[0] else ""
-
+            # 返回空字符串
             return {
-                "result": (fallback_text,),
+                "result": ("",),
                 "ui": {}
             }
 

@@ -1,4 +1,4 @@
-# ComfyUI Danbooru Gallery
+# D站画廊（Danbooru Gallery）
 
 <img width="966" height="830" alt="image" src="https://github.com/user-attachments/assets/e2a5d34e-0001-417e-bf8e-7753521ea0d3" />
 
@@ -17,7 +17,7 @@
 - [简介](#简介)
 - [主要特性](#主要特性)
 - [节点介绍](#节点介绍)
-  - [🖼️ Danbooru Images Gallery](#-danbooru-images-gallery)
+  - [🖼️ D站画廊 (Danbooru Gallery)](#-d站画廊-danbooru-gallery)
   - [🔄 人物特征替换 (Character Feature Swap)](#-人物特征替换-character-feature-swap)
   - [📚 提示词选择器 (Prompt Selector)](#-提示词选择器-prompt-selector)
   - [👥 多人角色提示词编辑器 (Multi Character Editor)](#-多人角色提示词编辑器-multi-character-editor)
@@ -26,6 +26,7 @@
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
   - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
   - [🖼️ 图像缓存节点 (Image Cache Nodes)](#-图像缓存节点-image-cache-nodes)
+  - [📝 文本缓存节点 (Text Cache Nodes)](#-文本缓存节点-text-cache-nodes)
   - [📐 分辨率大师简化版 (Resolution Master Simplify)](#-分辨率大师简化版-resolution-master-simplify)
   - [📦 简易Checkpoint加载器 (Simple Checkpoint Loader)](#-简易checkpoint加载器-simple-checkpoint-loader)
 - [安装说明](#安装说明)
@@ -47,6 +48,7 @@
   - [⚡ Group Executor Manager](#-group-executor-manager)
   - [🔇 Group Mute Manager](#-group-mute-manager)
   - [🖼️ Image Cache Nodes](#-image-cache-nodes)
+  - [📝 Text Cache Nodes](#-text-cache-nodes-1)
   - [📐 Resolution Master Simplify](#-resolution-master-simplify)
   - [📦 Simple Checkpoint Loader](#-simple-checkpoint-loader)
 - [Installation](#installation)
@@ -84,7 +86,7 @@
 
 ## 节点介绍
 
-### 🖼️ Danbooru Images Gallery
+### 🖼️ D站画廊 (Danbooru Gallery)
 
 **核心图像搜索和管理节点**
 
@@ -509,6 +511,68 @@ smile, ((long hair),  beautiful
 
 ---
 
+### 📝 文本缓存节点 (Text Cache Nodes)
+
+**智能文本缓存和获取节点组**
+
+文本缓存节点提供了强大的文本数据缓存和获取功能，支持多通道管理，可用于在工作流的不同部分传递和共享文本数据。
+
+#### 节点类型
+
+**1. 全局文本缓存保存 (Global Text Cache Save)**
+- 💾 **自动缓存**: 自动保存文本到指定通道
+- 🏷️ **通道管理**: 支持自定义通道名称分类
+- 👁️ **节点监听**: 可监听其他节点widget变化并自动更新缓存
+- 📊 **实时预览**: 显示缓存的文本内容和长度
+- 🔄 **自动通知**: 缓存更新时自动通知获取节点
+
+**2. 全局文本缓存获取 (Global Text Cache Get)**
+- 🔍 **智能获取**: 根据通道名称获取缓存文本
+- 🔄 **动态通道**: 下拉菜单自动显示所有已定义通道
+- 📋 **持久化**: 工作流保存时自动保存通道配置
+- 👁️ **预览功能**: 显示获取的文本内容和来源
+- ⏱️ **自动更新**: 监听缓存变化并自动刷新
+
+#### 核心功能
+- 🚀 **高性能**: 基于内存的快速缓存系统
+- 🔐 **线程安全**: 使用递归锁确保多线程安全
+- 🎯 **精确定位**: 通过通道名称精确获取文本
+- 📊 **实时通知**: WebSocket实时缓存更新通知
+- 💡 **智能验证**: 自动验证通道有效性
+
+#### 使用方法
+
+**基础流程**：
+1. 在工作流中添加 `全局文本缓存保存 (Global Text Cache Save)` 节点
+2. 连接要缓存的文本输出
+3. 设置通道名称（如 "my_prompt"）
+4. 在其他位置添加 `全局文本缓存获取 (Global Text Cache Get)` 节点
+5. 选择相同的通道名称获取文本
+
+**监听其他节点**：
+1. 在保存节点中配置 `monitor_node_id`（要监听的节点ID）
+2. 配置 `monitor_widget_name`（要监听的widget名称）
+3. 当监听的widget值变化时，自动更新缓存
+
+**使用示例**：
+```
+节点A（文本生成器）
+  ↓ positive输出
+保存节点（channel="positive_prompt"）
+
+节点B（其他位置）
+  ← 获取节点（channel="positive_prompt"）
+```
+
+#### 应用场景
+- **提示词复用**: 在多个地方使用相同的提示词
+- **动态监听**: 监听文本输入节点的变化并自动更新
+- **工作流通信**: 在工作流的不同部分传递文本信息
+- **参数共享**: 共享配置参数到多个节点
+- **调试辅助**: 临时保存和查看中间文本结果
+
+---
+
 ### 📐 分辨率大师简化版 (Resolution Master Simplify)
 
 **可视化分辨率控制节点**
@@ -715,6 +779,15 @@ ComfyUI-Danbooru-Gallery/
 ├── image_cache_manager/            # 图像缓存管理器
 │   ├── __init__.py
 │   └── image_cache_manager.py
+├── global_text_cache_save/         # 全局文本缓存保存节点
+│   ├── __init__.py
+│   └── global_text_cache_save.py
+├── global_text_cache_get/          # 全局文本缓存获取节点
+│   ├── __init__.py
+│   └── global_text_cache_get.py
+├── text_cache_manager/             # 文本缓存管理器
+│   ├── __init__.py
+│   └── text_cache_manager.py
 ├── resolution_master_simplify/     # 分辨率大师简化版
 │   ├── __init__.py
 │   ├── resolution_master_simplify.py
@@ -747,6 +820,10 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── resolution_master_simplify.js
 │   ├── simple_image_compare/       # 简易图像对比前端
 │   │   └── simple_image_compare.js
+│   ├── global_text_cache_save/     # 全局文本缓存保存节点前端
+│   │   └── global_text_cache_save.js
+│   ├── global_text_cache_get/      # 全局文本缓存获取节点前端
+│   │   └── global_text_cache_get.js
 │   ├── simple_checkpoint_loader_with_name/  # 简易Checkpoint加载器前端（预留）
 │   └── global/                     # 全局共享组件
 │       ├── autocomplete_cache.js
@@ -798,7 +875,7 @@ A powerful ComfyUI plugin suite featuring four core nodes that provide comprehen
 
 ## Node Documentation
 
-### 🖼️ Danbooru Images Gallery
+### 🖼️ Danbooru Gallery
 
 **Core Image Search and Management Node**
 
@@ -1223,6 +1300,68 @@ Group3: Cache Get(prefix="img2img") → PostProcess → Output
 
 ---
 
+### 📝 Text Cache Nodes
+
+**Smart Text Caching and Retrieval Node Group**
+
+Text Cache nodes provide powerful text data caching and retrieval functionality with multi-channel management, allowing text to be passed and shared across different parts of the workflow.
+
+#### Node Types
+
+**1. Global Text Cache Save**
+- 💾 **Auto Caching**: Automatically save text to specified channels
+- 🏷️ **Channel Management**: Support custom channel name classification
+- 👁️ **Node Monitoring**: Monitor other node widget changes and auto-update cache
+- 📊 **Real-time Preview**: Display cached text content and length
+- 🔄 **Auto Notification**: Automatically notify retrieval nodes when cache updates
+
+**2. Global Text Cache Get**
+- 🔍 **Smart Retrieval**: Get cached text by channel name
+- 🔄 **Dynamic Channels**: Dropdown menu automatically displays all defined channels
+- 📋 **Persistence**: Automatically save channel configuration when saving workflow
+- 👁️ **Preview Feature**: Display retrieved text content and source
+- ⏱️ **Auto Update**: Monitor cache changes and auto-refresh
+
+#### Core Features
+- 🚀 **High Performance**: Fast memory-based caching system
+- 🔐 **Thread-Safe**: Uses recursive locks to ensure multi-thread safety
+- 🎯 **Precise Positioning**: Accurately retrieve text by channel name
+- 📊 **Real-time Notification**: WebSocket real-time cache update notifications
+- 💡 **Smart Validation**: Automatically validate channel validity
+
+#### Usage
+
+**Basic Flow**:
+1. Add `Global Text Cache Save` node in workflow
+2. Connect text output to be cached
+3. Set channel name (e.g., "my_prompt")
+4. Add `Global Text Cache Get` node in another location
+5. Select the same channel name to retrieve text
+
+**Monitor Other Nodes**:
+1. Configure `monitor_node_id` in save node (ID of node to monitor)
+2. Configure `monitor_widget_name` (widget name to monitor)
+3. Cache automatically updates when monitored widget value changes
+
+**Usage Example**:
+```
+Node A (Text Generator)
+  ↓ positive output
+Save Node (channel="positive_prompt")
+
+Node B (Other Location)
+  ← Get Node (channel="positive_prompt")
+```
+
+#### Application Scenarios
+- **Prompt Reuse**: Use the same prompt in multiple places
+- **Dynamic Monitoring**: Monitor text input node changes and auto-update
+- **Workflow Communication**: Pass text information between different parts of workflow
+- **Parameter Sharing**: Share configuration parameters to multiple nodes
+- **Debug Assistant**: Temporarily save and view intermediate text results
+
+---
+
 ### 📐 Resolution Master Simplify
 
 **Visual Resolution Control Node**
@@ -1426,6 +1565,15 @@ ComfyUI-Danbooru-Gallery/
 ├── image_cache_manager/            # Image Cache Manager
 │   ├── __init__.py
 │   └── image_cache_manager.py
+├── global_text_cache_save/         # Global Text Cache Save node
+│   ├── __init__.py
+│   └── global_text_cache_save.py
+├── global_text_cache_get/          # Global Text Cache Get node
+│   ├── __init__.py
+│   └── global_text_cache_get.py
+├── text_cache_manager/             # Text Cache Manager
+│   ├── __init__.py
+│   └── text_cache_manager.py
 ├── resolution_master_simplify/     # Resolution Master Simplify
 │   ├── __init__.py
 │   ├── resolution_master_simplify.py
@@ -1456,6 +1604,10 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── group_mute_manager.js
 │   ├── resolution_master_simplify/ # Resolution Master Simplify frontend
 │   │   └── resolution_master_simplify.js
+│   ├── global_text_cache_save/     # Global Text Cache Save node frontend
+│   │   └── global_text_cache_save.js
+│   ├── global_text_cache_get/      # Global Text Cache Get node frontend
+│   │   └── global_text_cache_get.js
 │   ├── simple_checkpoint_loader_with_name/  # Simple Checkpoint Loader frontend (reserved)
 │   └── global/                     # Global shared components
 │       ├── autocomplete_cache.js
@@ -1521,6 +1673,8 @@ MIT License
 - [comfyui-adaptiveprompts](https://github.com/Alectriciti/comfyui-adaptiveprompts) - 提示词清洁女仆节点的代码来源 | Source code for Prompt Cleaning Maid node
 - [ComfyUI_Mira](https://github.com/mirabarukaso/ComfyUI_Mira) - 简易Checkpoint加载器的基础代码来源 | Base code source for Simple Checkpoint Loader
 - [ComfyUI-Easy-Use](https://github.com/yolain/ComfyUI-Easy-Use) - 简易Checkpoint加载器的VAE选择功能参考 | VAE selection functionality reference for Simple Checkpoint Loader
+- [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) - 文本缓存节点的动态combo实现参考 | Dynamic combo implementation reference for Text Cache nodes
+- [ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager) - 节点设计和功能参考 | Node design and functionality reference
 
 ### 翻译文件来源 | Translation Data Sources
 

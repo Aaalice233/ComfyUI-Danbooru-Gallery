@@ -37,10 +37,6 @@ class GlobalTextCacheSave:
                     "default": "default",
                     "tooltip": "缓存通道名称，用于区分不同的缓存"
                 }),
-                "enable_preview": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "是否在节点上预览文本内容"
-                }),
                 "monitor_node_id": ("STRING", {
                     "default": "",
                     "tooltip": "要监听的节点ID（必须为整数，留空则不监听）"
@@ -108,14 +104,13 @@ class GlobalTextCacheSave:
             **kwargs: 包含所有参数的字典
                 text: 要缓存的文本内容列表
                 channel_name: 缓存通道名称列表
-                enable_preview: 是否显示预览列表
                 monitor_node_id: 要监听的节点ID列表
                 monitor_widget_name: 要监听的widget名称列表
                 prompt: 工作流数据
                 extra_pnginfo: 额外信息
 
         Returns:
-            包含UI数据的字典
+            包含UI预览数据的字典
         """
         try:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
@@ -127,7 +122,6 @@ class GlobalTextCacheSave:
             # 从kwargs中获取参数（所有参数都是optional，INPUT_IS_LIST=True）
             text = kwargs.get("text", None)
             channel_name = kwargs.get("channel_name", None)
-            enable_preview = kwargs.get("enable_preview", None)
             monitor_node_id = kwargs.get("monitor_node_id", None)
             monitor_widget_name = kwargs.get("monitor_widget_name", None)
 
@@ -145,13 +139,6 @@ class GlobalTextCacheSave:
                 processed_channel = str(channel_name[0]) if channel_name[0] is not None else "default"
             else:
                 processed_channel = str(channel_name)
-
-            if enable_preview is None or (isinstance(enable_preview, list) and len(enable_preview) == 0):
-                processed_enable_preview = True
-            elif isinstance(enable_preview, list):
-                processed_enable_preview = bool(enable_preview[0])
-            else:
-                processed_enable_preview = bool(enable_preview)
 
             if monitor_node_id is None or (isinstance(monitor_node_id, list) and len(monitor_node_id) == 0):
                 processed_monitor_node_id = ""
@@ -192,19 +179,15 @@ class GlobalTextCacheSave:
 
             debug_print(COMPONENT_NAME, f"[GlobalTextCacheSave] └─ 保存完成")
 
-            # 返回预览数据
-            if processed_enable_preview:
-                # 限制预览长度，避免UI卡顿
-                preview_text = processed_text[:500] + "..." if len(processed_text) > 500 else processed_text
-                return {
-                    "ui": {
-                        "text": [preview_text],
-                        "channel": [processed_channel],
-                        "length": [len(processed_text)]
-                    }
+            # 固定返回预览数据（限制预览长度，避免UI卡顿）
+            preview_text = processed_text[:500] + "..." if len(processed_text) > 500 else processed_text
+            return {
+                "ui": {
+                    "text": [preview_text],
+                    "channel": [processed_channel],
+                    "length": [len(processed_text)]
                 }
-            else:
-                return {"ui": {}}
+            }
 
         except Exception as e:
             debug_print(COMPONENT_NAME, f"[GlobalTextCacheSave] └─ ✗ 保存失败: {str(e)}")

@@ -133,21 +133,33 @@ try:
             channel_name = data.get("channel_name", "default")
             triggered_by = data.get("triggered_by", "")
 
-            # 更新缓存
+            # 确保text是字符串
+            if not isinstance(text, str):
+                text = str(text)
+
+            # 限制triggered_by长度，防止过大日志
+            if len(triggered_by) > 200:
+                triggered_by = triggered_by[:200] + "..."
+
+            # 更新缓存（使用skip_websocket=True，由API端点统一发送WebSocket）
             metadata = {
                 "triggered_by": triggered_by,
                 "timestamp": time.time(),
                 "auto_update": True
             }
-            text_cache_manager.cache_text(text, channel_name, metadata)
+            text_cache_manager.cache_text(text, channel_name, metadata, skip_websocket=True)
 
-            # 发送WebSocket事件通知所有客户端
-            PromptServer.instance.send_sync("text-cache-channel-updated", {
-                "channel": channel_name,
-                "timestamp": time.time(),
-                "text_length": len(text),
-                "triggered_by": triggered_by
-            })
+            # 统一在API端点发送WebSocket事件（错误不应阻塞响应）
+            try:
+                PromptServer.instance.send_sync("text-cache-channel-updated", {
+                    "channel": channel_name,
+                    "timestamp": time.time(),
+                    "text_length": len(text),
+                    "triggered_by": triggered_by[:50] if triggered_by else ""  # 限制长度
+                })
+            except Exception as ws_error:
+                print(f"[TextCache] WebSocket发送失败: {ws_error}")
+                # 不阻塞API响应
 
             return web.json_response({
                 "status": "success",
@@ -155,6 +167,9 @@ try:
                 "text_length": len(text)
             })
         except Exception as e:
+            import traceback
+            print(f"[TextCache] API异常: {e}")
+            print(traceback.format_exc())
             return web.json_response({"status": "error", "error": str(e)}, status=500)
 
     @PromptServer.instance.routes.get("/danbooru/text_cache/channels")
@@ -167,6 +182,77 @@ try:
                 "channels": channels,
                 "count": len(channels)
             })
+        except Exception as e:
+            return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+    @PromptServer.instance.routes.post("/danbooru/text_cache/ensure_channel")
+    async def ensure_text_cache_channel(request):
+        """确保文本缓存通道存在的API端点（用于前端预注册通道）"""
+        try:
+            data = await request.json()
+            channel_name = data.get("channel_name", "default")
+
+            # 调用TextCacheManager的ensure_channel_exists方法
+            success = text_cache_manager.ensure_channel_exists(channel_name)
+
+            if success:
+                # 发送WebSocket事件通知所有客户端通道列表已更新
+                PromptServer.instance.send_sync("text-cache-channel-updated", {
+                    "channel": channel_name,
+                    "timestamp": time.time(),
+                    "text_length": 0,
+                    "triggered_by": "ensure_channel"
+                })
+
+                return web.json_response({
+                    "status": "success",
+                    "channel": channel_name,
+                    "message": "通道已确保存在"
+                })
+            else:
+                return web.json_response({
+                    "status": "error",
+                    "error": "创建通道失败"
+                }, status=500)
+        except Exception as e:
+            return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+    @PromptServer.instance.routes.post("/danbooru/text_cache/rename_channel")
+    async def rename_text_cache_channel(request):
+        """重命名文本缓存通道的API端点"""
+        try:
+            data = await request.json()
+            old_name = data.get("old_name", "")
+            new_name = data.get("new_name", "")
+
+            if not old_name or not new_name:
+                return web.json_response({
+                    "status": "error",
+                    "error": "缺少old_name或new_name参数"
+                }, status=400)
+
+            # 调用TextCacheManager的rename_channel方法
+            success = text_cache_manager.rename_channel(old_name, new_name)
+
+            if success:
+                # 发送WebSocket事件通知所有客户端通道已重命名
+                PromptServer.instance.send_sync("text-cache-channel-renamed", {
+                    "old_name": old_name,
+                    "new_name": new_name,
+                    "timestamp": time.time()
+                })
+
+                return web.json_response({
+                    "status": "success",
+                    "old_name": old_name,
+                    "new_name": new_name,
+                    "message": f"通道已重命名: '{old_name}' -> '{new_name}'"
+                })
+            else:
+                return web.json_response({
+                    "status": "error",
+                    "error": f"重命名通道失败: '{old_name}' -> '{new_name}'"
+                }, status=500)
         except Exception as e:
             return web.json_response({"status": "error", "error": str(e)}, status=500)
 

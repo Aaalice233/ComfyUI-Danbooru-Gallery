@@ -5,6 +5,7 @@
 import sys
 import os
 import time
+import threading
 import torch
 import numpy as np
 from PIL import Image
@@ -28,6 +29,9 @@ class ImageCacheManager:
             self.instance_id = id(self)
             print(f"[ImageCacheManager DEBUG] New instance created with ID: {self.instance_id}")
 
+            # 线程锁，确保线程安全
+            self._lock = threading.RLock()  # 使用RLock支持递归锁定
+
             # 多通道缓存数据（基于组名）
             self.cache_channels = {}  # {channel_name: {"images": [], "timestamp": 0, "metadata": {}}}
 
@@ -50,10 +54,8 @@ class ImageCacheManager:
             self.last_get_timestamp = 0               # 最后一次获取缓存的时间戳
             self.get_count_this_session = 0           # 当前会话中获取缓存的次数
 
-            # 状态同步字段
-            self._pending_operations = set()          # 进行中的操作集合
-            self._operation_lock = False              # 操作锁，防止并发问题
-            self._last_operation = None               # 最后一次操作信息
+            # 最后一次操作信息
+            self._last_operation = None
 
             # 延迟导入folder_paths
             try:
@@ -112,57 +114,57 @@ class ImageCacheManager:
 
     def clear_cache(self, channel_name: Optional[str] = None) -> None:
         """
-        清空缓存
+        清空缓存（线程安全）
 
         Args:
             channel_name: 要清空的通道名称，None表示清空所有通道
         """
-        operation_id = f"clear_{int(time.time() * 1000)}"
-        self._start_operation(operation_id, "clear_cache")
+        with self._lock:
+            try:
+                if channel_name is None:
+                    # 清空所有通道
+                    print(f"[ImageCacheManager] 清空所有缓存通道")
 
-        try:
-            if channel_name is None:
-                # 清空所有通道
-                print(f"[ImageCacheManager] 清空所有缓存通道 (操作ID: {operation_id})")
+                    # 清空默认通道
+                    self.cache_data["images"] = []
+                    self.cache_data["timestamp"] = 0
+                    self.cache_data["metadata"] = {}
 
-                # 清空默认通道
-                self.cache_data["images"] = []
-                self.cache_data["timestamp"] = 0
-                self.cache_data["metadata"] = {}
+                    # 清空所有命名通道
+                    self.cache_channels.clear()
 
-                # 清空所有命名通道
-                self.cache_channels.clear()
-
-                print(f"[ImageCacheManager] ✓ 已清空所有缓存通道")
-            else:
-                # 清空指定通道
-                print(f"[ImageCacheManager] 清空缓存通道: {channel_name} (操作ID: {operation_id})")
-
-                if channel_name in self.cache_channels:
-                    self.cache_channels[channel_name]["images"] = []
-                    self.cache_channels[channel_name]["timestamp"] = 0
-                    self.cache_channels[channel_name]["metadata"] = {}
-                    print(f"[ImageCacheManager] ✓ 已清空缓存通道: {channel_name}")
+                    print(f"[ImageCacheManager] ✓ 已清空所有缓存通道")
                 else:
-                    print(f"[ImageCacheManager] 缓存通道不存在，无需清空: {channel_name}")
+                    # 清空指定通道
+                    print(f"[ImageCacheManager] 清空缓存通道: {channel_name}")
 
-            # 重置会话追踪信息
-            self.has_saved_this_session = False
-            self.session_execution_count = 0
-            self.last_save_timestamp = 0
-            self.get_count_this_session = 0
-            self.last_get_timestamp = 0
+                    if channel_name in self.cache_channels:
+                        self.cache_channels[channel_name]["images"] = []
+                        self.cache_channels[channel_name]["timestamp"] = 0
+                        self.cache_channels[channel_name]["metadata"] = {}
+                        print(f"[ImageCacheManager] ✓ 已清空缓存通道: {channel_name}")
+                    else:
+                        print(f"[ImageCacheManager] 缓存通道不存在，无需清空: {channel_name}")
 
-            # 记录操作
-            self._last_operation = {
-                "type": "clear_cache",
-                "timestamp": time.time(),
-                "session_id": self.session_id,
-                "channel": channel_name
-            }
+                # 重置会话追踪信息
+                self.has_saved_this_session = False
+                self.session_execution_count = 0
+                self.last_save_timestamp = 0
+                self.get_count_this_session = 0
+                self.last_get_timestamp = 0
 
-        finally:
-            self._end_operation(operation_id)
+                # 记录操作
+                self._last_operation = {
+                    "type": "clear_cache",
+                    "timestamp": time.time(),
+                    "session_id": self.session_id,
+                    "channel": channel_name
+                }
+
+            except Exception as e:
+                print(f"[ImageCacheManager] ✗ 清空缓存失败: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
 
     def cache_images(self,
                     images: List[torch.Tensor],
@@ -171,9 +173,7 @@ class ImageCacheManager:
                     clear_before_save: bool = True,
                     channel_name: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        缓存图像数据
-
-        ✅ 添加执行锁保护，防止并发执行导致的状态混乱
+        缓存图像数据（线程安全）
 
         Args:
             images: 图像张量列表
@@ -185,138 +185,124 @@ class ImageCacheManager:
         Returns:
             缓存的图像数据列表
         """
-        operation_id = f"cache_{int(time.time() * 1000)}"
+        with self._lock:
+            try:
+                # 获取目标缓存通道
+                cache_channel = self.get_cache_channel(channel_name)
+                actual_channel_name = channel_name or self.current_group_name or "default"
 
-        # ✅ 检查操作锁，防止并发写入
-        if self._operation_lock:
-            print(f"[ImageCacheManager] ⚠ 操作被锁定，等待前一个操作完成...")
-            # 简单的自旋等待，最多等待5秒
-            wait_count = 0
-            while self._operation_lock and wait_count < 50:
-                time.sleep(0.1)
-                wait_count += 1
-            if self._operation_lock:
-                print(f"[ImageCacheManager] ✗ 操作锁超时，强制继续")
+                # 简化日志 - 只显示关键通道信息
+                print(f"[ImageCacheManager] ┌─ 通道: '{actual_channel_name}'")
+                print(f"[ImageCacheManager] │  当前: {len(cache_channel['images'])} 张 → 新增: {len(images)} 张")
 
-        self._operation_lock = True
-        self._start_operation(operation_id, "cache_images")
+                timestamp = int(time.time() * 1000)
+                results = []
+                cache_data = []
 
-        try:
-            # 获取目标缓存通道
-            cache_channel = self.get_cache_channel(channel_name)
-            actual_channel_name = channel_name or self.current_group_name or "default"
+                # 根据参数决定是否清空旧缓存
+                if clear_before_save and len(cache_channel["images"]) > 0:
+                    old_count = len(cache_channel["images"])
+                    cache_channel["images"] = []
+                    print(f"[ImageCacheManager] │  模式: 覆盖 (已清除 {old_count} 张旧图)")
+                else:
+                    print(f"[ImageCacheManager] │  模式: {'追加' if not clear_before_save else '覆盖'}")
 
-            # 简化日志 - 只显示关键通道信息
-            print(f"[ImageCacheManager] ┌─ 通道: '{actual_channel_name}'")
-            print(f"[ImageCacheManager] │  当前: {len(cache_channel['images'])} 张 → 新增: {len(images)} 张")
+                for idx, image_batch in enumerate(images):
+                    try:
+                        # 图像处理
+                        image = image_batch.squeeze()
+                        rgb_image = Image.fromarray(np.clip(255. * image.cpu().numpy(), 0, 255).astype(np.uint8))
 
-            timestamp = int(time.time() * 1000)
-            results = []
-            cache_data = []
+                        # 创建默认遮罩（完全不透明）
+                        mask_img = Image.new('L', rgb_image.size, 255)
 
-            # 根据参数决定是否清空旧缓存
-            if clear_before_save and len(cache_channel["images"]) > 0:
-                old_count = len(cache_channel["images"])
-                cache_channel["images"] = []
-                print(f"[ImageCacheManager] │  模式: 覆盖 (已清除 {old_count} 张旧图)")
-            else:
-                print(f"[ImageCacheManager] │  模式: {'追加' if not clear_before_save else '覆盖'}")
+                        # 合并为RGBA
+                        r, g, b = rgb_image.convert('RGB').split()
+                        rgba_image = Image.merge('RGBA', (r, g, b, mask_img))
 
-            for idx, image_batch in enumerate(images):
-                try:
-                    # 图像处理
-                    image = image_batch.squeeze()
-                    rgb_image = Image.fromarray(np.clip(255. * image.cpu().numpy(), 0, 255).astype(np.uint8))
+                        # 保存文件
+                        filename = f"{filename_prefix}_{timestamp}_{idx}.png"
+                        file_path = os.path.join(self.output_dir, filename)
+                        rgba_image.save(file_path, compress_level=self.compress_level)
 
-                    # 创建默认遮罩（完全不透明）
-                    mask_img = Image.new('L', rgb_image.size, 255)
-
-                    # 合并为RGBA
-                    r, g, b = rgb_image.convert('RGB').split()
-                    rgba_image = Image.merge('RGBA', (r, g, b, mask_img))
-
-                    # 保存文件
-                    filename = f"{filename_prefix}_{timestamp}_{idx}.png"
-                    file_path = os.path.join(self.output_dir, filename)
-                    rgba_image.save(file_path, compress_level=self.compress_level)
-
-                    # 准备缓存数据，包含预览格式信息
-                    cache_item = {
-                        "filename": filename,
-                        "subfolder": "",
-                        "type": self.type,
-                        "timestamp": timestamp,
-                        "index": idx,
-                        "preview_format": "rgba" if preview_rgba else "rgb",
-                        "original_filename": filename
-                    }
-                    cache_data.append(cache_item)
-
-                    # 预览处理
-                    if not preview_rgba:
-                        preview_filename = f"{filename_prefix}_{timestamp}_{idx}_preview.jpg"
-                        preview_path = os.path.join(self.output_dir, preview_filename)
-                        rgb_image.save(preview_path, format="JPEG", quality=95)
-                        results.append({
-                            "filename": preview_filename,
+                        # 准备缓存数据，包含预览格式信息
+                        cache_item = {
+                            "filename": filename,
                             "subfolder": "",
-                            "type": self.type
-                        })
-                    else:
-                        results.append(cache_item)
-
-                except Exception as e:
-                    print(f"[ImageCacheManager] 处理图像 {idx+1} 时出错: {str(e)}")
-                    continue
-
-            # 更新缓存通道（追加到当前通道）
-            cache_channel["images"].extend(cache_data)
-
-            cache_channel["timestamp"] = timestamp
-            cache_channel["metadata"] = {
-                "count": len(cache_channel["images"]), # 使用更新后的列表长度
-                "prefix": filename_prefix,
-                "channel": actual_channel_name
-            }
-
-            # 更新会话追踪信息
-            self.session_execution_count += 1
-            self.last_save_timestamp = timestamp
-            self.has_saved_this_session = True
-
-            # 输出结果日志
-            print(f"[ImageCacheManager] └─ 完成: {len(cache_data)} 张图像 → 总计: {len(cache_channel['images'])} 张")
-
-            # 发送WebSocket事件通知缓存更新（延迟导入）
-            if cache_data:
-                try:
-                    from server import PromptServer
-                    PromptServer.instance.send_sync("image-cache-update", {
-                        "cache_info": {
-                            "count": len(cache_data),
+                            "type": self.type,
                             "timestamp": timestamp,
-                            "metadata": cache_channel["metadata"],
-                            "channel": actual_channel_name
+                            "index": idx,
+                            "preview_format": "rgba" if preview_rgba else "rgb",
+                            "original_filename": filename
                         }
-                    })
-                except ImportError:
-                    print("[ImageCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
-                except Exception as e:
-                    print(f"[ImageCacheManager] WebSocket通知失败: {e}")
+                        cache_data.append(cache_item)
 
-        finally:
-            self._end_operation(operation_id)
-            # ✅ 释放操作锁
-            self._operation_lock = False
+                        # 预览处理
+                        if not preview_rgba:
+                            preview_filename = f"{filename_prefix}_{timestamp}_{idx}_preview.jpg"
+                            preview_path = os.path.join(self.output_dir, preview_filename)
+                            rgb_image.save(preview_path, format="JPEG", quality=95)
+                            results.append({
+                                "filename": preview_filename,
+                                "subfolder": "",
+                                "type": self.type
+                            })
+                        else:
+                            results.append(cache_item)
 
-        return results
+                    except Exception as e:
+                        print(f"[ImageCacheManager] 处理图像 {idx+1} 时出错: {str(e)}")
+                        continue
+
+                # 更新缓存通道（追加到当前通道）
+                cache_channel["images"].extend(cache_data)
+
+                cache_channel["timestamp"] = timestamp
+                cache_channel["metadata"] = {
+                    "count": len(cache_channel["images"]), # 使用更新后的列表长度
+                    "prefix": filename_prefix,
+                    "channel": actual_channel_name
+                }
+
+                # 更新会话追踪信息
+                self.session_execution_count += 1
+                self.last_save_timestamp = timestamp
+                self.has_saved_this_session = True
+
+                # 输出结果日志
+                print(f"[ImageCacheManager] └─ 完成: {len(cache_data)} 张图像 → 总计: {len(cache_channel['images'])} 张")
+
+                # 发送WebSocket事件通知缓存更新（延迟导入）
+                if cache_data:
+                    try:
+                        from server import PromptServer
+                        PromptServer.instance.send_sync("image-cache-update", {
+                            "cache_info": {
+                                "count": len(cache_data),
+                                "timestamp": timestamp,
+                                "metadata": cache_channel["metadata"],
+                                "channel": actual_channel_name
+                            }
+                        })
+                    except ImportError:
+                        print("[ImageCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+                    except Exception as e:
+                        print(f"[ImageCacheManager] WebSocket通知失败: {e}")
+
+                return results
+
+            except Exception as e:
+                print(f"[ImageCacheManager] ✗ 缓存失败: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
+                return []
 
     def get_cached_images(self,
                          get_latest: bool = True,
                          index: int = 0,
                          channel_name: Optional[str] = None) -> List[torch.Tensor]:
         """
-        从缓存中获取图像数据
+        从缓存中获取图像数据（线程安全）
 
         Args:
             get_latest: 是否获取所有缓存图像
@@ -326,111 +312,113 @@ class ImageCacheManager:
         Returns:
             images_tensors: 图像张量列表
         """
-        operation_id = f"get_{int(time.time() * 1000)}"
-        self._start_operation(operation_id, "get_cached_images")
-
-        try:
-            # 增加获取计数
-            self.increment_get_count()
-
-            # 获取目标缓存通道
-            cache_channel = self.get_cache_channel(channel_name)
-            actual_channel_name = channel_name or self.current_group_name or "default"
-
-            # 简化日志 - 只显示关键获取信息
-            print(f"[ImageCacheManager] ┌─ 从通道 '{actual_channel_name}' 获取")
-            print(f"[ImageCacheManager] │  可用: {len(cache_channel['images'])} 张")
-
-            # 检查缓存中是否有图像
-            if not cache_channel["images"]:
-                print(f"[ImageCacheManager] └─ 缓存为空，返回空列表")
-                # ✅ 修复：返回空列表，让调用者决定使用默认图像
-                return []
-
+        with self._lock:
             try:
-                # 延迟导入folder_paths
-                try:
-                    import folder_paths
-                    temp_dir = folder_paths.get_temp_directory()
-                except ImportError:
-                    temp_dir = self.output_dir
-                except Exception:
-                    temp_dir = self.output_dir
-                output_images = []
+                # 增加获取计数
+                self.increment_get_count()
 
-                # 确定要获取的图像
-                if get_latest:
-                    # 获取所有缓存的图像
-                    images_to_get = cache_channel["images"]
-                else:
-                    # 获取指定索引的图像
-                    if index < len(cache_channel["images"]):
-                        images_to_get = [cache_channel["images"][index]]
+                # 获取目标缓存通道
+                cache_channel = self.get_cache_channel(channel_name)
+                actual_channel_name = channel_name or self.current_group_name or "default"
+
+                # 简化日志 - 只显示关键获取信息
+                print(f"[ImageCacheManager] ┌─ 从通道 '{actual_channel_name}' 获取")
+                print(f"[ImageCacheManager] │  可用: {len(cache_channel['images'])} 张")
+
+                # 检查缓存中是否有图像
+                if not cache_channel["images"]:
+                    print(f"[ImageCacheManager] └─ 缓存为空，返回空列表")
+                    # ✅ 修复：返回空列表，让调用者决定使用默认图像
+                    return []
+
+                try:
+                    # 延迟导入folder_paths
+                    try:
+                        import folder_paths
+                        temp_dir = folder_paths.get_temp_directory()
+                    except ImportError:
+                        temp_dir = self.output_dir
+                    except Exception:
+                        temp_dir = self.output_dir
+                    output_images = []
+
+                    # 确定要获取的图像
+                    if get_latest:
+                        # 获取所有缓存的图像
+                        images_to_get = cache_channel["images"]
                     else:
-                        print(f"[ImageCacheManager] └─ 索引 {index} 超出范围 (总数: {len(cache_channel['images'])})")
+                        # 获取指定索引的图像
+                        if index < len(cache_channel["images"]):
+                            images_to_get = [cache_channel["images"][index]]
+                        else:
+                            print(f"[ImageCacheManager] └─ 索引 {index} 超出范围 (总数: {len(cache_channel['images'])})")
+                            empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                            return [empty_image]
+
+                    # 加载图像
+                    for img_data in images_to_get:
+                        try:
+                            img_file = img_data["filename"]
+                            img_path = os.path.join(temp_dir, img_file)
+
+                            if not os.path.exists(img_path):
+                                print(f"[ImageCacheManager] 文件不存在: {img_path}")
+                                continue
+
+                            img = Image.open(img_path)
+
+                            # RGBA格式处理 - 只提取RGB通道
+                            if img.mode == 'RGBA':
+                                r, g, b, a = img.split()
+                                rgb_image = Image.merge('RGB', (r, g, b))
+
+                                # 转换为张量
+                                image = np.array(rgb_image).astype(np.float32) / 255.0
+                                image = torch.from_numpy(image)  # 先创建3D张量 (H, W, C)
+
+                                # 确保是4D张量格式 (batch, height, width, channels)
+                                if image.dim() == 3:
+                                    image = image.unsqueeze(0)  # 添加批次维度 -> (1, H, W, C)
+                                elif image.dim() == 2:
+                                    image = image.unsqueeze(0).unsqueeze(-1)  # (1, H, W, 1)
+                                    image = image.expand(-1, -1, -1, 3)  # 扩展为3通道
+                            else:
+                                # RGB格式处理
+                                image = np.array(img.convert('RGB')).astype(np.float32) / 255.0
+                                image = torch.from_numpy(image)  # 先创建3D张量 (H, W, C)
+
+                                # 确保是4D张量格式 (batch, height, width, channels)
+                                if image.dim() == 3:
+                                    image = image.unsqueeze(0)  # 添加批次维度 -> (1, H, W, C)
+                                elif image.dim() == 2:
+                                    image = image.unsqueeze(0).unsqueeze(-1)  # (1, H, W, 1)
+                                    image = image.expand(-1, -1, -1, 3)  # 扩展为3通道
+
+                            output_images.append(image)
+
+                        except Exception as e:
+                            print(f"[ImageCacheManager] 处理文件时出错: {str(e)}")
+                            continue
+
+                    if not output_images:
+                        print(f"[ImageCacheManager] └─ 没有加载到任何图像，返回空白")
                         empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
                         return [empty_image]
 
-                # 加载图像
-                for img_data in images_to_get:
-                    try:
-                        img_file = img_data["filename"]
-                        img_path = os.path.join(temp_dir, img_file)
+                    print(f"[ImageCacheManager] └─ 成功获取: {len(output_images)} 张图像")
+                    return output_images
 
-                        if not os.path.exists(img_path):
-                            print(f"[ImageCacheManager] 文件不存在: {img_path}")
-                            continue
-
-                        img = Image.open(img_path)
-
-                        # RGBA格式处理 - 只提取RGB通道
-                        if img.mode == 'RGBA':
-                            r, g, b, a = img.split()
-                            rgb_image = Image.merge('RGB', (r, g, b))
-
-                            # 转换为张量
-                            image = np.array(rgb_image).astype(np.float32) / 255.0
-                            image = torch.from_numpy(image)  # 先创建3D张量 (H, W, C)
-
-                            # 确保是4D张量格式 (batch, height, width, channels)
-                            if image.dim() == 3:
-                                image = image.unsqueeze(0)  # 添加批次维度 -> (1, H, W, C)
-                            elif image.dim() == 2:
-                                image = image.unsqueeze(0).unsqueeze(-1)  # (1, H, W, 1)
-                                image = image.expand(-1, -1, -1, 3)  # 扩展为3通道
-                        else:
-                            # RGB格式处理
-                            image = np.array(img.convert('RGB')).astype(np.float32) / 255.0
-                            image = torch.from_numpy(image)  # 先创建3D张量 (H, W, C)
-
-                            # 确保是4D张量格式 (batch, height, width, channels)
-                            if image.dim() == 3:
-                                image = image.unsqueeze(0)  # 添加批次维度 -> (1, H, W, C)
-                            elif image.dim() == 2:
-                                image = image.unsqueeze(0).unsqueeze(-1)  # (1, H, W, 1)
-                                image = image.expand(-1, -1, -1, 3)  # 扩展为3通道
-
-                        output_images.append(image)
-
-                    except Exception as e:
-                        print(f"[ImageCacheManager] 处理文件时出错: {str(e)}")
-                        continue
-
-                if not output_images:
-                    print(f"[ImageCacheManager] └─ 没有加载到任何图像，返回空白")
+                except Exception as e:
+                    print(f"[ImageCacheManager] └─ 获取失败: {str(e)}")
                     empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
                     return [empty_image]
 
-                print(f"[ImageCacheManager] └─ 成功获取: {len(output_images)} 张图像")
-                return output_images
-
             except Exception as e:
-                print(f"[ImageCacheManager] └─ 获取失败: {str(e)}")
+                print(f"[ImageCacheManager] ✗ 获取缓存失败: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
                 empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
                 return [empty_image]
-
-        finally:
-            self._end_operation(operation_id)
 
     def get_cache_info(self) -> Dict[str, Any]:
         """
@@ -475,35 +463,23 @@ class ImageCacheManager:
 
         return True
 
-    def _start_operation(self, operation_id: str, operation_type: str) -> None:
-        """开始操作，添加到操作集合"""
-        if self._operation_lock:
-            print(f"[ImageCacheManager] ⚠ 操作被锁定: {operation_id}")
-        self._pending_operations.add(operation_id)
-
-    def _end_operation(self, operation_id: str) -> None:
-        """结束操作，从操作集合中移除"""
-        if operation_id in self._pending_operations:
-            self._pending_operations.remove(operation_id)
-
     def get_session_info(self) -> Dict[str, Any]:
-        """获取会话信息"""
-        current_time = time.time()
-        session_duration = current_time - self.session_start_time
+        """获取会话信息（线程安全）"""
+        with self._lock:
+            current_time = time.time()
+            session_duration = current_time - self.session_start_time
 
-        return {
-            "session_id": self.session_id,
-            "session_start_time": self.session_start_time,
-            "session_duration_seconds": round(session_duration, 2),
-            "execution_count": self.session_execution_count,
-            "get_count": self.get_count_this_session,
-            "has_saved_this_session": self.has_saved_this_session,
-            "last_save_timestamp": self.last_save_timestamp,
-            "last_get_timestamp": self.last_get_timestamp,
-            "pending_operations": list(self._pending_operations),
-            "operation_lock": self._operation_lock,
-            "last_operation": self._last_operation
-        }
+            return {
+                "session_id": self.session_id,
+                "session_start_time": self.session_start_time,
+                "session_duration_seconds": round(session_duration, 2),
+                "execution_count": self.session_execution_count,
+                "get_count": self.get_count_this_session,
+                "has_saved_this_session": self.has_saved_this_session,
+                "last_save_timestamp": self.last_save_timestamp,
+                "last_get_timestamp": self.last_get_timestamp,
+                "last_operation": self._last_operation
+            }
 
     def increment_get_count(self) -> None:
         """增加获取计数"""

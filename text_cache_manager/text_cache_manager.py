@@ -4,6 +4,7 @@ Text Cache Manager - Singleton pattern for global text caching
 """
 
 import time
+import threading
 from typing import Dict, List, Optional, Any
 
 
@@ -31,6 +32,9 @@ class TextCacheManager:
             self.instance_id = id(self)
             print(f"[TextCacheManager DEBUG] New instance created with ID: {self.instance_id}")
 
+            # 线程锁，确保线程安全
+            self._lock = threading.RLock()  # 使用RLock支持递归锁定
+
             # 多通道缓存数据（基于通道名）
             # 结构: {channel_name: {"text": str, "timestamp": float, "metadata": {}}}
             self.cache_channels: Dict[str, Dict[str, Any]] = {}
@@ -47,10 +51,8 @@ class TextCacheManager:
             self.last_get_timestamp = 0.0             # 最后一次获取缓存的时间戳
             self.get_count_this_session = 0           # 当前会话中获取缓存的次数
 
-            # 状态同步字段
-            self._pending_operations = set()          # 进行中的操作集合
-            self._operation_lock = False              # 操作锁，防止并发问题
-            self._last_operation: Optional[Dict] = None  # 最后一次操作信息
+            # 最后一次操作信息
+            self._last_operation: Optional[Dict] = None
 
             self._initialized = True
             print(f"[TextCacheManager] Initialized global text cache manager (Session ID: {self.session_id})")
@@ -84,72 +86,99 @@ class TextCacheManager:
 
         return self.cache_channels[channel_name]
 
-    def cache_text(self, text: str, channel_name: str = "default", metadata: Optional[Dict] = None) -> None:
+    def ensure_channel_exists(self, channel_name: str) -> bool:
         """
-        缓存文本数据
+        确保通道存在，如果不存在则创建空通道
+        用于前端预注册通道，确保下拉列表中显示该通道
+
+        Args:
+            channel_name: 通道名称
+
+        Returns:
+            True表示通道已存在或创建成功，False表示失败
+        """
+        try:
+            if channel_name not in self.cache_channels:
+                self.cache_channels[channel_name] = {
+                    "text": "",
+                    "timestamp": time.time(),
+                    "metadata": {}
+                }
+                print(f"[TextCacheManager] 预注册空通道: {channel_name}")
+                return True
+            else:
+                print(f"[TextCacheManager] 通道已存在: {channel_name}")
+                return True
+        except Exception as e:
+            print(f"[TextCacheManager] 创建通道失败: {channel_name}, 错误: {e}")
+            return False
+
+    def cache_text(self, text: str, channel_name: str = "default", metadata: Optional[Dict] = None, skip_websocket: bool = False) -> None:
+        """
+        缓存文本数据（线程安全）
 
         Args:
             text: 要缓存的文本内容
             channel_name: 缓存通道名称
             metadata: 可选的元数据
+            skip_websocket: 是否跳过WebSocket通知（避免重复发送）
         """
-        operation_id = f"cache_{int(time.time() * 1000)}"
-
-        # 检查操作锁，防止并发写入
-        if self._operation_lock:
-            print(f"[TextCacheManager] ⚠ 操作被锁定，等待前一个操作完成...")
-            wait_count = 0
-            while self._operation_lock and wait_count < 50:
-                time.sleep(0.1)
-                wait_count += 1
-            if self._operation_lock:
-                print(f"[TextCacheManager] ✗ 操作锁超时，强制继续")
-
-        self._operation_lock = True
-        self._start_operation(operation_id, "cache_text")
-
-        try:
-            # 获取目标缓存通道
-            cache_channel = self.get_cache_channel(channel_name)
-
-            # 简化日志
-            print(f"[TextCacheManager] ┌─ 通道: '{channel_name}'")
-            print(f"[TextCacheManager] │  文本长度: {len(text)} 字符")
-
-            timestamp = time.time()
-
-            # 更新缓存通道
-            cache_channel["text"] = text
-            cache_channel["timestamp"] = timestamp
-            cache_channel["metadata"] = metadata or {}
-
-            # 更新会话追踪信息
-            self.session_execution_count += 1
-            self.last_save_timestamp = timestamp
-            self.has_saved_this_session = True
-
-            print(f"[TextCacheManager] └─ 完成: 文本已缓存到通道 '{channel_name}'")
-
-            # 发送WebSocket事件通知缓存更新
+        with self._lock:
             try:
-                from server import PromptServer
-                PromptServer.instance.send_sync("text-cache-channel-updated", {
-                    "channel": channel_name,
-                    "timestamp": timestamp,
-                    "text_length": len(text)
-                })
-            except ImportError:
-                print("[TextCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
-            except Exception as e:
-                print(f"[TextCacheManager] WebSocket通知失败: {e}")
+                # 验证文本类型和长度
+                if not isinstance(text, str):
+                    print(f"[TextCacheManager] ⚠ 文本类型错误: {type(text)}，转换为字符串")
+                    text = str(text)
 
-        finally:
-            self._end_operation(operation_id)
-            self._operation_lock = False
+                # 限制文本长度（防止内存问题）
+                MAX_TEXT_LENGTH = 500000  # 500KB字符
+                if len(text) > MAX_TEXT_LENGTH:
+                    print(f"[TextCacheManager] ⚠ 文本过长({len(text)}字符)，截断到{MAX_TEXT_LENGTH}字符")
+                    text = text[:MAX_TEXT_LENGTH]
+
+                # 获取目标缓存通道
+                cache_channel = self.get_cache_channel(channel_name)
+
+                # 简化日志
+                print(f"[TextCacheManager] ┌─ 通道: '{channel_name}'")
+                print(f"[TextCacheManager] │  文本长度: {len(text)} 字符")
+
+                timestamp = time.time()
+
+                # 更新缓存通道
+                cache_channel["text"] = text
+                cache_channel["timestamp"] = timestamp
+                cache_channel["metadata"] = metadata or {}
+
+                # 更新会话追踪信息
+                self.session_execution_count += 1
+                self.last_save_timestamp = timestamp
+                self.has_saved_this_session = True
+
+                print(f"[TextCacheManager] └─ 完成: 文本已缓存到通道 '{channel_name}'")
+
+                # 发送WebSocket事件通知缓存更新（除非被禁用）
+                if not skip_websocket:
+                    try:
+                        from server import PromptServer
+                        PromptServer.instance.send_sync("text-cache-channel-updated", {
+                            "channel": channel_name,
+                            "timestamp": timestamp,
+                            "text_length": len(text)
+                        })
+                    except ImportError:
+                        print("[TextCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+                    except Exception as e:
+                        print(f"[TextCacheManager] WebSocket通知失败: {e}")
+
+            except Exception as e:
+                print(f"[TextCacheManager] ✗ 缓存失败: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
 
     def get_cached_text(self, channel_name: str = "default") -> str:
         """
-        从缓存中获取文本数据
+        从缓存中获取文本数据（线程安全）
 
         Args:
             channel_name: 缓存通道名称
@@ -157,77 +186,128 @@ class TextCacheManager:
         Returns:
             缓存的文本内容，如果不存在返回空字符串
         """
-        operation_id = f"get_{int(time.time() * 1000)}"
-        self._start_operation(operation_id, "get_cached_text")
+        with self._lock:
+            try:
+                # 增加获取计数
+                self.increment_get_count()
 
-        try:
-            # 增加获取计数
-            self.increment_get_count()
+                # 获取目标缓存通道
+                if channel_name not in self.cache_channels:
+                    print(f"[TextCacheManager] ⚠ 通道 '{channel_name}' 不存在，返回空字符串")
+                    return ""
 
-            # 获取目标缓存通道
-            if channel_name not in self.cache_channels:
-                print(f"[TextCacheManager] ⚠ 通道 '{channel_name}' 不存在，返回空字符串")
+                cache_channel = self.cache_channels[channel_name]
+
+                # 简化日志
+                print(f"[TextCacheManager] ┌─ 从通道 '{channel_name}' 获取")
+                print(f"[TextCacheManager] │  文本长度: {len(cache_channel['text'])} 字符")
+                print(f"[TextCacheManager] └─ 完成")
+
+                return cache_channel["text"]
+
+            except Exception as e:
+                print(f"[TextCacheManager] ✗ 获取缓存失败: {str(e)}")
                 return ""
-
-            cache_channel = self.cache_channels[channel_name]
-
-            # 简化日志
-            print(f"[TextCacheManager] ┌─ 从通道 '{channel_name}' 获取")
-            print(f"[TextCacheManager] │  文本长度: {len(cache_channel['text'])} 字符")
-            print(f"[TextCacheManager] └─ 完成")
-
-            return cache_channel["text"]
-
-        finally:
-            self._end_operation(operation_id)
 
     def clear_cache(self, channel_name: Optional[str] = None) -> None:
         """
-        清空缓存
+        清空缓存（线程安全）
 
         Args:
             channel_name: 要清空的通道名称，None表示清空所有通道
         """
-        operation_id = f"clear_{int(time.time() * 1000)}"
-        self._start_operation(operation_id, "clear_cache")
-
-        try:
-            if channel_name is None:
-                # 清空所有通道
-                print(f"[TextCacheManager] 清空所有缓存通道 (操作ID: {operation_id})")
-                self.cache_channels.clear()
-                print(f"[TextCacheManager] ✓ 已清空所有缓存通道")
-            else:
-                # 清空指定通道
-                print(f"[TextCacheManager] 清空缓存通道: {channel_name} (操作ID: {operation_id})")
-
-                if channel_name in self.cache_channels:
-                    self.cache_channels[channel_name] = {
-                        "text": "",
-                        "timestamp": 0.0,
-                        "metadata": {}
-                    }
-                    print(f"[TextCacheManager] ✓ 已清空缓存通道: {channel_name}")
+        with self._lock:
+            try:
+                if channel_name is None:
+                    # 清空所有通道
+                    print(f"[TextCacheManager] 清空所有缓存通道")
+                    self.cache_channels.clear()
+                    print(f"[TextCacheManager] ✓ 已清空所有缓存通道")
                 else:
-                    print(f"[TextCacheManager] 缓存通道不存在，无需清空: {channel_name}")
+                    # 清空指定通道
+                    print(f"[TextCacheManager] 清空缓存通道: {channel_name}")
 
-            # 重置会话追踪信息
-            self.has_saved_this_session = False
-            self.session_execution_count = 0
-            self.last_save_timestamp = 0.0
-            self.get_count_this_session = 0
-            self.last_get_timestamp = 0.0
+                    if channel_name in self.cache_channels:
+                        self.cache_channels[channel_name] = {
+                            "text": "",
+                            "timestamp": 0.0,
+                            "metadata": {}
+                        }
+                        print(f"[TextCacheManager] ✓ 已清空缓存通道: {channel_name}")
+                    else:
+                        print(f"[TextCacheManager] 缓存通道不存在，无需清空: {channel_name}")
 
-            # 记录操作
-            self._last_operation = {
-                "type": "clear_cache",
-                "timestamp": time.time(),
-                "session_id": self.session_id,
-                "channel": channel_name
-            }
+                # 重置会话追踪信息
+                self.has_saved_this_session = False
+                self.session_execution_count = 0
+                self.last_save_timestamp = 0.0
+                self.get_count_this_session = 0
+                self.last_get_timestamp = 0.0
 
-        finally:
-            self._end_operation(operation_id)
+                # 记录操作
+                self._last_operation = {
+                    "type": "clear_cache",
+                    "timestamp": time.time(),
+                    "session_id": self.session_id,
+                    "channel": channel_name
+                }
+
+            except Exception as e:
+                print(f"[TextCacheManager] ✗ 清空缓存失败: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
+
+    def rename_channel(self, old_name: str, new_name: str) -> bool:
+        """
+        重命名通道（将旧通道的数据移到新通道，然后删除旧通道）（线程安全）
+
+        Args:
+            old_name: 旧通道名称
+            new_name: 新通道名称
+
+        Returns:
+            是否成功重命名
+        """
+        with self._lock:
+            try:
+                # 检查旧通道是否存在
+                if old_name not in self.cache_channels:
+                    print(f"[TextCacheManager] ⚠️ 旧通道 '{old_name}' 不存在，无法重命名")
+                    return False
+
+                # 检查新通道名是否与旧通道名相同
+                if old_name == new_name:
+                    print(f"[TextCacheManager] ⚠️ 新旧通道名相同，无需重命名")
+                    return True
+
+                # 检查新通道是否已存在
+                if new_name in self.cache_channels:
+                    print(f"[TextCacheManager] ⚠️ 新通道 '{new_name}' 已存在，将覆盖")
+
+                # 复制旧通道数据到新通道
+                self.cache_channels[new_name] = self.cache_channels[old_name].copy()
+
+                # 删除旧通道
+                del self.cache_channels[old_name]
+
+                print(f"[TextCacheManager] ✅ 通道已重命名: '{old_name}' -> '{new_name}'")
+
+                # 记录操作
+                self._last_operation = {
+                    "type": "rename_channel",
+                    "timestamp": time.time(),
+                    "session_id": self.session_id,
+                    "old_name": old_name,
+                    "new_name": new_name
+                }
+
+                return True
+
+            except Exception as e:
+                print(f"[TextCacheManager] ❌ 重命名通道失败: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
+                return False
 
     def get_all_channels(self) -> List[str]:
         """
@@ -290,36 +370,24 @@ class TextCacheManager:
 
         return True
 
-    def _start_operation(self, operation_id: str, operation_type: str) -> None:
-        """开始操作，添加到操作集合"""
-        if self._operation_lock:
-            print(f"[TextCacheManager] ⚠ 操作被锁定: {operation_id}")
-        self._pending_operations.add(operation_id)
-
-    def _end_operation(self, operation_id: str) -> None:
-        """结束操作，从操作集合中移除"""
-        if operation_id in self._pending_operations:
-            self._pending_operations.remove(operation_id)
-
     def get_session_info(self) -> Dict[str, Any]:
-        """获取会话信息"""
-        current_time = time.time()
-        session_duration = current_time - self.session_start_time
+        """获取会话信息（线程安全）"""
+        with self._lock:
+            current_time = time.time()
+            session_duration = current_time - self.session_start_time
 
-        return {
-            "session_id": self.session_id,
-            "session_start_time": self.session_start_time,
-            "session_duration_seconds": round(session_duration, 2),
-            "execution_count": self.session_execution_count,
-            "get_count": self.get_count_this_session,
-            "has_saved_this_session": self.has_saved_this_session,
-            "last_save_timestamp": self.last_save_timestamp,
-            "last_get_timestamp": self.last_get_timestamp,
-            "pending_operations": list(self._pending_operations),
-            "operation_lock": self._operation_lock,
-            "last_operation": self._last_operation,
-            "total_channels": len(self.cache_channels)
-        }
+            return {
+                "session_id": self.session_id,
+                "session_start_time": self.session_start_time,
+                "session_duration_seconds": round(session_duration, 2),
+                "execution_count": self.session_execution_count,
+                "get_count": self.get_count_this_session,
+                "has_saved_this_session": self.has_saved_this_session,
+                "last_save_timestamp": self.last_save_timestamp,
+                "last_get_timestamp": self.last_get_timestamp,
+                "last_operation": self._last_operation,
+                "total_channels": len(self.cache_channels)
+            }
 
     def increment_get_count(self) -> None:
         """增加获取计数"""
