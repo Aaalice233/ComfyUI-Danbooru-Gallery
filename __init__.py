@@ -7,6 +7,8 @@ from .prompt_selector import NODE_CLASS_MAPPINGS as ps_mappings, NODE_DISPLAY_NA
 from .multi_character_editor import NODE_CLASS_MAPPINGS as mce_mappings, NODE_DISPLAY_NAME_MAPPINGS as mce_display_mappings
 from .image_cache_save import NODE_CLASS_MAPPINGS as cache_save_mappings, NODE_DISPLAY_NAME_MAPPINGS as cache_save_display_mappings
 from .image_cache_get import NODE_CLASS_MAPPINGS as cache_get_mappings, NODE_DISPLAY_NAME_MAPPINGS as cache_get_display_mappings
+from .global_text_cache_save import NODE_CLASS_MAPPINGS as text_cache_save_mappings, NODE_DISPLAY_NAME_MAPPINGS as text_cache_save_display_mappings
+from .global_text_cache_get import NODE_CLASS_MAPPINGS as text_cache_get_mappings, NODE_DISPLAY_NAME_MAPPINGS as text_cache_get_display_mappings
 from .resolution_master_simplify import NODE_CLASS_MAPPINGS as rms_mappings, NODE_DISPLAY_NAME_MAPPINGS as rms_display_mappings
 from .prompt_cleaning_maid import NODE_CLASS_MAPPINGS as pcm_mappings, NODE_DISPLAY_NAME_MAPPINGS as pcm_display_mappings
 from .simple_image_compare import NODE_CLASS_MAPPINGS as sic_mappings, NODE_DISPLAY_NAME_MAPPINGS as sic_display_mappings
@@ -41,6 +43,8 @@ NODE_CLASS_MAPPINGS = {
     **mce_mappings,
     **cache_save_mappings,
     **cache_get_mappings,
+    **text_cache_save_mappings,
+    **text_cache_get_mappings,
     **rms_mappings,
     **pcm_mappings,
     **sic_mappings,
@@ -55,6 +59,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **mce_display_mappings,
     **cache_save_display_mappings,
     **cache_get_display_mappings,
+    **text_cache_save_display_mappings,
+    **text_cache_get_display_mappings,
     **rms_display_mappings,
     **pcm_display_mappings,
     **sic_display_mappings,
@@ -70,7 +76,9 @@ try:
     from server import PromptServer
     from aiohttp import web
     from .image_cache_manager.image_cache_manager import cache_manager
+    from .text_cache_manager.text_cache_manager import text_cache_manager
     from .utils import debug_config
+    import time
 
     @PromptServer.instance.routes.post("/danbooru_gallery/clear_cache")
     async def clear_image_cache(request):
@@ -112,6 +120,53 @@ try:
                 return web.json_response({"status": "success", "message": "配置已更新"})
             else:
                 return web.json_response({"status": "error", "message": "配置更新失败"}, status=500)
+        except Exception as e:
+            return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+    # 文本缓存相关API路由
+    @PromptServer.instance.routes.post("/danbooru/text_cache/update")
+    async def update_text_cache(request):
+        """实时更新文本缓存的API端点（由JavaScript调用）"""
+        try:
+            data = await request.json()
+            text = data.get("text", "")
+            channel_name = data.get("channel_name", "default")
+            triggered_by = data.get("triggered_by", "")
+
+            # 更新缓存
+            metadata = {
+                "triggered_by": triggered_by,
+                "timestamp": time.time(),
+                "auto_update": True
+            }
+            text_cache_manager.cache_text(text, channel_name, metadata)
+
+            # 发送WebSocket事件通知所有客户端
+            PromptServer.instance.send_sync("text-cache-channel-updated", {
+                "channel": channel_name,
+                "timestamp": time.time(),
+                "text_length": len(text),
+                "triggered_by": triggered_by
+            })
+
+            return web.json_response({
+                "status": "success",
+                "channel": channel_name,
+                "text_length": len(text)
+            })
+        except Exception as e:
+            return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+    @PromptServer.instance.routes.get("/danbooru/text_cache/channels")
+    async def get_text_cache_channels(request):
+        """获取所有文本缓存通道列表的API端点"""
+        try:
+            channels = text_cache_manager.get_all_channels()
+            return web.json_response({
+                "status": "success",
+                "channels": channels,
+                "count": len(channels)
+            })
         except Exception as e:
             return web.json_response({"status": "error", "error": str(e)}, status=500)
 
