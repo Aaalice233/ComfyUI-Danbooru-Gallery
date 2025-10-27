@@ -66,14 +66,14 @@ log/*
 *.temp
 
 # Cache files
-character_feature_swap/cache/
+py/character_feature_swap/cache/
 
 # Prompt Selector specific
-prompt_selector/preview/
-prompt_selector/data.json
+py/prompt_selector/preview/
+py/prompt_selector/data.json
 
 # Multi Character Editor specific
-multi_character_editor/settings/
+py/multi_character_editor/settings/
 
 # 参考项目/外部项目
 Comfyui-LG_GroupExecutor-main/

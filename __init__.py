@@ -1,27 +1,27 @@
 # ComfyUI Danbooru Gallery 自定义节点集合
 
 # 导入各个模块的节点映射
-from .danbooru_gallery import NODE_CLASS_MAPPINGS as danbooru_mappings, NODE_DISPLAY_NAME_MAPPINGS as danbooru_display_mappings
-from .character_feature_swap import NODE_CLASS_MAPPINGS as swap_mappings, NODE_DISPLAY_NAME_MAPPINGS as swap_display_mappings
-from .prompt_selector import NODE_CLASS_MAPPINGS as ps_mappings, NODE_DISPLAY_NAME_MAPPINGS as ps_display_mappings
-from .multi_character_editor import NODE_CLASS_MAPPINGS as mce_mappings, NODE_DISPLAY_NAME_MAPPINGS as mce_display_mappings
-from .image_cache_save import NODE_CLASS_MAPPINGS as cache_save_mappings, NODE_DISPLAY_NAME_MAPPINGS as cache_save_display_mappings
-from .image_cache_get import NODE_CLASS_MAPPINGS as cache_get_mappings, NODE_DISPLAY_NAME_MAPPINGS as cache_get_display_mappings
-from .global_text_cache_save import NODE_CLASS_MAPPINGS as text_cache_save_mappings, NODE_DISPLAY_NAME_MAPPINGS as text_cache_save_display_mappings
-from .global_text_cache_get import NODE_CLASS_MAPPINGS as text_cache_get_mappings, NODE_DISPLAY_NAME_MAPPINGS as text_cache_get_display_mappings
-from .resolution_master_simplify import NODE_CLASS_MAPPINGS as rms_mappings, NODE_DISPLAY_NAME_MAPPINGS as rms_display_mappings
-from .prompt_cleaning_maid import NODE_CLASS_MAPPINGS as pcm_mappings, NODE_DISPLAY_NAME_MAPPINGS as pcm_display_mappings
-from .simple_image_compare import NODE_CLASS_MAPPINGS as sic_mappings, NODE_DISPLAY_NAME_MAPPINGS as sic_display_mappings
-from .simple_checkpoint_loader_with_name import NODE_CLASS_MAPPINGS as scl_mappings, NODE_DISPLAY_NAME_MAPPINGS as scl_display_mappings
+from .py.danbooru_gallery import NODE_CLASS_MAPPINGS as danbooru_mappings, NODE_DISPLAY_NAME_MAPPINGS as danbooru_display_mappings
+from .py.character_feature_swap import NODE_CLASS_MAPPINGS as swap_mappings, NODE_DISPLAY_NAME_MAPPINGS as swap_display_mappings
+from .py.prompt_selector import NODE_CLASS_MAPPINGS as ps_mappings, NODE_DISPLAY_NAME_MAPPINGS as ps_display_mappings
+from .py.multi_character_editor import NODE_CLASS_MAPPINGS as mce_mappings, NODE_DISPLAY_NAME_MAPPINGS as mce_display_mappings
+from .py.image_cache_save import NODE_CLASS_MAPPINGS as cache_save_mappings, NODE_DISPLAY_NAME_MAPPINGS as cache_save_display_mappings
+from .py.image_cache_get import NODE_CLASS_MAPPINGS as cache_get_mappings, NODE_DISPLAY_NAME_MAPPINGS as cache_get_display_mappings
+from .py.global_text_cache_save import NODE_CLASS_MAPPINGS as text_cache_save_mappings, NODE_DISPLAY_NAME_MAPPINGS as text_cache_save_display_mappings
+from .py.global_text_cache_get import NODE_CLASS_MAPPINGS as text_cache_get_mappings, NODE_DISPLAY_NAME_MAPPINGS as text_cache_get_display_mappings
+from .py.resolution_master_simplify import NODE_CLASS_MAPPINGS as rms_mappings, NODE_DISPLAY_NAME_MAPPINGS as rms_display_mappings
+from .py.prompt_cleaning_maid import NODE_CLASS_MAPPINGS as pcm_mappings, NODE_DISPLAY_NAME_MAPPINGS as pcm_display_mappings
+from .py.simple_image_compare import NODE_CLASS_MAPPINGS as sic_mappings, NODE_DISPLAY_NAME_MAPPINGS as sic_display_mappings
+from .py.simple_checkpoint_loader_with_name import NODE_CLASS_MAPPINGS as scl_mappings, NODE_DISPLAY_NAME_MAPPINGS as scl_display_mappings
 
 # 导入优化执行系统
-from .group_executor_manager import NODE_CLASS_MAPPINGS as group_manager_mappings
-from .group_executor_manager import NODE_DISPLAY_NAME_MAPPINGS as group_manager_display_mappings
-from .group_executor_trigger import GroupExecutorTrigger
+from .py.group_executor_manager import NODE_CLASS_MAPPINGS as group_manager_mappings
+from .py.group_executor_manager import NODE_DISPLAY_NAME_MAPPINGS as group_manager_display_mappings
+from .py.group_executor_trigger import GroupExecutorTrigger
 
 # 导入组静音管理器
-from .group_mute_manager import NODE_CLASS_MAPPINGS as group_mute_mappings
-from .group_mute_manager import NODE_DISPLAY_NAME_MAPPINGS as group_mute_display_mappings
+from .py.group_mute_manager import NODE_CLASS_MAPPINGS as group_mute_mappings
+from .py.group_mute_manager import NODE_DISPLAY_NAME_MAPPINGS as group_mute_display_mappings
 
 # 优化执行系统映射
 opt_mappings = {
@@ -75,9 +75,9 @@ WEB_DIRECTORY = "./js"
 try:
     from server import PromptServer
     from aiohttp import web
-    from .image_cache_manager.image_cache_manager import cache_manager
-    from .text_cache_manager.text_cache_manager import text_cache_manager
-    from .utils import debug_config
+    from .py.image_cache_manager.image_cache_manager import cache_manager
+    from .py.text_cache_manager.text_cache_manager import text_cache_manager
+    from .py.utils import debug_config
     import time
 
     @PromptServer.instance.routes.post("/danbooru_gallery/clear_cache")
