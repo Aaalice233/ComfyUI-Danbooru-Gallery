@@ -82,27 +82,6 @@ class ResolutionMasterSimplifyCanvas {
         const widthWidget = node.widgets?.find(w => w.name === 'width');
         const heightWidget = node.widgets?.find(w => w.name === 'height');
 
-        // ✅ 初始化值 - 优先使用 widgets 的值（ComfyUI会恢复widgets，而不是properties）
-        if (widthWidget && heightWidget) {
-            // ComfyUI 在加载工作流时会自动恢复 widgets 的值
-            // 我们需要用 widgets 的值更新 properties 和 intpos
-
-            const finalWidth = widthWidget.value;  // 使用 widget 的值（已被ComfyUI恢复）
-            const finalHeight = heightWidget.value;
-
-            // 更新 properties（从 widgets 同步）
-            node.properties.width = finalWidth;
-            node.properties.height = finalHeight;
-
-            // 计算并更新画布位置（基于最终的宽高值）
-            node.intpos.x = (finalWidth - node.properties.canvas_min_x) /
-                (node.properties.canvas_max_x - node.properties.canvas_min_x);
-            node.intpos.y = (finalHeight - node.properties.canvas_min_y) /
-                (node.properties.canvas_max_y - node.properties.canvas_min_y);
-
-            console.log(`[ResolutionMasterSimplify] 初始化完成: ${finalWidth}×${finalHeight}, intpos: (${node.intpos.x.toFixed(3)}, ${node.intpos.y.toFixed(3)})`);
-        }
-
         // 存储 widget 引用
         this.widthWidget = widthWidget;
         this.heightWidget = heightWidget;
@@ -873,6 +852,29 @@ class ResolutionMasterSimplifyCanvas {
             console.error('[ResolutionMasterSimplify] 删除预设失败:', error);
         }
     }
+
+    /**
+     * 从工作流恢复节点状态
+     * 在 ComfyUI 恢复完 widgets 和 properties 后调用
+     */
+    restoreFromWorkflow() {
+        const node = this.node;
+        const props = node.properties;
+
+        // ComfyUI 会恢复 properties，我们使用 properties 作为数据源
+        const finalWidth = props.width || 1024;
+        const finalHeight = props.height || 1024;
+
+        // 同步到 widgets
+        if (this.widthWidget) this.widthWidget.value = finalWidth;
+        if (this.heightWidget) this.heightWidget.value = finalHeight;
+
+        // 计算并更新 intpos（画布位置）
+        node.intpos.x = (finalWidth - props.canvas_min_x) / (props.canvas_max_x - props.canvas_min_x);
+        node.intpos.y = (finalHeight - props.canvas_min_y) / (props.canvas_max_y - props.canvas_min_y);
+
+        console.log(`[ResolutionMasterSimplify] 工作流恢复: ${finalWidth}×${finalHeight}, intpos: (${node.intpos.x.toFixed(3)}, ${node.intpos.y.toFixed(3)})`);
+    }
 }
 
 // 注册节点
@@ -886,6 +888,19 @@ app.registerExtension({
 
                 // 创建 canvas 实例
                 this.resolutionSimplifyCanvas = new ResolutionMasterSimplifyCanvas(this);
+
+                // 添加 onConfigure 钩子，在 ComfyUI 恢复工作流数据后调用
+                const onConfigure = this.onConfigure;
+                this.onConfigure = function(info) {
+                    const result = onConfigure ? onConfigure.apply(this, arguments) : undefined;
+
+                    // 从工作流恢复节点状态
+                    if (this.resolutionSimplifyCanvas) {
+                        this.resolutionSimplifyCanvas.restoreFromWorkflow();
+                    }
+
+                    return result;
+                };
 
                 return result;
             };
