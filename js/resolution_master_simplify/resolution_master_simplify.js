@@ -82,20 +82,19 @@ class ResolutionMasterSimplifyCanvas {
         const widthWidget = node.widgets?.find(w => w.name === 'width');
         const heightWidget = node.widgets?.find(w => w.name === 'height');
 
-        // ✅ 初始化值 - 直接使用 properties，ComfyUI 会在加载时自动恢复
+        // ✅ 初始化值 - 优先使用 widgets 的值（ComfyUI会恢复widgets，而不是properties）
         if (widthWidget && heightWidget) {
-            // properties 在节点加载时已经由 ComfyUI 恢复（来自工作流）
-            // 或者由 initializeProperties() 设置为默认值
-            // 直接使用 properties 的值同步到 widgets 和 intpos
+            // ComfyUI 在加载工作流时会自动恢复 widgets 的值
+            // 我们需要用 widgets 的值更新 properties 和 intpos
 
-            const finalWidth = node.properties.width;
-            const finalHeight = node.properties.height;
+            const finalWidth = widthWidget.value;  // 使用 widget 的值（已被ComfyUI恢复）
+            const finalHeight = heightWidget.value;
 
-            // 同步到 widgets
-            widthWidget.value = finalWidth;
-            heightWidget.value = finalHeight;
+            // 更新 properties（从 widgets 同步）
+            node.properties.width = finalWidth;
+            node.properties.height = finalHeight;
 
-            // 计算并更新画布位置（基于 properties）
+            // 计算并更新画布位置（基于最终的宽高值）
             node.intpos.x = (finalWidth - node.properties.canvas_min_x) /
                 (node.properties.canvas_max_x - node.properties.canvas_min_x);
             node.intpos.y = (finalHeight - node.properties.canvas_min_y) /
