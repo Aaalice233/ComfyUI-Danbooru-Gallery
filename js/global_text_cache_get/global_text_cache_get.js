@@ -74,99 +74,62 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = function() {
                 const result = onNodeCreated?.apply(this, arguments);
 
-                // 异步获取最新通道列表并更新widget选项（解决时序问题）
+                // 立即设置动态combo（借鉴KJ节点的实现）
                 const channelWidget = this.widgets?.find(w => w.name === "channel_name");
                 if (channelWidget) {
-                    // 延迟1200ms，确保Save节点预注册完成
-                    setTimeout(async () => {
-                        try {
-                            // 在setTimeout中重新获取原始值（避免闭包问题）
-                            let currentValue = channelWidget.value;
+                    // 保存工作流中的原始值
+                    let savedValue = channelWidget.value;
 
-                            // 尝试从widgets_values获取原始值
-                            if (this.widgets_values && Array.isArray(this.widgets_values)) {
-                                const channelWidgetIndex = this.widgets.indexOf(channelWidget);
-                                if (channelWidgetIndex !== -1 && this.widgets_values[channelWidgetIndex]) {
-                                    currentValue = this.widgets_values[channelWidgetIndex];
-                                    console.log(`[GlobalTextCacheGet] 从工作流数据恢复通道名: ${currentValue}`);
-                                }
-                            }
-
-                            console.log(`[GlobalTextCacheGet] 准备处理通道，当前widget值: ${channelWidget.value}, 恢复的值: ${currentValue}`);
-
-                            // 预注册当前通道到后端（确保通道在后端存在）
-                            if (currentValue && currentValue.trim() !== '') {
-                                try {
-                                    const ensureResponse = await api.fetchApi('/danbooru/text_cache/ensure_channel', {
-                                        method: 'POST',
-                                        headers: {'Content-Type': 'application/json'},
-                                        body: JSON.stringify({channel_name: currentValue})
-                                    });
-                                    if (ensureResponse.ok) {
-                                        console.log(`[GlobalTextCacheGet] ✅ 预注册通道: ${currentValue}`);
-                                    }
-                                } catch (error) {
-                                    console.error(`[GlobalTextCacheGet] 预注册通道失败:`, error);
-                                }
-                            }
-
-                            // 获取最新通道列表
-                            const response = await api.fetchApi('/danbooru/text_cache/channels');
-                            if (response.ok) {
-                                const data = await response.json();
-                                const channels = data.channels || [];
-                                let newOptions = [""].concat(channels.sort());
-
-                                // 关键修复：如果当前值不在列表中，将其添加到列表中（保持持久化）
-                                if (currentValue && !newOptions.includes(currentValue)) {
-                                    console.log(`[GlobalTextCacheGet] ✅ 保留工作流中保存的通道名: ${currentValue}`);
-                                    // 将当前值添加到选项列表中（在空字符串之后）
-                                    newOptions = ["", currentValue].concat(channels.sort());
-                                }
-
-                                // 设置为函数式values（与channel_updater.js配合）
-                                if (channelWidget.options) {
-                                    channelWidget.options.values = () => {
-                                        // 1. 从当前工作流的GlobalTextCacheSave节点收集通道名
-                                        const saveNodes = app.graph._nodes.filter(n => n.type === "GlobalTextCacheSave");
-                                        const workflowChannels = saveNodes
-                                            .map(n => n.widgets?.find(w => w.name === "channel_name")?.value)
-                                            .filter(v => v && v !== "");
-
-                                        // 2. 从全局缓存读取后端通道
-                                        const backendChannels = window.textChannelUpdater?.lastChannels || [];
-
-                                        // 3. 合并去重排序
-                                        const allChannels = ["", ...new Set([...workflowChannels, ...backendChannels])];
-
-                                        return allChannels.sort();
-                                    };
-                                }
-
-                                // 只有在currentValue不为空时才恢复值（避免覆盖正确的值）
-                                if (currentValue && currentValue.trim() !== '') {
-                                    channelWidget.value = currentValue;
-                                    console.log(`[GlobalTextCacheGet] ✅ 恢复通道值: ${currentValue}`);
-
-                                    // 二次确认：300ms后再次强制设置值，防止被外部逻辑覆盖
-                                    setTimeout(() => {
-                                        if (channelWidget.value !== currentValue) {
-                                            console.log(`[GlobalTextCacheGet] ⚠️ 检测到值被覆盖 (${channelWidget.value})，强制恢复为: ${currentValue}`);
-                                            channelWidget.value = currentValue;
-                                        } else {
-                                            console.log(`[GlobalTextCacheGet] ✅ 二次确认值未被覆盖: ${currentValue}`);
-                                        }
-                                    }, 300);
-                                } else {
-                                    console.log(`[GlobalTextCacheGet] ⚠️ 未找到有效的通道值，保持当前值: ${channelWidget.value}`);
-                                }
-
-                                console.log(`[GlobalTextCacheGet] 节点创建后刷新通道列表:`, newOptions, `最终值: ${channelWidget.value}`);
-                            }
-                        } catch (error) {
-                            console.error("[GlobalTextCacheGet] 获取通道列表失败:", error);
+                    // 尝试从widgets_values获取工作流保存的值
+                    if (this.widgets_values && Array.isArray(this.widgets_values)) {
+                        const channelWidgetIndex = this.widgets.indexOf(channelWidget);
+                        if (channelWidgetIndex !== -1 && this.widgets_values[channelWidgetIndex]) {
+                            savedValue = this.widgets_values[channelWidgetIndex];
+                            console.log(`[GlobalTextCacheGet] 从工作流恢复通道名: ${savedValue}`);
                         }
-                    }, 1200); // 延迟1200ms，确保Save节点预注册完成
+                    }
+
+                    // ✅ 立即设置为函数式values（不使用延迟）
+                    if (channelWidget.options) {
+                        channelWidget.options.values = () => {
+                            // 1. 从当前工作流的GlobalTextCacheSave节点收集通道名
+                            const saveNodes = app.graph._nodes.filter(n => n.type === "GlobalTextCacheSave");
+                            const workflowChannels = saveNodes
+                                .map(n => n.widgets?.find(w => w.name === "channel_name")?.value)
+                                .filter(v => v && v !== "");
+
+                            // 2. 从全局缓存读取后端通道
+                            const backendChannels = window.textChannelUpdater?.lastChannels || [];
+
+                            // 3. 如果有保存的值且不在列表中，添加进去
+                            const allChannelsSet = new Set(["", ...workflowChannels, ...backendChannels]);
+                            if (savedValue && savedValue !== "") {
+                                allChannelsSet.add(savedValue);
+                            }
+
+                            // 4. 合并去重排序
+                            return Array.from(allChannelsSet).sort();
+                        };
+                    }
+
+                    // ✅ 恢复工作流保存的值
+                    if (savedValue && savedValue.trim() !== '') {
+                        channelWidget.value = savedValue;
+                        console.log(`[GlobalTextCacheGet] ✅ 恢复通道值: ${savedValue}`);
+
+                        // 异步预注册通道到后端（确保通道存在）
+                        api.fetchApi('/danbooru/text_cache/ensure_channel', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({channel_name: savedValue})
+                        }).then(response => {
+                            if (response.ok) {
+                                console.log(`[GlobalTextCacheGet] ✅ 预注册通道: ${savedValue}`);
+                            }
+                        }).catch(error => {
+                            console.error(`[GlobalTextCacheGet] 预注册通道失败:`, error);
+                        });
+                    }
                 }
 
                 // 创建预览容器
