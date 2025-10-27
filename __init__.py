@@ -256,6 +256,91 @@ try:
         except Exception as e:
             return web.json_response({"status": "error", "error": str(e)}, status=500)
 
+    # 图像缓存相关API路由
+    @PromptServer.instance.routes.get("/danbooru/image_cache/channels")
+    async def get_image_cache_channels(request):
+        """获取所有图像缓存通道列表的API端点"""
+        try:
+            channels = cache_manager.get_all_channels()
+            return web.json_response({
+                "status": "success",
+                "channels": channels,
+                "count": len(channels)
+            })
+        except Exception as e:
+            return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+    @PromptServer.instance.routes.post("/danbooru/image_cache/ensure_channel")
+    async def ensure_image_cache_channel(request):
+        """确保图像缓存通道存在的API端点（用于前端预注册通道）"""
+        try:
+            data = await request.json()
+            channel_name = data.get("channel_name", "default")
+
+            # 调用ImageCacheManager的ensure_channel_exists方法
+            success = cache_manager.ensure_channel_exists(channel_name)
+
+            if success:
+                # 发送WebSocket事件通知所有客户端通道列表已更新
+                PromptServer.instance.send_sync("image-cache-channel-updated", {
+                    "channel": channel_name,
+                    "timestamp": time.time(),
+                    "image_count": 0,
+                    "triggered_by": "ensure_channel"
+                })
+
+                return web.json_response({
+                    "status": "success",
+                    "channel": channel_name,
+                    "message": "通道已确保存在"
+                })
+            else:
+                return web.json_response({
+                    "status": "error",
+                    "error": "创建通道失败"
+                }, status=500)
+        except Exception as e:
+            return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+    @PromptServer.instance.routes.post("/danbooru/image_cache/rename_channel")
+    async def rename_image_cache_channel(request):
+        """重命名图像缓存通道的API端点"""
+        try:
+            data = await request.json()
+            old_name = data.get("old_name", "")
+            new_name = data.get("new_name", "")
+
+            if not old_name or not new_name:
+                return web.json_response({
+                    "status": "error",
+                    "error": "缺少old_name或new_name参数"
+                }, status=400)
+
+            # 调用ImageCacheManager的rename_channel方法
+            success = cache_manager.rename_channel(old_name, new_name)
+
+            if success:
+                # 发送WebSocket事件通知所有客户端通道已重命名
+                PromptServer.instance.send_sync("image-cache-channel-renamed", {
+                    "old_name": old_name,
+                    "new_name": new_name,
+                    "timestamp": time.time()
+                })
+
+                return web.json_response({
+                    "status": "success",
+                    "old_name": old_name,
+                    "new_name": new_name,
+                    "message": f"通道已重命名: '{old_name}' -> '{new_name}'"
+                })
+            else:
+                return web.json_response({
+                    "status": "error",
+                    "error": f"重命名通道失败: '{old_name}' -> '{new_name}'"
+                }, status=500)
+        except Exception as e:
+            return web.json_response({"status": "error", "error": str(e)}, status=500)
+
 except ImportError:
     # ComfyUI 环境不可用时的静默处理
     pass

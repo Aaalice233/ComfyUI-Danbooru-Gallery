@@ -107,10 +107,18 @@ class ImageCacheGet:
 
     @classmethod
     def INPUT_TYPES(cls):
+        # 动态获取通道列表（INPUT_TYPES每次被调用时都会执行）
+        channels = cache_manager.get_all_channels() if cache_manager else []
+        channel_options = [""] + sorted(channels)
+
         return {
             "required": {
             },
             "optional": {
+                "channel_name": (channel_options, {
+                    "default": "",
+                    "tooltip": "从下拉菜单选择已定义的通道，或手动输入新通道名（留空则使用'default'通道）"
+                }),
                 "default_image": ("IMAGE", {
                     "tooltip": "当缓存无效时使用的默认图像（可选）"
                 }),
@@ -128,6 +136,16 @@ class ImageCacheGet:
             }
         }
 
+    @classmethod
+    def VALIDATE_INPUTS(cls, channel_name=None, **kwargs):
+        """
+        验证输入参数
+        允许任何通道名通过验证，即使不在当前的通道列表中
+        这确保了工作流中保存的通道名在加载时不会被重置
+        """
+        # 始终返回True，允许任何通道名
+        return True
+
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("images",)
     FUNCTION = "get_cached_image"
@@ -136,17 +154,31 @@ class ImageCacheGet:
     OUTPUT_NODE = True
 
     @classmethod
-    def IS_CHANGED(cls, default_image=None, enable_preview: bool = True, **kwargs) -> str:
+    def IS_CHANGED(cls, channel_name=None, default_image=None, enable_preview: bool = True, **kwargs) -> str:
         """
         基于缓存状态生成变化检测哈希
         确保缓存更新时节点重新执行
         """
         try:
-            # ✅ 修复：包含缓存管理器的状态
+            # 提取实际通道名
+            actual_channel = ""
+            if channel_name and isinstance(channel_name, list) and len(channel_name) > 0:
+                actual_channel = channel_name[0] if channel_name[0] else "default"
+            else:
+                actual_channel = "default"
+
+            # ✅ 包含缓存管理器的状态和通道信息
             cache_timestamp = cache_manager.last_save_timestamp if cache_manager else 0
-            cache_count = len(cache_manager.cache_data.get("images", [])) if cache_manager else 0
+
+            # 获取指定通道的缓存信息
+            if cache_manager:
+                cache_channel = cache_manager.cache_channels.get(actual_channel, {})
+                cache_count = len(cache_channel.get("images", []))
+            else:
+                cache_count = 0
+
             current_group = cache_manager.current_group_name if cache_manager else None
-            hash_input = f"{enable_preview}_{cache_timestamp}_{cache_count}_{current_group}"
+            hash_input = f"{actual_channel}_{enable_preview}_{cache_timestamp}_{cache_count}_{current_group}"
         except Exception:
             # 回退到基本检测
             hash_input = f"{enable_preview}_{hash(str(default_image))}"
@@ -154,19 +186,22 @@ class ImageCacheGet:
         return hashlib.md5(hash_input.encode()).hexdigest()
 
     def get_cached_image(self,
+                        channel_name: Optional[List[str]] = None,
                         default_image: Optional[List[torch.Tensor]] = None,
                         enable_preview: List[bool] = [True],
                         unique_id: str = "unknown",
                         prompt: Optional[Dict] = None,
                         extra_pnginfo: Optional[Dict] = None) -> Dict[str, Any]:
         """
-        获取全局缓存的图像（配合GroupExecutorManager使用）
+        从指定通道获取缓存的图像（支持多通道隔离）
 
-        重要：此节点必须配合GroupExecutorManager使用
-        - 从全局缓存获取所有图像（不使用通道隔离）
+        功能：
+        - 从指定通道获取缓存图像
+        - 支持默认图像
         - 执行顺序由GroupExecutorManager控制
 
         Args:
+            channel_name: 缓存通道名称列表
             default_image: 默认图像列表
             enable_preview: 是否显示预览列表
             unique_id: 节点ID
@@ -179,7 +214,13 @@ class ImageCacheGet:
         start_time = time.time()
 
         try:
-            # 参数提取
+            # 参数提取（INPUT_IS_LIST=True）
+            processed_channel = ""
+            if channel_name and isinstance(channel_name, list) and len(channel_name) > 0:
+                processed_channel = channel_name[0] if channel_name[0] else "default"
+            else:
+                processed_channel = "default"
+
             enable_preview = enable_preview[0] if enable_preview else True
 
             # ✅ 安全提取默认图像
@@ -212,9 +253,9 @@ class ImageCacheGet:
                 logger.info(f"\n{'='*60}")
                 logger.info(f"[ImageCacheGet] ⏰ 执行时间: {time.strftime('%H:%M:%S', time.localtime())}")
                 logger.info(f"[ImageCacheGet] 🎯 节点ID: {unique_id}")
+                logger.info(f"[ImageCacheGet] 📁 通道: {processed_channel}")
                 logger.info(f"[ImageCacheGet] 📷 显示预览: {enable_preview}")
                 logger.info(f"[ImageCacheGet] 🔍 当前组名: {cache_manager.current_group_name if cache_manager else 'N/A'}")
-                logger.info(f"[ImageCacheGet] 📁 使用全局缓存（不隔离通道）")
                 logger.info(f"{'='*60}\n")
 
             # ✅ 检测工作流中是否有GroupExecutorManager节点（使用缓存，只检测一次）
@@ -234,11 +275,10 @@ class ImageCacheGet:
                 logger.info(f"[ImageCacheGet] 🔍 DEBUG - 缓存管理器不可用，使用 safe_default_image，shape: {cached_image.shape}")
             else:
                 try:
-                    # ✅ 关键修复：从全局通道获取所有缓存图像
-                    # 使用channel_name="__global__"确保从ImageCacheSave保存的全局通道读取
+                    # 从指定通道获取所有缓存图像
                     cached_images = cache_manager.get_cached_images(
                         get_latest=True,
-                        channel_name="__global__"
+                        channel_name=processed_channel
                     )
                     if cached_images and len(cached_images) > 0:
                         # ✅ 合并所有缓存图像为一个批次
@@ -247,13 +287,13 @@ class ImageCacheGet:
                         cached_image = torch.cat(cached_images, dim=0)
                         using_default_image = False
                         if should_debug(COMPONENT_NAME):
-                            logger.info(f"[ImageCacheGet] ✅ 成功获取全局缓存图像 (共{len(cached_images)}张，批次shape: {cached_image.shape})")
+                            logger.info(f"[ImageCacheGet] ✅ 成功获取通道'{processed_channel}'缓存图像 (共{len(cached_images)}张，批次shape: {cached_image.shape})")
                         logger.info(f"[ImageCacheGet] 🔍 DEBUG - 从缓存获取图像，shape: {cached_image.shape}")
                     else:
-                        logger.info(f"[ImageCacheGet] 📌 全局缓存为空，使用默认图像")
+                        logger.info(f"[ImageCacheGet] 📌 通道'{processed_channel}'缓存为空，使用默认图像")
                         cached_image = safe_default_image
                         using_default_image = True
-                        logger.info(f"[ImageCacheGet] 🔍 DEBUG - 全局缓存为空，使用 safe_default_image，shape: {cached_image.shape}")
+                        logger.info(f"[ImageCacheGet] 🔍 DEBUG - 通道缓存为空，使用 safe_default_image，shape: {cached_image.shape}")
                 except Exception as e:
                     logger.warning(f"[ImageCacheGet] ⚠️ 缓存获取失败: {str(e)}")
                     import traceback
@@ -328,7 +368,7 @@ class ImageCacheGet:
 
                     # ✅ 否则从缓存获取预览数据
                     elif cache_manager is not None:
-                        cache_channel = cache_manager.get_cache_channel(channel_name="__global__")
+                        cache_channel = cache_manager.get_cache_channel(channel_name=processed_channel)
                         if cache_channel and "images" in cache_channel and cache_channel["images"]:
                             # 返回缓存的图像文件信息用于预览
                             ui_data = {"images": cache_channel["images"]}
@@ -336,7 +376,7 @@ class ImageCacheGet:
                                 logger.info(f"[ImageCacheGet] ✅ 预览数据已准备: {len(cache_channel['images'])}张图像")
                         else:
                             if should_debug(COMPONENT_NAME):
-                                logger.info(f"[ImageCacheGet] 📌 全局缓存无图像，不显示预览")
+                                logger.info(f"[ImageCacheGet] 📌 通道'{processed_channel}'无图像，不显示预览")
                             ui_data = {"images": []}
                     else:
                         ui_data = {"images": []}

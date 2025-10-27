@@ -486,5 +486,93 @@ class ImageCacheManager:
         self.get_count_this_session += 1
         self.last_get_timestamp = time.time()
 
+    def get_all_channels(self) -> List[str]:
+        """
+        获取所有已定义的通道列表
+
+        Returns:
+            通道名称列表
+        """
+        return list(self.cache_channels.keys())
+
+    def ensure_channel_exists(self, channel_name: str) -> bool:
+        """
+        确保通道存在，如果不存在则创建空通道
+        用于前端预注册通道，确保下拉列表中显示该通道
+
+        Args:
+            channel_name: 通道名称
+
+        Returns:
+            True表示通道已存在或创建成功，False表示失败
+        """
+        try:
+            if channel_name not in self.cache_channels:
+                self.cache_channels[channel_name] = {
+                    "images": [],
+                    "timestamp": int(time.time() * 1000),
+                    "metadata": {}
+                }
+                print(f"[ImageCacheManager] 预注册空通道: {channel_name}")
+                return True
+            else:
+                print(f"[ImageCacheManager] 通道已存在: {channel_name}")
+                return True
+        except Exception as e:
+            print(f"[ImageCacheManager] 创建通道失败: {channel_name}, 错误: {e}")
+            return False
+
+    def rename_channel(self, old_name: str, new_name: str) -> bool:
+        """
+        重命名通道（将旧通道的数据移到新通道，然后删除旧通道）（线程安全）
+
+        Args:
+            old_name: 旧通道名称
+            new_name: 新通道名称
+
+        Returns:
+            是否成功重命名
+        """
+        with self._lock:
+            try:
+                # 检查旧通道是否存在
+                if old_name not in self.cache_channels:
+                    print(f"[ImageCacheManager] ⚠️ 旧通道 '{old_name}' 不存在，无法重命名")
+                    return False
+
+                # 检查新通道名是否与旧通道名相同
+                if old_name == new_name:
+                    print(f"[ImageCacheManager] ⚠️ 新旧通道名相同，无需重命名")
+                    return True
+
+                # 检查新通道是否已存在
+                if new_name in self.cache_channels:
+                    print(f"[ImageCacheManager] ⚠️ 新通道 '{new_name}' 已存在，将覆盖")
+
+                # 复制旧通道数据到新通道
+                self.cache_channels[new_name] = self.cache_channels[old_name].copy()
+
+                # 删除旧通道
+                del self.cache_channels[old_name]
+
+                print(f"[ImageCacheManager] ✅ 通道已重命名: '{old_name}' -> '{new_name}'")
+
+                # 记录操作
+                self._last_operation = {
+                    "type": "rename_channel",
+                    "timestamp": time.time(),
+                    "session_id": self.session_id,
+                    "old_name": old_name,
+                    "new_name": new_name
+                }
+
+                return True
+
+            except Exception as e:
+                print(f"[ImageCacheManager] ❌ 重命名通道失败: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
+                return False
+
 # 全局缓存管理器实例
 cache_manager = ImageCacheManager()

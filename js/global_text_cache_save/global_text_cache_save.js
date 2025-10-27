@@ -680,6 +680,25 @@ app.registerExtension({
                             console.log(`[GlobalTextCacheSave] 🔄 通道改名: "${previousName}" -> "${newName}"`);
 
                             try {
+                                // 先检查旧通道是否存在
+                                const channelsResponse = await api.fetchApi('/danbooru/text_cache/channels');
+                                let existingChannels = [];
+                                if (channelsResponse.ok) {
+                                    const channelsData = await channelsResponse.json();
+                                    existingChannels = channelsData.channels || [];
+                                }
+
+                                const oldChannelExists = existingChannels.includes(previousName);
+
+                                // 如果旧通道不存在，说明是首次设置，直接注册新通道
+                                if (!oldChannelExists) {
+                                    console.log(`[GlobalTextCacheSave] 📝 旧通道"${previousName}"不存在，直接注册新通道: ${newName}`);
+                                    await ensureChannelExists(newName);
+                                    this._previousChannelName = newName;
+                                    return;
+                                }
+
+                                // 旧通道存在，执行重命名操作
                                 // 1. 调用后端API重命名通道（会自动删除旧通道）
                                 const response = await api.fetchApi('/danbooru/text_cache/rename_channel', {
                                     method: 'POST',

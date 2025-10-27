@@ -114,6 +114,10 @@ class ImageCache:
                 "images": ("IMAGE", {"tooltip": "要缓存的图像"}),
             },
             "optional": {
+                "channel_name": ("STRING", {
+                    "default": "default",
+                    "tooltip": "缓存通道名称，用于区分不同的图像缓存"
+                }),
                 "enable_preview": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "控制是否生成缓存图像的预览"
@@ -132,13 +136,14 @@ class ImageCache:
                     images: List,
                     prompt: Optional[Dict] = None,
                     extra_pnginfo: Optional[Dict] = None,
+                    channel_name: List[str] = ["default"],
                     enable_preview: List[bool] = [True]) -> Dict[str, Any]:
         """
-        将图像缓存到全局缓存（配合GroupExecutorManager使用）
+        将图像缓存到指定通道（支持多通道隔离）
 
-        重要：此节点必须配合GroupExecutorManager使用
-        - 保存前固定清空所有缓存
-        - 保存到全局缓存（不使用通道隔离）
+        功能：
+        - 支持自定义通道名称
+        - 保存前清空指定通道的缓存
         - 执行顺序由GroupExecutorManager控制
         """
         try:
@@ -146,7 +151,6 @@ class ImageCache:
             debug_print(COMPONENT_NAME, f"\n{'='*60}")
             debug_print(COMPONENT_NAME, f"[ImageCacheSave] ⏰ 执行时间: {timestamp}")
             debug_print(COMPONENT_NAME, f"[ImageCacheSave] 🔍 当前组名: {cache_manager.current_group_name}")
-            debug_print(COMPONENT_NAME, f"[ImageCacheSave] 📁 使用全局缓存（不隔离通道）")
             debug_print(COMPONENT_NAME, f"[ImageCacheSave] ┌─ 开始保存图像")
             debug_print(COMPONENT_NAME, f"{'='*60}\n")
 
@@ -156,13 +160,18 @@ class ImageCache:
                 # 发送WebSocket事件到前端显示toast（只发送一次）
                 ImageCache._send_no_manager_warning()
 
-            # 参数处理 - 确保正确提取参数值
+            # 参数处理 - 确保正确提取参数值（INPUT_IS_LIST=True）
+            processed_channel_name = channel_name[0] if isinstance(channel_name, list) and len(channel_name) > 0 else "default"
+            if not processed_channel_name or processed_channel_name.strip() == "":
+                processed_channel_name = "default"
+
             processed_enable_preview = enable_preview[0] if isinstance(enable_preview, list) else enable_preview
 
-            # ✅ 保存前固定清空所有缓存
-            # 因为此节点必须配合GroupExecutorManager使用，每个组保存时都应清空前一个组的缓存
-            debug_print(COMPONENT_NAME, f"[ImageCacheSave] 🗑️ 清空所有缓存通道（强制执行）")
-            cache_manager.clear_cache(channel_name=None)  # None表示清空所有通道
+            debug_print(COMPONENT_NAME, f"[ImageCacheSave] 📁 通道: {processed_channel_name}")
+
+            # ✅ 保存前清空指定通道的缓存
+            debug_print(COMPONENT_NAME, f"[ImageCacheSave] 🗑️ 清空通道 '{processed_channel_name}' 的缓存")
+            cache_manager.clear_cache(channel_name=processed_channel_name)
 
             # 将输入的批次列表展开为单个图像张量列表
             # ComfyUI's INPUT_IS_LIST=True wraps inputs in a list.
@@ -172,14 +181,13 @@ class ImageCache:
             for batch in images:
                 unpacked_images.extend(list(batch))  # Iterating over a tensor unpacks the first dimension
 
-            # ✅ 关键修复：保存到全局默认通道（channel_name="__global__"）而非组名通道
-            # 这样所有组都从同一个缓存读写，由GroupExecutorManager控制执行顺序
+            # 保存到指定通道
             results = cache_manager.cache_images(
                 images=unpacked_images,
                 filename_prefix="cached_image",
                 preview_rgba=True,
                 clear_before_save=False,  # 已经在上面清空过了
-                channel_name="__global__"  # 使用全局通道
+                channel_name=processed_channel_name
             )
 
             debug_print(COMPONENT_NAME, f"[ImageCacheSave] └─ 保存完成: {len(results)} 张")
