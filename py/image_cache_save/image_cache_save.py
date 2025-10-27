@@ -126,11 +126,13 @@ class ImageCache:
             "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
 
-    RETURN_TYPES = ()
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("pass_through",)
     FUNCTION = "cache_images"
     CATEGORY = CATEGORY_TYPE
     INPUT_IS_LIST = True
     OUTPUT_NODE = True
+    DESCRIPTION = "将图像缓存到指定通道，并输出原始图像供下游节点使用（控制执行顺序）"
 
     def cache_images(self,
                     images: List,
@@ -192,18 +194,31 @@ class ImageCache:
 
             debug_print(COMPONENT_NAME, f"[ImageCacheSave] └─ 保存完成: {len(results)} 张")
 
-            if processed_enable_preview:
-                return {"ui": {"images": results}}
+            # 返回原始图像供下游节点使用（强制执行顺序）
+            if unpacked_images:
+                # 将所有图像tensor堆叠成一个批次
+                if len(unpacked_images) > 1:
+                    output_batch = torch.stack(unpacked_images)
+                else:
+                    # 单张图像，确保是4D tensor (1, H, W, C)
+                    output_batch = unpacked_images[0].unsqueeze(0) if unpacked_images[0].dim() == 3 else unpacked_images[0]
             else:
-                return {"ui": {"images": []}}
+                # 如果没有图像，返回黑色占位图
+                output_batch = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+
+            if processed_enable_preview:
+                return {"ui": {"images": results}, "result": (output_batch,)}
+            else:
+                return {"ui": {"images": []}, "result": (output_batch,)}
 
         except Exception as e:
             debug_print(COMPONENT_NAME, f"[ImageCacheSave] └─ ✗ 保存失败: {str(e)}")
             import traceback
             debug_print(COMPONENT_NAME, traceback.format_exc())
 
-            # 返回空结果但不抛出异常
-            return {"ui": {"images": []}}
+            # 异常时返回黑色占位图
+            empty_batch = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+            return {"ui": {"images": []}, "result": (empty_batch,)}
 
 
 # 节点映射
