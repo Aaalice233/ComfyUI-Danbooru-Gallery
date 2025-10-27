@@ -82,15 +82,36 @@ class ResolutionMasterSimplifyCanvas {
         const widthWidget = node.widgets?.find(w => w.name === 'width');
         const heightWidget = node.widgets?.find(w => w.name === 'height');
 
-        // 初始化值
+        // ✅ 初始化值 - 优先从工作流数据恢复
         if (widthWidget && heightWidget) {
-            node.properties.width = widthWidget.value;
-            node.properties.height = heightWidget.value;
+            // 1. 尝试从 widgets_values 恢复工作流保存的值
+            let savedWidth = widthWidget.value;
+            let savedHeight = heightWidget.value;
 
-            // 初始化画布位置
-            node.intpos.x = (widthWidget.value - node.properties.canvas_min_x) /
+            if (node.widgets_values && Array.isArray(node.widgets_values)) {
+                const widthIndex = node.widgets.indexOf(widthWidget);
+                const heightIndex = node.widgets.indexOf(heightWidget);
+
+                if (widthIndex !== -1 && node.widgets_values[widthIndex] !== undefined) {
+                    savedWidth = node.widgets_values[widthIndex];
+                }
+                if (heightIndex !== -1 && node.widgets_values[heightIndex] !== undefined) {
+                    savedHeight = node.widgets_values[heightIndex];
+                }
+            }
+
+            // 2. 更新 properties（使用工作流保存的值或当前值）
+            node.properties.width = savedWidth;
+            node.properties.height = savedHeight;
+
+            // 3. 同步回 widgets（确保一致性）
+            widthWidget.value = savedWidth;
+            heightWidget.value = savedHeight;
+
+            // 4. 初始化画布位置（基于 properties）
+            node.intpos.x = (node.properties.width - node.properties.canvas_min_x) /
                 (node.properties.canvas_max_x - node.properties.canvas_min_x);
-            node.intpos.y = (heightWidget.value - node.properties.canvas_min_y) /
+            node.intpos.y = (node.properties.height - node.properties.canvas_min_y) /
                 (node.properties.canvas_max_y - node.properties.canvas_min_y);
         }
 
