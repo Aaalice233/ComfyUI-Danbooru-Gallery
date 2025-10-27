@@ -184,6 +184,9 @@ function cleanupMonitoring(node) {
     // 清除警告标记
     warnedNodes.delete(node.id);
 
+    // ✅ 清除内容hash缓存
+    lastSentContentHash.delete(node.id);
+
     const monitorInfo = monitoringMap.get(node.id);
 
     // 恢复原始callback
@@ -234,6 +237,24 @@ const MIN_REQUEST_INTERVAL = 500; // 最小请求间隔（增加到500ms）
 
 // 记录失败次数，防止重复错误日志
 const failureCount = new Map(); // key: node.id, value: count
+
+// 记录每个节点上次发送的文本内容hash，用于检测内容是否真的变化
+const lastSentContentHash = new Map(); // key: node.id, value: content hash
+
+/**
+ * 计算字符串的简单hash（用于内容比较）
+ * @param {string} str - 要计算hash的字符串
+ * @returns {string} hash值
+ */
+function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash.toString(36);
+}
 
 /**
  * 处理请求队列
@@ -441,6 +462,18 @@ async function executeUpdateRequest(node, monitoredValue) {
 
         console.log(`[GlobalTextCacheSave] 准备保存缓存: 通道=${channel}, 文本长度=${text.length}`);
 
+        // ✅ 内容变化检测：计算当前文本的hash
+        const currentHash = simpleHash(text + "_" + channel); // 包含通道名，确保不同通道的相同文本也会更新
+        const lastHash = lastSentContentHash.get(node.id);
+
+        // 如果内容没有变化，跳过API请求
+        if (lastHash === currentHash) {
+            console.log(`[GlobalTextCacheSave] ⏭️ 内容未变化，跳过更新（hash: ${currentHash}）`);
+            return; // 直接返回，不发送API请求，不显示toast
+        }
+
+        console.log(`[GlobalTextCacheSave] ✨ 内容已变化，继续更新（旧hash: ${lastHash}, 新hash: ${currentHash}）`);
+
         // 安全处理triggered_by值
         let triggeredByStr = "";
         try {
@@ -486,6 +519,10 @@ async function executeUpdateRequest(node, monitoredValue) {
         if (response.ok) {
             // 重置失败计数
             failureCount.set(node.id, 0);
+
+            // ✅ 更新hash缓存：记录本次成功发送的内容hash
+            lastSentContentHash.set(node.id, currentHash);
+            console.log(`[GlobalTextCacheSave] 📝 已更新内容hash缓存: ${currentHash}`);
 
             // Toast互斥显示：先移除上一条缓存更新toast
             if (lastCacheUpdateToast && toastModule) {

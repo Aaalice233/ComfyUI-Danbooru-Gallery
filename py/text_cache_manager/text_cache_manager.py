@@ -113,7 +113,7 @@ class TextCacheManager:
             print(f"[TextCacheManager] 创建通道失败: {channel_name}, 错误: {e}")
             return False
 
-    def cache_text(self, text: str, channel_name: str = "default", metadata: Optional[Dict] = None, skip_websocket: bool = False) -> None:
+    def cache_text(self, text: str, channel_name: str = "default", metadata: Optional[Dict] = None, skip_websocket: bool = False) -> bool:
         """
         缓存文本数据（线程安全）
 
@@ -122,6 +122,9 @@ class TextCacheManager:
             channel_name: 缓存通道名称
             metadata: 可选的元数据
             skip_websocket: 是否跳过WebSocket通知（避免重复发送）
+
+        Returns:
+            True表示内容已更新，False表示内容未变化
         """
         with self._lock:
             try:
@@ -139,26 +142,38 @@ class TextCacheManager:
                 # 获取目标缓存通道
                 cache_channel = self.get_cache_channel(channel_name)
 
+                # ✅ 内容变化检测：比较新旧内容
+                old_text = cache_channel.get("text", "")
+                content_changed = (old_text != text)
+
                 # 简化日志
                 print(f"[TextCacheManager] ┌─ 通道: '{channel_name}'")
                 print(f"[TextCacheManager] │  文本长度: {len(text)} 字符")
+                print(f"[TextCacheManager] │  内容变化: {'是' if content_changed else '否'}")
 
                 timestamp = time.time()
 
-                # 更新缓存通道
-                cache_channel["text"] = text
-                cache_channel["timestamp"] = timestamp
-                cache_channel["metadata"] = metadata or {}
+                # 只有内容变化时才更新主要字段
+                if content_changed:
+                    # 更新缓存通道
+                    cache_channel["text"] = text
+                    cache_channel["timestamp"] = timestamp
+                    cache_channel["metadata"] = metadata or {}
 
-                # 更新会话追踪信息
-                self.session_execution_count += 1
-                self.last_save_timestamp = timestamp
-                self.has_saved_this_session = True
+                    # 更新会话追踪信息
+                    self.session_execution_count += 1
+                    self.last_save_timestamp = timestamp
+                    self.has_saved_this_session = True
 
-                print(f"[TextCacheManager] └─ 完成: 文本已缓存到通道 '{channel_name}'")
+                    print(f"[TextCacheManager] └─ 完成: 文本已缓存到通道 '{channel_name}'")
+                else:
+                    # 内容未变化，只更新metadata中的检查时间
+                    if metadata:
+                        cache_channel["metadata"]["last_check_timestamp"] = timestamp
+                    print(f"[TextCacheManager] └─ 跳过: 内容未变化，通道 '{channel_name}'")
 
-                # 发送WebSocket事件通知缓存更新（除非被禁用）
-                if not skip_websocket:
+                # ✅ 只有内容变化时才发送WebSocket事件通知（除非被禁用）
+                if not skip_websocket and content_changed:
                     try:
                         from server import PromptServer
                         # 包含所有通道列表，供前端动态更新下拉菜单
@@ -174,10 +189,14 @@ class TextCacheManager:
                     except Exception as e:
                         print(f"[TextCacheManager] WebSocket通知失败: {e}")
 
+                # ✅ 返回内容是否变化
+                return content_changed
+
             except Exception as e:
                 print(f"[TextCacheManager] ✗ 缓存失败: {str(e)}")
                 import traceback
                 print(traceback.format_exc())
+                return False  # ✅ 异常时返回False
 
     def get_cached_text(self, channel_name: str = "default") -> str:
         """

@@ -141,30 +141,42 @@ try:
             if len(triggered_by) > 200:
                 triggered_by = triggered_by[:200] + "..."
 
-            # 更新缓存（使用skip_websocket=True，由API端点统一发送WebSocket）
-            metadata = {
-                "triggered_by": triggered_by,
-                "timestamp": time.time(),
-                "auto_update": True
-            }
-            text_cache_manager.cache_text(text, channel_name, metadata, skip_websocket=True)
+            # ✅ 内容变化检测：获取旧内容进行比较
+            old_text = ""
+            if text_cache_manager.channel_exists(channel_name):
+                old_text = text_cache_manager.get_cached_text(channel_name)
 
-            # 统一在API端点发送WebSocket事件（错误不应阻塞响应）
-            try:
-                PromptServer.instance.send_sync("text-cache-channel-updated", {
-                    "channel": channel_name,
+            content_changed = (old_text != text)
+
+            # 只有内容变化时才更新缓存
+            if content_changed:
+                # 更新缓存（使用skip_websocket=True，由API端点统一发送WebSocket）
+                metadata = {
+                    "triggered_by": triggered_by,
                     "timestamp": time.time(),
-                    "text_length": len(text),
-                    "triggered_by": triggered_by[:50] if triggered_by else ""  # 限制长度
-                })
-            except Exception as ws_error:
-                print(f"[TextCache] WebSocket发送失败: {ws_error}")
-                # 不阻塞API响应
+                    "auto_update": True
+                }
+                text_cache_manager.cache_text(text, channel_name, metadata, skip_websocket=True)
+
+                # 统一在API端点发送WebSocket事件（错误不应阻塞响应）
+                try:
+                    PromptServer.instance.send_sync("text-cache-channel-updated", {
+                        "channel": channel_name,
+                        "timestamp": time.time(),
+                        "text_length": len(text),
+                        "triggered_by": triggered_by[:50] if triggered_by else ""  # 限制长度
+                    })
+                except Exception as ws_error:
+                    print(f"[TextCache] WebSocket发送失败: {ws_error}")
+                    # 不阻塞API响应
+            else:
+                print(f"[TextCache] ⏭️ 内容未变化，跳过缓存更新: 通道={channel_name}, 长度={len(text)}")
 
             return web.json_response({
                 "status": "success",
                 "channel": channel_name,
-                "text_length": len(text)
+                "text_length": len(text),
+                "content_changed": content_changed  # ✅ 返回内容是否变化的标志
             })
         except Exception as e:
             import traceback
