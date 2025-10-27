@@ -82,37 +82,26 @@ class ResolutionMasterSimplifyCanvas {
         const widthWidget = node.widgets?.find(w => w.name === 'width');
         const heightWidget = node.widgets?.find(w => w.name === 'height');
 
-        // ✅ 初始化值 - 优先从工作流数据恢复
+        // ✅ 初始化值 - 直接使用 properties，ComfyUI 会在加载时自动恢复
         if (widthWidget && heightWidget) {
-            // 1. 尝试从 widgets_values 恢复工作流保存的值
-            let savedWidth = widthWidget.value;
-            let savedHeight = heightWidget.value;
+            // properties 在节点加载时已经由 ComfyUI 恢复（来自工作流）
+            // 或者由 initializeProperties() 设置为默认值
+            // 直接使用 properties 的值同步到 widgets 和 intpos
 
-            if (node.widgets_values && Array.isArray(node.widgets_values)) {
-                const widthIndex = node.widgets.indexOf(widthWidget);
-                const heightIndex = node.widgets.indexOf(heightWidget);
+            const finalWidth = node.properties.width;
+            const finalHeight = node.properties.height;
 
-                if (widthIndex !== -1 && node.widgets_values[widthIndex] !== undefined) {
-                    savedWidth = node.widgets_values[widthIndex];
-                }
-                if (heightIndex !== -1 && node.widgets_values[heightIndex] !== undefined) {
-                    savedHeight = node.widgets_values[heightIndex];
-                }
-            }
+            // 同步到 widgets
+            widthWidget.value = finalWidth;
+            heightWidget.value = finalHeight;
 
-            // 2. 更新 properties（使用工作流保存的值或当前值）
-            node.properties.width = savedWidth;
-            node.properties.height = savedHeight;
-
-            // 3. 同步回 widgets（确保一致性）
-            widthWidget.value = savedWidth;
-            heightWidget.value = savedHeight;
-
-            // 4. 初始化画布位置（基于 properties）
-            node.intpos.x = (node.properties.width - node.properties.canvas_min_x) /
+            // 计算并更新画布位置（基于 properties）
+            node.intpos.x = (finalWidth - node.properties.canvas_min_x) /
                 (node.properties.canvas_max_x - node.properties.canvas_min_x);
-            node.intpos.y = (node.properties.height - node.properties.canvas_min_y) /
+            node.intpos.y = (finalHeight - node.properties.canvas_min_y) /
                 (node.properties.canvas_max_y - node.properties.canvas_min_y);
+
+            console.log(`[ResolutionMasterSimplify] 初始化完成: ${finalWidth}×${finalHeight}, intpos: (${node.intpos.x.toFixed(3)}, ${node.intpos.y.toFixed(3)})`);
         }
 
         // 存储 widget 引用
