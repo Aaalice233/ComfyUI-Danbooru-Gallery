@@ -161,10 +161,13 @@ class TextCacheManager:
                 if not skip_websocket:
                     try:
                         from server import PromptServer
+                        # 包含所有通道列表，供前端动态更新下拉菜单
+                        all_channels = self.get_all_channels()
                         PromptServer.instance.send_sync("text-cache-channel-updated", {
                             "channel": channel_name,
                             "timestamp": timestamp,
-                            "text_length": len(text)
+                            "text_length": len(text),
+                            "all_channels": all_channels  # 新增：所有通道列表
                         })
                     except ImportError:
                         print("[TextCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
@@ -252,6 +255,19 @@ class TextCacheManager:
                     "channel": channel_name
                 }
 
+                # 发送WebSocket事件通知通道清空
+                try:
+                    from server import PromptServer
+                    all_channels = self.get_all_channels()
+                    PromptServer.instance.send_sync("text-cache-channel-cleared", {
+                        "channel": channel_name,
+                        "all_channels": all_channels
+                    })
+                except ImportError:
+                    print("[TextCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+                except Exception as e:
+                    print(f"[TextCacheManager] WebSocket通知失败: {e}")
+
             except Exception as e:
                 print(f"[TextCacheManager] ✗ 清空缓存失败: {str(e)}")
                 import traceback
@@ -300,6 +316,20 @@ class TextCacheManager:
                     "old_name": old_name,
                     "new_name": new_name
                 }
+
+                # 发送WebSocket事件通知通道重命名
+                try:
+                    from server import PromptServer
+                    all_channels = self.get_all_channels()
+                    PromptServer.instance.send_sync("text-cache-channel-renamed", {
+                        "old_name": old_name,
+                        "new_name": new_name,
+                        "all_channels": all_channels
+                    })
+                except ImportError:
+                    print("[TextCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+                except Exception as e:
+                    print(f"[TextCacheManager] WebSocket通知失败: {e}")
 
                 return True
 

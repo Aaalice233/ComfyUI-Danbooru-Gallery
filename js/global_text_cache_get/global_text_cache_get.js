@@ -124,9 +124,23 @@ app.registerExtension({
                                     newOptions = ["", currentValue].concat(channels.sort());
                                 }
 
-                                // 更新widget的选项
-                                if (channelWidget.options && channelWidget.options.values) {
-                                    channelWidget.options.values = newOptions;
+                                // 设置为函数式values（与channel_updater.js配合）
+                                if (channelWidget.options) {
+                                    channelWidget.options.values = () => {
+                                        // 1. 从当前工作流的GlobalTextCacheSave节点收集通道名
+                                        const saveNodes = app.graph._nodes.filter(n => n.type === "GlobalTextCacheSave");
+                                        const workflowChannels = saveNodes
+                                            .map(n => n.widgets?.find(w => w.name === "channel_name")?.value)
+                                            .filter(v => v && v !== "");
+
+                                        // 2. 从全局缓存读取后端通道
+                                        const backendChannels = window.textChannelUpdater?.lastChannels || [];
+
+                                        // 3. 合并去重排序
+                                        const allChannels = ["", ...new Set([...workflowChannels, ...backendChannels])];
+
+                                        return allChannels.sort();
+                                    };
                                 }
 
                                 // 只有在currentValue不为空时才恢复值（避免覆盖正确的值）

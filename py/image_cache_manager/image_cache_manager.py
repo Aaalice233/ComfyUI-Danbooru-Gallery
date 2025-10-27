@@ -161,6 +161,19 @@ class ImageCacheManager:
                     "channel": channel_name
                 }
 
+                # 发送WebSocket事件通知通道清空
+                try:
+                    from server import PromptServer
+                    all_channels = self.get_all_channels()
+                    PromptServer.instance.send_sync("image-cache-channel-cleared", {
+                        "channel": channel_name,
+                        "all_channels": all_channels
+                    })
+                except ImportError:
+                    print("[ImageCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+                except Exception as e:
+                    print(f"[ImageCacheManager] WebSocket通知失败: {e}")
+
             except Exception as e:
                 print(f"[ImageCacheManager] ✗ 清空缓存失败: {str(e)}")
                 import traceback
@@ -276,12 +289,15 @@ class ImageCacheManager:
                 if cache_data:
                     try:
                         from server import PromptServer
+                        # 包含所有通道列表，供前端动态更新下拉菜单
+                        all_channels = self.get_all_channels()
                         PromptServer.instance.send_sync("image-cache-update", {
                             "cache_info": {
                                 "count": len(cache_data),
                                 "timestamp": timestamp,
                                 "metadata": cache_channel["metadata"],
-                                "channel": actual_channel_name
+                                "channel": actual_channel_name,
+                                "all_channels": all_channels  # 新增：所有通道列表
                             }
                         })
                     except ImportError:
@@ -565,6 +581,20 @@ class ImageCacheManager:
                     "old_name": old_name,
                     "new_name": new_name
                 }
+
+                # 发送WebSocket事件通知通道重命名
+                try:
+                    from server import PromptServer
+                    all_channels = self.get_all_channels()
+                    PromptServer.instance.send_sync("image-cache-channel-renamed", {
+                        "old_name": old_name,
+                        "new_name": new_name,
+                        "all_channels": all_channels
+                    })
+                except ImportError:
+                    print("[ImageCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+                except Exception as e:
+                    print(f"[ImageCacheManager] WebSocket通知失败: {e}")
 
                 return True
 
