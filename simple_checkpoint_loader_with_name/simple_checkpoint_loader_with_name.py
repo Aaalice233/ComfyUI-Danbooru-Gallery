@@ -28,13 +28,14 @@ class SimpleCheckpointLoaderWithName:
             }
         }
 
-    RETURN_TYPES = ("MODEL", "CLIP", "VAE", "STRING")
-    RETURN_NAMES = ("MODEL", "CLIP", "VAE", "model_name")
+    RETURN_TYPES = ("MODEL", "CLIP", "VAE", "STRING", "STRING")
+    RETURN_NAMES = ("MODEL", "CLIP", "VAE", "model_name", "vae_name")
     OUTPUT_TOOLTIPS = (
         "用于对latent去噪的模型",
         "用于编码文本提示词的CLIP模型",
         "用于在图像和latent空间之间编码和解码的VAE模型",
-        "模型名称，可用于Image Save节点保存模型名称"
+        "模型名称，可用于Image Save节点保存模型名称",
+        "VAE名称，显示当前使用的VAE（Baked VAE或自定义VAE文件名）"
     )
 
     FUNCTION = "load_checkpoint"
@@ -58,7 +59,7 @@ class SimpleCheckpointLoaderWithName:
             vae_path = folder_paths.get_full_path_or_raise("vae", vae_name)
             vae = comfy.sd.VAE(sd=comfy.utils.load_torch_file(vae_path))
 
-        return (model, clip, vae, ckpt_name)
+        return (model, clip, vae, ckpt_name, vae_name)
 
 
 def get_node_class_mappings():
