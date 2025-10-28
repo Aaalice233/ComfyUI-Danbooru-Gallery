@@ -73,6 +73,21 @@ app.registerExtension({
                     }, 100);
                 } else {
                     console.log(`[PB] 输出引脚 ${slotIndex} 已断开`);
+
+                    // 获取对应的参数信息
+                    const paramStructure = this.properties.paramStructure || [];
+                    if (slotIndex < paramStructure.length) {
+                        const paramMeta = paramStructure[slotIndex];
+                        const paramName = paramMeta.name;
+                        const paramType = paramMeta.param_type;
+
+                        // 如果是下拉菜单类型，清空选项
+                        if (paramType === 'dropdown') {
+                            console.log(`[PB] 清空下拉菜单 '${paramName}' 的选项`);
+                            this.syncOptionsToPanel(paramName, []);
+                        }
+                    }
+
                     // 清理对应的缓存
                     const paramId = this.properties.outputIdMap[slotIndex];
                     if (paramId && this.properties.optionsSyncCache) {
@@ -158,39 +173,64 @@ app.registerExtension({
         // 从目标节点提取combo widget的选项
         nodeType.prototype.extractComboOptions = function (targetNode, inputIndex) {
             try {
-                // 方法1: 检查widgets
+                // 首先获取输入的名称
+                const inputName = targetNode.inputs && targetNode.inputs[inputIndex]
+                    ? targetNode.inputs[inputIndex].name
+                    : null;
+
+                if (!inputName) {
+                    console.warn('[PB] 无法获取输入名称，inputIndex:', inputIndex);
+                    return null;
+                }
+
+                console.log(`[PB] 查找输入 '${inputName}' (索引 ${inputIndex}) 的combo选项`);
+
+                // 方法1: 在widgets中查找name匹配的combo widget
                 if (targetNode.widgets && targetNode.widgets.length > 0) {
-                    for (const widget of targetNode.widgets) {
-                        if (widget.type === 'combo' && widget.options && widget.options.values) {
-                            return widget.options.values;
-                        }
+                    const matchedWidget = targetNode.widgets.find(widget =>
+                        widget.name === inputName && widget.type === 'combo'
+                    );
+
+                    if (matchedWidget && matchedWidget.options && matchedWidget.options.values) {
+                        console.log(`[PB] 通过widget name匹配找到combo选项: ${matchedWidget.options.values.length} 个`);
+                        return matchedWidget.options.values;
                     }
                 }
 
-                // 方法2: 检查输入配置（某些节点可能在inputs中定义combo）
+                // 方法2: 检查输入配置中的widget引用
                 if (targetNode.inputs && targetNode.inputs[inputIndex]) {
                     const input = targetNode.inputs[inputIndex];
                     if (input.widget && input.widget.options && input.widget.options.values) {
+                        console.log(`[PB] 通过input.widget找到combo选项: ${input.widget.options.values.length} 个`);
                         return input.widget.options.values;
                     }
                 }
 
-                // 方法3: 检查节点定义中的INPUT_TYPES
+                // 方法3: 从节点定义中查找对应名称的combo输入
                 const nodeDefName = targetNode.constructor.type || targetNode.type;
                 const nodeDefs = window.LiteGraph ? window.LiteGraph.registered_node_types : null;
                 if (nodeDefs && nodeDefs[nodeDefName]) {
                     const nodeDef = nodeDefs[nodeDefName];
                     if (nodeDef.nodeData && nodeDef.nodeData.input) {
-                        const inputs = nodeDef.nodeData.input.required || nodeDef.nodeData.input.optional || {};
-                        for (const [key, config] of Object.entries(inputs)) {
+                        // 合并required和optional inputs
+                        const allInputs = {
+                            ...(nodeDef.nodeData.input.required || {}),
+                            ...(nodeDef.nodeData.input.optional || {})
+                        };
+
+                        // 查找与inputName匹配的combo配置
+                        if (allInputs[inputName]) {
+                            const config = allInputs[inputName];
                             if (Array.isArray(config) && Array.isArray(config[0])) {
                                 // 这是一个combo类型: [["option1", "option2", ...]]
+                                console.log(`[PB] 通过节点定义找到combo选项: ${config[0].length} 个`);
                                 return config[0];
                             }
                         }
                     }
                 }
 
+                console.log(`[PB] 未找到输入 '${inputName}' 的combo选项`);
                 return null;
             } catch (error) {
                 console.error('[PB] 提取combo选项时出错:', error);
