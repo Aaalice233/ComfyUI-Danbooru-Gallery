@@ -1879,6 +1879,14 @@ app.registerExtension({
                 nameInput.title = '锁定模式下无法修改参数名称';
             }
 
+            // 锁定模式下禁用参数类型修改
+            if (isEdit && this.properties.locked) {
+                typeSelect.disabled = true;
+                typeSelect.style.opacity = '0.6';
+                typeSelect.style.cursor = 'not-allowed';
+                typeSelect.title = '锁定模式下无法修改参数类型';
+            }
+
             // 更新配置面板
             const updateConfigPanel = (type) => {
                 configPanel.innerHTML = '';
@@ -2054,6 +2062,14 @@ app.registerExtension({
 
                         sourceSelect.addEventListener('change', updateOptionsField);
                         updateOptionsField();
+
+                        // 锁定模式下禁用数据源选择器
+                        if (isEdit && this.properties.locked) {
+                            sourceSelect.disabled = true;
+                            sourceSelect.style.opacity = '0.6';
+                            sourceSelect.style.cursor = 'not-allowed';
+                            sourceSelect.title = '锁定模式下无法修改数据源';
+                        }
                         break;
                 }
             };
