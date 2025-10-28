@@ -22,6 +22,8 @@
   - [📚 提示词选择器 (Prompt Selector)](#-提示词选择器-prompt-selector)
   - [👥 多人角色提示词编辑器 (Multi Character Editor)](#-多人角色提示词编辑器-multi-character-editor)
   - [🧹 提示词清洁女仆 (Prompt Cleaning Maid)](#-提示词清洁女仆-prompt-cleaning-maid)
+  - [🎛️ 参数控制面板 (Parameter Control Panel)](#-参数控制面板-parameter-control-panel)
+  - [📤 参数展开 (Parameter Break)](#-参数展开-parameter-break)
   - [🖼️ 简易图像对比 (Simple Image Compare)](#-简易图像对比-simple-image-compare)
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
   - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
@@ -45,6 +47,8 @@
   - [📚 Prompt Selector](#-prompt-selector)
   - [👥 Multi Character Editor](#-multi-character-editor)
   - [🧹 Prompt Cleaning Maid](#-prompt-cleaning-maid)
+  - [🎛️ Parameter Control Panel](#-parameter-control-panel-1)
+  - [📤 Parameter Break](#-parameter-break-1)
   - [🖼️ Simple Image Compare](#-simple-image-compare)
   - [⚡ Group Executor Manager](#-group-executor-manager)
   - [🔇 Group Mute Manager](#-group-mute-manager)
@@ -299,6 +303,168 @@ smile, ((long hair),  beautiful
 ```
 1girl, blue eyes, smile, (long hair), beautiful
 ```
+
+---
+
+### 🎛️ 参数控制面板 (Parameter Control Panel)
+
+**可视化参数管理和工作流控制节点**
+
+参数控制面板是一个强大的参数管理节点，提供可视化界面来创建、管理和输出多种类型的参数，可以与参数展开节点配合使用，实现灵活的工作流参数控制。
+
+#### 核心功能
+- 🎨 **可视化参数编辑**: 直观的UI界面管理参数
+- 📊 **多种参数类型**: 支持滑条、开关、下拉菜单三种参数类型
+- 🎯 **分隔符支持**: 使用分隔符组织和分组参数
+- 🔄 **拖拽排序**: 通过拖拽调整参数顺序
+- 💾 **工作流持久化**: 参数配置随工作流保存
+- 🔒 **锁定保护**: 锁定模式防止误操作
+- 🎛️ **下拉菜单自适应**: 支持从连接自动获取下拉菜单选项
+
+#### 参数类型
+
+**1. 滑条 (Slider)**
+- 支持整数和浮点数
+- 可配置最小值、最大值、步长、默认值
+- 实时数值显示和调整
+- 示例：`steps (20, 1-150, step=1)`, `cfg (7.5, 1.0-30.0, step=0.5)`
+
+**2. 开关 (Switch)**
+- 布尔值开关
+- 可配置默认值（True/False）
+- 优雅的开关UI
+- 示例：`enable_hr (True)`, `save_metadata (False)`
+
+**3. 下拉菜单 (Dropdown)**
+- 四种数据源模式：
+  - **从连接获取**: 自动从Parameter Break连接的目标节点获取选项
+  - **自定义**: 手动输入选项列表
+  - **Checkpoint**: 自动加载checkpoint模型列表
+  - **LoRA**: 自动加载LoRA模型列表
+- 支持长文本自动省略显示
+- 深紫色配色主题
+- 示例：`sampler (euler_a, ddim, dpm++)`, `model (auto from connection)`
+
+**4. 分隔符 (Separator)**
+- 视觉分组和组织参数
+- 可自定义分隔符文本
+- 优雅的紫色主题设计
+- 示例：`--- 基础参数 ---`, `--- 高级设置 ---`
+
+#### 使用方法
+1. 添加 `Danbooru > 参数控制面板 (Parameter Control Panel)` 节点
+2. 双击打开参数管理界面
+3. 点击"+"按钮添加参数：
+   - 输入参数名称
+   - 选择参数类型
+   - 配置参数选项（范围、选项等）
+4. 调整参数值，连接 `parameters` 输出到 Parameter Break 节点
+5. 使用锁定🔒按钮保护参数配置
+
+#### 应用场景
+- **工作流参数化**: 将常用参数集中管理
+- **批量实验**: 快速调整参数进行对比实验
+- **预设系统**: 保存不同的参数组合
+- **模型切换**: 使用下拉菜单快速切换模型/LoRA
+- **条件控制**: 使用开关控制工作流分支
+
+#### 技术特点
+- **响应式设计**: 节点大小自适应内容
+- **深紫色主题**: 统一的视觉风格
+- **性能优化**: 避免不必要的重绘
+- **智能布局**: 自动调整按钮和控件位置
+
+---
+
+### 📤 参数展开 (Parameter Break)
+
+**智能参数展开和选项同步节点**
+
+参数展开节点接收来自参数控制面板的参数包，自动展开为独立的输出引脚，并支持从连接的目标节点自动同步下拉菜单选项。
+
+#### 核心功能
+- 📤 **自动展开**: 将参数包展开为独立的输出引脚
+- 🔄 **智能同步**: 自动同步参数结构变化
+- 🎯 **通配符类型**: 使用AnyType支持连接到任何输入
+- 🔗 **选项自动获取**: 连接到combo输入时自动提取选项
+- 🧹 **自动清空**: 断开连接时自动清空下拉菜单选项
+- 📊 **实时更新**: 参数变化时立即更新输出引脚
+
+#### 工作原理
+
+**参数结构同步**：
+1. Parameter Control Panel创建参数配置
+2. Parameter Break接收参数包
+3. 自动读取参数结构并创建对应数量的输出引脚
+4. 每个输出引脚对应一个参数，保持名称和类型一致
+
+**选项自动同步**：
+1. 将Parameter Break的下拉菜单输出连接到目标节点的combo输入
+2. 自动检测目标节点的输入类型和可用选项
+3. 提取选项列表并同步回Parameter Control Panel
+4. 下拉菜单UI自动刷新显示新选项
+5. 断开连接时自动清空选项
+
+#### 支持的同步场景
+- ✅ **Checkpoint加载器**: 自动获取checkpoint列表
+- ✅ **VAE选择器**: 自动获取VAE列表
+- ✅ **采样器选择**: 自动获取sampler列表
+- ✅ **调度器选择**: 自动获取scheduler列表
+- ✅ **所有combo输入**: 支持所有ComfyUI的combo类型输入
+
+#### 使用方法
+1. 添加 `Danbooru > 参数展开 (Parameter Break)` 节点
+2. 连接Parameter Control Panel的 `parameters` 输出
+3. 自动生成对应的输出引脚
+4. 将下拉菜单输出连接到目标节点的combo输入
+5. 选项自动同步，在Parameter Control Panel中选择
+
+#### 使用示例
+
+**基础参数控制**：
+```
+Parameter Control Panel (steps=20, cfg=7.5, sampler=euler_a)
+  ↓ parameters
+Parameter Break
+  ↓ steps (INT)
+  ↓ cfg (FLOAT)
+  ↓ sampler (STRING)
+KSampler节点
+```
+
+**模型自动切换**：
+```
+Parameter Control Panel (model_name: dropdown - from_connection)
+  ↓ parameters
+Parameter Break
+  ↓ model_name (*)  → CheckpointLoader的ckpt_name输入
+                       (自动获取所有checkpoint列表)
+```
+
+**VAE自动选择**：
+```
+Parameter Control Panel (vae_name: dropdown - from_connection)
+  ↓ parameters
+Parameter Break
+  ↓ vae_name (*)  → Simple Checkpoint Loader的vae_name输入
+                     (自动获取所有VAE列表)
+```
+
+#### 应用场景
+- **参数集中管理**: 将分散的参数集中到一个面板
+- **快速模型切换**: 通过下拉菜单快速切换checkpoint/VAE
+- **批量实验**: 配合组执行管理器进行批量参数实验
+- **工作流模板**: 创建可复用的参数化工作流模板
+
+#### 技术亮点
+- **精确匹配**: 通过输入名称精确匹配对应的widget
+- **智能缓存**: 避免重复同步相同的选项
+- **防抖处理**: 300ms防抖避免频繁API调用
+- **错误容错**: 完善的错误处理机制
+- **连接恢复**: 基于参数ID恢复连接，支持参数重排序
+
+#### 代码参考
+参数展开节点的自动选项同步功能参考了 [ComfyUI-CRZnodes](https://github.com/CoreyCorza/ComfyUI-CRZnodes) 项目的设计思路。
 
 ---
 
@@ -802,6 +968,12 @@ ComfyUI-Danbooru-Gallery/
 ├── prompt_cleaning_maid/           # 提示词清洁女仆
 │   ├── __init__.py
 │   └── prompt_cleaning_maid.py
+├── parameter_control_panel/        # 参数控制面板
+│   ├── __init__.py
+│   └── parameter_control_panel.py
+├── parameter_break/                # 参数展开
+│   ├── __init__.py
+│   └── parameter_break.py
 ├── simple_image_compare/           # 简易图像对比
 │   ├── __init__.py
 │   └── simple_image_compare.py
@@ -865,6 +1037,10 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── group_mute_manager.js
 │   ├── resolution_master_simplify/ # 分辨率大师简化版前端
 │   │   └── resolution_master_simplify.js
+│   ├── parameter_control_panel/    # 参数控制面板前端
+│   │   └── parameter_control_panel.js
+│   ├── parameter_break/            # 参数展开前端
+│   │   └── parameter_break.js
 │   ├── simple_image_compare/       # 简易图像对比前端
 │   │   └── simple_image_compare.js
 │   ├── global_text_cache_save/     # 全局文本缓存保存节点前端
@@ -1135,6 +1311,168 @@ smile, ((long hair),  beautiful
 ```
 1girl, blue eyes, smile, (long hair), beautiful
 ```
+
+---
+
+### 🎛️ Parameter Control Panel
+
+**Visual Parameter Management and Workflow Control Node**
+
+Parameter Control Panel is a powerful parameter management node that provides a visual interface to create, manage, and output various types of parameters, working with Parameter Break node for flexible workflow parameter control.
+
+#### Core Features
+- 🎨 **Visual Parameter Editing**: Intuitive UI interface for parameter management
+- 📊 **Multiple Parameter Types**: Support for sliders, switches, and dropdown menus
+- 🎯 **Separator Support**: Use separators to organize and group parameters
+- 🔄 **Drag-and-Drop Sorting**: Adjust parameter order through dragging
+- 💾 **Workflow Persistence**: Parameter configuration saved with workflow
+- 🔒 **Lock Protection**: Lock mode to prevent accidental modifications
+- 🎛️ **Adaptive Dropdowns**: Support for auto-fetching dropdown options from connections
+
+#### Parameter Types
+
+**1. Slider**
+- Support for integers and floating-point numbers
+- Configurable min, max, step, and default values
+- Real-time value display and adjustment
+- Examples: `steps (20, 1-150, step=1)`, `cfg (7.5, 1.0-30.0, step=0.5)`
+
+**2. Switch**
+- Boolean value switch
+- Configurable default value (True/False)
+- Elegant switch UI
+- Examples: `enable_hr (True)`, `save_metadata (False)`
+
+**3. Dropdown**
+- Four data source modes:
+  - **From Connection**: Auto-fetch options from target node connected to Parameter Break
+  - **Custom**: Manually input option list
+  - **Checkpoint**: Auto-load checkpoint model list
+  - **LoRA**: Auto-load LoRA model list
+- Support for long text auto-ellipsis display
+- Deep purple color theme
+- Examples: `sampler (euler_a, ddim, dpm++)`, `model (auto from connection)`
+
+**4. Separator**
+- Visual grouping and parameter organization
+- Customizable separator text
+- Elegant purple theme design
+- Examples: `--- Basic Parameters ---`, `--- Advanced Settings ---`
+
+#### Usage
+1. Add `Danbooru > Parameter Control Panel` node
+2. Double-click to open parameter management interface
+3. Click "+" button to add parameters:
+   - Input parameter name
+   - Select parameter type
+   - Configure parameter options (range, options, etc.)
+4. Adjust parameter values, connect `parameters` output to Parameter Break node
+5. Use lock 🔒 button to protect parameter configuration
+
+#### Use Cases
+- **Workflow Parameterization**: Centrally manage common parameters
+- **Batch Experiments**: Quickly adjust parameters for comparative experiments
+- **Preset System**: Save different parameter combinations
+- **Model Switching**: Quickly switch models/LoRAs using dropdowns
+- **Conditional Control**: Use switches to control workflow branches
+
+#### Technical Features
+- **Responsive Design**: Node size adapts to content
+- **Deep Purple Theme**: Unified visual style
+- **Performance Optimization**: Avoid unnecessary redraws
+- **Smart Layout**: Automatically adjust button and control positions
+
+---
+
+### 📤 Parameter Break
+
+**Smart Parameter Expansion and Option Synchronization Node**
+
+Parameter Break node receives parameter packages from Parameter Control Panel, automatically expands them into independent output pins, and supports auto-syncing dropdown options from connected target nodes.
+
+#### Core Features
+- 📤 **Auto Expansion**: Expand parameter package into independent output pins
+- 🔄 **Smart Synchronization**: Auto-sync parameter structure changes
+- 🎯 **Wildcard Type**: Use AnyType to support connecting to any input
+- 🔗 **Auto Option Fetching**: Auto-extract options when connected to combo inputs
+- 🧹 **Auto Clear**: Auto-clear dropdown options when disconnected
+- 📊 **Real-time Update**: Immediately update output pins when parameters change
+
+#### How It Works
+
+**Parameter Structure Synchronization**:
+1. Parameter Control Panel creates parameter configuration
+2. Parameter Break receives parameter package
+3. Auto-read parameter structure and create corresponding output pins
+4. Each output pin corresponds to one parameter, maintaining name and type consistency
+
+**Option Auto-Synchronization**:
+1. Connect Parameter Break's dropdown output to target node's combo input
+2. Auto-detect target node's input type and available options
+3. Extract option list and sync back to Parameter Control Panel
+4. Dropdown UI auto-refreshes to display new options
+5. Auto-clear options when disconnected
+
+#### Supported Sync Scenarios
+- ✅ **Checkpoint Loader**: Auto-fetch checkpoint list
+- ✅ **VAE Selector**: Auto-fetch VAE list
+- ✅ **Sampler Selection**: Auto-fetch sampler list
+- ✅ **Scheduler Selection**: Auto-fetch scheduler list
+- ✅ **All Combo Inputs**: Support all ComfyUI combo type inputs
+
+#### Usage
+1. Add `Danbooru > Parameter Break` node
+2. Connect Parameter Control Panel's `parameters` output
+3. Auto-generate corresponding output pins
+4. Connect dropdown outputs to target node's combo inputs
+5. Options auto-sync, select in Parameter Control Panel
+
+#### Usage Examples
+
+**Basic Parameter Control**:
+```
+Parameter Control Panel (steps=20, cfg=7.5, sampler=euler_a)
+  ↓ parameters
+Parameter Break
+  ↓ steps (INT)
+  ↓ cfg (FLOAT)
+  ↓ sampler (STRING)
+KSampler Node
+```
+
+**Auto Model Switching**:
+```
+Parameter Control Panel (model_name: dropdown - from_connection)
+  ↓ parameters
+Parameter Break
+  ↓ model_name (*)  → CheckpointLoader's ckpt_name input
+                       (auto-fetch all checkpoint lists)
+```
+
+**Auto VAE Selection**:
+```
+Parameter Control Panel (vae_name: dropdown - from_connection)
+  ↓ parameters
+Parameter Break
+  ↓ vae_name (*)  → Simple Checkpoint Loader's vae_name input
+                     (auto-fetch all VAE lists)
+```
+
+#### Use Cases
+- **Centralized Parameter Management**: Centralize scattered parameters to one panel
+- **Quick Model Switching**: Quickly switch checkpoint/VAE through dropdowns
+- **Batch Experiments**: Conduct batch parameter experiments with Group Executor Manager
+- **Workflow Templates**: Create reusable parameterized workflow templates
+
+#### Technical Highlights
+- **Precise Matching**: Precisely match corresponding widget through input name
+- **Smart Caching**: Avoid repeatedly syncing same options
+- **Debouncing**: 300ms debounce to avoid frequent API calls
+- **Error Tolerance**: Comprehensive error handling mechanism
+- **Connection Recovery**: Recover connections based on parameter ID, support parameter reordering
+
+#### Code Reference
+The auto option synchronization feature of Parameter Break node is inspired by the design of [ComfyUI-CRZnodes](https://github.com/CoreyCorza/ComfyUI-CRZnodes) project.
 
 ---
 
@@ -1638,6 +1976,12 @@ ComfyUI-Danbooru-Gallery/
 ├── prompt_cleaning_maid/           # Prompt Cleaning Maid
 │   ├── __init__.py
 │   └── prompt_cleaning_maid.py
+├── parameter_control_panel/        # Parameter Control Panel
+│   ├── __init__.py
+│   └── parameter_control_panel.py
+├── parameter_break/                # Parameter Break
+│   ├── __init__.py
+│   └── parameter_break.py
 ├── group_executor_manager/         # Group Executor Manager
 │   ├── __init__.py
 │   └── group_executor_manager.py
@@ -1698,6 +2042,10 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── group_mute_manager.js
 │   ├── resolution_master_simplify/ # Resolution Master Simplify frontend
 │   │   └── resolution_master_simplify.js
+│   ├── parameter_control_panel/    # Parameter Control Panel frontend
+│   │   └── parameter_control_panel.js
+│   ├── parameter_break/            # Parameter Break frontend
+│   │   └── parameter_break.js
 │   ├── global_text_cache_save/     # Global Text Cache Save node frontend
 │   │   └── global_text_cache_save.js
 │   ├── global_text_cache_get/      # Global Text Cache Get node frontend
@@ -1763,6 +2111,7 @@ MIT License
 
 ### 核心功能参考 | Core Feature References
 
+- [ComfyUI-CRZnodes](https://github.com/CoreyCorza/ComfyUI-CRZnodes) - 参数展开节点的自动选项同步功能设计参考 | Design reference for auto option synchronization in Parameter Break node
 - [Comfyui-LG_GroupExecutor](https://github.com/LAOGOU-666/Comfyui-LG_GroupExecutor) - 组执行管理器和图像缓存节点的设计思路来源 | Design inspiration for Group Executor Manager and Image Cache nodes
 - [rgthree-comfy](https://github.com/rgthree/rgthree-comfy) - 组静音管理器和简易图像对比节点的核心代码参考 | Core code reference for Group Mute Manager and Simple Image Compare node
 - [Comfyui-Resolution-Master](https://github.com/Azornes/Comfyui-Resolution-Master) - 分辨率大师简化版的原版参考 | Original reference for Resolution Master Simplify
