@@ -14,6 +14,8 @@ from .py.prompt_cleaning_maid import NODE_CLASS_MAPPINGS as pcm_mappings, NODE_D
 from .py.simple_image_compare import NODE_CLASS_MAPPINGS as sic_mappings, NODE_DISPLAY_NAME_MAPPINGS as sic_display_mappings
 from .py.simple_checkpoint_loader_with_name import NODE_CLASS_MAPPINGS as scl_mappings, NODE_DISPLAY_NAME_MAPPINGS as scl_display_mappings
 from .py.simple_notify import NODE_CLASS_MAPPINGS as sn_mappings, NODE_DISPLAY_NAME_MAPPINGS as sn_display_mappings
+from .py.parameter_control_panel import NODE_CLASS_MAPPINGS as pcp_mappings, NODE_DISPLAY_NAME_MAPPINGS as pcp_display_mappings
+from .py.parameter_break import NODE_CLASS_MAPPINGS as pb_mappings, NODE_DISPLAY_NAME_MAPPINGS as pb_display_mappings
 
 # 导入优化执行系统
 from .py.group_executor_manager import NODE_CLASS_MAPPINGS as group_manager_mappings
@@ -51,6 +53,8 @@ NODE_CLASS_MAPPINGS = {
     **sic_mappings,
     **scl_mappings,
     **sn_mappings,
+    **pcp_mappings,
+    **pb_mappings,
     **opt_mappings
 }
 
@@ -68,6 +72,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **sic_display_mappings,
     **scl_display_mappings,
     **sn_display_mappings,
+    **pcp_display_mappings,
+    **pb_display_mappings,
     **opt_display_mappings
 }
 
