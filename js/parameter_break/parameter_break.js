@@ -326,7 +326,8 @@ app.registerExtension({
                             } else if (param.type === "switch") {
                                 outputType = "BOOLEAN";
                             } else if (param.type === "dropdown") {
-                                outputType = "STRING";
+                                // 下拉菜单使用通配符类型，可以连接到任何输入
+                                outputType = "*";
                             }
 
                             paramMeta.push({
