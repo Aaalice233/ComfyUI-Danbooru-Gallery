@@ -355,6 +355,7 @@ async function executeUpdateRequest(node, monitoredValue) {
 
         // 获取源节点的输出值（改进的智能获取逻辑）
         let text = "";
+        let isConverted = false; // 标记是否进行了格式转换
         try {
             let sourceWidget = null;
 
@@ -425,8 +426,25 @@ async function executeUpdateRequest(node, monitoredValue) {
             if (sourceWidget && sourceWidget.value !== undefined && sourceWidget.value !== null) {
                 const rawValue = sourceWidget.value;
 
+                // ✨ 特殊处理：toggle_trigger_words 格式转换
+                if (monitorWidgetName === "toggle_trigger_words") {
+                    // 检查是否为数组格式 [{text: "xxx", active: true}, ...]
+                    if (Array.isArray(rawValue)) {
+                        // 过滤 active 为 true 的项，提取 text，用逗号连接
+                        const activeTexts = rawValue
+                            .filter(item => item && typeof item === 'object' && item.active !== false)
+                            .map(item => item.text)
+                            .filter(text => text); // 过滤空字符串
+
+                        text = activeTexts.join(', ');
+                        isConverted = true; // 标记已转换
+                        console.log(`[GlobalTextCacheSave] ✅ toggle_trigger_words 格式转换完成: ${text}`);
+                    } else {
+                        text = String(rawValue);
+                    }
+                }
                 // 检查是否为对象类型
-                if (typeof rawValue === 'object' && rawValue !== null) {
+                else if (typeof rawValue === 'object' && rawValue !== null) {
                     console.warn(`[GlobalTextCacheSave] Widget值为对象类型，尝试JSON序列化`);
                     try {
                         text = JSON.stringify(rawValue);
@@ -539,7 +557,7 @@ async function executeUpdateRequest(node, monitoredValue) {
             }
 
             // 更新预览显示
-            updateNodePreview(node, text);
+            updateNodePreview(node, text, isConverted);
 
             // Get节点现在使用动态combo，会自动获取最新通道列表，不需要手动刷新
         } else {
@@ -560,8 +578,9 @@ async function executeUpdateRequest(node, monitoredValue) {
  * 更新节点预览
  * @param {object} node - 节点对象
  * @param {string} text - 要显示的文本
+ * @param {boolean} isConverted - 是否已转换格式（可选，默认false）
  */
-function updateNodePreview(node, text) {
+function updateNodePreview(node, text, isConverted = false) {
     if (!node._cachePreviewElement) {
         return;
     }
@@ -572,8 +591,11 @@ function updateNodePreview(node, text) {
     // 生成文本内容行（不限制长度，完整显示）
     const textContent = text || '(空文本)';
 
+    // 根据是否转换，决定标签文本
+    const label = isConverted ? '📝 文本内容（已转换）：' : '📝 文本内容：';
+
     // 组合显示：第一行状态，第二行文本内容
-    const displayText = `${statusLine}\n📝 文本内容：${textContent}`;
+    const displayText = `${statusLine}\n${label}${textContent}`;
 
     node._cachePreviewElement.textContent = displayText;
     node._cachePreviewElement.title = '缓存内容预览（共' + text.length + '字符）';
