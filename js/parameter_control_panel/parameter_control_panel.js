@@ -1612,6 +1612,8 @@ app.registerExtension({
 
             const select = document.createElement('select');
             select.className = 'pcp-dropdown';
+            // 添加参数名标识，用于后续刷新选项
+            select.dataset.paramName = param.name;
 
             const config = param.config || {};
             const dataSource = config.data_source || 'custom';
@@ -1699,6 +1701,63 @@ app.registerExtension({
             } catch (error) {
                 console.error('[PCP] 加载数据源失败:', error);
                 return [];
+            }
+        };
+
+        // 刷新下拉菜单选项（用于from_connection类型）
+        nodeType.prototype.refreshDropdownOptions = function (paramName, options) {
+            try {
+                // 查找参数
+                const param = this.properties.parameters.find(p => p.name === paramName);
+                if (!param || param.type !== 'dropdown') {
+                    console.warn('[PCP] 未找到下拉菜单参数:', paramName);
+                    return;
+                }
+
+                // 更新参数配置中的选项
+                if (!param.config) {
+                    param.config = {};
+                }
+                param.config.options = options;
+
+                // 查找对应的select元素
+                const select = this.customUI?.querySelector(`select[data-param-name="${paramName}"]`);
+                if (!select) {
+                    console.warn('[PCP] 未找到下拉菜单UI元素:', paramName);
+                    return;
+                }
+
+                // 保存当前选中值
+                const currentValue = select.value;
+
+                // 清空现有选项
+                select.innerHTML = '';
+
+                // 添加新选项
+                options.forEach(opt => {
+                    const option = document.createElement('option');
+                    option.value = opt;
+                    option.textContent = opt;
+                    select.appendChild(option);
+                });
+
+                // 恢复选中值（如果仍然有效）
+                if (options.includes(currentValue)) {
+                    select.value = currentValue;
+                    param.value = currentValue;
+                } else if (options.length > 0) {
+                    // 如果之前的值无效，选择第一个
+                    select.value = options[0];
+                    param.value = options[0];
+                }
+
+                console.log(`[PCP] 下拉菜单 '${paramName}' 选项已刷新: ${options.length} 个选项`);
+
+                // 同步配置到后端
+                this.syncConfig();
+
+            } catch (error) {
+                console.error('[PCP] 刷新下拉菜单选项失败:', error);
             }
         };
 
@@ -1931,10 +1990,10 @@ app.registerExtension({
                             <div class="pcp-dialog-field">
                                 <label class="pcp-dialog-label">${t('dataSource')}</label>
                                 <select class="pcp-dialog-select" id="pcp-dropdown-source">
+                                    <option value="from_connection" ${dataSource === 'from_connection' ? 'selected' : ''}>${t('fromConnection')}</option>
                                     <option value="custom" ${dataSource === 'custom' ? 'selected' : ''}>${t('custom')}</option>
                                     <option value="checkpoint" ${dataSource === 'checkpoint' ? 'selected' : ''}>${t('checkpoint')}</option>
                                     <option value="lora" ${dataSource === 'lora' ? 'selected' : ''}>${t('lora')}</option>
-                                    <option value="from_connection" ${dataSource === 'from_connection' ? 'selected' : ''}>${t('fromConnection')}</option>
                                 </select>
                             </div>
                             <div class="pcp-dialog-field" id="pcp-dropdown-options-field">

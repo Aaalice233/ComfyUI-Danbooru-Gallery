@@ -234,11 +234,9 @@ app.registerExtension({
                     if (data.status === 'success') {
                         console.log(`[PB] 参数 '${paramName}' 选项已同步到Parameter Control Panel`);
 
-                        // 通知源节点刷新UI
-                        if (sourceNode.updateParametersList) {
-                            setTimeout(() => {
-                                sourceNode.updateParametersList();
-                            }, 50);
+                        // 直接刷新下拉菜单UI（不需要重建整个参数列表）
+                        if (sourceNode.refreshDropdownOptions) {
+                            sourceNode.refreshDropdownOptions(paramName, options);
                         }
                     } else {
                         console.error('[PB] 同步选项失败:', data.message);
