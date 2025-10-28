@@ -14,7 +14,12 @@ app.registerExtension({
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        if (nodeData.name !== "ParameterBreak") return;
+        console.log('[PB] beforeRegisterNodeDef 被调用，节点名称:', nodeData.name);
+        if (nodeData.name !== "ParameterBreak") {
+            console.log('[PB] 节点名称不匹配，跳过注册');
+            return;
+        }
+        console.log('[PB] 节点名称匹配，开始注册...');
 
         // 节点创建时的处理
         const onNodeCreated = nodeType.prototype.onNodeCreated;
@@ -516,13 +521,13 @@ app.registerExtension({
                 onSerialize.apply(this, arguments);
             }
 
-            // 保存参数结构到工作流
+            // 保存参数结构到工作流（不返回，直接修改info对象）
             info.paramStructure = this.properties.paramStructure;
             info.lastSync = this.properties.lastSync;
             info.outputIdMap = this.properties.outputIdMap;  // 保存输出引脚映射
 
             console.log('[PB] 序列化:', info.paramStructure?.length || 0, '个参数, 映射:', Object.keys(info.outputIdMap || {}).length, '条');
-            return info;
+            // 注意：不返回任何东西，数据已存储在info对象中
         };
 
         // 反序列化（从工作流加载）

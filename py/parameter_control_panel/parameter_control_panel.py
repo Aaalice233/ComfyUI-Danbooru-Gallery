@@ -83,11 +83,15 @@ load_presets()
 
 def get_node_config(node_id: str) -> Dict:
     """获取节点配置"""
+    # 确保 node_id 是字符串类型
+    node_id = str(node_id)
     return _node_configs.get(node_id, {"parameters": [], "last_update": 0})
 
 
 def set_node_config(node_id: str, parameters: List[Dict]):
     """设置节点配置"""
+    # 确保 node_id 是字符串类型
+    node_id = str(node_id)
     _node_configs[node_id] = {
         "parameters": parameters,
         "last_update": time.time()
@@ -137,12 +141,19 @@ class ParameterControlPanel:
     def IS_CHANGED(cls, **kwargs):
         """检测配置变化"""
         node_id = kwargs.get("unique_id")
-        if node_id and node_id in _node_configs:
-            return str(_node_configs[node_id]["last_update"])
+        if node_id:
+            # 确保 node_id 是字符串类型
+            node_id = str(node_id)
+            if node_id in _node_configs:
+                return str(_node_configs[node_id]["last_update"])
         return str(time.time())
 
     def execute(self, unique_id=None):
         """执行节点，返回参数包字典"""
+        # 确保 unique_id 是字符串类型
+        if unique_id is not None:
+            unique_id = str(unique_id)
+
         if not unique_id or unique_id not in _node_configs:
             print(f"[ParameterControlPanel] 节点 {unique_id} 无配置，返回空参数包")
             return ({"_meta": [], "_values": {}},)

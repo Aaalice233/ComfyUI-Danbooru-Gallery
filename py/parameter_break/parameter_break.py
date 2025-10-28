@@ -11,12 +11,15 @@ from aiohttp import web
 # ==================== 通配符类型 ====================
 
 class AnyType(str):
-    """通配符类型 - 可以连接到任何输入"""
+    """用于表示任意类型的特殊类，在类型比较时总是返回相等"""
+    def __eq__(self, _) -> bool:
+        return True
+
     def __ne__(self, __value: object) -> bool:
         return False
 
 # 创建通配符类型实例
-any_type = AnyType("*")
+any_typ = AnyType("*")
 
 # ==================== 全局存储 ====================
 
@@ -26,11 +29,15 @@ _node_param_structures: Dict[str, Dict] = {}
 
 def get_param_structure(node_id: str) -> Dict:
     """获取节点的参数结构"""
+    # 确保 node_id 是字符串类型
+    node_id = str(node_id)
     return _node_param_structures.get(node_id, {"meta": [], "last_update": 0})
 
 
 def set_param_structure(node_id: str, meta: list):
     """设置节点的参数结构"""
+    # 确保 node_id 是字符串类型
+    node_id = str(node_id)
     _node_param_structures[node_id] = {
         "meta": meta,
         "last_update": time.time()
@@ -57,10 +64,11 @@ class ParameterBreak:
             }
         }
 
-    # 动态返回类型 - 会被前端更新
-    # 使用AnyType实例作为默认输出类型，可连接到任何输入
-    RETURN_TYPES = (any_type,)
-    RETURN_NAMES = ("output",)
+    # 固定最大输出数量以支持动态参数
+    # 定义最多20个输出槽，未使用的返回None
+    # 使用AnyType实例作为通配符类型，可连接到任何输入
+    RETURN_TYPES = tuple([any_typ] * 20)
+    RETURN_NAMES = tuple([f"output_{i+1}" for i in range(20)])
     FUNCTION = "break_parameters"
     CATEGORY = "danbooru"
     OUTPUT_NODE = False
@@ -85,47 +93,53 @@ class ParameterBreak:
             unique_id: 节点ID
 
         Returns:
-            参数值的元组
+            参数值的元组（固定20个输出，未使用的为None）
         """
+        # 初始化20个None输出
+        outputs = [None] * 20
+
         if not parameters or not isinstance(parameters, dict):
             print(f"[ParameterBreak] 节点 {unique_id} 接收到无效的参数包")
-            return ("",)
+            return tuple(outputs)
 
         meta = parameters.get("_meta", [])
         values = parameters.get("_values", {})
 
         if not meta:
             print(f"[ParameterBreak] 节点 {unique_id} 参数包为空")
-            return ("",)
+            return tuple(outputs)
 
         # 更新节点的参数结构（用于前端同步）
         if unique_id:
             set_param_structure(unique_id, meta)
 
-        # 按照元数据顺序返回值
-        outputs = []
-        for param_meta in meta:
+        # 按照元数据顺序填充输出（最多20个）
+        for i, param_meta in enumerate(meta):
+            if i >= 20:
+                print(f"[ParameterBreak] 警告: 参数数量超过20个，后续参数将被忽略")
+                break
+
             name = param_meta.get("name")
             value = values.get(name)
 
             if value is not None:
-                outputs.append(value)
+                outputs[i] = value
             else:
                 # 如果值不存在，根据类型返回默认值
                 param_type = param_meta.get("type", "*")
                 if param_type == "INT":
-                    outputs.append(0)
+                    outputs[i] = 0
                 elif param_type == "FLOAT":
-                    outputs.append(0.0)
+                    outputs[i] = 0.0
                 elif param_type == "BOOLEAN":
-                    outputs.append(False)
+                    outputs[i] = False
                 elif param_type == "STRING":
-                    outputs.append("")
+                    outputs[i] = ""
                 else:
-                    outputs.append(None)
+                    outputs[i] = None
 
-        print(f"[ParameterBreak] 节点 {unique_id} 展开参数: {len(outputs)} 个输出")
-        return tuple(outputs) if outputs else ("",)
+        print(f"[ParameterBreak] 节点 {unique_id} 展开参数: {len([o for o in outputs if o is not None])} 个有效输出")
+        return tuple(outputs)
 
 
 # ==================== API 路由 ====================
