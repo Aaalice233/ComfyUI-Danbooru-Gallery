@@ -519,8 +519,9 @@ app.registerExtension({
             // 保存参数结构到工作流
             info.paramStructure = this.properties.paramStructure;
             info.lastSync = this.properties.lastSync;
+            info.outputIdMap = this.properties.outputIdMap;  // 保存输出引脚映射
 
-            console.log('[PB] 序列化:', info.paramStructure?.length || 0, '个参数');
+            console.log('[PB] 序列化:', info.paramStructure?.length || 0, '个参数, 映射:', Object.keys(info.outputIdMap || {}).length, '条');
             return info;
         };
 
@@ -540,6 +541,12 @@ app.registerExtension({
 
             if (info.lastSync) {
                 this.properties.lastSync = info.lastSync;
+            }
+
+            // 恢复输出引脚映射（关键：用于连接恢复）
+            if (info.outputIdMap) {
+                this.properties.outputIdMap = info.outputIdMap;
+                console.log('[PB] 恢复输出映射:', Object.keys(info.outputIdMap).length, '条');
             }
 
             // 延迟从源节点同步，而不是使用保存的结构

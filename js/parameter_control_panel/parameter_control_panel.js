@@ -1148,6 +1148,14 @@ app.registerExtension({
             const listContainer = this.customUI.querySelector('#pcp-parameters-list');
             listContainer.innerHTML = '';
 
+            // 确保所有参数都有ID（兼容旧数据）
+            this.properties.parameters.forEach(param => {
+                if (!param.id) {
+                    param.id = `param_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    console.log(`[PCP] 为参数 '${param.name}' 补充ID:`, param.id);
+                }
+            });
+
             this.properties.parameters.forEach((param, index) => {
                 const paramItem = this.createParameterItem(param, index);
                 listContainer.appendChild(paramItem);
@@ -2621,6 +2629,12 @@ app.registerExtension({
                     // 显示加载结果
                     this.properties.currentPreset = presetName;
 
+                    // 立即更新搜索框显示
+                    const presetSearch = this.customUI.querySelector('#pcp-preset-search');
+                    if (presetSearch) {
+                        presetSearch.value = presetName;
+                    }
+
                     if (unmatchedCount === 0) {
                         this.showToast(t('presetLoaded'), 'success');
                     } else {
@@ -2691,23 +2705,42 @@ app.registerExtension({
             // 只保留一个输出引脚，输出参数包
             const paramCount = this.properties.parameters.filter(p => p.type !== 'separator').length;
 
-            // 保留现有的连接信息（如果存在）
-            const existingLinks = (this.outputs && this.outputs.length > 0 && this.outputs[0].links)
-                ? this.outputs[0].links
-                : null;
+            // 确保 outputs 数组存在
+            if (!this.outputs) {
+                this.outputs = [];
+            }
 
-            this.outputs = [{
-                name: 'parameters',
-                type: 'DICT',
-                links: existingLinks  // 使用保留的连接而不是null
-            }];
+            // 更新或创建第一个输出引脚
+            if (this.outputs.length === 0) {
+                // 没有输出，创建新的
+                this.outputs.push({
+                    name: 'parameters',
+                    type: 'DICT',
+                    links: []
+                });
+            } else {
+                // 已有输出，更新现有对象（保持引用）
+                const output = this.outputs[0];
+                output.name = 'parameters';
+                output.type = 'DICT';
+                // 确保 links 数组存在且是数组
+                if (!output.links || !Array.isArray(output.links)) {
+                    output.links = [];
+                }
+            }
+
+            // 移除多余的输出引脚
+            if (this.outputs.length > 1) {
+                this.outputs.length = 1;
+            }
 
             // 触发节点图更新
             if (this.graph && this.graph.setDirtyCanvas) {
                 this.graph.setDirtyCanvas(true, true);
             }
 
-            console.log('[PCP] 输出引脚已更新: 参数包包含', paramCount, '个参数, 连接数:', existingLinks ? existingLinks.length : 0);
+            const linksCount = this.outputs[0].links ? this.outputs[0].links.length : 0;
+            console.log('[PCP] 输出引脚已更新: 参数包包含', paramCount, '个参数, 连接数:', linksCount);
         };
 
         // 格式化输出值显示
@@ -2804,7 +2837,15 @@ app.registerExtension({
 
             // 从工作流恢复参数配置
             if (info.parameters) {
-                this.properties.parameters = info.parameters;
+                // 确保所有参数都有ID（兼容旧工作流）
+                this.properties.parameters = info.parameters.map(param => {
+                    if (!param.id) {
+                        // 为旧参数生成ID
+                        param.id = `param_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        console.log(`[PCP] 为参数 '${param.name}' 补充ID:`, param.id);
+                    }
+                    return param;
+                });
                 // 标记已从工作流加载，防止被后端空数据覆盖
                 this._loadedFromWorkflow = true;
             }
