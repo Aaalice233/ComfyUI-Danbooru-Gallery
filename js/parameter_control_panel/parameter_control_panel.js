@@ -641,6 +641,7 @@ app.registerExtension({
                     align-items: center;
                     gap: 8px;
                     flex: 1;
+                    min-width: 0; /* 允许被压缩，防止挤出按钮 */
                 }
 
                 .pcp-slider-track {
@@ -742,9 +743,14 @@ app.registerExtension({
                     padding: 4px 8px;
                     color: #E0E0E0;
                     font-size: 12px;
-                    min-width: 100px;
+                    min-width: 80px;
+                    max-width: 100%; /* 限制最大宽度 */
                     transition: all 0.2s ease;
                     cursor: pointer;
+                    /* 文本溢出处理 */
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
                 }
 
                 .pcp-dropdown:focus {
@@ -1609,6 +1615,8 @@ app.registerExtension({
             container.style.alignItems = 'center';
             container.style.gap = '8px';
             container.style.flex = '1';
+            container.style.minWidth = '0'; // 允许被压缩，防止挤出按钮
+            container.style.overflow = 'hidden'; // 隐藏溢出内容
 
             const select = document.createElement('select');
             select.className = 'pcp-dropdown';
