@@ -25,6 +25,7 @@ class OptimizedExecutionEngine {
         this.executionContexts = new Map(); // execution_id -> ExecutionContext
         this.cacheControlStates = new Map(); // execution_id -> cache control states
         this.cancelledExecutions = new Set(); // 记录被取消的执行ID
+        this.lastExecutionInterrupted = false; // 记录最近一次执行是否被中断
         this.setupEventListeners();
         this.setupCancelHandler();
         this.debugMode = true;
@@ -57,6 +58,67 @@ class OptimizedExecutionEngine {
             };
             console.log('[OptimizedExecutionEngine] ✅ 取消处理器已设置');
         }
+
+        // 监听执行成功事件，重置中断标志
+        api.addEventListener("execution_success", (event) => {
+            console.log('[OptimizedExecutionEngine] ✅ 检测到执行成功事件');
+            this.lastExecutionInterrupted = false;
+        });
+
+        // 监听执行错误事件，检测InterruptProcessingException（图像过滤器取消会触发此异常）
+        api.addEventListener("execution_error", (event) => {
+            const { exception_type, exception_message, node_id, node_type } = event.detail || {};
+
+            console.log('[OptimizedExecutionEngine] 🔍 检测到执行错误事件:', {
+                exception_type,
+                exception_message,
+                node_id,
+                node_type
+            });
+
+            // 标记执行被中断
+            this.lastExecutionInterrupted = true;
+
+            // 只在组执行管理器活动时触发全局取消
+            if (this.executionContexts.size === 0) {
+                return;
+            }
+
+            // 检查是否是InterruptProcessingException（图像过滤器取消会抛出此异常）
+            if (exception_type === 'InterruptProcessingException' ||
+                exception_message?.includes('InterruptProcessingException') ||
+                exception_message?.includes('interrupted')) {
+
+                console.log('[OptimizedExecutionEngine] 🛑 检测到InterruptProcessingException（图像过滤器取消），触发全局取消');
+
+                // 触发全局取消，这会中断组执行管理器
+                if (api.interrupt) {
+                    api.interrupt();
+                }
+            }
+        });
+
+        // 同时监听execution_interrupted事件（ComfyUI的标准中断事件）
+        api.addEventListener("execution_interrupted", (event) => {
+            console.log('[OptimizedExecutionEngine] 🛑 检测到execution_interrupted事件');
+
+            // 标记执行被中断
+            this.lastExecutionInterrupted = true;
+
+            // 只在组执行管理器活动时触发全局取消
+            if (this.executionContexts.size === 0) {
+                return;
+            }
+
+            console.log('[OptimizedExecutionEngine] 🛑 触发全局取消');
+
+            // 确保调用interrupt以标记所有执行为已取消
+            if (api.interrupt) {
+                api.interrupt();
+            }
+        });
+
+        console.log('[OptimizedExecutionEngine] ✅ 图像过滤器取消监听已设置（监听execution_error和execution_interrupted）');
     }
 
     setupEventListeners() {
@@ -287,13 +349,22 @@ class OptimizedExecutionEngine {
 
         console.log(`[OptimizedExecutionEngine] 📍 找到输出节点: [${outputNodes.join(', ')}]`);
 
-        // 3. 提交到ComfyUI原生队列
+        // 3. 重置中断标志，准备开始新的执行
+        this.lastExecutionInterrupted = false;
+
+        // 4. 提交到ComfyUI原生队列
         await this.submitToComfyUIQueue(outputNodes, context);
 
-        // 4. 等待执行完成
+        // 5. 等待执行完成
         await this.waitForComfyUIQueueCompletion(context);
 
-        // 5. 设置缓存控制状态
+        // 6. 检查执行是否被中断（例如图像过滤器取消）
+        if (this.lastExecutionInterrupted) {
+            console.log(`[OptimizedExecutionEngine] 🛑 检测到执行被中断（可能是图像过滤器取消），停止后续组执行`);
+            throw new Error('执行被中断（图像过滤器取消或其他中断）');
+        }
+
+        // 7. 设置缓存控制状态
         if (context.cacheControlMode === "block_until_allowed") {
             this.setGroupCacheControl(context.executionId, groupName, true);
         }
