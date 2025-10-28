@@ -759,6 +759,22 @@ app.registerExtension({
                     background: rgba(0, 0, 0, 0.4);
                 }
 
+                /* 下拉菜单选项样式 */
+                .pcp-dropdown option {
+                    background: #3d2951; /* 深紫色背景 */
+                    color: #E0E0E0; /* 白色文字 */
+                    padding: 6px 8px;
+                }
+
+                .pcp-dropdown option:hover {
+                    background: #4d3561; /* 悬停时稍亮的紫色 */
+                }
+
+                .pcp-dropdown option:checked {
+                    background: #5d4171; /* 选中时更亮的紫色 */
+                    font-weight: 500;
+                }
+
                 /* 底部按钮 */
                 .pcp-add-parameter-container {
                     padding: 12px;
