@@ -29,6 +29,7 @@
   - [📝 文本缓存节点 (Text Cache Nodes)](#-文本缓存节点-text-cache-nodes)
   - [📐 分辨率大师简化版 (Resolution Master Simplify)](#-分辨率大师简化版-resolution-master-simplify)
   - [📦 简易Checkpoint加载器 (Simple Checkpoint Loader)](#-简易checkpoint加载器-simple-checkpoint-loader)
+  - [🔔 简易通知 (Simple Notify)](#-简易通知-simple-notify)
 - [安装说明](#安装说明)
 - [系统要求](#系统要求)
 - [高级功能](#高级功能)
@@ -51,6 +52,7 @@
   - [📝 Text Cache Nodes](#-text-cache-nodes-1)
   - [📐 Resolution Master Simplify](#-resolution-master-simplify)
   - [📦 Simple Checkpoint Loader](#-simple-checkpoint-loader)
+  - [🔔 Simple Notify](#-simple-notify-1)
 - [Installation](#installation)
 - [System Requirements](#system-requirements-1)
 - [Advanced Features](#advanced-features)
@@ -657,6 +659,47 @@ smile, ((long hair),  beautiful
 
 ---
 
+### 🔔 简易通知 (Simple Notify)
+
+**系统通知和音效二合一节点**
+
+简易通知节点结合了系统通知和音效播放功能，为工作流完成时提供即时的视觉和听觉反馈。
+
+#### 核心功能
+- 🔔 **系统通知**: 在工作流完成时显示系统通知
+- 🔊 **音效播放**: 播放提示音提醒任务完成
+- 🎛️ **独立控制**: 可单独开关通知和音效
+- 📝 **自定义消息**: 支持自定义通知消息内容
+- 🔊 **音量控制**: 可调节音效播放音量
+- 🔗 **工作流串联**: 保留输入输出引脚用于工作流串联
+
+#### 使用方法
+1. 添加 `danbooru > 简易通知 (Simple Notify)` 节点
+2. 连接上游节点的输出到 `any` 输入引脚
+3. 配置参数：
+   - `message`: 通知消息内容（默认："任务已完成"）
+   - `volume`: 音效音量 0-1（默认：0.5）
+   - `enable_notification`: 是否启用系统通知（默认：True）
+   - `enable_sound`: 是否启用音效（默认：True）
+4. 节点会透传输入数据到输出引脚，可继续连接后续节点
+
+#### 应用场景
+- **长时间任务提醒**: 在长时间运行的工作流完成时得到通知
+- **批量生成监控**: 批量生成图像时及时了解完成状态
+- **多任务管理**: 同时运行多个工作流时区分完成状态
+- **无人值守运行**: 离开电脑时也能知道任务完成情况
+
+#### 使用示例
+```
+文生图 → 图生图 → 放大 → 简易通知(message="图像生成完成!", volume=0.7) → 保存图像
+```
+
+#### 代码来源
+本节点功能参考自：
+- [ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts) - SystemNotification 和 PlaySound 节点
+
+---
+
 ## 安装说明
 
 ### 方法一：ComfyUI Manager 安装（推荐）
@@ -795,6 +838,10 @@ ComfyUI-Danbooru-Gallery/
 ├── simple_checkpoint_loader_with_name/  # 简易Checkpoint加载器
 │   ├── __init__.py
 │   └── simple_checkpoint_loader_with_name.py
+├── simple_notify/                  # 简易通知
+│   ├── __init__.py
+│   ├── simple_notify.py
+│   └── notify.mp3
 ├── install.py                      # 智能安装脚本
 ├── requirements.txt                # 依赖清单
 ├── js/
@@ -825,6 +872,8 @@ ComfyUI-Danbooru-Gallery/
 │   ├── global_text_cache_get/      # 全局文本缓存获取节点前端
 │   │   └── global_text_cache_get.js
 │   ├── simple_checkpoint_loader_with_name/  # 简易Checkpoint加载器前端（预留）
+│   ├── simple_notify/              # 简易通知前端
+│   │   └── simple_notify.js
 │   └── global/                     # 全局共享组件
 │       ├── autocomplete_cache.js
 │       ├── autocomplete_ui.js
@@ -1446,6 +1495,47 @@ This node is based on code from:
 
 ---
 
+### 🔔 Simple Notify
+
+**System Notification and Sound Effect Combined Node**
+
+Simple Notify node combines system notification and sound effect playback functions, providing instant visual and audio feedback when workflows complete.
+
+#### Core Features
+- 🔔 **System Notification**: Display system notification when workflow completes
+- 🔊 **Sound Playback**: Play notification sound to remind task completion
+- 🎛️ **Independent Control**: Separately toggle notification and sound on/off
+- 📝 **Custom Message**: Support custom notification message content
+- 🔊 **Volume Control**: Adjustable sound effect volume
+- 🔗 **Workflow Chaining**: Preserves input/output pins for workflow chaining
+
+#### Usage
+1. Add `danbooru > Simple Notify` node
+2. Connect upstream node's output to `any` input pin
+3. Configure parameters:
+   - `message`: Notification message content (default: "Task completed")
+   - `volume`: Sound effect volume 0-1 (default: 0.5)
+   - `enable_notification`: Enable system notification (default: True)
+   - `enable_sound`: Enable sound effect (default: True)
+4. Node passes through input data to output pin, can continue connecting subsequent nodes
+
+#### Application Scenarios
+- **Long-task Reminders**: Get notified when long-running workflows complete
+- **Batch Generation Monitoring**: Timely understand completion status during batch image generation
+- **Multi-task Management**: Distinguish completion status when running multiple workflows simultaneously
+- **Unattended Operation**: Know task completion even when away from computer
+
+#### Usage Example
+```
+Text2Image → Image2Image → Upscale → Simple Notify(message="Image generation complete!", volume=0.7) → Save Image
+```
+
+#### Code Sources
+This node's functionality is based on:
+- [ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts) - SystemNotification and PlaySound nodes
+
+---
+
 ## Installation
 
 ### Method 1: ComfyUI Manager Installation (Recommended)
@@ -1581,6 +1671,10 @@ ComfyUI-Danbooru-Gallery/
 ├── simple_checkpoint_loader_with_name/  # Simple Checkpoint Loader
 │   ├── __init__.py
 │   └── simple_checkpoint_loader_with_name.py
+├── simple_notify/                  # Simple Notify
+│   ├── __init__.py
+│   ├── simple_notify.py
+│   └── notify.mp3
 ├── install.py                      # Smart installation script
 ├── requirements.txt                # Dependency list
 ├── js/
@@ -1609,6 +1703,8 @@ ComfyUI-Danbooru-Gallery/
 │   ├── global_text_cache_get/      # Global Text Cache Get node frontend
 │   │   └── global_text_cache_get.js
 │   ├── simple_checkpoint_loader_with_name/  # Simple Checkpoint Loader frontend (reserved)
+│   ├── simple_notify/              # Simple Notify frontend
+│   │   └── simple_notify.js
 │   └── global/                     # Global shared components
 │       ├── autocomplete_cache.js
 │       ├── autocomplete_ui.js
@@ -1675,6 +1771,7 @@ MIT License
 - [ComfyUI-Easy-Use](https://github.com/yolain/ComfyUI-Easy-Use) - 简易Checkpoint加载器的VAE选择功能参考 | VAE selection functionality reference for Simple Checkpoint Loader
 - [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) - 文本缓存节点的动态combo实现参考 | Dynamic combo implementation reference for Text Cache nodes
 - [ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager) - 节点设计和功能参考 | Node design and functionality reference
+- [ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts) - 简易通知节点的功能参考 | Functionality reference for Simple Notify node
 
 ### 翻译文件来源 | Translation Data Sources
 
