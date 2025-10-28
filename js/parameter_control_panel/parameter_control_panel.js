@@ -2005,7 +2005,7 @@ app.registerExtension({
 
                     case 'dropdown':
                         const dropdownConfig = param?.config || {};
-                        const dataSource = dropdownConfig.data_source || 'custom';
+                        const dataSource = dropdownConfig.data_source || 'from_connection';
                         const optionsText = Array.isArray(dropdownConfig.options)
                             ? dropdownConfig.options.join('\n')
                             : '';
