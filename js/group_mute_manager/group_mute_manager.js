@@ -30,6 +30,9 @@ app.registerExtension({
                 selectedColorFilter: ''  // 选中的颜色过滤器
             };
 
+            // 初始化循环检测栈
+            this._processingStack = new Set();
+
             // 设置节点初始大小
             this.size = [400, 500];
 
@@ -790,6 +793,16 @@ app.registerExtension({
 
         // 切换组状态（带联动）
         nodeType.prototype.toggleGroup = function (groupName, enable) {
+            // 防止循环联动 - 在修改状态之前检查
+            if (!this._processingStack) {
+                this._processingStack = new Set();
+            }
+
+            if (this._processingStack.has(groupName)) {
+                console.warn('[GMM] 检测到循环联动，跳过切换:', groupName, enable ? '开启' : '关闭');
+                return;
+            }
+
             console.log('[GMM] 切换组状态:', groupName, enable ? '开启' : '关闭');
 
             const group = app.graph._groups.find(g => g.title === groupName);
@@ -805,38 +818,46 @@ app.registerExtension({
                 return;
             }
 
-            // 切换节点模式
-            nodes.forEach(node => {
-                // LiteGraph.ALWAYS = 0, LiteGraph.NEVER = 2
-                node.mode = enable ? 0 : 2;
-            });
+            // 添加到处理栈
+            this._processingStack.add(groupName);
 
-            // 更新配置
-            const config = this.properties.groups.find(g => g.group_name === groupName);
-            if (config) {
-                config.enabled = enable;
-            }
+            try {
+                // 切换节点模式
+                nodes.forEach(node => {
+                    // LiteGraph.ALWAYS = 0, LiteGraph.NEVER = 2
+                    node.mode = enable ? 0 : 2;
+                });
 
-            // 触发联动
-            this.applyLinkage(groupName, enable);
-
-            // 更新UI
-            this.updateGroupsList();
-
-            // 刷新画布
-            app.graph.setDirtyCanvas(true, true);
-
-            // 广播状态变化事件，通知其他节点刷新UI（使用 window 对象）
-            const event = new CustomEvent('group-mute-changed', {
-                detail: {
-                    sourceId: this._gmmInstanceId,
-                    groupName: groupName,
-                    enabled: enable,
-                    timestamp: Date.now()
+                // 更新配置
+                const config = this.properties.groups.find(g => g.group_name === groupName);
+                if (config) {
+                    config.enabled = enable;
                 }
-            });
-            window.dispatchEvent(event);
-            console.log('[GMM] 已广播状态变化事件');
+
+                // 触发联动
+                this.applyLinkage(groupName, enable);
+
+                // 更新UI
+                this.updateGroupsList();
+
+                // 刷新画布
+                app.graph.setDirtyCanvas(true, true);
+
+                // 广播状态变化事件，通知其他节点刷新UI（使用 window 对象）
+                const event = new CustomEvent('group-mute-changed', {
+                    detail: {
+                        sourceId: this._gmmInstanceId,
+                        groupName: groupName,
+                        enabled: enable,
+                        timestamp: Date.now()
+                    }
+                });
+                window.dispatchEvent(event);
+                console.log('[GMM] 已广播状态变化事件');
+            } finally {
+                // 从处理栈中移除
+                this._processingStack.delete(groupName);
+            }
         };
 
         // 跳转到指定组
@@ -871,37 +892,21 @@ app.registerExtension({
             console.log('[GMM] 跳转完成');
         };
 
-        // 应用联动规则（带防循环）
+        // 应用联动规则
         nodeType.prototype.applyLinkage = function (groupName, enabled) {
-            // 防止循环联动
-            if (!this._processingStack) {
-                this._processingStack = new Set();
-            }
+            const config = this.properties.groups.find(g => g.group_name === groupName);
+            if (!config || !config.linkage) return;
 
-            if (this._processingStack.has(groupName)) {
-                console.warn('[GMM] 检测到循环联动，终止:', groupName);
-                return;
-            }
+            const rules = enabled ? config.linkage.on_enable : config.linkage.on_disable;
+            if (!rules || !Array.isArray(rules)) return;
 
-            this._processingStack.add(groupName);
+            console.log('[GMM] 应用联动规则:', groupName, '规则数:', rules.length);
 
-            try {
-                const config = this.properties.groups.find(g => g.group_name === groupName);
-                if (!config || !config.linkage) return;
-
-                const rules = enabled ? config.linkage.on_enable : config.linkage.on_disable;
-                if (!rules || !Array.isArray(rules)) return;
-
-                console.log('[GMM] 应用联动规则:', groupName, '规则数:', rules.length);
-
-                rules.forEach(rule => {
-                    const targetEnable = rule.action === "enable";
-                    console.log('[GMM] 联动:', rule.target_group, rule.action);
-                    this.toggleGroup(rule.target_group, targetEnable);
-                });
-            } finally {
-                this._processingStack.delete(groupName);
-            }
+            rules.forEach(rule => {
+                const targetEnable = rule.action === "enable";
+                console.log('[GMM] 联动:', rule.target_group, rule.action);
+                this.toggleGroup(rule.target_group, targetEnable);
+            });
         };
 
         // 显示联动配置对话框
@@ -1032,7 +1037,8 @@ app.registerExtension({
             // 获取可用组列表（排除当前组）
             const availableGroups = this.getWorkflowGroups()
                 .filter(g => g.title !== config.group_name)
-                .map(g => g.title);
+                .map(g => g.title)
+                .sort((a, b) => a.localeCompare(b, 'zh-CN'));
 
             const groupOptions = availableGroups.map(name => {
                 const selected = name === rule.target_group ? 'selected' : '';
@@ -1086,7 +1092,8 @@ app.registerExtension({
         nodeType.prototype.addRule = function (dialog, config, type) {
             // 获取可用组列表（排除当前组）
             const availableGroups = this.getWorkflowGroups()
-                .filter(g => g.title !== config.group_name);
+                .filter(g => g.title !== config.group_name)
+                .sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
 
             if (availableGroups.length === 0) {
                 console.warn('[GMM] 没有可用的目标组');
