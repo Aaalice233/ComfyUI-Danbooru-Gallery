@@ -27,7 +27,8 @@ app.registerExtension({
             // 初始化节点属性
             this.properties = {
                 groups: [],  // 组配置列表
-                selectedColorFilter: ''  // 选中的颜色过滤器
+                selectedColorFilter: '',  // 选中的颜色过滤器
+                groupOrder: []  // 组显示顺序（用于自定义拖拽排序）
             };
 
             // 初始化循环检测栈
@@ -589,6 +590,50 @@ app.registerExtension({
                 .gmm-button-primary:hover {
                     background: linear-gradient(135deg, #8b4ba8 0%, #a35dbe 100%);
                 }
+
+                /* 拖拽手柄样式 */
+                .gmm-drag-handle {
+                    width: 20px;
+                    height: 28px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: grab;
+                    flex-shrink: 0;
+                    opacity: 0.4;
+                    transition: opacity 0.2s ease;
+                    margin-right: 4px;
+                }
+
+                .gmm-drag-handle:hover {
+                    opacity: 0.8;
+                }
+
+                .gmm-drag-handle:active {
+                    cursor: grabbing;
+                }
+
+                .gmm-drag-handle svg {
+                    width: 14px;
+                    height: 14px;
+                    fill: #B0B0B0;
+                }
+
+                /* 拖拽时的样式 */
+                .gmm-group-item[draggable="true"] {
+                    cursor: grab;
+                }
+
+                .gmm-group-item[draggable="true"]:active {
+                    cursor: grabbing;
+                }
+
+                /* 拖拽目标高亮样式 */
+                .gmm-group-item.gmm-drag-over {
+                    border: 2px dashed #743795;
+                    background: linear-gradient(135deg, rgba(116, 55, 149, 0.2) 0%, rgba(139, 75, 168, 0.2) 100%);
+                    transform: scale(1.02);
+                }
             `;
             document.head.appendChild(style);
         };
@@ -625,8 +670,11 @@ app.registerExtension({
             // 获取工作流中的所有组（未过滤）
             const allWorkflowGroups = this.getWorkflowGroups();
 
+            // 应用排序（默认按名称排序，或使用自定义顺序）
+            const sortedGroups = this.sortGroupsByOrder(allWorkflowGroups);
+
             // 应用颜色过滤用于显示 (rgthree-comfy approach)
-            let displayGroups = allWorkflowGroups;
+            let displayGroups = sortedGroups;
             if (this.properties.selectedColorFilter) {
                 let filterColor = this.properties.selectedColorFilter.trim().toLowerCase();
 
@@ -704,6 +752,45 @@ app.registerExtension({
             return app.graph._groups.filter(g => g && g.title);
         };
 
+        // 按照自定义顺序或名称排序组列表
+        nodeType.prototype.sortGroupsByOrder = function (groups) {
+            if (!groups || groups.length === 0) return [];
+
+            // 如果没有自定义顺序，按名称排序
+            if (!this.properties.groupOrder || this.properties.groupOrder.length === 0) {
+                return groups.slice().sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
+            }
+
+            // 按照自定义顺序排序
+            const orderMap = new Map();
+            this.properties.groupOrder.forEach((name, index) => {
+                orderMap.set(name, index);
+            });
+
+            // 分离已排序和未排序的组
+            const orderedGroups = [];
+            const unorderedGroups = [];
+
+            groups.forEach(group => {
+                if (orderMap.has(group.title)) {
+                    orderedGroups.push(group);
+                } else {
+                    unorderedGroups.push(group);
+                }
+            });
+
+            // 已排序的组按照 groupOrder 的顺序排列
+            orderedGroups.sort((a, b) => {
+                return orderMap.get(a.title) - orderMap.get(b.title);
+            });
+
+            // 未排序的组按名称排序
+            unorderedGroups.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
+
+            // 合并返回
+            return [...orderedGroups, ...unorderedGroups];
+        };
+
         // 检查组是否启用
         nodeType.prototype.isGroupEnabled = function (group) {
             if (!group) return false;
@@ -738,12 +825,23 @@ app.registerExtension({
             const item = document.createElement('div');
             item.className = 'gmm-group-item';
             item.dataset.groupName = groupConfig.group_name;
+            item.draggable = true;  // 启用拖拽
 
             const displayName = this.truncateText(groupConfig.group_name, 30);
             const fullName = groupConfig.group_name || '';
 
             item.innerHTML = `
                 <div class="gmm-group-header">
+                    <div class="gmm-drag-handle" title="拖拽排序">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round">
+                            <circle cx="9" cy="5" r="1.5"></circle>
+                            <circle cx="9" cy="12" r="1.5"></circle>
+                            <circle cx="9" cy="19" r="1.5"></circle>
+                            <circle cx="15" cy="5" r="1.5"></circle>
+                            <circle cx="15" cy="12" r="1.5"></circle>
+                            <circle cx="15" cy="19" r="1.5"></circle>
+                        </svg>
+                    </div>
                     <span class="gmm-group-name" title="${fullName}">${displayName}</span>
                     <div class="gmm-switch ${groupConfig.enabled ? 'active' : ''}">
                         <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -788,7 +886,120 @@ app.registerExtension({
                 });
             }
 
+            // 绑定拖拽事件
+            item.addEventListener('dragstart', (e) => this.onDragStart(e, groupConfig.group_name));
+            item.addEventListener('dragover', (e) => this.onDragOver(e));
+            item.addEventListener('drop', (e) => this.onDrop(e, groupConfig.group_name));
+            item.addEventListener('dragend', (e) => this.onDragEnd(e));
+            item.addEventListener('dragenter', (e) => this.onDragEnter(e));
+            item.addEventListener('dragleave', (e) => this.onDragLeave(e));
+
             return item;
+        };
+
+        // 拖拽开始事件
+        nodeType.prototype.onDragStart = function (e, groupName) {
+            e.stopPropagation();
+            this._draggedGroup = groupName;
+            e.target.style.opacity = '0.5';
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', groupName);
+            console.log('[GMM-Drag] 开始拖拽:', groupName);
+        };
+
+        // 拖拽经过事件
+        nodeType.prototype.onDragOver = function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+        };
+
+        // 拖拽进入事件
+        nodeType.prototype.onDragEnter = function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const target = e.currentTarget;
+            if (target && target.classList.contains('gmm-group-item')) {
+                target.classList.add('gmm-drag-over');
+            }
+        };
+
+        // 拖拽离开事件
+        nodeType.prototype.onDragLeave = function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const target = e.currentTarget;
+            if (target && target.classList.contains('gmm-group-item')) {
+                target.classList.remove('gmm-drag-over');
+            }
+        };
+
+        // 放置事件
+        nodeType.prototype.onDrop = function (e, targetGroupName) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const target = e.currentTarget;
+            if (target) {
+                target.classList.remove('gmm-drag-over');
+            }
+
+            const draggedGroupName = this._draggedGroup;
+            if (!draggedGroupName || draggedGroupName === targetGroupName) {
+                return;
+            }
+
+            console.log('[GMM-Drag] 放置:', draggedGroupName, '->', targetGroupName);
+
+            // 更新 groupOrder
+            this.updateGroupOrder(draggedGroupName, targetGroupName);
+
+            // 刷新UI
+            this.updateGroupsList();
+        };
+
+        // 拖拽结束事件
+        nodeType.prototype.onDragEnd = function (e) {
+            e.stopPropagation();
+            e.target.style.opacity = '';
+            this._draggedGroup = null;
+
+            // 清理所有拖拽样式
+            const items = this.customUI.querySelectorAll('.gmm-group-item');
+            items.forEach(item => item.classList.remove('gmm-drag-over'));
+
+            console.log('[GMM-Drag] 拖拽结束');
+        };
+
+        // 更新组顺序
+        nodeType.prototype.updateGroupOrder = function (draggedGroupName, targetGroupName) {
+            // 获取当前排序后的组列表
+            const allGroups = this.getWorkflowGroups();
+            const sortedGroups = this.sortGroupsByOrder(allGroups);
+
+            // 构建新的 groupOrder
+            const newOrder = sortedGroups.map(g => g.title);
+
+            // 找到被拖拽组和目标组的索引
+            const draggedIndex = newOrder.indexOf(draggedGroupName);
+            const targetIndex = newOrder.indexOf(targetGroupName);
+
+            if (draggedIndex === -1 || targetIndex === -1) {
+                console.warn('[GMM-Drag] 找不到组:', draggedGroupName, targetGroupName);
+                return;
+            }
+
+            // 移除被拖拽的组
+            newOrder.splice(draggedIndex, 1);
+
+            // 在目标位置插入
+            const insertIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+            newOrder.splice(insertIndex, 0, draggedGroupName);
+
+            // 更新 properties
+            this.properties.groupOrder = newOrder;
+
+            console.log('[GMM-Drag] 更新排序:', newOrder);
         };
 
         // 切换组状态（带联动）
@@ -1220,8 +1431,10 @@ app.registerExtension({
             // 保存组配置到工作流 JSON
             info.groups = this.properties.groups || [];
             info.selectedColorFilter = this.properties.selectedColorFilter || '';
+            info.groupOrder = this.properties.groupOrder || [];
 
             console.log('[GMM-Serialize] 保存组配置:', info.groups.length, '个组');
+            console.log('[GMM-Serialize] 保存组顺序:', info.groupOrder.length, '个组');
 
             return data;
         };
@@ -1242,6 +1455,14 @@ app.registerExtension({
                 this.properties.selectedColorFilter = info.selectedColorFilter;
             } else {
                 this.properties.selectedColorFilter = '';
+            }
+
+            // 恢复组顺序
+            if (info.groupOrder && Array.isArray(info.groupOrder)) {
+                this.properties.groupOrder = info.groupOrder;
+                console.log('[GMM-Configure] 恢复组顺序:', info.groupOrder.length, '个组');
+            } else {
+                this.properties.groupOrder = [];
             }
 
             // 等待UI准备就绪后更新界面
@@ -1272,7 +1493,7 @@ app.registerExtension({
             }
 
             // 清理自定义属性
-            this.properties = { groups: [], selectedColorFilter: '' };
+            this.properties = { groups: [], selectedColorFilter: '', groupOrder: [] };
 
             // 调用原始移除方法
             onRemoved?.apply?.(this, arguments);
