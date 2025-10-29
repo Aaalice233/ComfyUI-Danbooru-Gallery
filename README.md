@@ -26,6 +26,7 @@
   - [📤 参数展开 (Parameter Break)](#-参数展开-parameter-break)
   - [📝 工作流说明 (Workflow Description)](#-工作流说明-workflow-description)
   - [🖼️ 简易图像对比 (Simple Image Compare)](#-简易图像对比-simple-image-compare)
+  - [🖼️ 简易加载图像 (Simple Load Image)](#-简易加载图像-simple-load-image)
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
   - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
   - [🖼️ 图像缓存节点 (Image Cache Nodes)](#-图像缓存节点-image-cache-nodes)
@@ -52,6 +53,7 @@
   - [📤 Parameter Break](#-parameter-break-1)
   - [📝 Workflow Description](#-workflow-description-1)
   - [🖼️ Simple Image Compare](#-simple-image-compare)
+  - [🖼️ Simple Load Image](#-simple-load-image)
   - [⚡ Group Executor Manager](#-group-executor-manager)
   - [🔇 Group Mute Manager](#-group-mute-manager)
   - [🖼️ Image Cache Nodes](#-image-cache-nodes)
@@ -582,6 +584,39 @@ Parameter Break
 
 ---
 
+### 🖼️ 简易加载图像 (Simple Load Image)
+
+**简洁的图像加载节点**
+
+简易加载图像节点提供与ComfyUI原生上传节点相似的基础功能，支持图像选择、上传和默认黑色图像。
+
+#### 核心功能
+- 📁 **图像选择**: 从input目录选择已有图像文件
+- ⬆️ **图像上传**: 支持直接上传新图像到input目录
+- ⚫ **默认黑图**: 第一个选项为黑色图像（simple_none.png），返回1024×1024纯黑色图像
+- 🔄 **自动恢复**: 如果默认黑图被误删，会自动重新创建
+- 🎯 **原生兼容**: 完全使用ComfyUI原生逻辑，预览和加载机制与原生节点一致
+
+#### 使用方法
+1. 添加 `image > 简易加载图像 (Simple Load Image)` 节点
+2. 从下拉列表选择图像：
+   - 第一项 `simple_none.png` 为默认黑色图像
+   - 其他选项为input目录中的图像文件
+3. 或点击上传按钮上传新图像
+4. 节点输出IMAGE类型张量，可连接到任何需要图像输入的节点
+
+#### 应用场景
+- **占位图像**: 工作流开发时使用黑图作为占位符
+- **图像切换**: 快速在不同图像间切换测试效果
+- **批量测试**: 结合其他节点进行批量图像处理测试
+
+#### 技术特点
+- **完全原生**: 使用ComfyUI原生文件加载机制，无自定义前端代码
+- **自动维护**: 默认黑图自动创建和恢复，无需手动管理
+- **简洁高效**: 代码结构简单，性能开销极小
+
+---
+
 ### ⚡ 组执行管理器 (Group Executor Manager)
 
 **高效的批量工作流执行节点**
@@ -1053,6 +1088,9 @@ ComfyUI-Danbooru-Gallery/
 ├── simple_image_compare/           # 简易图像对比
 │   ├── __init__.py
 │   └── simple_image_compare.py
+├── simple_load_image/              # 简易加载图像
+│   ├── __init__.py
+│   └── simple_load_image.py
 ├── group_executor_manager/         # 组执行管理器
 │   ├── __init__.py
 │   └── group_executor_manager.py
@@ -1666,6 +1704,39 @@ Compared to the original image comparison node, this node is optimized in the fo
 
 ---
 
+### 🖼️ Simple Load Image
+
+**Minimalist Image Loading Node**
+
+Simple Load Image provides basic functionality similar to ComfyUI's native upload node, supporting image selection, upload, and a default black image option.
+
+#### Core Features
+- 📁 **Image Selection**: Choose from existing image files in the input directory
+- ⬆️ **Image Upload**: Directly upload new images to the input directory
+- ⚫ **Default Black Image**: First option is a black image (simple_none.png) that returns a 1024×1024 pure black image
+- 🔄 **Auto Recovery**: Automatically recreates the default black image if accidentally deleted
+- 🎯 **Native Compatibility**: Uses ComfyUI's native logic entirely, preview and loading mechanism identical to native nodes
+
+#### Usage
+1. Add `image > Simple Load Image` node
+2. Select image from dropdown:
+   - First option `simple_none.png` is the default black image
+   - Other options are image files in the input directory
+3. Or click upload button to upload a new image
+4. Node outputs IMAGE type tensor, can be connected to any node requiring image input
+
+#### Use Cases
+- **Placeholder Image**: Use black image as placeholder during workflow development
+- **Image Switching**: Quickly switch between different images to test effects
+- **Batch Testing**: Combine with other nodes for batch image processing tests
+
+#### Technical Features
+- **Fully Native**: Uses ComfyUI's native file loading mechanism, no custom frontend code
+- **Auto Maintenance**: Default black image automatically created and recovered, no manual management needed
+- **Simple & Efficient**: Simple code structure with minimal performance overhead
+
+---
+
 ### ⚡ Group Executor Manager
 
 **Efficient Batch Workflow Execution Node**
@@ -2137,6 +2208,9 @@ ComfyUI-Danbooru-Gallery/
 ├── simple_image_compare/           # Simple Image Compare
 │   ├── __init__.py
 │   └── simple_image_compare.py
+├── simple_load_image/              # Simple Load Image
+│   ├── __init__.py
+│   └── simple_load_image.py
 ├── group_executor_manager/         # Group Executor Manager
 │   ├── __init__.py
 │   └── group_executor_manager.py
