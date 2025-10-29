@@ -16,8 +16,8 @@ from aiohttp import web
 # 存储每个节点的参数配置 {node_id: {"parameters": [...], "last_update": timestamp}}
 _node_configs: Dict[str, Dict] = {}
 
-# 存储预设配置（按节点标题分组）
-# 新结构: {preset_name: {"node_groups": {node_title: {"parameters": [...], "created_at": timestamp}}}}
+# 存储预设配置（全局共享）
+# 结构: {preset_name: {"parameters": [...], "created_at": timestamp}}
 _presets: Dict[str, Dict] = {}
 
 # 设置文件路径
@@ -33,27 +33,27 @@ def load_presets():
             with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
                 loaded_data = json.load(f)
 
-            # 检查数据格式并迁移旧格式
+            # 检查数据格式并迁移旧格式（从按节点分组迁移到全局共享）
             migrated = False
-            for preset_name, preset_data in loaded_data.items():
-                # 旧格式: {"parameters": [...], "created_at": ...}
-                # 新格式: {"node_groups": {node_title: {"parameters": [...], "created_at": ...}}}
-                if "parameters" in preset_data and "node_groups" not in preset_data:
-                    # 迁移到新格式，放入"default"组
-                    loaded_data[preset_name] = {
-                        "node_groups": {
-                            "default": {
-                                "parameters": preset_data.get("parameters", []),
-                                "created_at": preset_data.get("created_at", time.time())
-                            }
+            for preset_name, preset_data in list(loaded_data.items()):
+                # 旧格式（按节点分组）: {"node_groups": {node_title: {"parameters": [...], "created_at": ...}}}
+                # 新格式（全局共享）: {"parameters": [...], "created_at": ...}
+                if "node_groups" in preset_data:
+                    # 从旧格式迁移：取第一个节点组的数据
+                    node_groups = preset_data["node_groups"]
+                    if node_groups:
+                        first_group = next(iter(node_groups.values()))
+                        loaded_data[preset_name] = {
+                            "parameters": first_group.get("parameters", []),
+                            "created_at": first_group.get("created_at", time.time())
                         }
-                    }
-                    migrated = True
+                        migrated = True
+                        print(f"[ParameterControlPanel] 迁移预设 '{preset_name}' 从分组格式到全局格式")
 
             _presets = loaded_data
 
             if migrated:
-                print(f"[ParameterControlPanel] 已迁移旧格式预设数据到新格式")
+                print(f"[ParameterControlPanel] 已迁移旧格式预设数据到新格式（全局共享）")
                 save_presets()  # 保存迁移后的数据
 
             print(f"[ParameterControlPanel] 加载了 {len(_presets)} 个预设")
@@ -270,20 +270,14 @@ try:
 
     @routes.get('/danbooru_gallery/pcp/list_presets')
     async def list_presets(request):
-        """列出指定节点组的预设"""
+        """列出所有全局预设"""
         try:
-            node_group = request.query.get('node_group', 'default')
-
-            # 收集该节点组下的所有预设名称
-            preset_names = []
-            for preset_name, preset_data in _presets.items():
-                if "node_groups" in preset_data and node_group in preset_data["node_groups"]:
-                    preset_names.append(preset_name)
+            # 返回所有预设名称
+            preset_names = list(_presets.keys())
 
             return web.json_response({
                 "status": "success",
-                "presets": preset_names,
-                "node_group": node_group
+                "presets": preset_names
             })
         except Exception as e:
             print(f"[ParameterControlPanel API] 列出预设错误: {e}")
@@ -294,12 +288,11 @@ try:
 
     @routes.post('/danbooru_gallery/pcp/save_preset')
     async def save_preset(request):
-        """保存节点组预设"""
+        """保存全局预设"""
         try:
             data = await request.json()
             preset_name = data.get('preset_name')
             parameters = data.get('parameters', [])
-            node_group = data.get('node_group', 'default')
 
             if not preset_name:
                 return web.json_response({
@@ -307,12 +300,8 @@ try:
                     "message": "缺少 preset_name"
                 }, status=400)
 
-            # 确保预设存在node_groups结构
-            if preset_name not in _presets:
-                _presets[preset_name] = {"node_groups": {}}
-
-            # 保存到指定节点组
-            _presets[preset_name]["node_groups"][node_group] = {
+            # 保存预设
+            _presets[preset_name] = {
                 "parameters": parameters,
                 "created_at": time.time()
             }
@@ -322,7 +311,7 @@ try:
 
             return web.json_response({
                 "status": "success",
-                "message": f"预设 '{preset_name}' 已保存到节点组 '{node_group}'"
+                "message": f"预设 '{preset_name}' 已保存"
             })
         except Exception as e:
             print(f"[ParameterControlPanel API] 保存预设错误: {e}")
@@ -333,11 +322,10 @@ try:
 
     @routes.post('/danbooru_gallery/pcp/load_preset')
     async def load_preset(request):
-        """加载节点组预设"""
+        """加载全局预设"""
         try:
             data = await request.json()
             preset_name = data.get('preset_name')
-            node_group = data.get('node_group', 'default')
 
             if not preset_name:
                 return web.json_response({
@@ -354,18 +342,9 @@ try:
 
             preset_data = _presets[preset_name]
 
-            # 检查节点组是否存在
-            if "node_groups" not in preset_data or node_group not in preset_data["node_groups"]:
-                return web.json_response({
-                    "status": "error",
-                    "message": f"预设 '{preset_name}' 在节点组 '{node_group}' 中不存在"
-                }, status=404)
-
-            group_data = preset_data["node_groups"][node_group]
-
             return web.json_response({
                 "status": "success",
-                "parameters": group_data["parameters"]
+                "parameters": preset_data["parameters"]
             })
         except Exception as e:
             print(f"[ParameterControlPanel API] 加载预设错误: {e}")
@@ -376,11 +355,10 @@ try:
 
     @routes.post('/danbooru_gallery/pcp/delete_preset')
     async def delete_preset(request):
-        """删除节点组预设"""
+        """删除全局预设"""
         try:
             data = await request.json()
             preset_name = data.get('preset_name')
-            node_group = data.get('node_group', 'default')
 
             if not preset_name:
                 return web.json_response({
@@ -395,28 +373,15 @@ try:
                     "message": f"预设 '{preset_name}' 不存在"
                 }, status=404)
 
-            preset_data = _presets[preset_name]
-
-            # 检查节点组是否存在
-            if "node_groups" not in preset_data or node_group not in preset_data["node_groups"]:
-                return web.json_response({
-                    "status": "error",
-                    "message": f"预设 '{preset_name}' 在节点组 '{node_group}' 中不存在"
-                }, status=404)
-
-            # 删除节点组下的预设
-            del preset_data["node_groups"][node_group]
-
-            # 如果该预设所有节点组都被删除，则删除整个预设
-            if not preset_data["node_groups"]:
-                del _presets[preset_name]
+            # 删除预设
+            del _presets[preset_name]
 
             # 保存到文件
             save_presets()
 
             return web.json_response({
                 "status": "success",
-                "message": f"预设 '{preset_name}' 在节点组 '{node_group}' 中已删除"
+                "message": f"预设 '{preset_name}' 已删除"
             })
         except Exception as e:
             print(f"[ParameterControlPanel API] 删除预设错误: {e}")

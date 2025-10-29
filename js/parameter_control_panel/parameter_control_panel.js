@@ -2467,17 +2467,16 @@ app.registerExtension({
 
         // ==================== 预设管理 ====================
 
-        // 加载预设列表（按节点标题分组）
+        // 加载预设列表（全局共享）
         nodeType.prototype.loadPresetsList = async function () {
             try {
-                const nodeGroup = this.title || 'default';
-                const response = await fetch(`/danbooru_gallery/pcp/list_presets?node_group=${encodeURIComponent(nodeGroup)}`);
+                const response = await fetch(`/danbooru_gallery/pcp/list_presets`);
                 const data = await response.json();
 
                 if (data.status === 'success') {
                     this._allPresets = data.presets || [];
                     this.renderPresetsList(this._allPresets);
-                    console.log('[PCP] 节点组', nodeGroup, '的预设列表已加载:', this._allPresets.length);
+                    console.log('[PCP] 全局预设列表已加载:', this._allPresets.length);
                 }
             } catch (error) {
                 console.error('[PCP] 加载预设列表失败:', error);
@@ -2538,10 +2537,9 @@ app.registerExtension({
             this.renderPresetsList(filtered);
         };
 
-        // 保存预设（按节点标题分组）
+        // 保存预设（全局共享）
         nodeType.prototype.savePreset = async function (presetName) {
             try {
-                const nodeGroup = this.title || 'default';
                 const response = await fetch('/danbooru_gallery/pcp/save_preset', {
                     method: 'POST',
                     headers: {
@@ -2549,8 +2547,7 @@ app.registerExtension({
                     },
                     body: JSON.stringify({
                         preset_name: presetName,
-                        parameters: this.properties.parameters,
-                        node_group: nodeGroup
+                        parameters: this.properties.parameters
                     })
                 });
 
@@ -2560,7 +2557,7 @@ app.registerExtension({
                     this.properties.currentPreset = presetName;
                     this.showToast(t('presetSaved'), 'success');
                     await this.loadPresetsList();
-                    console.log('[PCP] 预设已保存到节点组', nodeGroup, ':', presetName);
+                    console.log('[PCP] 全局预设已保存:', presetName);
                 } else {
                     this.showToast(`${t('error')}: ${data.message}`, 'error');
                 }
@@ -2570,18 +2567,16 @@ app.registerExtension({
             }
         };
 
-        // 加载预设（按节点标题分组）
+        // 加载预设（全局共享）
         nodeType.prototype.loadPreset = async function (presetName) {
             try {
-                const nodeGroup = this.title || 'default';
                 const response = await fetch('/danbooru_gallery/pcp/load_preset', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        preset_name: presetName,
-                        node_group: nodeGroup
+                        preset_name: presetName
                     })
                 });
 
@@ -2653,21 +2648,19 @@ app.registerExtension({
             }
         };
 
-        // 删除预设（按节点标题分组）
+        // 删除预设（全局共享）
         nodeType.prototype.deletePreset = async function (presetName) {
             this.showDeleteConfirm(
                 `${t('deletePreset')}: "${presetName}"?`,
                 async () => {
                     try {
-                        const nodeGroup = this.title || 'default';
                         const response = await fetch('/danbooru_gallery/pcp/delete_preset', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json'
                             },
                             body: JSON.stringify({
-                                preset_name: presetName,
-                                node_group: nodeGroup
+                                preset_name: presetName
                             })
                         });
 
@@ -2679,7 +2672,7 @@ app.registerExtension({
                             }
                             this.showToast(t('presetDeleted'), 'success');
                             await this.loadPresetsList();
-                            console.log('[PCP] 节点组', nodeGroup, '的预设已删除:', presetName);
+                            console.log('[PCP] 全局预设已删除:', presetName);
                         } else {
                             this.showToast(`${t('error')}: ${data.message}`, 'error');
                         }
