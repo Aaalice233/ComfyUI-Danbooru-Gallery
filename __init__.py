@@ -26,6 +26,10 @@ from .py.group_executor_trigger import GroupExecutorTrigger
 from .py.group_mute_manager import NODE_CLASS_MAPPINGS as group_mute_mappings
 from .py.group_mute_manager import NODE_DISPLAY_NAME_MAPPINGS as group_mute_display_mappings
 
+# 导入工作流说明节点
+from .py.workflow_description import NODE_CLASS_MAPPINGS as workflow_description_mappings
+from .py.workflow_description import NODE_DISPLAY_NAME_MAPPINGS as workflow_description_display_mappings
+
 # 优化执行系统映射
 opt_mappings = {
     "GroupExecutorTrigger": GroupExecutorTrigger,
@@ -55,7 +59,8 @@ NODE_CLASS_MAPPINGS = {
     **sn_mappings,
     **pcp_mappings,
     **pb_mappings,
-    **opt_mappings
+    **opt_mappings,
+    **workflow_description_mappings
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -74,7 +79,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **sn_display_mappings,
     **pcp_display_mappings,
     **pb_display_mappings,
-    **opt_display_mappings
+    **opt_display_mappings,
+    **workflow_description_display_mappings
 }
 
 # 设置JavaScript文件目录
@@ -361,6 +367,99 @@ try:
                 }, status=500)
         except Exception as e:
             return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+    # 工作流说明节点相关API路由
+    import os
+    import json
+
+    # 设置文件路径
+    WORKFLOW_DESCRIPTION_SETTINGS_FILE = os.path.join(
+        os.path.dirname(__file__),
+        "py",
+        "workflow_description",
+        "settings.json"
+    )
+
+    def load_workflow_description_settings():
+        """加载工作流说明节点的设置文件"""
+        try:
+            if os.path.exists(WORKFLOW_DESCRIPTION_SETTINGS_FILE):
+                with open(WORKFLOW_DESCRIPTION_SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            return {"opened_versions": {}}
+        except Exception as e:
+            print(f"[WorkflowDescription] 加载设置失败: {e}")
+            return {"opened_versions": {}}
+
+    def save_workflow_description_settings(settings):
+        """保存工作流说明节点的设置文件"""
+        try:
+            os.makedirs(os.path.dirname(WORKFLOW_DESCRIPTION_SETTINGS_FILE), exist_ok=True)
+            with open(WORKFLOW_DESCRIPTION_SETTINGS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            print(f"[WorkflowDescription] 保存设置失败: {e}")
+            return False
+
+    @PromptServer.instance.routes.get("/workflow_description/get_settings")
+    async def get_workflow_description_settings(request):
+        """获取工作流说明节点的设置（已打开的版本记录）"""
+        try:
+            settings = load_workflow_description_settings()
+            return web.json_response({
+                "success": True,
+                "opened_versions": settings.get("opened_versions", {})
+            })
+        except Exception as e:
+            return web.json_response({
+                "success": False,
+                "error": str(e)
+            }, status=500)
+
+    @PromptServer.instance.routes.post("/workflow_description/save_settings")
+    async def save_workflow_description_version(request):
+        """保存已打开的版本到设置文件"""
+        try:
+            data = await request.json()
+            node_id = data.get("node_id", "")
+            version = data.get("version", "")
+
+            if not node_id or not version:
+                return web.json_response({
+                    "success": False,
+                    "error": "缺少node_id或version参数"
+                }, status=400)
+
+            # 加载现有设置
+            settings = load_workflow_description_settings()
+            opened_versions = settings.get("opened_versions", {})
+
+            # 更新版本记录
+            opened_versions[str(node_id)] = version
+            settings["opened_versions"] = opened_versions
+
+            # 保存设置
+            success = save_workflow_description_settings(settings)
+
+            if success:
+                return web.json_response({
+                    "success": True,
+                    "node_id": node_id,
+                    "version": version,
+                    "message": "版本已记录"
+                })
+            else:
+                return web.json_response({
+                    "success": False,
+                    "error": "保存设置失败"
+                }, status=500)
+
+        except Exception as e:
+            return web.json_response({
+                "success": False,
+                "error": str(e)
+            }, status=500)
 
 except ImportError:
     # ComfyUI 环境不可用时的静默处理

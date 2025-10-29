@@ -6,6 +6,7 @@ Text Cache Manager - Singleton pattern for global text caching
 import time
 import threading
 from typing import Dict, List, Optional, Any
+from ..utils import debug_config
 
 
 class TextCacheManager:
@@ -55,15 +56,15 @@ class TextCacheManager:
             self._last_operation: Optional[Dict] = None
 
             self._initialized = True
-            print(f"[TextCacheManager] Initialized global text cache manager (Session ID: {self.session_id})")
+            debug_config.debug_print("text_cache_manager", f"[TextCacheManager] Initialized global text cache manager (Session ID: {self.session_id})")
 
     def set_current_group(self, group_name: Optional[str]) -> None:
         """设置当前执行的组名（由组执行管理器调用）"""
         self.current_group_name = group_name
         if group_name:
-            print(f"[TextCacheManager] >>> 设置当前执行组: {group_name}")
+            debug_config.debug_print("text_cache_manager", f"[TextCacheManager] >>> 设置当前执行组: {group_name}")
         else:
-            print(f"[TextCacheManager] >>> 清除当前执行组")
+            debug_config.debug_print("text_cache_manager", f"[TextCacheManager] >>> 清除当前执行组")
 
     def get_cache_channel(self, channel_name: str) -> Dict[str, Any]:
         """
@@ -82,7 +83,7 @@ class TextCacheManager:
                 "timestamp": 0.0,
                 "metadata": {}
             }
-            print(f"[TextCacheManager] 创建新缓存通道: {channel_name}")
+            debug_config.debug_print("text_cache_manager", f"[TextCacheManager] 创建新缓存通道: {channel_name}")
 
         return self.cache_channels[channel_name]
 
@@ -104,10 +105,10 @@ class TextCacheManager:
                     "timestamp": time.time(),
                     "metadata": {}
                 }
-                print(f"[TextCacheManager] 预注册空通道: {channel_name}")
+                debug_config.debug_print("text_cache_manager", f"[TextCacheManager] 预注册空通道: {channel_name}")
                 return True
             else:
-                print(f"[TextCacheManager] 通道已存在: {channel_name}")
+                debug_config.debug_print("text_cache_manager", f"[TextCacheManager] 通道已存在: {channel_name}")
                 return True
         except Exception as e:
             print(f"[TextCacheManager] 创建通道失败: {channel_name}, 错误: {e}")
@@ -146,10 +147,10 @@ class TextCacheManager:
                 old_text = cache_channel.get("text", "")
                 content_changed = (old_text != text)
 
-                # 简化日志
-                print(f"[TextCacheManager] ┌─ 通道: '{channel_name}'")
-                print(f"[TextCacheManager] │  文本长度: {len(text)} 字符")
-                print(f"[TextCacheManager] │  内容变化: {'是' if content_changed else '否'}")
+                # 简化日志（debug模式）
+                debug_config.debug_print("text_cache_manager", f"[TextCacheManager] ┌─ 通道: '{channel_name}'")
+                debug_config.debug_print("text_cache_manager", f"[TextCacheManager] │  文本长度: {len(text)} 字符")
+                debug_config.debug_print("text_cache_manager", f"[TextCacheManager] │  内容变化: {'是' if content_changed else '否'}")
 
                 timestamp = time.time()
 
@@ -165,12 +166,12 @@ class TextCacheManager:
                     self.last_save_timestamp = timestamp
                     self.has_saved_this_session = True
 
-                    print(f"[TextCacheManager] └─ 完成: 文本已缓存到通道 '{channel_name}'")
+                    debug_config.debug_print("text_cache_manager", f"[TextCacheManager] └─ 完成: 文本已缓存到通道 '{channel_name}'")
                 else:
                     # 内容未变化，只更新metadata中的检查时间
                     if metadata:
                         cache_channel["metadata"]["last_check_timestamp"] = timestamp
-                    print(f"[TextCacheManager] └─ 跳过: 内容未变化，通道 '{channel_name}'")
+                    debug_config.debug_print("text_cache_manager", f"[TextCacheManager] └─ 跳过: 内容未变化，通道 '{channel_name}'")
 
                 # ✅ 只有内容变化时才发送WebSocket事件通知（除非被禁用）
                 if not skip_websocket and content_changed:
@@ -220,10 +221,10 @@ class TextCacheManager:
 
                 cache_channel = self.cache_channels[channel_name]
 
-                # 简化日志
-                print(f"[TextCacheManager] ┌─ 从通道 '{channel_name}' 获取")
-                print(f"[TextCacheManager] │  文本长度: {len(cache_channel['text'])} 字符")
-                print(f"[TextCacheManager] └─ 完成")
+                # 简化日志（debug模式）
+                debug_config.debug_print("text_cache_manager", f"[TextCacheManager] ┌─ 从通道 '{channel_name}' 获取")
+                debug_config.debug_print("text_cache_manager", f"[TextCacheManager] │  文本长度: {len(cache_channel['text'])} 字符")
+                debug_config.debug_print("text_cache_manager", f"[TextCacheManager] └─ 完成")
 
                 return cache_channel["text"]
 
@@ -242,12 +243,12 @@ class TextCacheManager:
             try:
                 if channel_name is None:
                     # 清空所有通道
-                    print(f"[TextCacheManager] 清空所有缓存通道")
+                    debug_config.debug_print("text_cache_manager", f"[TextCacheManager] 清空所有缓存通道")
                     self.cache_channels.clear()
-                    print(f"[TextCacheManager] ✓ 已清空所有缓存通道")
+                    debug_config.debug_print("text_cache_manager", f"[TextCacheManager] ✓ 已清空所有缓存通道")
                 else:
                     # 清空指定通道
-                    print(f"[TextCacheManager] 清空缓存通道: {channel_name}")
+                    debug_config.debug_print("text_cache_manager", f"[TextCacheManager] 清空缓存通道: {channel_name}")
 
                     if channel_name in self.cache_channels:
                         self.cache_channels[channel_name] = {
@@ -255,9 +256,9 @@ class TextCacheManager:
                             "timestamp": 0.0,
                             "metadata": {}
                         }
-                        print(f"[TextCacheManager] ✓ 已清空缓存通道: {channel_name}")
+                        debug_config.debug_print("text_cache_manager", f"[TextCacheManager] ✓ 已清空缓存通道: {channel_name}")
                     else:
-                        print(f"[TextCacheManager] 缓存通道不存在，无需清空: {channel_name}")
+                        debug_config.debug_print("text_cache_manager", f"[TextCacheManager] 缓存通道不存在，无需清空: {channel_name}")
 
                 # 重置会话追踪信息
                 self.has_saved_this_session = False
@@ -325,7 +326,7 @@ class TextCacheManager:
                 # 删除旧通道
                 del self.cache_channels[old_name]
 
-                print(f"[TextCacheManager] ✅ 通道已重命名: '{old_name}' -> '{new_name}'")
+                debug_config.debug_print("text_cache_manager", f"[TextCacheManager] ✅ 通道已重命名: '{old_name}' -> '{new_name}'")
 
                 # 记录操作
                 self._last_operation = {

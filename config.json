@@ -1,11 +1,14 @@
 {
   "debug": {
-    "group_executor_manager": true,
-    "group_executor_trigger": true,
-    "image_cache_save": true,
-    "image_cache_get": true,
+    "group_executor_manager": false,
+    "group_executor_trigger": false,
+    "image_cache_save": false,
+    "image_cache_get": false,
     "execution_engine": false,
     "cache_control_events": false,
-    "resolution_master_simplify": false
+    "resolution_master_simplify": false,
+    "text_cache_manager": false,
+    "parameter_control_panel": false,
+    "workflow_description": false
   }
 }
