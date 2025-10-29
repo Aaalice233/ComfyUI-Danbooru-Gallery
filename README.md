@@ -24,6 +24,7 @@
   - [🧹 提示词清洁女仆 (Prompt Cleaning Maid)](#-提示词清洁女仆-prompt-cleaning-maid)
   - [🎛️ 参数控制面板 (Parameter Control Panel)](#-参数控制面板-parameter-control-panel)
   - [📤 参数展开 (Parameter Break)](#-参数展开-parameter-break)
+  - [📝 工作流说明 (Workflow Description)](#-工作流说明-workflow-description)
   - [🖼️ 简易图像对比 (Simple Image Compare)](#-简易图像对比-simple-image-compare)
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
   - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
@@ -49,6 +50,7 @@
   - [🧹 Prompt Cleaning Maid](#-prompt-cleaning-maid)
   - [🎛️ Parameter Control Panel](#-parameter-control-panel-1)
   - [📤 Parameter Break](#-parameter-break-1)
+  - [📝 Workflow Description](#-workflow-description-1)
   - [🖼️ Simple Image Compare](#-simple-image-compare)
   - [⚡ Group Executor Manager](#-group-executor-manager)
   - [🔇 Group Mute Manager](#-group-mute-manager)
@@ -475,6 +477,66 @@ Parameter Break
 
 #### 代码参考
 参数展开节点的自动选项同步功能参考了 [ComfyUI-CRZnodes](https://github.com/CoreyCorza/ComfyUI-CRZnodes) 项目的设计思路。
+
+---
+
+### 📝 工作流说明 (Workflow Description)
+
+**Markdown渲染工作流说明节点**
+
+工作流说明节点提供了一个优雅的方式来为工作流添加说明文档，支持Markdown渲染、版本管理、首次打开提示弹窗等功能。
+
+#### 核心功能
+- 📝 **Markdown渲染**: 支持完整的Markdown语法，包括标题、列表、代码块、表格等
+- 🎨 **富文本编辑**: 直观的编辑界面，支持实时预览
+- 🔔 **版本提示弹窗**: 基于版本号的首次打开提示，确保用户看到最新说明
+- 💾 **工作流持久化**: 说明内容随工作流保存，方便分享和协作
+- 🎯 **简洁UI**: 节点内直接显示渲染后的Markdown内容
+- 🔒 **虚拟节点**: 不参与实际执行，不影响工作流性能
+
+#### 参数配置
+- **标题 (title)**: 说明文档的标题，显示在节点顶部
+- **内容 (content)**: Markdown格式的说明内容
+- **版本号 (version)**: 用于控制首次打开提示弹窗，格式如 "1.0.0"
+- **启用弹窗 (enable_popup)**: 是否在首次打开工作流时显示提示弹窗
+
+#### 使用方法
+1. 添加 `Danbooru > 工作流说明 (Workflow Description)` 节点
+2. 双击节点打开编辑器
+3. 输入标题和Markdown内容
+4. 设置版本号（可选）
+5. 启用/禁用首次打开弹窗
+6. 保存后内容会在节点中实时渲染显示
+
+#### 应用场景
+- **工作流文档**: 为复杂工作流添加使用说明
+- **参数说明**: 说明各个参数的作用和推荐值
+- **更新日志**: 记录工作流的版本变更历史
+- **协作共享**: 向团队成员说明工作流的使用方法
+- **模板说明**: 在工作流模板中提供配置指南
+
+#### Markdown支持
+- ✅ **标题**: `# H1`, `## H2`, `### H3` 等
+- ✅ **列表**: 有序列表、无序列表、嵌套列表
+- ✅ **强调**: `**粗体**`, `*斜体*`, `~~删除线~~`
+- ✅ **代码**: 行内代码和代码块（支持语法高亮）
+- ✅ **链接**: `[链接文本](URL)`
+- ✅ **图片**: `![图片说明](URL)`
+- ✅ **表格**: Markdown表格语法
+- ✅ **引用**: `> 引用文本`
+- ✅ **分割线**: `---` 或 `***`
+
+#### 版本弹窗机制
+- 基于节点ID和版本号追踪
+- 每个节点独立记录已打开的版本
+- 版本号变更时自动触发弹窗提示
+- 设置保存在插件目录，跨工作流共享
+
+#### 技术特点
+- **轻量级渲染**: 高效的Markdown解析和渲染
+- **样式定制**: 紫色主题与插件整体风格统一
+- **响应式设计**: 节点大小自适应内容
+- **持久化存储**: 完善的数据保存和恢复机制
 
 ---
 
@@ -984,6 +1046,10 @@ ComfyUI-Danbooru-Gallery/
 ├── parameter_break/                # 参数展开
 │   ├── __init__.py
 │   └── parameter_break.py
+├── workflow_description/           # 工作流说明
+│   ├── __init__.py
+│   ├── workflow_description.py
+│   └── settings.json               # 版本记录设置文件
 ├── simple_image_compare/           # 简易图像对比
 │   ├── __init__.py
 │   └── simple_image_compare.py
@@ -1051,6 +1117,8 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── parameter_control_panel.js
 │   ├── parameter_break/            # 参数展开前端
 │   │   └── parameter_break.js
+│   ├── workflow_description/       # 工作流说明前端
+│   │   └── workflow_description.js
 │   ├── simple_image_compare/       # 简易图像对比前端
 │   │   └── simple_image_compare.js
 │   ├── global_text_cache_save/     # 全局文本缓存保存节点前端
@@ -1493,6 +1561,66 @@ Parameter Break
 
 #### Code Reference
 The auto option synchronization feature of Parameter Break node is inspired by the design of [ComfyUI-CRZnodes](https://github.com/CoreyCorza/ComfyUI-CRZnodes) project.
+
+---
+
+### 📝 Workflow Description
+
+**Markdown Rendering Workflow Documentation Node**
+
+Workflow Description node provides an elegant way to add documentation to workflows, supporting Markdown rendering, version management, and first-open popup notifications.
+
+#### Core Features
+- 📝 **Markdown Rendering**: Full Markdown syntax support including headings, lists, code blocks, tables, etc.
+- 🎨 **Rich Text Editing**: Intuitive editing interface with real-time preview
+- 🔔 **Version Popup**: First-open notification based on version number to ensure users see latest instructions
+- 💾 **Workflow Persistence**: Documentation content saved with workflow for easy sharing and collaboration
+- 🎯 **Clean UI**: Rendered Markdown content displayed directly in the node
+- 🔒 **Virtual Node**: Does not participate in actual execution, no impact on workflow performance
+
+#### Parameter Configuration
+- **Title**: Title of the documentation, displayed at the top of the node
+- **Content**: Markdown-formatted documentation content
+- **Version**: Used to control first-open popup, format like "1.0.0"
+- **Enable Popup**: Whether to show notification popup when first opening the workflow
+
+#### Usage
+1. Add `Danbooru > Workflow Description` node
+2. Double-click the node to open the editor
+3. Enter title and Markdown content
+4. Set version number (optional)
+5. Enable/disable first-open popup
+6. After saving, content will be rendered and displayed in the node in real-time
+
+#### Use Cases
+- **Workflow Documentation**: Add usage instructions for complex workflows
+- **Parameter Explanation**: Explain the purpose and recommended values of parameters
+- **Change Log**: Record version change history of workflows
+- **Collaboration Sharing**: Explain workflow usage to team members
+- **Template Instructions**: Provide configuration guides in workflow templates
+
+#### Markdown Support
+- ✅ **Headings**: `# H1`, `## H2`, `### H3`, etc.
+- ✅ **Lists**: Ordered lists, unordered lists, nested lists
+- ✅ **Emphasis**: `**bold**`, `*italic*`, `~~strikethrough~~`
+- ✅ **Code**: Inline code and code blocks (with syntax highlighting)
+- ✅ **Links**: `[link text](URL)`
+- ✅ **Images**: `![image description](URL)`
+- ✅ **Tables**: Markdown table syntax
+- ✅ **Blockquotes**: `> quote text`
+- ✅ **Horizontal Rules**: `---` or `***`
+
+#### Version Popup Mechanism
+- Tracking based on node ID and version number
+- Each node independently records opened versions
+- Popup automatically triggered when version number changes
+- Settings saved in plugin directory, shared across workflows
+
+#### Technical Features
+- **Lightweight Rendering**: Efficient Markdown parsing and rendering
+- **Style Customization**: Purple theme consistent with overall plugin style
+- **Responsive Design**: Node size adapts to content
+- **Persistent Storage**: Comprehensive data save and recovery mechanism
 
 ---
 
@@ -2002,6 +2130,13 @@ ComfyUI-Danbooru-Gallery/
 ├── parameter_break/                # Parameter Break
 │   ├── __init__.py
 │   └── parameter_break.py
+├── workflow_description/           # Workflow Description
+│   ├── __init__.py
+│   ├── workflow_description.py
+│   └── settings.json               # Version record settings file
+├── simple_image_compare/           # Simple Image Compare
+│   ├── __init__.py
+│   └── simple_image_compare.py
 ├── group_executor_manager/         # Group Executor Manager
 │   ├── __init__.py
 │   └── group_executor_manager.py
@@ -2066,6 +2201,10 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── parameter_control_panel.js
 │   ├── parameter_break/            # Parameter Break frontend
 │   │   └── parameter_break.js
+│   ├── workflow_description/       # Workflow Description frontend
+│   │   └── workflow_description.js
+│   ├── simple_image_compare/       # Simple Image Compare frontend
+│   │   └── simple_image_compare.js
 │   ├── global_text_cache_save/     # Global Text Cache Save node frontend
 │   │   └── global_text_cache_save.js
 │   ├── global_text_cache_get/      # Global Text Cache Get node frontend
