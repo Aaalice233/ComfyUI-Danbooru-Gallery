@@ -314,7 +314,7 @@ smile, ((long hair),  beautiful
 
 #### 核心功能
 - 🎨 **可视化参数编辑**: 直观的UI界面管理参数
-- 📊 **多种参数类型**: 支持滑条、开关、下拉菜单三种参数类型
+- 📊 **多种参数类型**: 支持滑条、开关、下拉菜单、图像等多种参数类型
 - 🎯 **分隔符支持**: 使用分隔符组织和分组参数
 - 🔄 **拖拽排序**: 通过拖拽调整参数顺序
 - 💾 **工作流持久化**: 参数配置随工作流保存
@@ -345,7 +345,17 @@ smile, ((long hair),  beautiful
 - 深紫色配色主题
 - 示例：`sampler (euler_a, ddim, dpm++)`, `model (auto from connection)`
 
-**4. 分隔符 (Separator)**
+**4. 图像 (Image)**
+- 图像上传和管理功能
+- 支持通过文件选择器上传图像
+- 悬浮显示图像预览（鼠标悬停在文件名上）
+- 清空按钮可快速移除选中的图像
+- 未上传图像时输出1024×1024纯白色图像
+- 输出类型为IMAGE（ComfyUI标准图像张量）
+- 适用于条件图像、参考图像等场景
+- 示例：`reference_image (uploaded.png)`, `control_image (None → white image)`
+
+**5. 分隔符 (Separator)**
 - 视觉分组和组织参数
 - 可自定义分隔符文本
 - 优雅的紫色主题设计
@@ -1322,7 +1332,7 @@ Parameter Control Panel is a powerful parameter management node that provides a 
 
 #### Core Features
 - 🎨 **Visual Parameter Editing**: Intuitive UI interface for parameter management
-- 📊 **Multiple Parameter Types**: Support for sliders, switches, and dropdown menus
+- 📊 **Multiple Parameter Types**: Support for sliders, switches, dropdown menus, images, and more
 - 🎯 **Separator Support**: Use separators to organize and group parameters
 - 🔄 **Drag-and-Drop Sorting**: Adjust parameter order through dragging
 - 💾 **Workflow Persistence**: Parameter configuration saved with workflow
@@ -1353,7 +1363,17 @@ Parameter Control Panel is a powerful parameter management node that provides a 
 - Deep purple color theme
 - Examples: `sampler (euler_a, ddim, dpm++)`, `model (auto from connection)`
 
-**4. Separator**
+**4. Image**
+- Image upload and management functionality
+- Support for uploading images via file selector
+- Hover preview display (mouse over filename)
+- Clear button to quickly remove selected image
+- Outputs 1024×1024 pure white image when no image is uploaded
+- Output type is IMAGE (ComfyUI standard image tensor)
+- Suitable for conditional images, reference images, etc.
+- Examples: `reference_image (uploaded.png)`, `control_image (None → white image)`
+
+**5. Separator**
 - Visual grouping and parameter organization
 - Customizable separator text
 - Elegant purple theme design

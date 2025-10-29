@@ -25,6 +25,7 @@ const translations = {
         slider: "滑条",
         switch: "开关",
         dropdown: "下拉菜单",
+        image: "图像",
         min: "最小值",
         max: "最大值",
         step: "步长",
@@ -55,7 +56,14 @@ const translations = {
         noPresets: "暂无预设",
         refreshPresets: "刷新预设列表",
         presetsRefreshed: "预设列表已刷新",
-        autoSyncedOptions: "选项将在Break节点输出连接时自动同步"
+        autoSyncedOptions: "选项将在Break节点输出连接时自动同步",
+        uploadImage: "上传图像",
+        selectImage: "选择图像",
+        noImageSelected: "未选择图像",
+        imageFile: "图像文件",
+        uploading: "上传中...",
+        uploadSuccess: "上传成功",
+        uploadFailed: "上传失败"
     },
     en: {
         title: "Parameter Control Panel",
@@ -72,6 +80,7 @@ const translations = {
         slider: "Slider",
         switch: "Switch",
         dropdown: "Dropdown",
+        image: "Image",
         min: "Min",
         max: "Max",
         step: "Step",
@@ -102,7 +111,14 @@ const translations = {
         noPresets: "No presets available",
         refreshPresets: "Refresh Presets",
         presetsRefreshed: "Presets refreshed",
-        autoSyncedOptions: "Options will be auto-synced when Break output is connected"
+        autoSyncedOptions: "Options will be auto-synced when Break output is connected",
+        uploadImage: "Upload Image",
+        selectImage: "Select Image",
+        noImageSelected: "No Image Selected",
+        imageFile: "Image File",
+        uploading: "Uploading...",
+        uploadSuccess: "Upload successful",
+        uploadFailed: "Upload failed"
     }
 };
 
@@ -775,6 +791,101 @@ app.registerExtension({
                     font-weight: 500;
                 }
 
+                /* 图像参数样式 */
+                .pcp-image-container {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex: 1;
+                    min-width: 0;
+                }
+
+                .pcp-image-filename {
+                    flex: 1;
+                    padding: 4px 8px;
+                    background: rgba(0, 0, 0, 0.3);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 6px;
+                    color: #E0E0E0;
+                    font-size: 12px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+
+                .pcp-image-filename:hover {
+                    background: rgba(0, 0, 0, 0.4);
+                    border-color: rgba(116, 55, 149, 0.3);
+                }
+
+                .pcp-image-clear-button {
+                    padding: 4px 8px;
+                    background: rgba(220, 38, 38, 0.2);
+                    border: 1px solid rgba(220, 38, 38, 0.3);
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    flex-shrink: 0;
+                    transition: all 0.2s ease;
+                }
+
+                .pcp-image-clear-button:hover {
+                    background: rgba(220, 38, 38, 0.4);
+                    border-color: rgba(220, 38, 38, 0.5);
+                    transform: translateY(-1px);
+                }
+
+                .pcp-image-upload-button {
+                    padding: 4px 8px;
+                    background: rgba(116, 55, 149, 0.2);
+                    border: 1px solid rgba(116, 55, 149, 0.3);
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    flex-shrink: 0;
+                    transition: all 0.2s ease;
+                }
+
+                .pcp-image-upload-button:hover {
+                    background: rgba(116, 55, 149, 0.4);
+                    border-color: rgba(116, 55, 149, 0.5);
+                    transform: translateY(-1px);
+                }
+
+                .pcp-image-preview-popup {
+                    position: fixed;
+                    z-index: 10000;
+                    background: #2a2a3a;
+                    border: 2px solid #555;
+                    border-radius: 8px;
+                    padding: 8px;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+                    max-width: 400px;
+                    max-height: 400px;
+                    pointer-events: none;
+                    animation: pcp-fade-in 0.15s ease;
+                }
+
+                @keyframes pcp-fade-in {
+                    from {
+                        opacity: 0;
+                        transform: scale(0.95);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: scale(1);
+                    }
+                }
+
+                .pcp-image-preview-popup img {
+                    max-width: 100%;
+                    max-height: 100%;
+                    display: block;
+                    border-radius: 4px;
+                }
+
                 /* 底部按钮 */
                 .pcp-add-parameter-container {
                     padding: 12px;
@@ -1362,6 +1473,9 @@ app.registerExtension({
                 case 'dropdown':
                     control.appendChild(this.createDropdown(param));
                     break;
+                case 'image':
+                    control.appendChild(this.createImage(param));
+                    break;
             }
 
             // 编辑按钮（SVG图标）
@@ -1719,6 +1833,221 @@ app.registerExtension({
             return container;
         };
 
+        // 创建图像UI
+        nodeType.prototype.createImage = function (param) {
+            const container = document.createElement('div');
+            container.className = 'pcp-image-container';
+            container.style.display = 'flex';
+            container.style.alignItems = 'center';
+            container.style.gap = '8px';
+            container.style.flex = '1';
+            container.style.minWidth = '0';
+
+            // 文件名显示区域（支持悬浮预览）
+            const filenameDisplay = document.createElement('div');
+            filenameDisplay.className = 'pcp-image-filename';
+            filenameDisplay.style.flex = '1';
+            filenameDisplay.style.padding = '4px 8px';
+            filenameDisplay.style.background = 'rgba(0, 0, 0, 0.3)';
+            filenameDisplay.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+            filenameDisplay.style.borderRadius = '6px';
+            filenameDisplay.style.color = '#E0E0E0';
+            filenameDisplay.style.fontSize = '12px';
+            filenameDisplay.style.overflow = 'hidden';
+            filenameDisplay.style.textOverflow = 'ellipsis';
+            filenameDisplay.style.whiteSpace = 'nowrap';
+            filenameDisplay.style.cursor = 'pointer';
+            filenameDisplay.textContent = param.value || t('noImageSelected');
+            filenameDisplay.title = param.value || '';
+
+            // 清空按钮
+            const clearButton = document.createElement('button');
+            clearButton.className = 'pcp-image-clear-button';
+            clearButton.textContent = '❌';
+            clearButton.title = '清空图像';
+            clearButton.style.padding = '4px 8px';
+            clearButton.style.background = 'rgba(220, 38, 38, 0.2)';
+            clearButton.style.border = '1px solid rgba(220, 38, 38, 0.3)';
+            clearButton.style.borderRadius = '6px';
+            clearButton.style.cursor = 'pointer';
+            clearButton.style.fontSize = '14px';
+            clearButton.style.flexShrink = '0';
+            clearButton.style.display = param.value ? 'block' : 'none'; // 初始状态根据是否有值决定
+
+            // 上传按钮
+            const uploadButton = document.createElement('button');
+            uploadButton.className = 'pcp-image-upload-button';
+            uploadButton.textContent = '📁';
+            uploadButton.title = t('selectImage');
+            uploadButton.style.padding = '4px 8px';
+            uploadButton.style.background = 'rgba(116, 55, 149, 0.2)';
+            uploadButton.style.border = '1px solid rgba(116, 55, 149, 0.3)';
+            uploadButton.style.borderRadius = '6px';
+            uploadButton.style.cursor = 'pointer';
+            uploadButton.style.fontSize = '14px';
+            uploadButton.style.flexShrink = '0';
+
+            // 创建隐藏的文件input
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'image/*';
+            fileInput.style.display = 'none';
+
+            // 阻止触发拖拽
+            const preventDrag = (e) => {
+                e.stopPropagation();
+            };
+            const preventDragStart = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
+
+            container.addEventListener('mousedown', preventDrag);
+            container.addEventListener('dragstart', preventDragStart);
+            container.draggable = false;
+            uploadButton.addEventListener('mousedown', preventDrag);
+            uploadButton.addEventListener('dragstart', preventDragStart);
+            uploadButton.draggable = false;
+            clearButton.addEventListener('mousedown', preventDrag);
+            clearButton.addEventListener('dragstart', preventDragStart);
+            clearButton.draggable = false;
+            filenameDisplay.addEventListener('mousedown', preventDrag);
+            filenameDisplay.addEventListener('dragstart', preventDragStart);
+            filenameDisplay.draggable = false;
+
+            // 清空按钮点击事件
+            clearButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // 清空参数值
+                param.value = '';
+                filenameDisplay.textContent = t('noImageSelected');
+                filenameDisplay.title = '';
+                // 隐藏清空按钮
+                clearButton.style.display = 'none';
+                // 同步配置
+                this.syncConfig();
+            });
+
+            // 上传按钮点击事件
+            uploadButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                fileInput.click();
+            });
+
+            // 文件选择事件
+            fileInput.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                try {
+                    // 显示上传中状态
+                    const originalText = filenameDisplay.textContent;
+                    filenameDisplay.textContent = t('uploading');
+
+                    // 上传文件
+                    const formData = new FormData();
+                    formData.append('image', file);
+
+                    const response = await fetch('/danbooru_gallery/pcp/upload_image', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        // 更新参数值
+                        param.value = result.filename;
+                        filenameDisplay.textContent = result.filename;
+                        filenameDisplay.title = result.filename;
+                        // 显示清空按钮
+                        clearButton.style.display = 'block';
+                        this.syncConfig();
+
+                        // 显示成功提示
+                        if (globalToastManager) {
+                            globalToastManager.showToast(t('uploadSuccess'), 'success');
+                        }
+                    } else {
+                        throw new Error(result.message || t('uploadFailed'));
+                    }
+
+                } catch (error) {
+                    console.error('[PCP] 上传图像失败:', error);
+                    filenameDisplay.textContent = param.value || t('noImageSelected');
+                    if (globalToastManager) {
+                        globalToastManager.showToast(t('uploadFailed') + ': ' + error.message, 'error');
+                    }
+                }
+
+                // 重置文件input
+                fileInput.value = '';
+            });
+
+            // 悬浮预览功能
+            let previewPopup = null;
+
+            filenameDisplay.addEventListener('mouseenter', (e) => {
+                if (!param.value) return;
+
+                // 创建预览窗口
+                previewPopup = document.createElement('div');
+                previewPopup.className = 'pcp-image-preview-popup';
+                previewPopup.style.position = 'fixed';
+                previewPopup.style.zIndex = '10000';
+                previewPopup.style.background = '#2a2a3a';
+                previewPopup.style.border = '2px solid #555';
+                previewPopup.style.borderRadius = '8px';
+                previewPopup.style.padding = '8px';
+                previewPopup.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.5)';
+                previewPopup.style.maxWidth = '400px';
+                previewPopup.style.maxHeight = '400px';
+                previewPopup.style.pointerEvents = 'none';
+
+                // 创建图像元素
+                const img = document.createElement('img');
+                img.src = `/view?filename=${encodeURIComponent(param.value)}&type=input`;
+                img.style.maxWidth = '100%';
+                img.style.maxHeight = '100%';
+                img.style.display = 'block';
+                img.style.borderRadius = '4px';
+
+                previewPopup.appendChild(img);
+                document.body.appendChild(previewPopup);
+
+                // 定位预览窗口（在鼠标附近）
+                const rect = filenameDisplay.getBoundingClientRect();
+                previewPopup.style.left = `${rect.right + 10}px`;
+                previewPopup.style.top = `${rect.top}px`;
+
+                // 确保预览窗口不超出屏幕
+                setTimeout(() => {
+                    const popupRect = previewPopup.getBoundingClientRect();
+                    if (popupRect.right > window.innerWidth) {
+                        previewPopup.style.left = `${rect.left - popupRect.width - 10}px`;
+                    }
+                    if (popupRect.bottom > window.innerHeight) {
+                        previewPopup.style.top = `${window.innerHeight - popupRect.height - 10}px`;
+                    }
+                }, 50);
+            });
+
+            filenameDisplay.addEventListener('mouseleave', () => {
+                if (previewPopup) {
+                    previewPopup.remove();
+                    previewPopup = null;
+                }
+            });
+
+            // 组装容器
+            container.appendChild(filenameDisplay);
+            container.appendChild(clearButton);
+            container.appendChild(uploadButton);
+            container.appendChild(fileInput);
+
+            return container;
+        };
+
         // ==================== 辅助方法 ====================
 
         // 加载数据源
@@ -1846,6 +2175,7 @@ app.registerExtension({
                             <option value="slider" ${param?.type === 'slider' ? 'selected' : ''}>${t('slider')}</option>
                             <option value="switch" ${param?.type === 'switch' ? 'selected' : ''}>${t('switch')}</option>
                             <option value="dropdown" ${param?.type === 'dropdown' ? 'selected' : ''}>${t('dropdown')}</option>
+                            <option value="image" ${param?.type === 'image' ? 'selected' : ''}>${t('image')}</option>
                             <option value="separator" ${param?.type === 'separator' ? 'selected' : ''}>${t('separator')}</option>
                         </select>
                     </div>
@@ -2079,6 +2409,16 @@ app.registerExtension({
                             sourceSelect.title = '锁定模式下无法修改数据源';
                         }
                         break;
+
+                    case 'image':
+                        configPanel.innerHTML = `
+                            <div class="pcp-dialog-field">
+                                <p style="color: #999; font-size: 12px; margin: 0;">
+                                    💡 图像参数将输出IMAGE张量，可直接连接到其他节点的图像输入
+                                </p>
+                            </div>
+                        `;
+                        break;
                 }
             };
 
@@ -2191,6 +2531,11 @@ app.registerExtension({
                             // 动态数据源，默认值为空字符串
                             defaultValue = '';
                         }
+                        break;
+
+                    case 'image':
+                        // 图像类型：默认值为空字符串（未上传图像）
+                        defaultValue = '';
                         break;
                 }
 

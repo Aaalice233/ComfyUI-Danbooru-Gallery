@@ -1,15 +1,28 @@
 """
 参数控制面板 (Parameter Control Panel)
-支持滑条、开关、下拉菜单、分隔符等多种参数类型
+支持滑条、开关、下拉菜单、分隔符、图像等多种参数类型
 动态输出引脚，预设管理，拖拽排序
 """
 
 import os
 import json
 import time
+import numpy as np
+import torch
+from PIL import Image, ImageOps, ImageSequence
 from typing import Dict, List, Any, Tuple
 from server import PromptServer
 from aiohttp import web
+from ..utils import debug_config
+
+# 导入ComfyUI的辅助模块
+try:
+    import folder_paths
+    import node_helpers
+except ImportError:
+    print("[ParameterControlPanel] 警告: 无法导入 folder_paths 或 node_helpers")
+    folder_paths = None
+    node_helpers = None
 
 # ==================== 全局配置存储 ====================
 
@@ -48,15 +61,15 @@ def load_presets():
                             "created_at": first_group.get("created_at", time.time())
                         }
                         migrated = True
-                        print(f"[ParameterControlPanel] 迁移预设 '{preset_name}' 从分组格式到全局格式")
+                        debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 迁移预设 '{preset_name}' 从分组格式到全局格式")
 
             _presets = loaded_data
 
             if migrated:
-                print(f"[ParameterControlPanel] 已迁移旧格式预设数据到新格式（全局共享）")
+                debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 已迁移旧格式预设数据到新格式（全局共享）")
                 save_presets()  # 保存迁移后的数据
 
-            print(f"[ParameterControlPanel] 加载了 {len(_presets)} 个预设")
+            debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 加载了 {len(_presets)} 个预设")
         else:
             _presets = {}
     except Exception as e:
@@ -96,7 +109,7 @@ def set_node_config(node_id: str, parameters: List[Dict]):
         "parameters": parameters,
         "last_update": time.time()
     }
-    print(f"[ParameterControlPanel] 节点 {node_id} 配置已更新: {len(parameters)} 个参数")
+    debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 节点 {node_id} 配置已更新: {len(parameters)} 个参数")
 
 
 def get_output_type(param_type: str, config: Dict = None) -> str:
@@ -110,6 +123,8 @@ def get_output_type(param_type: str, config: Dict = None) -> str:
         return "BOOLEAN"
     elif param_type == "dropdown":
         return "STRING"
+    elif param_type == "image":
+        return "IMAGE"
     return "*"  # 未知类型返回通配符
 
 
@@ -155,7 +170,7 @@ class ParameterControlPanel:
             unique_id = str(unique_id)
 
         if not unique_id or unique_id not in _node_configs:
-            print(f"[ParameterControlPanel] 节点 {unique_id} 无配置，返回空参数包")
+            debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 节点 {unique_id} 无配置，返回空参数包")
             return ({"_meta": [], "_values": {}},)
 
         config = _node_configs[unique_id]
@@ -190,6 +205,48 @@ class ParameterControlPanel:
                 elif param_type == "dropdown":
                     value = str(value)
                     output_type = "STRING"
+                elif param_type == "image":
+                    # 处理图像参数
+                    output_type = "IMAGE"
+                    if value and folder_paths and node_helpers:
+                        try:
+                            # 获取图像路径
+                            image_path = folder_paths.get_annotated_filepath(value)
+
+                            # 加载图像
+                            img = node_helpers.pillow(Image.open, image_path)
+
+                            # 处理图像序列（如GIF）
+                            output_images = []
+                            for i in ImageSequence.Iterator(img):
+                                i = node_helpers.pillow(ImageOps.exif_transpose, i)
+
+                                if i.mode == 'I':
+                                    i = i.point(lambda i: i * (1 / 255))
+                                image = i.convert("RGB")
+
+                                # 转换为张量
+                                image = np.array(image).astype(np.float32) / 255.0
+                                image = torch.from_numpy(image)[None,]
+                                output_images.append(image)
+
+                            # 合并所有图像
+                            if len(output_images) > 1:
+                                value = torch.cat(output_images, dim=0)
+                            elif len(output_images) == 1:
+                                value = output_images[0]
+                            else:
+                                # 如果加载失败，创建1024x1024白色图像
+                                value = torch.ones((1, 1024, 1024, 3), dtype=torch.float32)
+
+                            debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 加载图像 '{name}': {value.shape}")
+                        except Exception as e:
+                            print(f"[ParameterControlPanel] 加载图像失败 '{name}': {e}")
+                            # 创建1024x1024白色图像作为默认值
+                            value = torch.ones((1, 1024, 1024, 3), dtype=torch.float32)
+                    else:
+                        # 如果没有图像文件，创建1024x1024白色图像
+                        value = torch.ones((1, 1024, 1024, 3), dtype=torch.float32)
                 else:
                     output_type = "*"
 
@@ -205,7 +262,7 @@ class ParameterControlPanel:
                 params_pack["_values"][name] = value
                 order += 1
 
-        print(f"[ParameterControlPanel] 节点 {unique_id} 输出参数包: {len(params_pack['_meta'])} 个参数")
+        debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 节点 {unique_id} 输出参数包: {len(params_pack['_meta'])} 个参数")
         return (params_pack,)
 
 
@@ -463,7 +520,7 @@ try:
                             param["config"] = {}
                         param["config"]["options"] = options
                         param_found = True
-                        print(f"[ParameterControlPanel] 参数 '{param_name}' 选项已同步: {len(options)} 个")
+                        debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 参数 '{param_name}' 选项已同步: {len(options)} 个")
                         break
 
             if not param_found:
@@ -488,7 +545,68 @@ try:
                 "message": str(e)
             }, status=500)
 
-    print("[ParameterControlPanel] API 路由已注册")
+    @routes.post('/danbooru_gallery/pcp/upload_image')
+    async def upload_image(request):
+        """上传图像文件"""
+        try:
+            if not folder_paths:
+                return web.json_response({
+                    "status": "error",
+                    "message": "folder_paths 模块不可用"
+                }, status=500)
+
+            # 读取multipart数据
+            reader = await request.multipart()
+            field = await reader.next()
+
+            if field is None:
+                return web.json_response({
+                    "status": "error",
+                    "message": "未找到上传的文件"
+                }, status=400)
+
+            # 获取文件名和内容
+            filename = field.filename
+            if not filename:
+                return web.json_response({
+                    "status": "error",
+                    "message": "文件名为空"
+                }, status=400)
+
+            # 读取文件内容
+            file_data = await field.read()
+
+            # 获取ComfyUI的input目录
+            input_dir = folder_paths.get_input_directory()
+
+            # 生成唯一文件名（添加时间戳避免覆盖）
+            name_parts = os.path.splitext(filename)
+            timestamp = int(time.time() * 1000)
+            unique_filename = f"{name_parts[0]}_{timestamp}{name_parts[1]}"
+
+            # 保存文件
+            file_path = os.path.join(input_dir, unique_filename)
+            with open(file_path, 'wb') as f:
+                f.write(file_data)
+
+            debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 图像已上传: {unique_filename}")
+
+            return web.json_response({
+                "status": "success",
+                "filename": unique_filename,
+                "message": f"图像已上传: {unique_filename}"
+            })
+
+        except Exception as e:
+            print(f"[ParameterControlPanel API] 上传图像错误: {e}")
+            import traceback
+            traceback.print_exc()
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    debug_config.debug_print("parameter_control_panel", "[ParameterControlPanel] API 路由已注册")
 
 except ImportError as e:
     print(f"[ParameterControlPanel] 警告: 无法导入 PromptServer，API 端点将不可用: {e}")
