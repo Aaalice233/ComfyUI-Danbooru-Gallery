@@ -1785,6 +1785,31 @@ app.registerExtension({
                     }
                 });
 
+                // 绑定tooltip事件到整个item（排除按钮区域）
+                const separatorDescription = param.config?.description;
+                if (separatorDescription && separatorDescription.trim()) {
+                    let isTooltipVisible = false;
+
+                    const controlSelector = '.pcp-parameter-edit, .pcp-parameter-delete';
+
+                    item.addEventListener('mousemove', (e) => {
+                        const isInControl = e.target.closest(controlSelector);
+
+                        if (!isInControl && !isTooltipVisible) {
+                            tooltipManager.showTooltip(item, separatorDescription);
+                            isTooltipVisible = true;
+                        } else if (isInControl && isTooltipVisible) {
+                            tooltipManager.hideTooltip();
+                            isTooltipVisible = false;
+                        }
+                    });
+
+                    item.addEventListener('mouseleave', () => {
+                        tooltipManager.hideTooltip();
+                        isTooltipVisible = false;
+                    });
+                }
+
                 return item;
             }
 
@@ -1805,7 +1830,7 @@ app.registerExtension({
             nameLabel.className = 'pcp-parameter-name';
             nameLabel.textContent = param.name;
 
-            // 如果有说明，添加提示图标
+            // 如果有说明，添加提示图标（tooltip绑定移到item级别）
             const description = param.config?.description;
             if (description && description.trim()) {
                 const descIcon = document.createElement('span');
@@ -1813,15 +1838,6 @@ app.registerExtension({
                 descIcon.textContent = ' ℹ️';
                 descIcon.style.cursor = 'help';
                 nameLabel.appendChild(descIcon);
-
-                // 绑定 tooltip 事件
-                nameLabel.addEventListener('mouseenter', () => {
-                    tooltipManager.showTooltip(nameLabel, description);
-                });
-
-                nameLabel.addEventListener('mouseleave', () => {
-                    tooltipManager.hideTooltip();
-                });
             }
 
             // 锁定模式下禁用拖拽
@@ -1938,6 +1954,30 @@ app.registerExtension({
                 }
             });
 
+            // 绑定tooltip事件到整个item（排除控件区域）
+            if (description && description.trim()) {
+                let isTooltipVisible = false;
+
+                const controlSelector = '.pcp-slider-container, .pcp-switch, .pcp-dropdown-container, .pcp-string-input, .pcp-string-textarea, .pcp-image-container, .pcp-parameter-edit, .pcp-parameter-delete';
+
+                item.addEventListener('mousemove', (e) => {
+                    const isInControl = e.target.closest(controlSelector);
+
+                    if (!isInControl && !isTooltipVisible) {
+                        tooltipManager.showTooltip(item, description);
+                        isTooltipVisible = true;
+                    } else if (isInControl && isTooltipVisible) {
+                        tooltipManager.hideTooltip();
+                        isTooltipVisible = false;
+                    }
+                });
+
+                item.addEventListener('mouseleave', () => {
+                    tooltipManager.hideTooltip();
+                    isTooltipVisible = false;
+                });
+            }
+
             return item;
         };
 
@@ -2002,7 +2042,7 @@ app.registerExtension({
 
             labelContainer.appendChild(label);
 
-            // 如果有说明，添加提示图标和tooltip功能
+            // 如果有说明，添加提示图标（tooltip绑定移到item级别）
             const description = param.config?.description;
             if (description && description.trim()) {
                 const descIcon = document.createElement('span');
@@ -2011,15 +2051,6 @@ app.registerExtension({
                 descIcon.style.cursor = 'help';
                 descIcon.style.marginLeft = '6px';
                 labelContainer.appendChild(descIcon);
-
-                // 绑定 tooltip 事件到整个标签容器
-                labelContainer.addEventListener('mouseenter', () => {
-                    tooltipManager.showTooltip(labelContainer, description);
-                });
-
-                labelContainer.addEventListener('mouseleave', () => {
-                    tooltipManager.hideTooltip();
-                });
             }
 
             // 组装
