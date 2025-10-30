@@ -31,6 +31,10 @@ from .py.group_mute_manager import NODE_DISPLAY_NAME_MAPPINGS as group_mute_disp
 from .py.workflow_description import NODE_CLASS_MAPPINGS as workflow_description_mappings
 from .py.workflow_description import NODE_DISPLAY_NAME_MAPPINGS as workflow_description_display_mappings
 
+# 导入文本缓存查看器节点
+from .py.text_cache_viewer import NODE_CLASS_MAPPINGS as text_cache_viewer_mappings
+from .py.text_cache_viewer import NODE_DISPLAY_NAME_MAPPINGS as text_cache_viewer_display_mappings
+
 # 优化执行系统映射
 opt_mappings = {
     "GroupExecutorTrigger": GroupExecutorTrigger,
@@ -62,7 +66,8 @@ NODE_CLASS_MAPPINGS = {
     **pb_mappings,
     **sli_mappings,
     **opt_mappings,
-    **workflow_description_mappings
+    **workflow_description_mappings,
+    **text_cache_viewer_mappings
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -83,7 +88,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **pb_display_mappings,
     **sli_display_mappings,
     **opt_display_mappings,
-    **workflow_description_display_mappings
+    **workflow_description_display_mappings,
+    **text_cache_viewer_display_mappings
 }
 
 # 设置JavaScript文件目录
@@ -213,6 +219,58 @@ try:
                 "count": len(channels)
             })
         except Exception as e:
+            return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+    @PromptServer.instance.routes.get("/danbooru/text_cache/get_all_details")
+    async def get_all_text_cache_details(request):
+        """获取所有文本缓存通道的详细信息（包括内容、长度、时间戳等）"""
+        try:
+            all_channels = text_cache_manager.get_all_channels()
+            channel_details = []
+
+            current_time = time.time()
+
+            for channel_name in all_channels:
+                if text_cache_manager.channel_exists(channel_name):
+                    # 获取通道数据
+                    channel_info = text_cache_manager.get_cache_channel(channel_name)
+                    text = channel_info.get("text", "")
+                    timestamp = channel_info.get("timestamp", 0)
+
+                    # 计算更新时间差
+                    time_diff = current_time - timestamp
+                    if time_diff < 60:
+                        time_str = "刚刚"
+                    elif time_diff < 3600:
+                        time_str = f"{int(time_diff / 60)}分钟前"
+                    elif time_diff < 86400:
+                        time_str = f"{int(time_diff / 3600)}小时前"
+                    else:
+                        time_str = f"{int(time_diff / 86400)}天前"
+
+                    # 内容预览（完整内容，由CSS控制显示行数）
+                    preview = text
+
+                    channel_details.append({
+                        "name": channel_name,
+                        "length": len(text),
+                        "time": time_str,
+                        "preview": preview,
+                        "timestamp": timestamp
+                    })
+
+            # 按时间戳排序（最新的在前）
+            channel_details.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+
+            return web.json_response({
+                "status": "success",
+                "channels": channel_details,
+                "count": len(channel_details)
+            })
+        except Exception as e:
+            import traceback
+            print(f"[TextCache] 获取所有通道详情失败: {e}")
+            print(traceback.format_exc())
             return web.json_response({"status": "error", "error": str(e)}, status=500)
 
     @PromptServer.instance.routes.post("/danbooru/text_cache/ensure_channel")

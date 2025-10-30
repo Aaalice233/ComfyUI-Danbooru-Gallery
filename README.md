@@ -808,6 +808,15 @@ Parameter Break
 - 👁️ **预览功能**: 显示获取的文本内容和来源
 - ⏱️ **自动更新**: 监听缓存变化并自动刷新
 
+**3. 文本缓存查看器 (Text Cache Viewer)**
+- 📊 **实时监控**: 实时显示所有文本缓存通道的状态和内容
+- 🔍 **完整预览**: 查看每个通道的详细信息（名称、长度、更新时间、内容）
+- 📝 **内容查看**: 支持滚动查看完整文本内容（最大显示3行，超出显示滚动条）
+- ⏰ **时间追踪**: 显示相对更新时间（刚刚/分钟前/小时前/天前）
+- 🔄 **自动刷新**: WebSocket实时更新，缓存变化时自动刷新显示
+- 🎨 **美观界面**: 紫色主题UI，emoji图标，清晰的卡片式布局
+- 🖱️ **手动刷新**: 提供刷新按钮，可手动更新显示内容
+
 #### 核心功能
 - 🚀 **高性能**: 基于内存的快速缓存系统
 - 🔐 **线程安全**: 使用递归锁确保多线程安全
@@ -1117,6 +1126,9 @@ ComfyUI-Danbooru-Gallery/
 ├── text_cache_manager/             # 文本缓存管理器
 │   ├── __init__.py
 │   └── text_cache_manager.py
+├── text_cache_viewer/              # 文本缓存查看器节点
+│   ├── __init__.py
+│   └── text_cache_viewer.py
 ├── resolution_master_simplify/     # 分辨率大师简化版
 │   ├── __init__.py
 │   ├── resolution_master_simplify.py
@@ -1163,6 +1175,8 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── global_text_cache_save.js
 │   ├── global_text_cache_get/      # 全局文本缓存获取节点前端
 │   │   └── global_text_cache_get.js
+│   ├── text_cache_viewer/          # 文本缓存查看器前端
+│   │   └── text_cache_viewer.js
 │   ├── simple_checkpoint_loader_with_name/  # 简易Checkpoint加载器前端（预留）
 │   ├── simple_notify/              # 简易通知前端
 │   │   └── simple_notify.js
@@ -1928,6 +1942,15 @@ Text Cache nodes provide powerful text data caching and retrieval functionality 
 - 👁️ **Preview Feature**: Display retrieved text content and source
 - ⏱️ **Auto Update**: Monitor cache changes and auto-refresh
 
+**3. Text Cache Viewer**
+- 📊 **Real-time Monitoring**: Display status and content of all text cache channels in real-time
+- 🔍 **Complete Preview**: View detailed information for each channel (name, length, update time, content)
+- 📝 **Content Viewing**: Support scrolling to view complete text content (max 3 lines display, scrollbar for overflow)
+- ⏰ **Time Tracking**: Display relative update times (just now/minutes ago/hours ago/days ago)
+- 🔄 **Auto Refresh**: WebSocket real-time updates, automatically refresh when cache changes
+- 🎨 **Beautiful Interface**: Purple-themed UI with emoji icons and clean card-style layout
+- 🖱️ **Manual Refresh**: Provides refresh button for manual content updates
+
 #### Core Features
 - 🚀 **High Performance**: Fast memory-based caching system
 - 🔐 **Thread-Safe**: Uses recursive locks to ensure multi-thread safety
@@ -2237,6 +2260,9 @@ ComfyUI-Danbooru-Gallery/
 ├── text_cache_manager/             # Text Cache Manager
 │   ├── __init__.py
 │   └── text_cache_manager.py
+├── text_cache_viewer/              # Text Cache Viewer node
+│   ├── __init__.py
+│   └── text_cache_viewer.py
 ├── resolution_master_simplify/     # Resolution Master Simplify
 │   ├── __init__.py
 │   ├── resolution_master_simplify.py
@@ -2283,6 +2309,8 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── global_text_cache_save.js
 │   ├── global_text_cache_get/      # Global Text Cache Get node frontend
 │   │   └── global_text_cache_get.js
+│   ├── text_cache_viewer/          # Text Cache Viewer frontend
+│   │   └── text_cache_viewer.js
 │   ├── simple_checkpoint_loader_with_name/  # Simple Checkpoint Loader frontend (reserved)
 │   ├── simple_notify/              # Simple Notify frontend
 │   │   └── simple_notify.js
