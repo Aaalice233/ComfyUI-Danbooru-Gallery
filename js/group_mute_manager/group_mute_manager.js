@@ -662,19 +662,28 @@ app.registerExtension({
 
         // 更新组列表显示
         nodeType.prototype.updateGroupsList = function () {
+            console.log('[GMM-UI] === 开始更新组列表 ===');
+
             const listContainer = this.customUI.querySelector('#gmm-groups-list');
-            if (!listContainer) return;
+            if (!listContainer) {
+                console.warn('[GMM-UI] 找不到组列表容器');
+                return;
+            }
 
             listContainer.innerHTML = '';
 
             // 获取工作流中的所有组（未过滤）
             const allWorkflowGroups = this.getWorkflowGroups();
+            console.log('[GMM-UI] 工作流中的组总数:', allWorkflowGroups.length);
+            console.log('[GMM-UI] 所有组名称:', allWorkflowGroups.map(g => g.title));
 
             // 应用排序（默认按名称排序，或使用自定义顺序）
             const sortedGroups = this.sortGroupsByOrder(allWorkflowGroups);
+            console.log('[GMM-UI] 排序后的组顺序:', sortedGroups.map(g => g.title));
 
             // 应用颜色过滤用于显示 (rgthree-comfy approach)
             let displayGroups = sortedGroups;
+            console.log('[GMM-UI] 当前颜色过滤器:', this.properties.selectedColorFilter || '无');
             if (this.properties.selectedColorFilter) {
                 let filterColor = this.properties.selectedColorFilter.trim().toLowerCase();
 
@@ -704,8 +713,8 @@ app.registerExtension({
                 }
                 filterColor = `#${filterColor}`;
 
-                // Filter groups
-                displayGroups = allWorkflowGroups.filter(group => {
+                // Filter groups (使用已排序的组列表，保持排序顺序)
+                displayGroups = sortedGroups.filter(group => {
                     if (!group.color) return false;
                     let groupColor = group.color.replace("#", "").trim().toLowerCase();
                     if (groupColor.length === 3) {
@@ -714,7 +723,12 @@ app.registerExtension({
                     groupColor = `#${groupColor}`;
                     return groupColor === filterColor;
                 });
+                console.log('[GMM-UI] 颜色过滤后的组数量:', displayGroups.length);
+                console.log('[GMM-UI] 过滤后的组名称:', displayGroups.map(g => g.title));
             }
+
+            console.log('[GMM-UI] 最终显示的组数量:', displayGroups.length);
+            console.log('[GMM-UI] 最终显示顺序:', displayGroups.map(g => g.title));
 
             // 为每个显示的组创建UI
             displayGroups.forEach(group => {
@@ -741,9 +755,16 @@ app.registerExtension({
             });
 
             // 清理不存在的组配置（使用完整的组列表，不受颜色过滤影响）
+            const beforeCleanupCount = this.properties.groups.length;
             this.properties.groups = this.properties.groups.filter(config =>
                 allWorkflowGroups.some(g => g.title === config.group_name)
             );
+            const afterCleanupCount = this.properties.groups.length;
+            if (beforeCleanupCount !== afterCleanupCount) {
+                console.log('[GMM-UI] 清理了不存在的组配置，数量从', beforeCleanupCount, '减少到', afterCleanupCount);
+            }
+
+            console.log('[GMM-UI] === 组列表更新完成 ===');
         };
 
         // 获取工作流中的所有组
@@ -754,12 +775,23 @@ app.registerExtension({
 
         // 按照自定义顺序或名称排序组列表
         nodeType.prototype.sortGroupsByOrder = function (groups) {
-            if (!groups || groups.length === 0) return [];
+            if (!groups || groups.length === 0) {
+                console.log('[GMM-Sort] 输入组列表为空');
+                return [];
+            }
+
+            console.log('[GMM-Sort] 开始排序，组数量:', groups.length);
+            console.log('[GMM-Sort] 输入组名称:', groups.map(g => g.title));
 
             // 如果没有自定义顺序，按名称排序
             if (!this.properties.groupOrder || this.properties.groupOrder.length === 0) {
-                return groups.slice().sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
+                console.log('[GMM-Sort] 没有自定义顺序，按名称排序');
+                const sorted = groups.slice().sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
+                console.log('[GMM-Sort] 排序结果:', sorted.map(g => g.title));
+                return sorted;
             }
+
+            console.log('[GMM-Sort] 使用自定义顺序:', this.properties.groupOrder);
 
             // 按照自定义顺序排序
             const orderMap = new Map();
@@ -779,6 +811,9 @@ app.registerExtension({
                 }
             });
 
+            console.log('[GMM-Sort] 已排序的组:', orderedGroups.map(g => g.title));
+            console.log('[GMM-Sort] 未排序的组:', unorderedGroups.map(g => g.title));
+
             // 已排序的组按照 groupOrder 的顺序排列
             orderedGroups.sort((a, b) => {
                 return orderMap.get(a.title) - orderMap.get(b.title);
@@ -788,7 +823,9 @@ app.registerExtension({
             unorderedGroups.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
 
             // 合并返回
-            return [...orderedGroups, ...unorderedGroups];
+            const result = [...orderedGroups, ...unorderedGroups];
+            console.log('[GMM-Sort] 最终排序结果:', result.map(g => g.title));
+            return result;
         };
 
         // 检查组是否启用
@@ -946,16 +983,22 @@ app.registerExtension({
 
             const draggedGroupName = this._draggedGroup;
             if (!draggedGroupName || draggedGroupName === targetGroupName) {
+                console.log('[GMM-Drag] 取消放置 - 被拖拽组:', draggedGroupName, ', 目标组:', targetGroupName);
                 return;
             }
 
-            console.log('[GMM-Drag] 放置:', draggedGroupName, '->', targetGroupName);
+            console.log('[GMM-Drag] 放置事件触发:', draggedGroupName, '->', targetGroupName);
 
             // 更新 groupOrder
             this.updateGroupOrder(draggedGroupName, targetGroupName);
 
             // 刷新UI
+            console.log('[GMM-Drag] 开始刷新UI以显示新顺序');
             this.updateGroupsList();
+            console.log('[GMM-Drag] UI刷新完成');
+
+            // 输出最终的 groupOrder 以确认保存成功
+            console.log('[GMM-Drag] 当前保存的 groupOrder:', this.properties.groupOrder);
         };
 
         // 拖拽结束事件
@@ -973,33 +1016,47 @@ app.registerExtension({
 
         // 更新组顺序
         nodeType.prototype.updateGroupOrder = function (draggedGroupName, targetGroupName) {
+            console.log('[GMM-Drag] === 开始更新组顺序 ===');
+            console.log('[GMM-Drag] 被拖拽的组:', draggedGroupName);
+            console.log('[GMM-Drag] 目标位置组:', targetGroupName);
+
             // 获取当前排序后的组列表
             const allGroups = this.getWorkflowGroups();
+            console.log('[GMM-Drag] 工作流中所有组:', allGroups.map(g => g.title));
+
             const sortedGroups = this.sortGroupsByOrder(allGroups);
 
             // 构建新的 groupOrder
             const newOrder = sortedGroups.map(g => g.title);
+            console.log('[GMM-Drag] 拖拽前的顺序:', newOrder);
 
             // 找到被拖拽组和目标组的索引
             const draggedIndex = newOrder.indexOf(draggedGroupName);
             const targetIndex = newOrder.indexOf(targetGroupName);
 
+            console.log('[GMM-Drag] 被拖拽组索引:', draggedIndex);
+            console.log('[GMM-Drag] 目标组索引:', targetIndex);
+
             if (draggedIndex === -1 || targetIndex === -1) {
-                console.warn('[GMM-Drag] 找不到组:', draggedGroupName, targetGroupName);
+                console.warn('[GMM-Drag] 找不到组索引 - 被拖拽组:', draggedGroupName, '(索引:', draggedIndex + '), 目标组:', targetGroupName, '(索引:', targetIndex + ')');
                 return;
             }
 
             // 移除被拖拽的组
             newOrder.splice(draggedIndex, 1);
+            console.log('[GMM-Drag] 移除被拖拽组后:', newOrder);
 
             // 在目标位置插入
             const insertIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+            console.log('[GMM-Drag] 计算的插入位置:', insertIndex);
             newOrder.splice(insertIndex, 0, draggedGroupName);
+
+            console.log('[GMM-Drag] 拖拽后的新顺序:', newOrder);
 
             // 更新 properties
             this.properties.groupOrder = newOrder;
-
-            console.log('[GMM-Drag] 更新排序:', newOrder);
+            console.log('[GMM-Drag] 已保存新顺序到 properties.groupOrder');
+            console.log('[GMM-Drag] === 组顺序更新完成 ===');
         };
 
         // 切换组状态（带联动）
