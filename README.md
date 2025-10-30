@@ -34,6 +34,7 @@
   - [📐 分辨率大师简化版 (Resolution Master Simplify)](#-分辨率大师简化版-resolution-master-simplify)
   - [📦 简易Checkpoint加载器 (Simple Checkpoint Loader)](#-简易checkpoint加载器-simple-checkpoint-loader)
   - [🔔 简易通知 (Simple Notify)](#-简易通知-simple-notify)
+  - [✂️ 简易字符串分隔 (Simple String Split)](#-简易字符串分隔-simple-string-split)
 - [安装说明](#安装说明)
 - [系统要求](#系统要求)
 - [高级功能](#高级功能)
@@ -61,6 +62,7 @@
   - [📐 Resolution Master Simplify](#-resolution-master-simplify)
   - [📦 Simple Checkpoint Loader](#-simple-checkpoint-loader)
   - [🔔 Simple Notify](#-simple-notify-1)
+  - [✂️ Simple String Split](#-simple-string-split-1)
 - [Installation](#installation)
 - [System Requirements](#system-requirements-1)
 - [Advanced Features](#advanced-features)
@@ -982,6 +984,69 @@ Parameter Break
 
 ---
 
+### ✂️ 简易字符串分隔 (Simple String Split)
+
+**轻量级字符串分割工具节点**
+
+简易字符串分隔节点提供基础的字符串分割功能，将输入字符串按指定分隔符分割为字符串数组，自动去除前后空白字符。
+
+#### 核心功能
+- ✂️ **简洁分割**: 按分隔符分割字符串为数组
+- 🧹 **自动清理**: 自动去除每个元素前后的空白字符
+- 🎯 **精确输出**: 只返回实际内容，不填充空元素
+- 🔧 **灵活选择**: 支持逗号和竖线两种常用分隔符
+- 📋 **列表输出**: 直接输出字符串数组，便于后续处理
+
+#### 使用方法
+1. 添加 `danbooru > 简易字符串分隔 (Simple String Split)` 节点
+2. 在 `string` 参数中输入要分割的字符串
+3. 选择 `split` 分隔符类型：
+   - `,` (逗号) - 默认选项
+   - `|` (竖线)
+4. 节点输出字符串数组，可连接到支持列表输入的节点
+
+#### 输入参数
+- **string** (STRING): 要分割的字符串
+- **split** (可选): 分隔符类型，支持 `,` 和 `|`
+
+#### 输出参数
+- **STRING** (列表): 分割后的字符串数组
+
+#### 使用示例
+
+**示例 1：分割标签列表**
+```
+输入: "face, eyes, hand"
+分隔符: ,
+输出: ["face", "eyes", "hand"]
+```
+
+**示例 2：竖线分隔**
+```
+输入: "option1 | option2 | option3"
+分隔符: |
+输出: ["option1", "option2", "option3"]
+```
+
+**示例 3：自动清理空白**
+```
+输入: "  tag1  ,  tag2  ,  tag3  "
+分隔符: ,
+输出: ["tag1", "tag2", "tag3"]
+```
+
+#### 应用场景
+- **标签处理**: 分割逗号分隔的标签列表
+- **配置解析**: 解析配置字符串为数组
+- **数据预处理**: 将字符串数据转换为列表格式
+- **批量操作**: 准备批量处理的参数列表
+
+#### 代码来源
+本节点基于以下项目简化而来：
+- [cg-image-filter](https://github.com/chrisgoringe/cg-image-filter) - Split String by Commas 节点
+
+---
+
 ## 安装说明
 
 ### 方法一：ComfyUI Manager 安装（推荐）
@@ -1140,6 +1205,9 @@ ComfyUI-Danbooru-Gallery/
 │   ├── __init__.py
 │   ├── simple_notify.py
 │   └── notify.mp3
+├── simple_string_split/            # 简易字符串分隔
+│   ├── __init__.py
+│   └── simple_string_split.py
 ├── install.py                      # 智能安装脚本
 ├── requirements.txt                # 依赖清单
 ├── js/
@@ -2116,6 +2184,69 @@ This node's functionality is based on:
 
 ---
 
+### ✂️ Simple String Split
+
+**Lightweight String Splitting Tool Node**
+
+Simple String Split node provides basic string splitting functionality, dividing input strings into string arrays by specified delimiter, automatically removing leading and trailing whitespace.
+
+#### Core Features
+- ✂️ **Clean Splitting**: Split strings into arrays by delimiter
+- 🧹 **Auto Cleanup**: Automatically remove leading and trailing whitespace from each element
+- 🎯 **Precise Output**: Return only actual content without padding empty elements
+- 🔧 **Flexible Choice**: Support two common delimiters: comma and pipe
+- 📋 **List Output**: Directly output string arrays for easy subsequent processing
+
+#### Usage
+1. Add `danbooru > Simple String Split` node
+2. Enter the string to split in the `string` parameter
+3. Select `split` delimiter type:
+   - `,` (comma) - Default option
+   - `|` (pipe)
+4. Node outputs string array, can connect to nodes supporting list input
+
+#### Input Parameters
+- **string** (STRING): String to split
+- **split** (optional): Delimiter type, supports `,` and `|`
+
+#### Output Parameters
+- **STRING** (list): String array after splitting
+
+#### Usage Examples
+
+**Example 1: Split Tag List**
+```
+Input: "face, eyes, hand"
+Delimiter: ,
+Output: ["face", "eyes", "hand"]
+```
+
+**Example 2: Pipe Delimiter**
+```
+Input: "option1 | option2 | option3"
+Delimiter: |
+Output: ["option1", "option2", "option3"]
+```
+
+**Example 3: Auto Whitespace Cleanup**
+```
+Input: "  tag1  ,  tag2  ,  tag3  "
+Delimiter: ,
+Output: ["tag1", "tag2", "tag3"]
+```
+
+#### Application Scenarios
+- **Tag Processing**: Split comma-separated tag lists
+- **Configuration Parsing**: Parse configuration strings into arrays
+- **Data Preprocessing**: Convert string data to list format
+- **Batch Operations**: Prepare parameter lists for batch processing
+
+#### Code Sources
+This node is simplified from:
+- [cg-image-filter](https://github.com/chrisgoringe/cg-image-filter) - Split String by Commas node
+
+---
+
 ## Installation
 
 ### Method 1: ComfyUI Manager Installation (Recommended)
@@ -2274,6 +2405,9 @@ ComfyUI-Danbooru-Gallery/
 │   ├── __init__.py
 │   ├── simple_notify.py
 │   └── notify.mp3
+├── simple_string_split/            # Simple String Split
+│   ├── __init__.py
+│   └── simple_string_split.py
 ├── install.py                      # Smart installation script
 ├── requirements.txt                # Dependency list
 ├── js/
@@ -2382,6 +2516,7 @@ MIT License
 - [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) - 文本缓存节点的动态combo实现参考 | Dynamic combo implementation reference for Text Cache nodes
 - [ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager) - 节点设计和功能参考 | Node design and functionality reference
 - [ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts) - 简易通知节点的功能参考 | Functionality reference for Simple Notify node
+- [cg-image-filter](https://github.com/chrisgoringe/cg-image-filter) - 简易字符串分隔节点的基础代码来源 | Base code source for Simple String Split node
 
 ### 翻译文件来源 | Translation Data Sources
 
