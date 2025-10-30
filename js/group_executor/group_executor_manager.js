@@ -33,7 +33,8 @@ app.registerExtension({
             this.properties = {
                 isExecuting: false,
                 groups: [],
-                selectedColorFilter: ''
+                selectedColorFilter: '',
+                locked: false  // 锁定模式状态
             };
 
             // 设置节点初始大小
@@ -77,6 +78,7 @@ app.registerExtension({
                                     <option value="">所有颜色</option>
                                 </select>
                             </div>
+                            <button class="gem-lock-button" id="gem-lock-button" title="锁定模式（双击切换）">🔒</button>
                             <button class="gem-refresh-button" id="gem-refresh" title="刷新">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <polyline points="23 4 23 10 17 10"></polyline>
@@ -252,6 +254,33 @@ app.registerExtension({
 
                 .gem-refresh-button svg {
                     stroke: #B0B0B0;
+                }
+
+                .gem-lock-button {
+                    background: rgba(100, 100, 120, 0.2);
+                    border: 1px solid rgba(100, 100, 120, 0.3);
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    font-size: 14px;
+                    min-width: 32px;
+                    opacity: 0.5;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .gem-lock-button:hover {
+                    opacity: 0.8;
+                    background: rgba(100, 100, 120, 0.3);
+                }
+
+                .gem-lock-button.locked {
+                    opacity: 1;
+                    background: rgba(255, 193, 7, 0.3);
+                    border-color: rgba(255, 193, 7, 0.5);
+                    box-shadow: 0 0 10px rgba(255, 193, 7, 0.3);
                 }
 
                 .gem-groups-list {
@@ -638,6 +667,14 @@ app.registerExtension({
                 this.refreshGroupsList();
             });
 
+            // 锁定按钮 - 双击切换锁定状态
+            const lockButton = container.querySelector('#gem-lock-button');
+            if (lockButton) {
+                lockButton.addEventListener('dblclick', () => {
+                    this.toggleLock();
+                });
+            }
+
             // 颜色过滤器
             const colorFilter = container.querySelector('#gem-color-filter');
             if (colorFilter) {
@@ -853,6 +890,61 @@ app.registerExtension({
         nodeType.prototype.truncateText = function (text, maxLength = 30) {
             if (!text || text.length <= maxLength) return text;
             return text.substring(0, maxLength) + '...';
+        };
+
+        // Toast提示方法
+        nodeType.prototype.showToast = function (message, type = 'info') {
+            try {
+                if (typeof globalToastManager !== 'undefined') {
+                    globalToastManager.showToast(message, type, 3000);
+                } else {
+                    console.log('[GEM] Toast:', message);
+                }
+            } catch (error) {
+                console.error('[GEM] Toast显示失败:', error);
+            }
+        };
+
+        // 切换锁定模式
+        nodeType.prototype.toggleLock = function () {
+            this.properties.locked = !this.properties.locked;
+
+            // 更新UI
+            this.updateLockUI();
+
+            // 显示提示
+            if (this.properties.locked) {
+                this.showToast('已开启锁定模式', 'success');
+                console.log('[GEM] 锁定模式已开启');
+            } else {
+                this.showToast('已关闭锁定模式', 'success');
+                console.log('[GEM] 锁定模式已关闭');
+            }
+        };
+
+        // 根据当前锁定状态更新UI（不改变锁定状态值）
+        nodeType.prototype.updateLockUI = function () {
+            if (!this.customUI) return;
+
+            const lockButton = this.customUI.querySelector('#gem-lock-button');
+            const addButton = this.customUI.querySelector('#gem-add-group');
+
+            if (!lockButton || !addButton) return;
+
+            if (this.properties.locked) {
+                // 应用锁定模式UI
+                lockButton.classList.add('locked');
+                addButton.style.display = 'none';
+            } else {
+                // 应用解锁模式UI
+                lockButton.classList.remove('locked');
+                addButton.style.display = '';
+            }
+
+            // 重新渲染组列表以应用锁定状态到每个组项
+            if (this.properties.groups && this.properties.groups.length > 0) {
+                this.updateGroupsList();
+            }
         };
 
         // 创建可搜索下拉框
@@ -1094,7 +1186,7 @@ app.registerExtension({
         nodeType.prototype.createGroupItem = function (group, index) {
             const item = document.createElement('div');
             item.className = 'gem-group-item';
-            item.draggable = true;
+            item.draggable = !this.properties.locked;  // ✅ 根据锁定状态设置拖拽能力
             item.dataset.groupId = group.id;
 
             // 获取可用的组列表
@@ -1134,13 +1226,34 @@ app.registerExtension({
                 searchableDropdown.setParentItem(item);
             }
 
+            // ✅ 锁定模式：禁用下拉框
+            if (this.properties.locked) {
+                const display = searchableDropdown.querySelector('.gem-dropdown-display');
+                if (display) {
+                    display.style.pointerEvents = 'none';
+                    display.style.opacity = '0.5';
+                    display.style.cursor = 'not-allowed';
+                }
+            }
+
             const deleteButton = item.querySelector('.gem-delete-button');
             deleteButton.addEventListener('click', () => {
                 this.deleteGroup(group.id);
             });
 
+            // ✅ 锁定模式：隐藏删除按钮
+            if (this.properties.locked) {
+                deleteButton.style.display = 'none';
+            }
+
             // 拖拽事件
             item.addEventListener('dragstart', (e) => {
+                // ✅ 锁定模式：阻止拖拽
+                if (this.properties.locked) {
+                    e.preventDefault();
+                    return;
+                }
+
                 e.dataTransfer.effectAllowed = 'move';
                 e.dataTransfer.setData('text/plain', group.id);
                 item.classList.add('dragging');
@@ -1151,11 +1264,21 @@ app.registerExtension({
             });
 
             item.addEventListener('dragover', (e) => {
+                // ✅ 锁定模式：不允许drop
+                if (this.properties.locked) {
+                    return;
+                }
+
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
             });
 
             item.addEventListener('drop', (e) => {
+                // ✅ 锁定模式：阻止drop
+                if (this.properties.locked) {
+                    return;
+                }
+
                 e.preventDefault();
                 const draggedId = parseInt(e.dataTransfer.getData('text/plain'));
                 const draggedIndex = this.properties.groups.findIndex(g => g.id === draggedId);
@@ -1315,6 +1438,7 @@ app.registerExtension({
             info.groups = this.properties.groups || [];
             info.selectedColorFilter = this.properties.selectedColorFilter || '';
             info.isExecuting = this.properties.isExecuting || false;
+            info.locked = this.properties.locked || false;  // ✅ 保存锁定状态
 
             // 保存节点尺寸信息
             info.gem_node_size = {
@@ -1380,6 +1504,14 @@ app.registerExtension({
             this.properties.isExecuting = false;
             console.log('[GEM] 工作流加载完成，执行状态已重置为false');
 
+            // ✅ 恢复锁定状态
+            if (info.locked !== undefined && typeof info.locked === 'boolean') {
+                this.properties.locked = info.locked;
+                console.log('[GEM] ✅ 恢复锁定状态:', this.properties.locked ? '已锁定' : '未锁定');
+            } else {
+                this.properties.locked = false;
+            }
+
             // 恢复节点尺寸
             if (info.gem_node_size && typeof info.gem_node_size === 'object') {
                 const width = typeof info.gem_node_size.width === 'number' ? info.gem_node_size.width : 450;
@@ -1397,6 +1529,9 @@ app.registerExtension({
                     if (colorFilter) {
                         colorFilter.value = this.properties.selectedColorFilter || '';
                     }
+
+                    // ✅ 恢复锁定状态的UI
+                    this.updateLockUI();
                 }, 100);
             }
 
