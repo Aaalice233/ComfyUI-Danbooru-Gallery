@@ -42,7 +42,7 @@ def set_group_config(groups):
     _group_executor_config["last_update"] = time.time()
     debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager] ✅ 配置已更新: {len(groups)} 个组")
     for i, group in enumerate(groups, 1):
-        debug_print(COMPONENT_NAME, f"   {i}. {group.get('group_name', '未命名')} (延迟: {group.get('delay_seconds', 0)}s)")
+        debug_print(COMPONENT_NAME, f"   {i}. {group.get('group_name', '未命名')}")
 
 
 class GroupExecutorManager:
@@ -189,8 +189,7 @@ class GroupExecutorManager:
 
             for i, group in enumerate(config_data, 1):
                 group_name = group.get('group_name', f'未命名组{i}')
-                delay = group.get('delay_seconds', 0)
-                debug_print(COMPONENT_NAME, f"   ├─ 组{i}: {group_name} (延迟{delay}s)")
+                debug_print(COMPONENT_NAME, f"   ├─ 组{i}: {group_name}")
 
             debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager] ✅ 执行计划生成完成\n")
 
@@ -255,7 +254,7 @@ try:
             # 立即显示保存后的配置
             debug_print(COMPONENT_NAME, f"[GroupExecutorManager API] ✅ 配置已保存到全局存储")
             for i, group in enumerate(groups, 1):
-                debug_print(COMPONENT_NAME, f"   {i}. {group.get('group_name', '未命名')} (延迟: {group.get('delay_seconds', 0)}s)")
+                debug_print(COMPONENT_NAME, f"   {i}. {group.get('group_name', '未命名')}")
             debug_print(COMPONENT_NAME, "")
             
             return web.json_response({

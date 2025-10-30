@@ -261,18 +261,7 @@ class OptimizedExecutionEngine {
             console.log(`[OptimizedExecutionEngine] ⏱️ 开始时间: ${new Date().toLocaleTimeString()}`);
 
             try {
-                // 处理延迟项
-                if (groupInfo.group_name === '__delay__') {
-                    const delaySeconds = groupInfo.delay_seconds || 0;
-                    if (delaySeconds > 0) {
-                        console.log(`[OptimizedExecutionEngine] ⏳ 延迟 ${delaySeconds} 秒...`);
-                        await this.delay(delaySeconds * 1000);
-                        console.log(`[OptimizedExecutionEngine] ✅ 延迟完成`);
-                    }
-                    continue;
-                }
-
-                // 执行普通组
+                // 执行组
                 await this.executeGroup(context, groupInfo, i + 1, groups.length);
 
                 // 标记组完成
@@ -299,12 +288,6 @@ class OptimizedExecutionEngine {
                     console.log(`[OptimizedExecutionEngine] ⏸️ 错误暂停执行: ${groupInfo.group_name}`);
                     throw error;
                 }
-            }
-
-            // 组间延迟
-            if (i < groups.length - 1 && groupInfo.delay_seconds > 0) {
-                console.log(`[OptimizedExecutionEngine] ⏳ 组间延迟 ${groupInfo.delay_seconds} 秒...`);
-                await this.delay(groupInfo.delay_seconds * 1000);
             }
         }
 

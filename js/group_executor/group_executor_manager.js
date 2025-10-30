@@ -542,40 +542,6 @@ app.registerExtension({
                     font-size: 12px;
                 }
 
-                .gem-delay-container {
-                    display: flex;
-                    align-items: center;
-                    gap: 4px;
-                }
-
-                .gem-delay-label {
-                    font-size: 11px;
-                    color: #B0B0B0;
-                    white-space: nowrap;
-                }
-
-                .gem-delay-input {
-                    background: rgba(0, 0, 0, 0.2);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    border-radius: 6px;
-                    padding: 4px 8px;
-                    color: #E0E0E0;
-                    font-size: 12px;
-                    width: 60px;
-                    transition: all 0.2s ease;
-                }
-
-                .gem-delay-input:focus {
-                    outline: none;
-                    border-color: #743795;
-                    background: rgba(0, 0, 0, 0.3);
-                }
-
-                .gem-delay-unit {
-                    font-size: 11px;
-                    color: #B0B0B0;
-                }
-
                 .gem-delete-button {
                     background: linear-gradient(135deg, rgba(220, 38, 38, 0.8) 0%, rgba(185, 28, 28, 0.8) 100%);
                     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -686,8 +652,7 @@ app.registerExtension({
         nodeType.prototype.addGroup = function () {
             const newGroup = {
                 id: Date.now(),
-                group_name: '',
-                delay_seconds: 0
+                group_name: ''
             };
 
             this.properties.groups.push(newGroup);
@@ -1140,15 +1105,6 @@ app.registerExtension({
                 <div class="gem-group-header">
                     <div class="gem-group-number">${index + 1}</div>
                     <div class="gem-dropdown-container"></div>
-                    <div class="gem-delay-container">
-                        <label class="gem-delay-label">延迟:</label>
-                        <input type="number"
-                               class="gem-delay-input"
-                               min="0"
-                               step="0.1"
-                               value="${group.delay_seconds || 0}">
-                        <span class="gem-delay-unit">秒</span>
-                    </div>
                     <button class="gem-delete-button">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -1177,13 +1133,6 @@ app.registerExtension({
             if (searchableDropdown.setParentItem) {
                 searchableDropdown.setParentItem(item);
             }
-
-            const delayInput = item.querySelector('.gem-delay-input');
-            delayInput.addEventListener('change', (e) => {
-                group.delay_seconds = Math.max(0, parseFloat(e.target.value) || 0);
-                e.target.value = group.delay_seconds;
-                this.syncConfig();
-            });
 
             const deleteButton = item.querySelector('.gem-delete-button');
             deleteButton.addEventListener('click', () => {
@@ -1378,7 +1327,7 @@ app.registerExtension({
             console.log(`[GEM-Serialize]   节点ID: ${this.id}`);
             console.log(`[GEM-Serialize]   组数量: ${info.groups.length}`);
             info.groups.forEach((g, i) => {
-                console.log(`[GEM-Serialize]   ${i + 1}. ${g.group_name} (延迟: ${g.delay_seconds}s)`);
+                console.log(`[GEM-Serialize]   ${i + 1}. ${g.group_name}`);
             });
             console.log(`[GEM-Serialize]   节点大小: ${info.gem_node_size.width}x${info.gem_node_size.height}`);
 
@@ -1407,14 +1356,13 @@ app.registerExtension({
                 const validGroups = info.groups.filter(group => {
                     return group &&
                         typeof group === 'object' &&
-                        typeof group.group_name === 'string' &&
-                        typeof group.delay_seconds === 'number';
+                        typeof group.group_name === 'string';
                 });
 
                 this.properties.groups = validGroups;
                 console.log('[GEM] ✅ 从工作流JSON恢复配置:', validGroups.length, '个组');
                 validGroups.forEach((g, i) => {
-                    console.log(`   ${i + 1}. ${g.group_name} (延迟: ${g.delay_seconds}s)`);
+                    console.log(`   ${i + 1}. ${g.group_name}`);
                 });
             } else {
                 this.properties.groups = [];
