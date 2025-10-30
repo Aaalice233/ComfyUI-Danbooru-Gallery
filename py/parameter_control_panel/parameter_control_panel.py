@@ -123,6 +123,8 @@ def get_output_type(param_type: str, config: Dict = None) -> str:
         return "BOOLEAN"
     elif param_type == "dropdown":
         return "STRING"
+    elif param_type == "string":
+        return "STRING"
     elif param_type == "image":
         return "IMAGE"
     return "*"  # 未知类型返回通配符
@@ -203,6 +205,9 @@ class ParameterControlPanel:
                     value = bool(value)
                     output_type = "BOOLEAN"
                 elif param_type == "dropdown":
+                    value = str(value)
+                    output_type = "STRING"
+                elif param_type == "string":
                     value = str(value)
                     output_type = "STRING"
                 elif param_type == "image":

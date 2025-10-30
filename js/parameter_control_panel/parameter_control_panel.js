@@ -8,6 +8,38 @@ import { app } from "/scripts/app.js";
 import { globalToastManager } from "../global/toast_manager.js";
 import { globalMultiLanguageManager } from "../global/multi_language.js";
 
+// 工具函数：加载Marked.js库（与workflow_description一致）
+let markedLoaded = false;
+let markedLoadPromise = null;
+
+async function ensureMarkedLoaded() {
+    if (markedLoaded) return true;
+    if (markedLoadPromise) return markedLoadPromise;
+
+    markedLoadPromise = new Promise((resolve, reject) => {
+        if (typeof marked !== 'undefined') {
+            markedLoaded = true;
+            resolve(true);
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
+        script.onload = () => {
+            markedLoaded = true;
+            console.log('[PCP] Marked.js loaded successfully');
+            resolve(true);
+        };
+        script.onerror = () => {
+            console.error('[PCP] Failed to load Marked.js');
+            reject(false);
+        };
+        document.head.appendChild(script);
+    });
+
+    return markedLoadPromise;
+}
+
 // 注册多语言翻译
 const translations = {
     zh: {
@@ -25,6 +57,7 @@ const translations = {
         slider: "滑条",
         switch: "开关",
         dropdown: "下拉菜单",
+        string: "字符串",
         image: "图像",
         min: "最小值",
         max: "最大值",
@@ -63,7 +96,11 @@ const translations = {
         imageFile: "图像文件",
         uploading: "上传中...",
         uploadSuccess: "上传成功",
-        uploadFailed: "上传失败"
+        uploadFailed: "上传失败",
+        description: "参数说明",
+        descriptionPlaceholder: "输入参数说明（支持Markdown格式）",
+        descriptionLockedHint: "锁定模式下无法修改说明",
+        multiline: "多行文本"
     },
     en: {
         title: "Parameter Control Panel",
@@ -80,6 +117,7 @@ const translations = {
         slider: "Slider",
         switch: "Switch",
         dropdown: "Dropdown",
+        string: "String",
         image: "Image",
         min: "Min",
         max: "Max",
@@ -118,7 +156,11 @@ const translations = {
         imageFile: "Image File",
         uploading: "Uploading...",
         uploadSuccess: "Upload successful",
-        uploadFailed: "Upload failed"
+        uploadFailed: "Upload failed",
+        description: "Description",
+        descriptionPlaceholder: "Enter description (Markdown supported)",
+        descriptionLockedHint: "Cannot modify description in locked mode",
+        multiline: "Multiline"
     }
 };
 
@@ -127,12 +169,202 @@ globalMultiLanguageManager.registerTranslations('pcp', translations);
 // 创建命名空间翻译函数
 const t = (key) => globalMultiLanguageManager.t(`pcp.${key}`);
 
+// Markdown Tooltip 管理器
+class MarkdownTooltipManager {
+    constructor() {
+        this.currentTooltip = null;
+        this.showTimeout = null;
+        this.hideTimeout = null;
+        this.currentTarget = null;
+    }
+
+    /**
+     * 显示 Tooltip
+     * @param {HTMLElement} target - 触发元素
+     * @param {string} markdownText - Markdown 文本
+     * @param {Object} options - 选项
+     */
+    showTooltip(target, markdownText, options = {}) {
+        // 如果已经在显示同一个 tooltip，直接返回
+        if (this.currentTarget === target && this.currentTooltip) {
+            return;
+        }
+
+        // 清除现有的延迟
+        if (this.showTimeout) {
+            clearTimeout(this.showTimeout);
+        }
+        if (this.hideTimeout) {
+            clearTimeout(this.hideTimeout);
+        }
+
+        // 延迟显示，防止快速移动时闪烁
+        this.showTimeout = setTimeout(async () => {
+            await this._createTooltip(target, markdownText, options);
+        }, 100);
+    }
+
+    /**
+     * 隐藏 Tooltip
+     */
+    hideTooltip() {
+        // 清除显示延迟
+        if (this.showTimeout) {
+            clearTimeout(this.showTimeout);
+            this.showTimeout = null;
+        }
+
+        // 延迟隐藏，避免鼠标快速移动时闪烁
+        if (this.hideTimeout) {
+            clearTimeout(this.hideTimeout);
+        }
+
+        this.hideTimeout = setTimeout(() => {
+            this._destroyTooltip();
+        }, 50);
+    }
+
+    /**
+     * 立即隐藏 Tooltip（无延迟）
+     */
+    hideTooltipImmediate() {
+        if (this.showTimeout) {
+            clearTimeout(this.showTimeout);
+            this.showTimeout = null;
+        }
+        if (this.hideTimeout) {
+            clearTimeout(this.hideTimeout);
+            this.hideTimeout = null;
+        }
+        this._destroyTooltip();
+    }
+
+    /**
+     * 创建 Tooltip（异步方法，确保marked已加载）
+     */
+    async _createTooltip(target, markdownText, options) {
+        // 先移除现有的 tooltip
+        this._destroyTooltip();
+
+        if (!markdownText || !markdownText.trim()) {
+            return;
+        }
+
+        // 确保Marked.js已加载
+        await ensureMarkedLoaded();
+
+        // 创建 tooltip 元素
+        const tooltip = document.createElement('div');
+        tooltip.className = 'pcp-markdown-tooltip';
+
+        // 渲染 Markdown
+        if (typeof marked !== 'undefined') {
+            try {
+                const html = marked.parse(markdownText, {
+                    breaks: true,
+                    gfm: true
+                });
+                tooltip.innerHTML = html;
+            } catch (error) {
+                console.warn('[PCP] Markdown 渲染失败:', error);
+                tooltip.textContent = markdownText;
+            }
+        } else {
+            // 如果 marked.js 未加载，直接显示纯文本
+            tooltip.innerHTML = markdownText.replace(/\n/g, '<br>');
+        }
+
+        // 添加到 body
+        document.body.appendChild(tooltip);
+
+        // 计算位置
+        this._positionTooltip(tooltip, target, options);
+
+        // 保存引用
+        this.currentTooltip = tooltip;
+        this.currentTarget = target;
+
+        // 添加淡入动画
+        setTimeout(() => {
+            tooltip.style.opacity = '1';
+        }, 10);
+    }
+
+    /**
+     * 定位 Tooltip
+     */
+    _positionTooltip(tooltip, target, options) {
+        const rect = target.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const margin = options.margin || 10;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        let left, top;
+
+        // 默认优先显示在右侧
+        left = rect.right + margin;
+        top = rect.top;
+
+        // 检查是否超出右侧边界
+        if (left + tooltipRect.width > viewportWidth) {
+            // 尝试显示在左侧
+            left = rect.left - tooltipRect.width - margin;
+
+            // 如果左侧也不够，显示在下方
+            if (left < 0) {
+                left = rect.left;
+                top = rect.bottom + margin;
+
+                // 如果下方也不够，显示在上方
+                if (top + tooltipRect.height > viewportHeight) {
+                    top = rect.top - tooltipRect.height - margin;
+                }
+            }
+        }
+
+        // 确保不超出上下边界
+        if (top < 0) {
+            top = margin;
+        } else if (top + tooltipRect.height > viewportHeight) {
+            top = viewportHeight - tooltipRect.height - margin;
+        }
+
+        // 确保不超出左右边界
+        if (left < 0) {
+            left = margin;
+        } else if (left + tooltipRect.width > viewportWidth) {
+            left = viewportWidth - tooltipRect.width - margin;
+        }
+
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+    }
+
+    /**
+     * 销毁 Tooltip
+     */
+    _destroyTooltip() {
+        if (this.currentTooltip) {
+            this.currentTooltip.remove();
+            this.currentTooltip = null;
+            this.currentTarget = null;
+        }
+    }
+}
+
+// 创建全局实例
+const tooltipManager = new MarkdownTooltipManager();
+
 // 参数控制面板节点
 app.registerExtension({
     name: "ParameterControlPanel",
 
     async init(app) {
         console.log('[PCP] 初始化参数控制面板');
+
+        // 预加载Marked.js用于Markdown tooltip
+        await ensureMarkedLoaded();
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
@@ -1131,6 +1363,142 @@ app.registerExtension({
                 .pcp-parameter-item {
                     animation: pcpFadeIn 0.3s ease-out;
                 }
+
+                /* Markdown Tooltip 样式 */
+                .pcp-markdown-tooltip {
+                    position: fixed;
+                    background: rgba(30, 30, 40, 0.98);
+                    border: 1px solid rgba(116, 55, 149, 0.6);
+                    border-radius: 8px;
+                    padding: 12px 16px;
+                    max-width: 400px;
+                    max-height: 300px;
+                    overflow-y: auto;
+                    z-index: 999999;
+                    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 20px rgba(116, 55, 149, 0.3);
+                    pointer-events: none;
+                    opacity: 0;
+                    transition: opacity 0.15s ease-in-out;
+                    font-size: 13px;
+                    line-height: 1.6;
+                    color: #E0E0E0;
+                }
+
+                .pcp-markdown-tooltip.visible {
+                    opacity: 1;
+                }
+
+                .pcp-markdown-tooltip::-webkit-scrollbar {
+                    width: 6px;
+                }
+
+                .pcp-markdown-tooltip::-webkit-scrollbar-track {
+                    background: rgba(0, 0, 0, 0.2);
+                    border-radius: 3px;
+                }
+
+                .pcp-markdown-tooltip::-webkit-scrollbar-thumb {
+                    background: rgba(116, 55, 149, 0.5);
+                    border-radius: 3px;
+                }
+
+                .pcp-markdown-tooltip::-webkit-scrollbar-thumb:hover {
+                    background: rgba(116, 55, 149, 0.7);
+                }
+
+                /* Markdown 内容样式 */
+                .pcp-markdown-tooltip h1,
+                .pcp-markdown-tooltip h2,
+                .pcp-markdown-tooltip h3,
+                .pcp-markdown-tooltip h4,
+                .pcp-markdown-tooltip h5,
+                .pcp-markdown-tooltip h6 {
+                    color: #B19CD9;
+                    margin: 8px 0 4px 0;
+                    font-weight: 600;
+                }
+
+                .pcp-markdown-tooltip h1 { font-size: 18px; }
+                .pcp-markdown-tooltip h2 { font-size: 16px; }
+                .pcp-markdown-tooltip h3 { font-size: 15px; }
+                .pcp-markdown-tooltip h4 { font-size: 14px; }
+                .pcp-markdown-tooltip h5 { font-size: 13px; }
+                .pcp-markdown-tooltip h6 { font-size: 12px; }
+
+                .pcp-markdown-tooltip p {
+                    margin: 4px 0;
+                }
+
+                .pcp-markdown-tooltip code {
+                    background: rgba(0, 0, 0, 0.3);
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                    font-size: 12px;
+                    color: #F0DB4F;
+                }
+
+                .pcp-markdown-tooltip pre {
+                    background: rgba(0, 0, 0, 0.4);
+                    padding: 8px 12px;
+                    border-radius: 4px;
+                    border-left: 3px solid rgba(116, 55, 149, 0.8);
+                    overflow-x: auto;
+                    margin: 8px 0;
+                }
+
+                .pcp-markdown-tooltip pre code {
+                    background: none;
+                    padding: 0;
+                }
+
+                .pcp-markdown-tooltip ul,
+                .pcp-markdown-tooltip ol {
+                    margin: 4px 0;
+                    padding-left: 20px;
+                }
+
+                .pcp-markdown-tooltip li {
+                    margin: 2px 0;
+                }
+
+                .pcp-markdown-tooltip blockquote {
+                    border-left: 3px solid rgba(116, 55, 149, 0.6);
+                    padding-left: 12px;
+                    margin: 8px 0;
+                    color: #B0B0B0;
+                    font-style: italic;
+                }
+
+                .pcp-markdown-tooltip a {
+                    color: #9370DB;
+                    text-decoration: underline;
+                }
+
+                .pcp-markdown-tooltip a:hover {
+                    color: #B19CD9;
+                }
+
+                .pcp-markdown-tooltip strong {
+                    color: #F0F0F0;
+                    font-weight: 600;
+                }
+
+                .pcp-markdown-tooltip em {
+                    color: #D0D0D0;
+                    font-style: italic;
+                }
+
+                /* 说明图标样式 */
+                .pcp-description-icon {
+                    opacity: 0.6;
+                    transition: opacity 0.2s ease;
+                    user-select: none;
+                }
+
+                .pcp-description-icon:hover {
+                    opacity: 1;
+                }
             `;
             document.head.appendChild(style);
         };
@@ -1339,7 +1707,7 @@ app.registerExtension({
                     if (this.properties.locked) {
                         dragHandle.draggable = false;
                         dragHandle.style.cursor = 'default';
-                        dragHandle.title = '';
+                        dragHandle.removeAttribute('title');
                     } else {
                         dragHandle.addEventListener('dragstart', (e) => {
                             e.dataTransfer.effectAllowed = 'move';
@@ -1437,11 +1805,30 @@ app.registerExtension({
             nameLabel.className = 'pcp-parameter-name';
             nameLabel.textContent = param.name;
 
+            // 如果有说明，添加提示图标
+            const description = param.config?.description;
+            if (description && description.trim()) {
+                const descIcon = document.createElement('span');
+                descIcon.className = 'pcp-description-icon';
+                descIcon.textContent = ' ℹ️';
+                descIcon.style.cursor = 'help';
+                nameLabel.appendChild(descIcon);
+
+                // 绑定 tooltip 事件
+                nameLabel.addEventListener('mouseenter', () => {
+                    tooltipManager.showTooltip(nameLabel, description);
+                });
+
+                nameLabel.addEventListener('mouseleave', () => {
+                    tooltipManager.hideTooltip();
+                });
+            }
+
             // 锁定模式下禁用拖拽
             if (this.properties.locked) {
                 nameLabel.draggable = false;
                 nameLabel.style.cursor = 'default';
-                nameLabel.title = '';
+                nameLabel.removeAttribute('title');
             } else {
                 nameLabel.draggable = true;
                 nameLabel.style.cursor = 'move';
@@ -1472,6 +1859,9 @@ app.registerExtension({
                     break;
                 case 'dropdown':
                     control.appendChild(this.createDropdown(param));
+                    break;
+                case 'string':
+                    control.appendChild(this.createString(param));
                     break;
                 case 'image':
                     control.appendChild(this.createImage(param));
@@ -1611,6 +2001,26 @@ app.registerExtension({
             label.style.textShadow = `0 0 8px ${rgbaGlow}, 0 0 12px ${rgbaGlow}`;
 
             labelContainer.appendChild(label);
+
+            // 如果有说明，添加提示图标和tooltip功能
+            const description = param.config?.description;
+            if (description && description.trim()) {
+                const descIcon = document.createElement('span');
+                descIcon.className = 'pcp-description-icon';
+                descIcon.textContent = ' ℹ️';
+                descIcon.style.cursor = 'help';
+                descIcon.style.marginLeft = '6px';
+                labelContainer.appendChild(descIcon);
+
+                // 绑定 tooltip 事件到整个标签容器
+                labelContainer.addEventListener('mouseenter', () => {
+                    tooltipManager.showTooltip(labelContainer, description);
+                });
+
+                labelContainer.addEventListener('mouseleave', () => {
+                    tooltipManager.hideTooltip();
+                });
+            }
 
             // 组装
             separator.appendChild(fullLine);
@@ -1829,6 +2239,66 @@ app.registerExtension({
             // 组装container
             container.appendChild(indicator);
             container.appendChild(select);
+
+            return container;
+        };
+
+        // 创建字符串UI
+        nodeType.prototype.createString = function (param) {
+            const container = document.createElement('div');
+            container.className = 'pcp-string-container';
+            container.style.display = 'flex';
+            container.style.alignItems = 'flex-start';
+            container.style.gap = '8px';
+            container.style.flex = '1';
+            container.style.minWidth = '0';
+
+            const config = param.config || {};
+            const isMultiline = config.multiline || false;
+
+            // 创建输入控件
+            let input;
+            if (isMultiline) {
+                input = document.createElement('textarea');
+                input.className = 'pcp-string-textarea';
+                input.rows = 3;
+                input.style.resize = 'vertical';
+            } else {
+                input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'pcp-string-input';
+            }
+
+            input.value = param.value || '';
+            input.placeholder = '输入文本...';
+            input.style.flex = '1';
+            input.style.padding = '6px 10px';
+            input.style.background = 'rgba(0, 0, 0, 0.3)';
+            input.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+            input.style.borderRadius = '6px';
+            input.style.color = '#E0E0E0';
+            input.style.fontSize = '12px';
+            input.style.fontFamily = 'inherit';
+
+            // 输入事件
+            input.addEventListener('input', (e) => {
+                param.value = e.target.value;
+                this.syncConfig();
+            });
+
+            // 聚焦样式
+            input.addEventListener('focus', () => {
+                input.style.outline = 'none';
+                input.style.borderColor = '#743795';
+                input.style.background = 'rgba(0, 0, 0, 0.4)';
+            });
+
+            input.addEventListener('blur', () => {
+                input.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                input.style.background = 'rgba(0, 0, 0, 0.3)';
+            });
+
+            container.appendChild(input);
 
             return container;
         };
@@ -2175,6 +2645,7 @@ app.registerExtension({
                             <option value="slider" ${param?.type === 'slider' ? 'selected' : ''}>${t('slider')}</option>
                             <option value="switch" ${param?.type === 'switch' ? 'selected' : ''}>${t('switch')}</option>
                             <option value="dropdown" ${param?.type === 'dropdown' ? 'selected' : ''}>${t('dropdown')}</option>
+                            <option value="string" ${param?.type === 'string' ? 'selected' : ''}>${t('string')}</option>
                             <option value="image" ${param?.type === 'image' ? 'selected' : ''}>${t('image')}</option>
                             <option value="separator" ${param?.type === 'separator' ? 'selected' : ''}>${t('separator')}</option>
                         </select>
@@ -2233,6 +2704,7 @@ app.registerExtension({
                     case 'separator':
                         // 分隔符配置：颜色选择
                         const separatorColor = param?.color || '#9370DB';
+                        const separatorDescription = param?.config?.description || '';
                         const colorPresets = [
                             { name: '紫色', value: '#9370DB' },
                             { name: '蓝色', value: '#4A90E2' },
@@ -2249,6 +2721,13 @@ app.registerExtension({
                                 <p style="color: #999; font-size: 12px; margin: 0 0 12px 0;">
                                     提示：参数名称将作为分隔符的显示文本
                                 </p>
+                            </div>
+
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">${t('description')}</label>
+                                <textarea class="pcp-dialog-textarea pcp-param-description" id="pcp-param-description"
+                                          placeholder="${t('descriptionPlaceholder')}"
+                                          rows="3">${separatorDescription}</textarea>
                             </div>
 
                             <div class="pcp-dialog-field">
@@ -2308,7 +2787,14 @@ app.registerExtension({
 
                     case 'slider':
                         const sliderConfig = param?.config || {};
+                        const sliderDescription = sliderConfig.description || '';
                         configPanel.innerHTML = `
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">${t('description')}</label>
+                                <textarea class="pcp-dialog-textarea pcp-param-description" id="pcp-param-description"
+                                          placeholder="${t('descriptionPlaceholder')}"
+                                          rows="3">${sliderDescription}</textarea>
+                            </div>
                             <div class="pcp-dialog-row">
                                 <div class="pcp-dialog-field pcp-dialog-field-half">
                                     <label class="pcp-dialog-label">${t('min')}</label>
@@ -2337,8 +2823,16 @@ app.registerExtension({
                         break;
 
                     case 'switch':
-                        const switchDefault = param?.config?.default !== undefined ? param.config.default : false;
+                        const switchConfig = param?.config || {};
+                        const switchDefault = switchConfig.default !== undefined ? switchConfig.default : false;
+                        const switchDescription = switchConfig.description || '';
                         configPanel.innerHTML = `
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">${t('description')}</label>
+                                <textarea class="pcp-dialog-textarea pcp-param-description" id="pcp-param-description"
+                                          placeholder="${t('descriptionPlaceholder')}"
+                                          rows="3">${switchDescription}</textarea>
+                            </div>
                             <div class="pcp-dialog-field">
                                 <label class="pcp-dialog-label">${t('defaultValue')}</label>
                                 <select class="pcp-dialog-select" id="pcp-switch-default">
@@ -2352,11 +2846,18 @@ app.registerExtension({
                     case 'dropdown':
                         const dropdownConfig = param?.config || {};
                         const dataSource = dropdownConfig.data_source || 'from_connection';
+                        const dropdownDescription = dropdownConfig.description || '';
                         const optionsText = Array.isArray(dropdownConfig.options)
                             ? dropdownConfig.options.join('\n')
                             : '';
 
                         configPanel.innerHTML = `
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">${t('description')}</label>
+                                <textarea class="pcp-dialog-textarea pcp-param-description" id="pcp-param-description"
+                                          placeholder="${t('descriptionPlaceholder')}"
+                                          rows="3">${dropdownDescription}</textarea>
+                            </div>
                             <div class="pcp-dialog-field">
                                 <label class="pcp-dialog-label">${t('dataSource')}</label>
                                 <select class="pcp-dialog-select" id="pcp-dropdown-source">
@@ -2410,8 +2911,44 @@ app.registerExtension({
                         }
                         break;
 
-                    case 'image':
+                    case 'string':
+                        const stringConfig = param?.config || {};
+                        const stringDescription = stringConfig.description || '';
+                        const stringDefault = stringConfig.default || '';
+                        const stringMultiline = stringConfig.multiline || false;
                         configPanel.innerHTML = `
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">${t('description')}</label>
+                                <textarea class="pcp-dialog-textarea pcp-param-description" id="pcp-param-description"
+                                          placeholder="${t('descriptionPlaceholder')}"
+                                          rows="3">${stringDescription}</textarea>
+                            </div>
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">${t('defaultValue')}</label>
+                                <input type="text" class="pcp-dialog-input" id="pcp-string-default"
+                                       value="${stringDefault}"
+                                       placeholder="输入默认文本...">
+                            </div>
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label" style="display: flex; align-items: center; gap: 8px;">
+                                    <input type="checkbox" id="pcp-string-multiline" ${stringMultiline ? 'checked' : ''}
+                                           style="width: auto; margin: 0;">
+                                    <span>${t('multiline')}</span>
+                                </label>
+                            </div>
+                        `;
+                        break;
+
+                    case 'image':
+                        const imageConfig = param?.config || {};
+                        const imageDescription = imageConfig.description || '';
+                        configPanel.innerHTML = `
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">${t('description')}</label>
+                                <textarea class="pcp-dialog-textarea pcp-param-description" id="pcp-param-description"
+                                          placeholder="${t('descriptionPlaceholder')}"
+                                          rows="3">${imageDescription}</textarea>
+                            </div>
                             <div class="pcp-dialog-field">
                                 <p style="color: #999; font-size: 12px; margin: 0;">
                                     💡 图像参数将输出IMAGE张量，可直接连接到其他节点的图像输入
@@ -2422,12 +2959,28 @@ app.registerExtension({
                 }
             };
 
+            // 应用锁定模式禁用逻辑
+            const applyLockModeDisabling = () => {
+                if (isEdit && this.properties.locked) {
+                    // 查找说明输入框并禁用
+                    const descriptionTextarea = configPanel.querySelector('#pcp-param-description');
+                    if (descriptionTextarea) {
+                        descriptionTextarea.disabled = true;
+                        descriptionTextarea.style.opacity = '0.6';
+                        descriptionTextarea.style.cursor = 'not-allowed';
+                        descriptionTextarea.title = t('descriptionLockedHint');
+                    }
+                }
+            };
+
             // 初始化配置面板
             updateConfigPanel(param?.type || 'slider');
+            applyLockModeDisabling();
 
             // 类型变化时更新配置面板
             typeSelect.addEventListener('change', (e) => {
                 updateConfigPanel(e.target.value);
+                applyLockModeDisabling();
             });
 
             // 点击覆盖层关闭
@@ -2473,6 +3026,15 @@ app.registerExtension({
                 // 收集配置
                 const config = {};
                 let defaultValue = null;
+
+                // 读取说明字段（所有类型共用）
+                const descriptionTextarea = configPanel.querySelector('#pcp-param-description');
+                if (descriptionTextarea) {
+                    const description = descriptionTextarea.value.trim();
+                    if (description) {
+                        config.description = description;
+                    }
+                }
 
                 switch (type) {
                     case 'separator':
@@ -2531,6 +3093,16 @@ app.registerExtension({
                             // 动态数据源，默认值为空字符串
                             defaultValue = '';
                         }
+                        break;
+
+                    case 'string':
+                        const stringDefaultInput = configPanel.querySelector('#pcp-string-default');
+                        const stringMultilineCheckbox = configPanel.querySelector('#pcp-string-multiline');
+
+                        config.default = stringDefaultInput ? stringDefaultInput.value : '';
+                        config.multiline = stringMultilineCheckbox ? stringMultilineCheckbox.checked : false;
+
+                        defaultValue = config.default;
                         break;
 
                     case 'image':
