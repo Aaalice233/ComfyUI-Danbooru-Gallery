@@ -305,6 +305,9 @@ class OptimizedExecutionEngine {
         /** 执行单个组 */
         const groupName = groupInfo.group_name;
 
+        // ✅ 设置全局变量，记录当前执行的组名（供 hook 使用）
+        window._currentExecutingGroup = groupName;
+
         console.log(`[OptimizedExecutionEngine] 🎯 开始执行组: ${groupName}`);
 
         // ✅ 增强日志：显示当前执行进度和组信息
@@ -353,6 +356,9 @@ class OptimizedExecutionEngine {
         }
 
         console.log(`[OptimizedExecutionEngine] ✅ 组执行完成: ${groupName}`);
+
+        // ✅ 清除全局变量
+        window._currentExecutingGroup = null;
     }
 
     async setCurrentCacheGroup(groupName) {
