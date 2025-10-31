@@ -169,6 +169,127 @@ globalMultiLanguageManager.registerTranslations('pcp', translations);
 // 创建命名空间翻译函数
 const t = (key) => globalMultiLanguageManager.t(`pcp.${key}`);
 
+// ============================================================
+// 左上角提示管理器 (Top Left Notice Manager)
+// ============================================================
+
+/**
+ * 管理屏幕左上角的持久提示
+ * 用于显示布尔参数启用时的状态提示
+ */
+class TopLeftNoticeManager {
+    constructor() {
+        this.notices = new Map(); // key: paramName, value: {text, element}
+        this.container = null;
+    }
+
+    /**
+     * 初始化容器（懒加载）
+     */
+    initContainer() {
+        if (this.container) return;
+
+        this.container = document.createElement('div');
+        this.container.className = 'pcp-top-left-notice-container';
+        document.body.appendChild(this.container);
+
+        console.log('[PCP-Notice] 左上角提示容器已创建');
+    }
+
+    /**
+     * 显示提示
+     * @param {string} paramName - 参数名称（唯一标识）
+     * @param {string} text - 提示文本
+     */
+    showNotice(paramName, text) {
+        // 确保容器存在
+        this.initContainer();
+
+        // 如果已存在相同参数的提示，先移除
+        if (this.notices.has(paramName)) {
+            this.hideNotice(paramName);
+        }
+
+        // 创建提示元素
+        const noticeElement = document.createElement('div');
+        noticeElement.className = 'pcp-top-left-notice-item';
+        noticeElement.textContent = text;
+
+        // 添加到容器
+        this.container.appendChild(noticeElement);
+
+        // 保存引用
+        this.notices.set(paramName, {
+            text: text,
+            element: noticeElement
+        });
+
+        console.log(`[PCP-Notice] 显示提示: ${text}`);
+    }
+
+    /**
+     * 隐藏提示
+     * @param {string} paramName - 参数名称
+     */
+    hideNotice(paramName) {
+        const notice = this.notices.get(paramName);
+        if (!notice) return;
+
+        // 添加淡出动画
+        notice.element.style.animation = 'slideOutLeft 0.3s ease';
+
+        // 延迟移除元素
+        setTimeout(() => {
+            // 删除 DOM 元素
+            if (notice.element.parentNode) {
+                notice.element.parentNode.removeChild(notice.element);
+            }
+
+            // 只有当 Map 中的记录还是当前这个时，才删除记录
+            // 避免误删新创建的提示记录
+            if (this.notices.get(paramName) === notice) {
+                this.notices.delete(paramName);
+            }
+
+            // 如果容器为空，移除容器
+            if (this.notices.size === 0 && this.container && this.container.parentNode) {
+                this.container.parentNode.removeChild(this.container);
+                this.container = null;
+                console.log('[PCP-Notice] 左上角提示容器已移除（无活动提示）');
+            }
+        }, 300);
+
+        console.log(`[PCP-Notice] 隐藏提示: ${paramName}`);
+    }
+
+    /**
+     * 更新提示文本
+     * @param {string} paramName - 参数名称
+     * @param {string} text - 新的提示文本
+     */
+    updateNotice(paramName, text) {
+        const notice = this.notices.get(paramName);
+        if (notice) {
+            notice.element.textContent = text;
+            notice.text = text;
+        } else {
+            this.showNotice(paramName, text);
+        }
+    }
+
+    /**
+     * 清除所有提示
+     */
+    clearAll() {
+        for (const paramName of this.notices.keys()) {
+            this.hideNotice(paramName);
+        }
+    }
+}
+
+// 全局单例
+const globalTopLeftNoticeManager = new TopLeftNoticeManager();
+
 // Markdown Tooltip 管理器
 class MarkdownTooltipManager {
     constructor() {
@@ -1499,6 +1620,59 @@ app.registerExtension({
                 .pcp-description-icon:hover {
                     opacity: 1;
                 }
+
+                /* ============================================================ */
+                /* 左上角提示样式 (Top Left Notice Styles) */
+                /* ============================================================ */
+
+                .pcp-top-left-notice-container {
+                    position: fixed;
+                    top: 120px;
+                    left: 120px;
+                    z-index: 99999;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    pointer-events: none; /* 不阻止鼠标事件 */
+                }
+
+                .pcp-top-left-notice-item {
+                    background: linear-gradient(135deg, #743795 0%, #8b4ba8 100%);
+                    padding: 12px 20px;
+                    border-radius: 8px;
+                    color: white;
+                    font-weight: 500;
+                    font-size: 14px;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+                    animation: slideInLeft 0.3s ease;
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    backdrop-filter: blur(10px);
+                    pointer-events: auto; /* 提示本身可以接收鼠标事件 */
+                }
+
+                /* 滑入动画 */
+                @keyframes slideInLeft {
+                    from {
+                        opacity: 0;
+                        transform: translateX(-30px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateX(0);
+                    }
+                }
+
+                /* 滑出动画 */
+                @keyframes slideOutLeft {
+                    from {
+                        opacity: 1;
+                        transform: translateX(0);
+                    }
+                    to {
+                        opacity: 0;
+                        transform: translateX(-30px);
+                    }
+                }
             `;
             document.head.appendChild(style);
         };
@@ -1645,6 +1819,23 @@ app.registerExtension({
 
             // 通知连接的 ParameterBreak 节点更新
             this.notifyConnectedBreakNodes();
+        };
+
+        // 恢复所有需要显示的左上角提示
+        nodeType.prototype.restoreTopLeftNotices = function () {
+            // 遍历所有参数
+            this.properties.parameters.forEach(param => {
+                // 只处理 switch 类型参数
+                if (param.type !== 'switch') return;
+
+                // 检查是否开启且配置了显示提示
+                const value = param.value !== undefined ? param.value : (param.config?.default || false);
+                if (value && param.config?.show_top_left_notice) {
+                    const noticeText = param.config.notice_text || `${param.name}：已开启`;
+                    globalTopLeftNoticeManager.showNotice(param.name, noticeText);
+                    console.log(`[PCP] 恢复提示: ${param.name} -> ${noticeText}`);
+                }
+            });
         };
 
         // 通知所有连接的 ParameterBreak 节点更新参数结构
@@ -2181,6 +2372,16 @@ app.registerExtension({
                 }
 
                 this.syncConfig();
+
+                // 根据配置显示/隐藏左上角提示
+                if (param.config?.show_top_left_notice) {
+                    if (newValue) {
+                        const noticeText = param.config.notice_text || `${param.name}：已开启`;
+                        globalTopLeftNoticeManager.showNotice(param.name, noticeText);
+                    } else {
+                        globalTopLeftNoticeManager.hideNotice(param.name);
+                    }
+                }
             });
 
             return switchContainer;
@@ -2857,6 +3058,8 @@ app.registerExtension({
                         const switchConfig = param?.config || {};
                         const switchDefault = switchConfig.default !== undefined ? switchConfig.default : false;
                         const switchDescription = switchConfig.description || '';
+                        const showTopLeftNotice = switchConfig.show_top_left_notice || false;
+                        const noticeText = switchConfig.notice_text || '';
                         configPanel.innerHTML = `
                             <div class="pcp-dialog-field">
                                 <label class="pcp-dialog-label">${t('description')}</label>
@@ -2870,6 +3073,17 @@ app.registerExtension({
                                     <option value="false" ${!switchDefault ? 'selected' : ''}>False</option>
                                     <option value="true" ${switchDefault ? 'selected' : ''}>True</option>
                                 </select>
+                            </div>
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">
+                                    <input type="checkbox" id="pcp-switch-show-notice" ${showTopLeftNotice ? 'checked' : ''}>
+                                    开启时在左上角显示提示
+                                </label>
+                            </div>
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">提示文本（留空则显示"参数名：已开启"）</label>
+                                <input type="text" class="pcp-dialog-input" id="pcp-switch-notice-text"
+                                       placeholder="例如：图生图模式：已开启" value="${noticeText}">
                             </div>
                         `;
                         break;
@@ -3100,7 +3314,13 @@ app.registerExtension({
 
                     case 'switch':
                         const switchDefaultSelect = configPanel.querySelector('#pcp-switch-default');
+                        const switchShowNoticeCheckbox = configPanel.querySelector('#pcp-switch-show-notice');
+                        const switchNoticeTextInput = configPanel.querySelector('#pcp-switch-notice-text');
+
                         config.default = switchDefaultSelect.value === 'true';
+                        config.show_top_left_notice = switchShowNoticeCheckbox.checked;
+                        config.notice_text = switchNoticeTextInput.value.trim();
+
                         defaultValue = config.default;
                         break;
 
@@ -3807,6 +4027,8 @@ app.registerExtension({
                     this.loadPresetsList();
                     // 根据恢复的锁定状态更新UI
                     this.updateLockUI();
+                    // 恢复所有左上角提示
+                    this.restoreTopLeftNotices();
                 }
 
                 // 将工作流数据同步到后端内存
