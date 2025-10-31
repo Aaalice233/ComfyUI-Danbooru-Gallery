@@ -5,6 +5,74 @@
 
 import { app } from "/scripts/app.js";
 
+// ============================================================
+// 工具函数：处理子图节点的深度优先遍历
+// ============================================================
+
+/**
+ * 深度优先遍历节点及其子图节点
+ * 改编自ComfyUI Frontend和rgthree的实现
+ *
+ * @param {LGraphNode|LGraphNode[]} nodeOrNodes - 节点或节点数组
+ * @param {Function} reduceFn - 对每个节点执行的函数 (node, reduceTo) => newReduceTo
+ * @param {*} reduceTo - 累积值（可选）
+ * @returns {*} 最终累积值
+ */
+function reduceNodesDepthFirst(nodeOrNodes, reduceFn, reduceTo) {
+    const nodes = Array.isArray(nodeOrNodes) ? nodeOrNodes : [nodeOrNodes];
+    const stack = nodes.map((node) => ({ node }));
+
+    // 使用栈进行迭代式深度优先遍历（避免递归栈溢出）
+    while (stack.length > 0) {
+        const { node } = stack.pop();
+        const result = reduceFn(node, reduceTo);
+        if (result !== undefined && result !== reduceTo) {
+            reduceTo = result;
+        }
+
+        // 关键：如果是子图节点，将其内部节点也加入处理栈
+        if (node.isSubgraphNode?.() && node.subgraph) {
+            const children = node.subgraph.nodes;
+            // 倒序添加以保持从左到右的处理顺序（LIFO栈特性）
+            for (let i = children.length - 1; i >= 0; i--) {
+                stack.push({ node: children[i] });
+            }
+        }
+    }
+    return reduceTo;
+}
+
+/**
+ * 批量修改节点模式（支持子图节点递归处理）
+ * 这是对 reduceNodesDepthFirst 的简单封装
+ *
+ * 注意：ComfyUI引入子图后，不会自动更新子图中节点的模式，
+ * 因此需要使用此函数手动递归处理所有节点（包括子图内节点）
+ *
+ * @param {LGraphNode|LGraphNode[]} nodeOrNodes - 节点或节点数组
+ * @param {number} mode - LiteGraph模式 (0=ALWAYS, 2=NEVER, 4=BYPASS)
+ */
+function changeModeOfNodes(nodeOrNodes, mode) {
+    reduceNodesDepthFirst(nodeOrNodes, (n) => {
+        n.mode = mode;
+    });
+}
+
+/**
+ * 获取组内的所有节点
+ * 使用 group._children 而不是已弃用的 group.nodes
+ *
+ * @param {LGraphGroup} group - 组对象
+ * @returns {LGraphNode[]} 组内节点数组
+ */
+function getGroupNodes(group) {
+    return Array.from(group._children).filter((c) => c instanceof LGraphNode);
+}
+
+// ============================================================
+// 组静音管理器主体
+// ============================================================
+
 // 组静音管理器
 app.registerExtension({
     name: "GroupMuteManager",
@@ -828,15 +896,22 @@ app.registerExtension({
             return result;
         };
 
-        // 检查组是否启用
+        // 检查组是否启用（支持子图节点递归检查）
         nodeType.prototype.isGroupEnabled = function (group) {
             if (!group) return false;
 
             const nodes = this.getNodesInGroup(group);
             if (nodes.length === 0) return false;
 
-            // 如果组内有任何节点是 ALWAYS 状态，则认为组是启用的
-            return nodes.some(node => node.mode === 0); // LiteGraph.ALWAYS = 0
+            // 使用深度优先遍历检查所有节点（包括子图内节点）
+            // 如果有任何节点是 ALWAYS 状态，则认为组是启用的
+            let hasActiveNode = false;
+            reduceNodesDepthFirst(nodes, (node) => {
+                if (node.mode === 0) { // LiteGraph.ALWAYS = 0
+                    hasActiveNode = true;
+                }
+            });
+            return hasActiveNode;
         };
 
         // 获取组内的所有节点
@@ -848,7 +923,8 @@ app.registerExtension({
                 group.recomputeInsideNodes();
             }
 
-            return group.nodes || [];
+            // 使用工具函数获取节点（支持_children，避免使用已弃用的group.nodes）
+            return getGroupNodes(group);
         };
 
         // 截断文本辅助函数
@@ -1090,11 +1166,10 @@ app.registerExtension({
             this._processingStack.add(groupName);
 
             try {
-                // 切换节点模式
-                nodes.forEach(node => {
-                    // LiteGraph.ALWAYS = 0, LiteGraph.NEVER = 2
-                    node.mode = enable ? 0 : 2;
-                });
+                // 切换节点模式（使用工具函数，支持子图节点递归处理）
+                // LiteGraph.ALWAYS = 0, LiteGraph.NEVER = 2
+                const mode = enable ? 0 : 2;
+                changeModeOfNodes(nodes, mode);
 
                 // 更新配置
                 const config = this.properties.groups.find(g => g.group_name === groupName);
