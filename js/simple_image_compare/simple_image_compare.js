@@ -184,6 +184,17 @@ class SimpleImageCompare {
         this.throttledMouseMove(pos);
     }
 
+    // 检查点击是否在区域内
+    clickWasWithinBounds(pos, bounds) {
+        let xStart = bounds[0];
+        let xEnd = xStart + (bounds.length > 2 ? bounds[2] : bounds[1]);
+        const clickedX = pos[0] >= xStart && pos[0] <= xEnd;
+        if (bounds.length === 2) {
+            return clickedX;
+        }
+        return clickedX && pos[1] >= bounds[1] && pos[1] <= bounds[1] + bounds[3];
+    }
+
     // 选择框点击处理
     onSelectionDown(event, pos, bounds) {
         const selected = [...this.selected];
@@ -194,6 +205,24 @@ class SimpleImageCompare {
         }
         this.setSelected(selected);
         this.node.setDirtyCanvas(true, false);
+    }
+
+    // 鼠标事件处理（统一处理所有鼠标事件）
+    mouse(event, pos, node) {
+        // 只处理 pointerdown 事件来触发按钮点击
+        if (event.type === "pointerdown") {
+            // 遍历所有 hitAreas 检查点击位置
+            for (const part of Object.values(this.hitAreas)) {
+                if (this.clickWasWithinBounds(pos, part.bounds)) {
+                    // 如果点击在区域内，调用 onDown 回调
+                    if (part.onDown) {
+                        part.onDown.call(this, event, pos, part);
+                        return true; // 事件已处理
+                    }
+                }
+            }
+        }
+        return false; // 事件未处理
     }
 
     // 绘制函数
