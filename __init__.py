@@ -36,6 +36,10 @@ from .py.workflow_description import NODE_DISPLAY_NAME_MAPPINGS as workflow_desc
 from .py.text_cache_viewer import NODE_CLASS_MAPPINGS as text_cache_viewer_mappings
 from .py.text_cache_viewer import NODE_DISPLAY_NAME_MAPPINGS as text_cache_viewer_display_mappings
 
+# 导入Open In Krita节点
+from .py.open_in_krita import NODE_CLASS_MAPPINGS as open_in_krita_mappings
+from .py.open_in_krita import NODE_DISPLAY_NAME_MAPPINGS as open_in_krita_display_mappings
+
 # 优化执行系统映射
 opt_mappings = {
     "GroupExecutorTrigger": GroupExecutorTrigger,
@@ -69,7 +73,8 @@ NODE_CLASS_MAPPINGS = {
     **sss_mappings,
     **opt_mappings,
     **workflow_description_mappings,
-    **text_cache_viewer_mappings
+    **text_cache_viewer_mappings,
+    **open_in_krita_mappings
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -92,7 +97,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **sss_display_mappings,
     **opt_display_mappings,
     **workflow_description_display_mappings,
-    **text_cache_viewer_display_mappings
+    **text_cache_viewer_display_mappings,
+    **open_in_krita_display_mappings
 }
 
 # 设置JavaScript文件目录
@@ -523,6 +529,324 @@ try:
             return web.json_response({
                 "success": False,
                 "error": str(e)
+            }, status=500)
+
+    # Open In Krita 相关API路由
+    import base64
+    from .py.open_in_krita.open_in_krita import OpenInKrita
+    from .py.open_in_krita.krita_manager import get_manager as get_krita_manager
+    from .py.open_in_krita.plugin_installer import KritaPluginInstaller
+
+    # 在启动时自动检查并安装Krita插件
+    try:
+        installer = KritaPluginInstaller()
+        if not installer.check_plugin_installed():
+            print("[OpenInKrita] 检测到Krita插件未安装，正在自动安装...")
+            installer.install_plugin()
+            print("[OpenInKrita] Krita插件安装完成")
+        else:
+            print("[OpenInKrita] Krita插件已安装")
+    except Exception as e:
+        print(f"[OpenInKrita] 插件安装检查失败: {e}")
+
+    @PromptServer.instance.routes.post("/open_in_krita/get_data")
+    async def get_data_from_krita(request):
+        """从Krita获取编辑后的数据（前端按钮调用，触发节点重新执行）"""
+        try:
+            data = await request.json()
+            node_id = data.get("node_id", "")
+
+            if not node_id:
+                return web.json_response({
+                    "status": "error",
+                    "message": "缺少node_id参数"
+                }, status=400)
+
+            # 检查是否有待处理的数据
+            pending_data = OpenInKrita.get_pending_data(node_id)
+
+            if pending_data:
+                return web.json_response({
+                    "status": "success",
+                    "message": "已获取Krita数据，请等待节点执行"
+                })
+            else:
+                return web.json_response({
+                    "status": "no_data",
+                    "message": "暂无Krita数据，请先在Krita中使用: Tools → Scripts → Send to ComfyUI"
+                })
+
+        except Exception as e:
+            import traceback
+            print(f"[OpenInKrita] 获取数据失败: {e}")
+            print(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    @PromptServer.instance.routes.post("/open_in_krita/receive_data")
+    async def receive_data_from_krita(request):
+        """接收来自Krita插件的数据（由Krita插件调用）"""
+        try:
+            data = await request.json()
+            node_id = data.get("node_id", "")
+            image_base64 = data.get("image", "")
+            mask_base64 = data.get("mask", "")
+
+            if not node_id:
+                return web.json_response({
+                    "status": "error",
+                    "message": "缺少node_id参数"
+                }, status=400)
+
+            # 解码图像数据
+            if image_base64:
+                image_bytes = base64.b64decode(image_base64)
+                image_tensor = OpenInKrita.load_image_from_bytes(image_bytes)
+            else:
+                return web.json_response({
+                    "status": "error",
+                    "message": "缺少图像数据"
+                }, status=400)
+
+            # 解码蒙版数据（可选）
+            if mask_base64:
+                mask_bytes = base64.b64decode(mask_base64)
+                mask_tensor = OpenInKrita.load_mask_from_bytes(mask_bytes)
+            else:
+                # 创建空蒙版
+                import torch
+                mask_tensor = torch.zeros((image_tensor.shape[1], image_tensor.shape[2]))
+
+            # 存储待处理数据
+            OpenInKrita.set_pending_data(node_id, image_tensor, mask_tensor)
+
+            print(f"[OpenInKrita] 接收到Krita数据: node_id={node_id}, image_shape={image_tensor.shape}, mask_shape={mask_tensor.shape}")
+
+            return web.json_response({
+                "status": "success",
+                "message": "数据已接收，请在ComfyUI中点击'从Krita获取数据'按钮"
+            })
+
+        except Exception as e:
+            import traceback
+            print(f"[OpenInKrita] 接收数据失败: {e}")
+            print(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    @PromptServer.instance.routes.get("/open_in_krita/browse_path")
+    async def browse_krita_path(request):
+        """打开文件选择对话框，让用户选择Krita可执行文件"""
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            import sys
+
+            # 创建隐藏的Tkinter根窗口
+            root = tk.Tk()
+            root.withdraw()  # 隐藏主窗口
+            root.attributes('-topmost', True)  # 文件对话框置顶
+
+            # 根据平台设置文件类型过滤器
+            if sys.platform == "win32":
+                filetypes = [
+                    ("可执行文件", "*.exe"),
+                    ("所有文件", "*.*")
+                ]
+                title = "选择Krita可执行文件 (krita.exe)"
+            elif sys.platform == "darwin":
+                filetypes = [
+                    ("应用程序", "*.app"),
+                    ("所有文件", "*.*")
+                ]
+                title = "选择Krita应用程序"
+            else:  # Linux
+                filetypes = [
+                    ("所有文件", "*.*")
+                ]
+                title = "选择Krita可执行文件"
+
+            # 打开文件选择对话框
+            file_path = filedialog.askopenfilename(
+                title=title,
+                filetypes=filetypes
+            )
+
+            # 销毁Tkinter窗口
+            root.destroy()
+
+            if file_path:
+                return web.json_response({
+                    "status": "success",
+                    "path": file_path
+                })
+            else:
+                # 用户取消选择
+                return web.json_response({
+                    "status": "cancelled",
+                    "message": "用户取消选择"
+                })
+
+        except ImportError:
+            return web.json_response({
+                "status": "error",
+                "message": "tkinter不可用，请手动输入路径"
+            }, status=500)
+        except Exception as e:
+            import traceback
+            print(f"[OpenInKrita] 文件选择对话框失败: {e}")
+            print(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    @PromptServer.instance.routes.post("/open_in_krita/set_path")
+    async def set_krita_path(request):
+        """设置Krita可执行文件路径"""
+        try:
+            data = await request.json()
+            path = data.get("path", "")
+
+            if not path:
+                return web.json_response({
+                    "status": "error",
+                    "message": "缺少path参数"
+                }, status=400)
+
+            # 验证路径是否存在
+            from pathlib import Path
+            krita_path = Path(path)
+
+            if not krita_path.exists():
+                return web.json_response({
+                    "status": "error",
+                    "message": f"文件不存在: {path}"
+                }, status=400)
+
+            if not krita_path.is_file():
+                return web.json_response({
+                    "status": "error",
+                    "message": f"路径不是文件: {path}"
+                }, status=400)
+
+            # 保存路径到设置
+            manager = get_krita_manager()
+            success = manager.set_krita_path(str(krita_path))
+
+            if not success:
+                return web.json_response({
+                    "status": "error",
+                    "message": f"路径验证失败: {path}"
+                }, status=400)
+
+            print(f"[OpenInKrita] Krita路径已设置: {krita_path}")
+
+            return web.json_response({
+                "status": "success",
+                "path": str(krita_path),
+                "message": "Krita路径已设置"
+            })
+
+        except Exception as e:
+            import traceback
+            print(f"[OpenInKrita] 设置路径失败: {e}")
+            print(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    @PromptServer.instance.routes.get("/open_in_krita/check_plugin")
+    async def check_krita_plugin_status(request):
+        """检查Krita插件安装状态"""
+        try:
+            installer = KritaPluginInstaller()
+            installed = installer.check_plugin_installed()
+            version = installer.get_installed_version() if installed else None
+            pykrita_dir = str(installer.pykrita_dir)
+
+            # 检查Krita路径
+            manager = get_krita_manager()
+            krita_path = manager.get_krita_path()
+
+            return web.json_response({
+                "installed": installed,
+                "version": version,
+                "pykrita_dir": pykrita_dir,
+                "krita_path": str(krita_path) if krita_path else None
+            })
+
+        except Exception as e:
+            import traceback
+            print(f"[OpenInKrita] 检查插件状态失败: {e}")
+            print(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    @PromptServer.instance.routes.post("/open_in_krita/reinstall_plugin")
+    async def reinstall_krita_plugin(request):
+        """重新安装Krita插件（强制覆盖）"""
+        try:
+            installer = KritaPluginInstaller()
+            success = installer.install_plugin(force=True)
+
+            if success:
+                return web.json_response({
+                    "status": "success",
+                    "message": "插件已重新安装",
+                    "pykrita_dir": str(installer.pykrita_dir),
+                    "version": installer.VERSION
+                })
+            else:
+                return web.json_response({
+                    "status": "error",
+                    "message": "插件安装失败"
+                }, status=500)
+
+        except Exception as e:
+            import traceback
+            print(f"[OpenInKrita] 重新安装插件失败: {e}")
+            print(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    @PromptServer.instance.routes.post("/open_in_krita/cancel_wait")
+    async def cancel_wait(request):
+        """取消节点等待"""
+        try:
+            data = await request.json()
+            node_id = data.get("node_id", "")
+
+            if not node_id:
+                return web.json_response({
+                    "status": "error",
+                    "message": "缺少node_id参数"
+                }, status=400)
+
+            # 调用节点的取消方法
+            OpenInKrita.cancel_waiting(node_id)
+
+            return web.json_response({
+                "status": "success",
+                "message": "已取消等待"
+            })
+
+        except Exception as e:
+            import traceback
+            print(f"[OpenInKrita] 取消等待失败: {e}")
+            print(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
             }, status=500)
 
 except ImportError:

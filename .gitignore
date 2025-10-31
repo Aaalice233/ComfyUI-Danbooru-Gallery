@@ -78,6 +78,9 @@ py/multi_character_editor/settings/
 # Workflow Description specific
 py/workflow_description/settings.json
 
+# Open In Krita specific
+py/open_in_krita/settings.json
+
 # 参考项目/外部项目
 Comfyui-LG_GroupExecutor-main/
 rgthree-comfy-main/
@@ -91,3 +94,6 @@ WeiLin-Comfyui-Tools-main/
 ComfyUI-KJNodes-main/
 cg-image-filter-main/
 ComfyUI-CRZnodes-main/
+cg-krita-main/
+krita-ai-diffusion-main/
+comfyui-tooling-nodes-main/

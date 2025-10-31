@@ -120,7 +120,8 @@ class ToastManager {
                 max-width: 400px !important;
                 height: auto !important;
                 min-height: 40px !important;
-                white-space: nowrap !important;
+                white-space: pre-wrap !important;
+                word-break: break-word !important;
                 text-overflow: ellipsis !important;
                 overflow: hidden !important;
                 flex-shrink: 0 !important;
@@ -149,10 +150,11 @@ class ToastManager {
             }
               
             .mce-toast.multi-line {
-                white-space: normal;
-                word-wrap: break-word;
-                width: 350px; /* 多行时使用更紧凑的宽度 */
-                max-width: 70vw; /* 在小屏幕上限制宽度 */
+                white-space: pre-wrap !important;
+                word-break: break-word !important;
+                word-wrap: break-word !important;
+                width: 350px !important; /* 多行时使用更紧凑的宽度 */
+                max-width: 70vw !important; /* 在小屏幕上限制宽度 */
             }
               
             .mce-toast-container .mce-toast.removing {
@@ -380,17 +382,21 @@ class ToastManager {
         toast.style.minWidth = `${minToastWidth}px`;
         toast.style.maxWidth = `${maxToastWidth}px`;
 
-        // 如果内容很长，启用多行模式
-        if (textWidth > maxToastWidth - paddingWidth - closeButtonWidth || message.length > 40) {
+        // 如果内容很长或包含换行符，启用多行模式
+        if (textWidth > maxToastWidth - paddingWidth - closeButtonWidth ||
+            message.length > 40 ||
+            message.includes('\n')) {
             toast.classList.add('multi-line');
             // 对于多行toast，使用更紧凑的宽度
             const multiLineWidth = Math.min(350, window.innerWidth * 0.7);
             toast.style.width = `${multiLineWidth}px`;
-            toast.style.whiteSpace = 'normal';
+            toast.style.whiteSpace = 'pre-wrap';
+            toast.style.wordBreak = 'break-word';
             toast.style.wordWrap = 'break-word';
         } else {
             toast.classList.remove('multi-line');
-            toast.style.whiteSpace = 'nowrap';
+            toast.style.whiteSpace = 'pre-wrap';
+            toast.style.wordBreak = 'break-word';
         }
 
     }

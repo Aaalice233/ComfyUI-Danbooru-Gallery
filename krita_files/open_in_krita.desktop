@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Service
+ServiceTypes=Krita/PythonPlugin
+X-KDE-Library=open_in_krita
+X-Python-2-Compatible=false
+Name=Open In Krita (ComfyUI Bridge)
+Comment=Send images and selections between ComfyUI and Krita
