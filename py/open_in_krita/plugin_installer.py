@@ -6,18 +6,40 @@ Krita插件自动安装器
 import os
 import sys
 import shutil
+import time
 from pathlib import Path
 from typing import Optional
+
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
+    print("[OpenInKrita] Warning: psutil not available, Krita process management will be limited")
 
 
 class KritaPluginInstaller:
     """Krita插件自动安装器"""
 
-    VERSION = "1.0.0"
-
     def __init__(self):
         self.plugin_source_dir = self._get_plugin_source_dir()
         self.pykrita_dir = self._get_krita_pykrita_dir()
+        self.source_version = self._get_source_version()
+
+    def _get_source_version(self) -> str:
+        """从源码中读取版本号"""
+        try:
+            plugin_init = self.plugin_source_dir / "open_in_krita" / "__init__.py"
+            if plugin_init.exists():
+                with open(plugin_init, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    import re
+                    match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
+                    if match:
+                        return match.group(1)
+        except Exception as e:
+            print(f"[OpenInKrita] Error reading source version: {e}")
+        return "unknown"
 
     def _get_plugin_source_dir(self) -> Path:
         """获取插件源文件目录（krita_files）"""
@@ -74,6 +96,22 @@ class KritaPluginInstaller:
 
         return desktop_file.exists() and plugin_dir.exists()
 
+    def needs_update(self) -> bool:
+        """
+        检查插件是否需要更新
+
+        Returns:
+            bool: 如果源码版本比已安装版本新，返回True
+        """
+        if not self.check_plugin_installed():
+            return True  # 未安装，需要安装
+
+        installed_version = self.get_installed_version()
+        if installed_version is None:
+            return True  # 无法获取版本，需要重新安装
+
+        return installed_version != self.source_version
+
     def get_installed_version(self) -> Optional[str]:
         """
         获取已安装插件的版本号
@@ -122,11 +160,11 @@ class KritaPluginInstaller:
             # 检查是否已安装
             if self.check_plugin_installed() and not force:
                 installed_version = self.get_installed_version()
-                if installed_version == self.VERSION:
-                    print(f"[OpenInKrita] Plugin v{self.VERSION} already installed, skipping")
+                if installed_version == self.source_version:
+                    print(f"[OpenInKrita] Plugin v{self.source_version} already installed, skipping")
                     return True
                 else:
-                    print(f"[OpenInKrita] Updating plugin from v{installed_version} to v{self.VERSION}")
+                    print(f"[OpenInKrita] Updating plugin from v{installed_version} to v{self.source_version}")
 
             # 复制.desktop文件
             desktop_source = self.plugin_source_dir / "open_in_krita.desktop"
@@ -154,7 +192,7 @@ class KritaPluginInstaller:
                 print(f"[OpenInKrita] Error: Plugin directory not found: {plugin_source}")
                 return False
 
-            print(f"[OpenInKrita] Plugin v{self.VERSION} installed successfully")
+            print(f"[OpenInKrita] Plugin v{self.source_version} installed successfully")
             print("[OpenInKrita] Please restart Krita and enable the plugin in:")
             print("[OpenInKrita]   Settings → Configure Krita → Python Plugin Manager")
 
@@ -195,6 +233,41 @@ class KritaPluginInstaller:
 
         except Exception as e:
             print(f"[OpenInKrita] Error uninstalling plugin: {e}")
+            return False
+
+    def kill_krita_process(self) -> bool:
+        """
+        杀掉所有Krita进程
+
+        Returns:
+            bool: 成功杀掉至少一个进程返回True
+        """
+        if not HAS_PSUTIL:
+            print("[OpenInKrita] psutil not available, cannot kill Krita process")
+            return False
+
+        try:
+            killed_count = 0
+            for proc in psutil.process_iter(['name', 'pid']):
+                try:
+                    if proc.info['name'] and 'krita' in proc.info['name'].lower():
+                        print(f"[OpenInKrita] Killing Krita process: PID={proc.info['pid']}")
+                        proc.kill()
+                        killed_count += 1
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+            if killed_count > 0:
+                print(f"[OpenInKrita] Killed {killed_count} Krita process(es)")
+                # 等待进程真正结束
+                time.sleep(1)
+                return True
+            else:
+                print("[OpenInKrita] No Krita process found")
+                return False
+
+        except Exception as e:
+            print(f"[OpenInKrita] Error killing Krita process: {e}")
             return False
 
     @staticmethod

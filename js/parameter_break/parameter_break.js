@@ -14,9 +14,8 @@ app.registerExtension({
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        console.log('[PB] beforeRegisterNodeDef 被调用，节点名称:', nodeData.name);
+        // 只处理ParameterBreak节点，避免产生大量冗余日志
         if (nodeData.name !== "ParameterBreak") {
-            console.log('[PB] 节点名称不匹配，跳过注册');
             return;
         }
         console.log('[PB] 节点名称匹配，开始注册...');

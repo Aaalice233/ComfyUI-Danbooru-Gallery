@@ -35,7 +35,7 @@ class ToastManager {
             gap: 0px; /* 使用margin-bottom代替gap */
             pointer-events: none;
             align-items: center; /* 居中对齐 */
-            max-width: 400px;
+            max-width: 550px;
             width: auto;
             height: auto;
         `;
@@ -98,7 +98,7 @@ class ToastManager {
                 gap: 0px !important; /* 使用margin-bottom代替gap */
                 pointer-events: none !important;
                 align-items: center !important; /* 居中对齐 */
-                max-width: 400px !important;
+                max-width: 550px !important;
                 width: auto !important;
                 height: auto !important;
             }
@@ -117,7 +117,7 @@ class ToastManager {
                 transform: translateY(-20px) scale(0.9) !important;
                 width: auto !important;
                 min-width: 120px !important;
-                max-width: 400px !important;
+                max-width: 550px !important;
                 height: auto !important;
                 min-height: 40px !important;
                 white-space: pre-wrap !important;
@@ -153,7 +153,7 @@ class ToastManager {
                 white-space: pre-wrap !important;
                 word-break: break-word !important;
                 word-wrap: break-word !important;
-                width: 350px !important; /* 多行时使用更紧凑的宽度 */
+                width: 500px !important; /* 多行时使用更舒适的宽度 */
                 max-width: 70vw !important; /* 在小屏幕上限制宽度 */
             }
               
@@ -366,7 +366,7 @@ class ToastManager {
         const paddingWidth = 32; // 左右padding各16px
         const closeButtonWidth = 20; // 关闭按钮宽度
         const minToastWidth = 120; // 减小最小宽度
-        const maxToastWidth = Math.min(400, window.innerWidth * 0.7); // 减小最大宽度，不超过屏幕宽度的70%
+        const maxToastWidth = Math.min(550, window.innerWidth * 0.7); // 增加最大宽度，不超过屏幕宽度的70%
 
         let calculatedWidth = textWidth + paddingWidth;
         if (message.length > 0) {
@@ -387,8 +387,8 @@ class ToastManager {
             message.length > 40 ||
             message.includes('\n')) {
             toast.classList.add('multi-line');
-            // 对于多行toast，使用更紧凑的宽度
-            const multiLineWidth = Math.min(350, window.innerWidth * 0.7);
+            // 对于多行toast，使用更舒适的宽度
+            const multiLineWidth = Math.min(500, window.innerWidth * 0.7);
             toast.style.width = `${multiLineWidth}px`;
             toast.style.whiteSpace = 'pre-wrap';
             toast.style.wordBreak = 'break-word';

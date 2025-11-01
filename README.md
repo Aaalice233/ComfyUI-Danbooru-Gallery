@@ -27,6 +27,7 @@
   - [📝 工作流说明 (Workflow Description)](#-工作流说明-workflow-description)
   - [🖼️ 简易图像对比 (Simple Image Compare)](#-简易图像对比-simple-image-compare)
   - [🖼️ 简易加载图像 (Simple Load Image)](#-简易加载图像-simple-load-image)
+  - [🎨 Krita 集成 (Open In Krita)](#-krita-集成-open-in-krita)
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
   - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
   - [🖼️ 图像缓存节点 (Image Cache Nodes)](#-图像缓存节点-image-cache-nodes)
@@ -55,6 +56,7 @@
   - [📝 Workflow Description](#-workflow-description-1)
   - [🖼️ Simple Image Compare](#-simple-image-compare)
   - [🖼️ Simple Load Image](#-simple-load-image)
+  - [🎨 Open In Krita](#-open-in-krita)
   - [⚡ Group Executor Manager](#-group-executor-manager)
   - [🔇 Group Mute Manager](#-group-mute-manager)
   - [🖼️ Image Cache Nodes](#-image-cache-nodes)
@@ -616,6 +618,90 @@ Parameter Break
 - **完全原生**: 使用ComfyUI原生文件加载机制，无自定义前端代码
 - **自动维护**: 默认黑图自动创建和恢复，无需手动管理
 - **简洁高效**: 代码结构简单，性能开销极小
+
+---
+
+### 🎨 Krita 集成 (Open In Krita)
+
+**ComfyUI 与 Krita 的无缝桥接节点**
+
+Open In Krita 节点实现了 ComfyUI 与 Krita 之间的双向数据交互，让你可以在 Krita 中直接编辑 ComfyUI 生成的图像，并将编辑结果（包括选区蒙版）实时回传到工作流中继续处理。
+
+#### 核心功能
+- 🔄 **双向数据传输**: ComfyUI ↔ Krita 图像和蒙版数据互传
+- 🎨 **自动启动 Krita**: 检测 Krita 未运行时自动启动
+- 🖼️ **智能会话管理**: 相同图像复用标签页，不同图像创建新标签页
+- ⏱️ **实时数据监控**: 等待用户在 Krita 中编辑完成并获取数据
+- 🔌 **自动插件安装**: 首次使用时自动安装并配置 Krita 插件
+- 🛡️ **版本同步更新**: 插件版本自动检测和更新
+- 🎯 **选区蒙版支持**: 完整支持 Krita 选区作为蒙版输出
+- ⚙️ **友好的设置向导**: 未配置时显示引导对话框
+
+#### 工作流程
+1. **发送图像到 Krita**:
+   - 节点执行时自动将输入图像发送到 Krita
+   - Krita 自动打开图像（新图像创建新标签页，相同图像复用标签页）
+   - 节点进入等待状态（最长1小时）
+
+2. **Krita 中编辑**:
+   - 在 Krita 中自由编辑图像（绘画、调色、滤镜等）
+   - 可创建选区作为蒙版区域
+   - 编辑完成后点击节点的"从 Krita 获取数据"按钮
+
+3. **数据回传到 ComfyUI**:
+   - 节点获取编辑后的图像和选区蒙版
+   - 输出 IMAGE 和 MASK，可连接到后续节点
+   - 继续 ComfyUI 工作流处理
+
+#### 使用方法
+1. **首次配置**:
+   - 添加 `Danbooru > 在Krita中打开 (Open In Krita)` 节点
+   - 执行节点时会显示设置引导对话框
+   - 选择"已安装，设置路径"或"未安装，跳转官网"
+   - 插件会自动安装到 Krita（无需手动操作）
+
+2. **日常使用**:
+   - 连接 IMAGE 输入到节点
+   - 执行节点→图像自动在 Krita 中打开
+   - 在 Krita 中编辑图像
+   - 点击"从 Krita 获取数据"按钮
+   - 获取编辑结果继续工作流
+
+#### 节点按钮说明
+- 🟢 **从 Krita 获取数据**: 主动从 Krita 获取当前编辑的图像和选区
+- 🔧 **重新安装插件**: 强制重新安装 Krita 插件（解决插件问题）
+- ⚙️ **设置 Krita 路径**: 更改 Krita 可执行文件路径
+- ✅ **检查 Krita 插件**: 检查插件安装状态和版本
+- 🛑 **终止执行**: 取消等待，中断节点执行
+
+#### 技术特点
+- **文件监控机制**: 基于临时文件和请求-响应模式实现数据交互
+- **自动版本管理**: 检测版本差异时自动更新 Krita 插件
+- **智能启动**: 检测 Krita 进程状态，未运行时自动启动
+- **图像 Hash 缓存**: 避免重复打开相同图像
+- **批处理模式**: Krita 插件使用批处理模式，避免保存确认弹窗
+- **完整日志记录**: 详细的日志帮助问题诊断
+
+#### 系统要求
+- **Krita**: 4.0 或更高版本
+- **Python**: ComfyUI 环境（自带）
+- **可选依赖**: `psutil`（用于进程管理，提升体验）
+
+#### 常见问题
+- **Q: 插件需要手动启用吗？**
+  A: 不需要！插件安装时已设置 `EnabledByDefault=true`，重启 Krita 后自动启用
+
+- **Q: 图像没有自动打开怎么办？**
+  A: 检查 Krita 是否正在运行，尝试点击"检查 Krita 插件"按钮，或查看日志文件
+
+- **Q: 如何查看详细日志？**
+  A: 日志文件位于 `%TEMP%\open_in_krita\krita_plugin.log`（Windows）
+
+#### 致谢
+本节点的设计思路参考了以下优秀项目：
+- [cg-krita](https://github.com/chrisgoringe/cg-krita) - Krita 集成的核心思路
+- [comfyui-tooling-nodes](https://github.com/Acly/comfyui-tooling-nodes) - 外部工具集成参考
+- [krita-ai-diffusion](https://github.com/Acly/krita-ai-diffusion) - Krita 插件架构参考
 
 ---
 
@@ -1208,6 +1294,18 @@ ComfyUI-Danbooru-Gallery/
 ├── simple_string_split/            # 简易字符串分隔
 │   ├── __init__.py
 │   └── simple_string_split.py
+├── open_in_krita/                  # Open In Krita (Krita集成)
+│   ├── __init__.py
+│   ├── open_in_krita.py            # 主节点逻辑
+│   ├── krita_manager.py            # Krita路径管理
+│   └── plugin_installer.py         # Krita插件自动安装器
+├── krita_files/                    # Krita插件源文件
+│   ├── open_in_krita.desktop       # Krita插件配置文件
+│   └── open_in_krita/              # Krita插件Python代码
+│       ├── __init__.py
+│       ├── extension.py            # Krita扩展主逻辑
+│       ├── communication.py        # 与ComfyUI通信模块
+│       └── logger.py               # 日志记录器
 ├── install.py                      # 智能安装脚本
 ├── requirements.txt                # 依赖清单
 ├── js/
@@ -1248,6 +1346,9 @@ ComfyUI-Danbooru-Gallery/
 │   ├── simple_checkpoint_loader_with_name/  # 简易Checkpoint加载器前端（预留）
 │   ├── simple_notify/              # 简易通知前端
 │   │   └── simple_notify.js
+│   ├── open_in_krita/              # Open In Krita 前端
+│   │   ├── open_in_krita.js
+│   │   └── setup_dialog.js
 │   └── global/                     # 全局共享组件
 │       ├── autocomplete_cache.js
 │       ├── autocomplete_ui.js
@@ -1816,6 +1917,90 @@ Simple Load Image provides basic functionality similar to ComfyUI's native uploa
 - **Fully Native**: Uses ComfyUI's native file loading mechanism, no custom frontend code
 - **Auto Maintenance**: Default black image automatically created and recovered, no manual management needed
 - **Simple & Efficient**: Simple code structure with minimal performance overhead
+
+---
+
+### 🎨 Open In Krita
+
+**Seamless Bridge Between ComfyUI and Krita**
+
+The Open In Krita node implements bidirectional data exchange between ComfyUI and Krita, allowing you to edit ComfyUI-generated images directly in Krita and send the editing results (including selection masks) back to the workflow for continued processing.
+
+#### Core Features
+- 🔄 **Bidirectional Data Transfer**: ComfyUI ↔ Krita image and mask data exchange
+- 🎨 **Auto-Launch Krita**: Automatically launches Krita when not running
+- 🖼️ **Smart Session Management**: Reuses tabs for same images, creates new tabs for different images
+- ⏱️ **Real-Time Monitoring**: Waits for user to complete editing in Krita and retrieve data
+- 🔌 **Auto Plugin Installation**: Automatically installs and configures Krita plugin on first use
+- 🛡️ **Version Sync Updates**: Automatic plugin version detection and updates
+- 🎯 **Selection Mask Support**: Full support for Krita selections as mask output
+- ⚙️ **Friendly Setup Wizard**: Shows guided dialog when not configured
+
+#### Workflow
+1. **Send Image to Krita**:
+   - Node execution automatically sends input image to Krita
+   - Krita automatically opens image (new tabs for new images, reuses tabs for same images)
+   - Node enters waiting state (up to 1 hour)
+
+2. **Edit in Krita**:
+   - Freely edit image in Krita (painting, color adjustment, filters, etc.)
+   - Can create selections as mask regions
+   - Click node's "Fetch from Krita" button when editing is complete
+
+3. **Return Data to ComfyUI**:
+   - Node retrieves edited image and selection mask
+   - Outputs IMAGE and MASK for connection to subsequent nodes
+   - Continue ComfyUI workflow processing
+
+#### Usage
+1. **Initial Setup**:
+   - Add `Danbooru > Open In Krita` node
+   - Setup wizard dialog appears on first execution
+   - Choose "Installed, Set Path" or "Not Installed, Go to Website"
+   - Plugin automatically installs to Krita (no manual operation needed)
+
+2. **Daily Use**:
+   - Connect IMAGE input to node
+   - Execute node → Image opens automatically in Krita
+   - Edit image in Krita
+   - Click "Fetch from Krita" button
+   - Get editing results to continue workflow
+
+#### Node Buttons
+- 🟢 **Fetch from Krita**: Actively retrieve currently edited image and selection from Krita
+- 🔧 **Reinstall Plugin**: Force reinstall Krita plugin (fixes plugin issues)
+- ⚙️ **Set Krita Path**: Change Krita executable file path
+- ✅ **Check Krita Plugin**: Check plugin installation status and version
+- 🛑 **Cancel Execution**: Cancel waiting, interrupt node execution
+
+#### Technical Features
+- **File Monitoring Mechanism**: Implements data exchange based on temporary files and request-response pattern
+- **Auto Version Management**: Automatically updates Krita plugin when version differences detected
+- **Smart Launch**: Detects Krita process status, auto-launches when not running
+- **Image Hash Caching**: Avoids repeatedly opening same image
+- **Batch Mode**: Krita plugin uses batch mode to avoid save confirmation popups
+- **Complete Logging**: Detailed logs help with problem diagnosis
+
+#### System Requirements
+- **Krita**: 4.0 or higher
+- **Python**: ComfyUI environment (built-in)
+- **Optional Dependency**: `psutil` (for process management, improves experience)
+
+#### FAQ
+- **Q: Does the plugin need manual enabling?**
+  A: No! Plugin is set with `EnabledByDefault=true` during installation, automatically enabled after restarting Krita
+
+- **Q: What if images don't open automatically?**
+  A: Check if Krita is running, try clicking the "Check Krita Plugin" button, or view log files
+
+- **Q: How to view detailed logs?**
+  A: Log file located at `%TEMP%\open_in_krita\krita_plugin.log` (Windows)
+
+#### Acknowledgments
+This node's design is inspired by the following excellent projects:
+- [cg-krita](https://github.com/chrisgoringe/cg-krita) - Core ideas for Krita integration
+- [comfyui-tooling-nodes](https://github.com/Acly/comfyui-tooling-nodes) - External tool integration reference
+- [krita-ai-diffusion](https://github.com/Acly/krita-ai-diffusion) - Krita plugin architecture reference
 
 ---
 
@@ -2408,6 +2593,18 @@ ComfyUI-Danbooru-Gallery/
 ├── simple_string_split/            # Simple String Split
 │   ├── __init__.py
 │   └── simple_string_split.py
+├── open_in_krita/                  # Open In Krita (Krita Integration)
+│   ├── __init__.py
+│   ├── open_in_krita.py            # Main node logic
+│   ├── krita_manager.py            # Krita path manager
+│   └── plugin_installer.py         # Krita plugin auto-installer
+├── krita_files/                    # Krita plugin source files
+│   ├── open_in_krita.desktop       # Krita plugin config file
+│   └── open_in_krita/              # Krita plugin Python code
+│       ├── __init__.py
+│       ├── extension.py            # Krita extension main logic
+│       ├── communication.py        # ComfyUI communication module
+│       └── logger.py               # Logger
 ├── install.py                      # Smart installation script
 ├── requirements.txt                # Dependency list
 ├── js/
@@ -2448,6 +2645,9 @@ ComfyUI-Danbooru-Gallery/
 │   ├── simple_checkpoint_loader_with_name/  # Simple Checkpoint Loader frontend (reserved)
 │   ├── simple_notify/              # Simple Notify frontend
 │   │   └── simple_notify.js
+│   ├── open_in_krita/              # Open In Krita frontend
+│   │   ├── open_in_krita.js
+│   │   └── setup_dialog.js
 │   └── global/                     # Global shared components
 │       ├── autocomplete_cache.js
 │       ├── autocomplete_ui.js
@@ -2517,6 +2717,9 @@ MIT License
 - [ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager) - 节点设计和功能参考 | Node design and functionality reference
 - [ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts) - 简易通知节点的功能参考 | Functionality reference for Simple Notify node
 - [cg-image-filter](https://github.com/chrisgoringe/cg-image-filter) - 简易字符串分隔节点的基础代码来源 | Base code source for Simple String Split node
+- [cg-krita](https://github.com/chrisgoringe/cg-krita) - Open In Krita节点的设计思路来源 | Design inspiration for Open In Krita node
+- [comfyui-tooling-nodes](https://github.com/Acly/comfyui-tooling-nodes) - Open In Krita节点的Krita集成思路参考 | Krita integration reference for Open In Krita node
+- [krita-ai-diffusion](https://github.com/Acly/krita-ai-diffusion) - Open In Krita节点的Krita插件通信机制参考 | Krita plugin communication mechanism reference for Open In Krita node
 
 ### 翻译文件来源 | Translation Data Sources
 

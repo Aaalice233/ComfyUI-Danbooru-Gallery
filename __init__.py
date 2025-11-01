@@ -802,7 +802,7 @@ try:
                     "status": "success",
                     "message": "插件已重新安装",
                     "pykrita_dir": str(installer.pykrita_dir),
-                    "version": installer.VERSION
+                    "version": installer.source_version
                 })
             else:
                 return web.json_response({
@@ -843,6 +843,202 @@ try:
         except Exception as e:
             import traceback
             print(f"[OpenInKrita] 取消等待失败: {e}")
+            print(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    @PromptServer.instance.routes.get("/open_in_krita/check_krita_status")
+    async def check_krita_status(request):
+        """检查Krita进程是否正在运行"""
+        try:
+            # 创建临时的OpenInKrita实例来调用_is_krita_running方法
+            temp_node = OpenInKrita()
+            is_running = temp_node._is_krita_running()
+
+            return web.json_response({
+                "status": "running" if is_running else "stopped",
+                "is_running": is_running
+            })
+        except Exception as e:
+            import traceback
+            print(f"[OpenInKrita] 检查Krita状态失败: {e}")
+            print(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e),
+                "is_running": False
+            }, status=500)
+
+    @PromptServer.instance.routes.get("/open_in_krita/check_waiting_status")
+    async def check_waiting_status(request):
+        """检查节点是否处于等待状态"""
+        try:
+            from .py.open_in_krita.open_in_krita import _waiting_nodes
+
+            node_id = request.query.get("node_id", "")
+
+            if not node_id:
+                return web.json_response({
+                    "status": "error",
+                    "message": "缺少node_id参数",
+                    "is_waiting": False
+                }, status=400)
+
+            # 检查节点是否在等待字典中且waiting=True
+            is_waiting = node_id in _waiting_nodes and _waiting_nodes[node_id].get("waiting", False)
+
+            return web.json_response({
+                "is_waiting": is_waiting
+            })
+
+        except Exception as e:
+            import traceback
+            print(f"[OpenInKrita] 检查等待状态失败: {e}")
+            print(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e),
+                "is_waiting": False
+            }, status=500)
+
+    @PromptServer.instance.routes.post("/open_in_krita/set_fetch_mode")
+    async def set_fetch_mode(request):
+        """设置节点为'从Krita获取数据'模式"""
+        try:
+            data = await request.json()
+            node_id = data.get("node_id", "")
+
+            if not node_id:
+                return web.json_response({
+                    "status": "error",
+                    "message": "缺少node_id参数"
+                }, status=400)
+
+            # 设置fetch模式标志
+            OpenInKrita.set_fetch_mode(node_id)
+
+            print(f"[OpenInKrita] Set fetch mode for node {node_id}")
+
+            return web.json_response({
+                "status": "success",
+                "message": "已设置获取模式"
+            })
+
+        except Exception as e:
+            import traceback
+            print(f"[OpenInKrita] 设置fetch模式失败: {e}")
+            print(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    @PromptServer.instance.routes.post("/open_in_krita/fetch_from_krita")
+    async def fetch_from_krita(request):
+        """从Krita获取当前数据（按钮触发）"""
+        try:
+            data = await request.json()
+            node_id = data.get("node_id", "")
+
+            if not node_id:
+                return web.json_response({
+                    "status": "error",
+                    "message": "缺少node_id参数"
+                }, status=400)
+
+            import tempfile
+            from pathlib import Path
+            import asyncio
+
+            # 临时文件目录
+            temp_dir = Path(tempfile.gettempdir()) / "open_in_krita"
+            temp_dir.mkdir(exist_ok=True)
+
+            # 创建请求文件
+            timestamp = int(time.time() * 1000)
+            request_file = temp_dir / f"fetch_{node_id}_{timestamp}.request"
+            response_file = temp_dir / f"fetch_{node_id}_{timestamp}.response"
+
+            # 写入请求文件（空文件作为信号）
+            request_file.write_text("", encoding='utf-8')
+            print(f"[OpenInKrita] 已创建fetch请求: {request_file.name}")
+
+            # 等待响应文件出现（超时10秒）
+            max_wait = 10.0
+            check_interval = 0.1
+            elapsed = 0
+
+            while elapsed < max_wait:
+                if response_file.exists():
+                    print(f"[OpenInKrita] 检测到响应文件: {response_file.name}")
+                    break
+                await asyncio.sleep(check_interval)
+                elapsed += check_interval
+
+            if not response_file.exists():
+                print(f"[OpenInKrita] 等待响应超时 ({max_wait}s)")
+                # 清理请求文件
+                request_file.unlink(missing_ok=True)
+                return web.json_response({
+                    "status": "timeout",
+                    "message": "等待Krita响应超时，请确保Krita正在运行"
+                }, status=408)
+
+            # 读取响应数据
+            import json
+            response_data = json.loads(response_file.read_text(encoding='utf-8'))
+
+            image_path = response_data.get("image_path")
+            mask_path = response_data.get("mask_path")
+
+            if not image_path:
+                # 清理文件
+                response_file.unlink(missing_ok=True)
+                return web.json_response({
+                    "status": "error",
+                    "message": "Krita未返回图像数据"
+                }, status=500)
+
+            # 加载图像和蒙版
+            image_file = Path(image_path)
+            image_tensor = OpenInKrita._load_image_from_file(OpenInKrita(), image_file)
+
+            if mask_path:
+                mask_file = Path(mask_path)
+                mask_tensor = OpenInKrita._load_mask_from_file(OpenInKrita(), mask_file)
+            else:
+                # 创建空蒙版
+                import torch
+                mask_tensor = torch.zeros((image_tensor.shape[1], image_tensor.shape[2]))
+
+            # 存储到pending data
+            OpenInKrita.set_pending_data(node_id, image_tensor, mask_tensor)
+
+            print(f"[OpenInKrita] ✓ 数据已获取: node_id={node_id}, image={image_tensor.shape}, mask={mask_tensor.shape}")
+
+            # 发送成功Toast到ComfyUI前端
+            PromptServer.instance.send_sync("open-in-krita-notification", {
+                "node_id": node_id,
+                "message": "✓ 已从Krita获取数据\n图像和蒙版已准备就绪",
+                "type": "success"
+            })
+
+            # 清理临时文件
+            response_file.unlink(missing_ok=True)
+            if mask_path:
+                Path(mask_path).unlink(missing_ok=True)
+            image_file.unlink(missing_ok=True)
+
+            return web.json_response({
+                "status": "success",
+                "message": "✓ 已从Krita获取数据，可以执行工作流了"
+            })
+
+        except Exception as e:
+            import traceback
+            print(f"[OpenInKrita] 从Krita获取数据失败: {e}")
             print(traceback.format_exc())
             return web.json_response({
                 "status": "error",

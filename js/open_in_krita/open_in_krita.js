@@ -6,6 +6,7 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { globalToastManager } from "../global/toast_manager.js";
+import { kritaSetupDialog } from "./setup_dialog.js";  // Krita设置引导对话框
 
 app.registerExtension({
     name: "open_in_krita",
@@ -27,8 +28,8 @@ app.registerExtension({
                 onNodeCreated?.apply(this, arguments);
 
                 // 设置节点初始大小和最小尺寸
-                this.size = [280, 290];
-                this.min_size = [280, 290];
+                this.size = [280, 350];
+                this.min_size = [280, 350];
 
                 // 添加样式（只添加一次）
                 addStyles();
@@ -37,8 +38,17 @@ app.registerExtension({
                 const container = document.createElement('div');
                 container.className = 'oik-buttons-container';
 
-                // 创建四个按钮
+                // 创建五个按钮
                 container.innerHTML = `
+                    <button class="oik-button oik-button-success" data-action="fetchFromKrita">
+                        <span class="oik-status-indicator"></span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <span>从Krita获取数据</span>
+                    </button>
                     <button class="oik-button oik-button-primary" data-action="reinstallPlugin">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
@@ -77,7 +87,9 @@ app.registerExtension({
                         e.stopPropagation();
 
                         const action = button.getAttribute('data-action');
-                        if (action === 'reinstallPlugin') {
+                        if (action === 'fetchFromKrita') {
+                            fetchFromKrita(node);
+                        } else if (action === 'reinstallPlugin') {
                             reinstallPlugin(node);
                         } else if (action === 'setPath') {
                             setKritaPath(node);
@@ -95,6 +107,10 @@ app.registerExtension({
                     hideOnZoom: false
                 });
 
+                // 启动Krita状态监控
+                const fetchButton = container.querySelector('[data-action="fetchFromKrita"]');
+                startKritaStatusMonitor(node, fetchButton);
+
                 // 处理节点大小调整，确保最小尺寸
                 this.onResize = function (size) {
                     // 强制限制最小尺寸
@@ -105,6 +121,15 @@ app.registerExtension({
                         size[1] = this.min_size[1];
                     }
                     app.graph.setDirtyCanvas(true);
+                };
+
+                // 清理：节点移除时停止监控
+                const originalOnRemoved = this.onRemoved;
+                this.onRemoved = function () {
+                    stopKritaStatusMonitor(node);
+                    if (originalOnRemoved) {
+                        originalOnRemoved.apply(this, arguments);
+                    }
                 };
             };
         }
@@ -207,6 +232,58 @@ function addStyles() {
         .oik-button-danger:active {
             transform: translateY(0);
             box-shadow: 0 1px 4px rgba(239, 68, 68, 0.2);
+        }
+
+        .oik-button-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border: 1px solid rgba(16, 185, 129, 0.5);
+        }
+
+        .oik-button-success:hover {
+            background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+            border-color: rgba(16, 185, 129, 0.7);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+        }
+
+        .oik-button-success:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 4px rgba(16, 185, 129, 0.2);
+        }
+
+        /* 状态指示器 */
+        .oik-status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #6b7280;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        /* Krita运行中状态 */
+        .oik-button-active .oik-status-indicator {
+            background: #10b981;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+        }
+
+        /* Krita未运行状态 */
+        .oik-button-inactive {
+            opacity: 0.6;
+            background: linear-gradient(135deg, rgba(107, 114, 128, 0.5) 0%, rgba(75, 85, 99, 0.5) 100%);
+            border: 1px solid rgba(107, 114, 128, 0.4);
+        }
+
+        .oik-button-inactive:hover {
+            background: linear-gradient(135deg, rgba(107, 114, 128, 0.6) 0%, rgba(75, 85, 99, 0.6) 100%);
+            border-color: rgba(107, 114, 128, 0.5);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .oik-button-inactive .oik-status-indicator {
+            background: #ef4444;
+            box-shadow: none;
         }
     `;
     document.head.appendChild(style);
@@ -391,6 +468,201 @@ async function cancelWait(node) {
     } catch (error) {
         console.error("[OpenInKrita] Error cancelling wait:", error);
         globalToastManager.showToast(`网络错误: ${error.message}`, "error", 5000);
+    }
+}
+
+// 存储每个节点的状态监控定时器
+const nodeStatusTimers = new Map();
+
+/**
+ * 检查Krita运行状态和文档打开状态
+ */
+async function checkKritaStatus() {
+    try {
+        const response = await api.fetchApi("/open_in_krita/check_krita_status", {
+            method: "GET"
+        });
+
+        if (!response.ok) {
+            return {is_running: false, has_documents: false};
+        }
+
+        const result = await response.json();
+        return {
+            is_running: result.is_running || false,
+            has_documents: result.has_documents || false
+        };
+
+    } catch (error) {
+        console.error("[OpenInKrita] Error checking Krita status:", error);
+        return {is_running: false, has_documents: false};
+    }
+}
+
+/**
+ * 启动Krita状态监控
+ */
+function startKritaStatusMonitor(node, fetchButton) {
+    if (!node || !fetchButton) return;
+
+    const nodeId = node.id;
+
+    // 清除已有的定时器（如果存在）
+    stopKritaStatusMonitor(node);
+
+    // 立即执行一次状态检测
+    checkAndUpdateStatus(fetchButton);
+
+    // 启动定时器，每3秒检测一次
+    const timerId = setInterval(async () => {
+        await checkAndUpdateStatus(fetchButton);
+    }, 3000);
+
+    // 存储定时器ID
+    nodeStatusTimers.set(nodeId, timerId);
+
+    console.log(`[OpenInKrita] Started status monitor for node ${nodeId}`);
+}
+
+/**
+ * 停止Krita状态监控
+ */
+function stopKritaStatusMonitor(node) {
+    if (!node) return;
+
+    const nodeId = node.id;
+    const timerId = nodeStatusTimers.get(nodeId);
+
+    if (timerId) {
+        clearInterval(timerId);
+        nodeStatusTimers.delete(nodeId);
+        console.log(`[OpenInKrita] Stopped status monitor for node ${nodeId}`);
+    }
+}
+
+/**
+ * 检测并更新按钮状态
+ */
+async function checkAndUpdateStatus(fetchButton) {
+    if (!fetchButton) return;
+
+    const status = await checkKritaStatus();
+    updateFetchButtonStatus(fetchButton, status);
+}
+
+/**
+ * 更新"从Krita获取数据"按钮的状态显示
+ */
+function updateFetchButtonStatus(button, status) {
+    if (!button) return;
+
+    const indicator = button.querySelector('.oik-status-indicator');
+    if (!indicator) return;
+
+    // status可能是布尔值（旧版）或对象（新版）
+    let isRunning;
+    if (typeof status === 'object') {
+        isRunning = status.is_running || false;
+    } else {
+        // 兼容旧版返回布尔值的情况
+        isRunning = status;
+    }
+
+    // 只要Krita进程运行就启用按钮（文档状态在点击时检测）
+    if (isRunning) {
+        // Krita运行中：绿色高亮，启用按钮
+        button.classList.remove('oik-button-inactive');
+        button.classList.add('oik-button-active');
+        button.disabled = false;
+    } else {
+        // Krita未运行：灰色暗淡，禁用按钮
+        button.classList.remove('oik-button-active');
+        button.classList.add('oik-button-inactive');
+        button.disabled = true;
+    }
+}
+
+/**
+ * 从Krita获取数据（智能版：根据节点状态自动选择行为）
+ */
+async function fetchFromKrita(node) {
+    try {
+        // 1. 先检查节点是否处于等待状态
+        const checkResponse = await api.fetchApi(`/open_in_krita/check_waiting_status?node_id=${node.id.toString()}`, {
+            method: "GET"
+        });
+
+        if (!checkResponse.ok) {
+            globalToastManager.showToast("检查节点状态失败", "error", 5000);
+            return;
+        }
+
+        const checkResult = await checkResponse.json();
+        const isWaiting = checkResult.is_waiting;
+
+        console.log(`[OpenInKrita] Node ${node.id} waiting status:`, isWaiting);
+
+        if (isWaiting) {
+            // 节点正在等待 → 直接从Krita获取数据（不触发新执行）
+            globalToastManager.showToast("检测到节点正在等待\n正在从Krita获取数据...", "info", 2000);
+
+            const fetchResponse = await api.fetchApi("/open_in_krita/fetch_from_krita", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    node_id: node.id.toString()
+                })
+            });
+
+            if (!fetchResponse.ok) {
+                const error = await fetchResponse.text();
+                globalToastManager.showToast(`获取数据失败: ${error}`, "error", 5000);
+                return;
+            }
+
+            const fetchResult = await fetchResponse.json();
+
+            if (fetchResult.status === "success") {
+                // 数据已获取，提示用户
+                globalToastManager.showToast("✓ 已从Krita获取数据\n数据已就绪，可以继续编辑或执行", "success", 4000);
+                console.log("[OpenInKrita] Data fetched successfully from Krita");
+            } else if (fetchResult.status === "timeout") {
+                globalToastManager.showToast("⏳ Krita响应超时\n请确保Krita正在运行并已打开图像", "warning", 5000);
+            } else {
+                globalToastManager.showToast(`获取失败: ${fetchResult.message || "未知错误"}`, "error", 5000);
+            }
+
+        } else {
+            // 节点未在等待 → 设置fetch模式并触发执行
+            const setModeResponse = await api.fetchApi("/open_in_krita/set_fetch_mode", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    node_id: node.id.toString()
+                })
+            });
+
+            if (!setModeResponse.ok) {
+                globalToastManager.showToast("设置获取模式失败", "error", 5000);
+                return;
+            }
+
+            // 触发ComfyUI执行流程（文档状态检查在后端进行）
+            globalToastManager.showToast("正在启动执行流程...", "info", 2000);
+
+            // 触发执行（使用ComfyUI的queuePrompt方法）
+            app.queuePrompt(0, 1);  // batch_count=0(使用默认), batch_size=1
+
+            console.log("[OpenInKrita] Triggered execution for node", node.id);
+        }
+
+    } catch (error) {
+        console.error("[OpenInKrita] Error fetching from Krita:", error);
+        globalToastManager.showToast(`错误: ${error.message}`, "error", 5000);
     }
 }
 
