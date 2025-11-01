@@ -309,7 +309,7 @@ async function reinstallPlugin(node) {
         const result = await response.json();
 
         if (result.status === "success") {
-            const message = `✓ Krita插件已重新安装\n版本: ${result.version}\n路径: ${result.pykrita_dir}\n\n请重启Krita并启用插件：\nSettings → Configure Krita → Python Plugin Manager`;
+            const message = `✓ Krita插件已重新安装\n版本: ${result.version}\n路径: ${result.pykrita_dir}\n\n插件已自动启用，请重启Krita以使用新版本`;
             globalToastManager.showToast(message, "success", 10000);
         } else {
             globalToastManager.showToast(`安装失败: ${result.message || "未知错误"}`, "error", 5000);

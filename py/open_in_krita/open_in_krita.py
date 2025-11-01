@@ -141,6 +141,23 @@ class OpenInKrita:
         print(f"[OpenInKrita] ✗ Krita startup timeout after {max_wait}s")
         return False
 
+    def _wait_for_plugin_load(self, max_wait: float = 15.0) -> bool:
+        """等待Krita插件加载完成（通过检查_plugin_loaded.txt标志文件）"""
+        print(f"[OpenInKrita] Waiting for plugin to load (max {max_wait}s)...")
+        elapsed = 0
+        check_interval = 0.5
+        plugin_loaded_flag = self.temp_dir / "_plugin_loaded.txt"
+
+        while elapsed < max_wait:
+            if plugin_loaded_flag.exists():
+                print(f"[OpenInKrita] ✓ Plugin loaded flag detected (after {elapsed:.1f}s)")
+                return True
+            time.sleep(check_interval)
+            elapsed += check_interval
+
+        print(f"[OpenInKrita] ✗ Plugin load timeout after {max_wait}s")
+        return False
+
     def _get_image_hash(self, image: torch.Tensor) -> str:
         """计算图像内容的hash值"""
         import hashlib
@@ -266,29 +283,27 @@ class OpenInKrita:
                 if success:
                     print(f"[OpenInKrita] ✓ Plugin updated to v{source_version}")
 
-                    # Toast提示：更新成功，请再次执行
+                    # Toast提示：更新成功（插件自动启用，无需额外操作）
                     PromptServer.instance.send_sync("open-in-krita-notification", {
                         "node_id": unique_id,
-                        "message": f"✓ 插件已更新到 v{source_version}\n请再次执行节点以使用新版本",
+                        "message": f"✓ Krita插件已更新到 v{source_version}\n请再次执行工作流",
                         "type": "success"
                     })
 
                     print(f"[OpenInKrita] Plugin updated, execution stopped. User must execute again.")
 
-                    # 🔥 直接返回空结果，中断执行
-                    final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
-                    return (image, final_mask)
+                    # 🔥 抛出异常，中断执行流程
+                    raise RuntimeError(f"✓ Krita插件已更新到 v{source_version}，请重新执行工作流")
                 else:
                     print(f"[OpenInKrita] ✗ Plugin update failed")
                     PromptServer.instance.send_sync("open-in-krita-notification", {
                         "node_id": unique_id,
-                        "message": f"⚠️ 插件更新失败\n请检查日志",
+                        "message": f"⚠️ Krita插件更新失败\n请检查日志",
                         "type": "error"
                     })
 
-                    # 更新失败也返回空结果，中断执行
-                    final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
-                    return (image, final_mask)
+                    # 🔥 抛出异常，中断执行流程
+                    raise RuntimeError("⚠️ Krita插件更新失败，请检查日志")
             else:
                 print(f"[OpenInKrita] Plugin version check OK: v{installer.source_version}")
 
@@ -479,7 +494,7 @@ class OpenInKrita:
             })
 
             print("[OpenInKrita] Setup dialog sent, cancelling execution")
-            # 🚫 直接抛出异常，中断执行流程
+            # 🔥 抛出异常，中断执行流程
             raise RuntimeError("⚠️ Krita路径未配置，请按照引导完成设置后重新执行")
 
         # ===== 智能Krita会话管理 =====
@@ -495,21 +510,17 @@ class OpenInKrita:
             # Krita未运行，需要启动
             print(f"[OpenInKrita] Krita not running, launching...")
 
-            # 保存图像到临时文件
-            temp_image_path = self._save_image_to_temp(image, unique_id)
+            # 🔥 删除旧的插件加载标志文件，确保检测到的是新启动的插件
+            plugin_loaded_flag = self.temp_dir / "_plugin_loaded.txt"
+            if plugin_loaded_flag.exists():
+                try:
+                    plugin_loaded_flag.unlink()
+                    print(f"[OpenInKrita] Deleted old plugin loaded flag")
+                except Exception as e:
+                    print(f"[OpenInKrita] Warning: Failed to delete old flag: {e}")
 
-            if not temp_image_path:
-                print("[OpenInKrita] Failed to save temp image")
-                PromptServer.instance.send_sync("open-in-krita-notification", {
-                    "node_id": unique_id,
-                    "message": "❌ 保存临时图像失败",
-                    "type": "error"
-                })
-                final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
-                return (image, final_mask)
-
-            # 启动Krita
-            success = self.manager.launch_krita(str(temp_image_path))
+            # 🔥 先启动Krita（不带图像参数，避免跳过文件监控机制）
+            success = self.manager.launch_krita(None)
 
             if not success:
                 print("[OpenInKrita] Failed to launch Krita")
@@ -530,11 +541,50 @@ class OpenInKrita:
                     "type": "warning"
                 })
 
+            print(f"[OpenInKrita] ✓ Krita launched successfully")
+
+            # 🔥 等待Krita插件加载完成（检查_plugin_loaded.txt标志文件）
+            print(f"[OpenInKrita] Waiting for Krita plugin to load...")
+            plugin_loaded = self._wait_for_plugin_load(max_wait=15.0)
+
+            if not plugin_loaded:
+                print(f"[OpenInKrita] ⚠ Plugin load timeout, but will try to continue")
+            else:
+                print(f"[OpenInKrita] ✓ Plugin loaded successfully")
+                # 额外等待1秒，确保文件监控器完全启动
+                print(f"[OpenInKrita] Waiting 1s for file watcher to be ready...")
+                time.sleep(1.0)
+
+            # 🔥 Krita启动后，保存图像并通过open请求打开（触发图层设置）
+            temp_image_path = self._save_image_to_temp(image, unique_id)
+
+            if not temp_image_path:
+                print("[OpenInKrita] Failed to save temp image")
+                PromptServer.instance.send_sync("open-in-krita-notification", {
+                    "node_id": unique_id,
+                    "message": "❌ 保存临时图像失败",
+                    "type": "error"
+                })
+                final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
+                return (image, final_mask)
+
             # 记录当前图像
             OpenInKrita._current_image_hash = current_hash
             OpenInKrita._current_temp_file = temp_image_path
 
-            print(f"[OpenInKrita] ✓ Krita launched and image opened: {temp_image_path.name}")
+            print(f"[OpenInKrita] ✓ Image saved: {temp_image_path.name}")
+
+            # 🔥 创建open请求，让Krita通过文件监控打开图像（会触发图层设置）
+            if self._create_open_request(temp_image_path, unique_id):
+                print(f"[OpenInKrita] ✓ Open request created, Krita will open and setup layers")
+            else:
+                print(f"[OpenInKrita] ⚠ Open request failed")
+
+            PromptServer.instance.send_sync("open-in-krita-notification", {
+                "node_id": unique_id,
+                "message": "✓ Krita已启动\n图像将自动打开",
+                "type": "info"
+            })
 
         else:
             # Krita已运行，检查是否是同一图像
@@ -647,6 +697,7 @@ class OpenInKrita:
             # 异步等待循环：检查pending data、cancelled状态和ComfyUI中断
             while elapsed < max_wait_time:
                 # 🔥 检查ComfyUI取消执行（用户点击了"取消执行"按钮）
+                # 直接调用throw_exception_if_processing_interrupted()来中断执行
                 comfy.model_management.throw_exception_if_processing_interrupted()
 
                 # 检查是否有pending data（用户点击了"从Krita获取数据"按钮）
@@ -676,7 +727,7 @@ class OpenInKrita:
                         "type": "warning"
                     })
 
-                    # 🚫 抛出异常，中断执行流程
+                    # 🔥 抛出异常，中断执行流程
                     raise RuntimeError("⚠️ 用户已取消等待Krita数据")
 
                 # 休眠后继续检查
@@ -692,7 +743,7 @@ class OpenInKrita:
                 "type": "warning"
             })
 
-            # 🚫 抛出异常，中断执行流程
+            # 🔥 抛出异常，中断执行流程
             raise RuntimeError(f"⚠️ 等待Krita数据超时（{max_wait_time}秒）")
         finally:
             # 无论如何都清理等待状态（正常返回、取消或异常）

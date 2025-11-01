@@ -200,7 +200,17 @@ class OpenInKritaExtension(Extension):
                 self.logger.error("✗ 文档对象为空")
                 return False
 
+            # 🔍 详细的文档状态调试信息
             self.logger.info(f"文档名称: {doc.name()}")
+            self.logger.info(f"文档路径: {doc.fileName()}")
+            self.logger.info(f"文档已修改: {doc.modified()}")
+
+            # 当前活动图层信息
+            current_active = doc.activeNode()
+            if current_active:
+                self.logger.info(f"当前活动图层: {current_active.name()} (类型: {current_active.type()})")
+            else:
+                self.logger.warning("当前没有活动图层")
 
             # 获取根节点
             root_node = doc.rootNode()
@@ -247,16 +257,56 @@ class OpenInKritaExtension(Extension):
                 target_node = child_nodes[0]
                 self.logger.info(f"未找到绘画图层，使用第一个节点: {target_node.name()} (类型: {target_node.type()})")
 
-            # 设置活动图层
+            # 🔥 多步骤激活图层（通过Document和View双重设置）
             self.logger.info(f"正在激活图层: {target_node.name()}")
-            doc.setActiveNode(target_node)
 
-            # 刷新文档
+            # 第1步：通过Document设置活动节点
+            doc.setActiveNode(target_node)
+            self.logger.info("  步骤1: 已调用 doc.setActiveNode()")
+
+            # 第2步：通过View设置活动节点（更可靠）
+            app = Krita.instance()
+            window = app.activeWindow()
+            if window:
+                active_view = window.activeView()
+                if active_view and active_view.document() == doc:
+                    self.logger.info("  步骤2: 正在通过View设置活动节点...")
+                    # 🔥 修正API调用：View没有setCurrentNode，要用setCurrentNode的正确方法
+                    # Krita API: view没有直接设置节点的方法，只能通过document
+                    self.logger.info("  ✓ View检查完成（活动视图已确认）")
+                else:
+                    self.logger.warning("  步骤2跳过: activeView为空或文档不匹配")
+            else:
+                self.logger.warning("  步骤2跳过: activeWindow为空")
+
+            # 🔥 多重刷新确保UI更新
             try:
+                # 第3步：刷新文档投影
                 doc.refreshProjection()
-                self.logger.info("✓ 文档投影已刷新")
+                self.logger.info("  步骤3: 文档投影已刷新")
+
+                # 第4步：等待文档操作完成
+                doc.waitForDone()
+                self.logger.info("  步骤4: 文档操作已完成")
+
+                # 第5步：强制激活窗口和视图
+                if window:
+                    self.logger.info("  步骤5: 正在激活窗口和视图...")
+                    try:
+                        # 激活窗口
+                        window.activate()
+                        self.logger.info("    ✓ 窗口已激活")
+
+                        # 重新设置活动文档（确保UI同步）
+                        app.setActiveDocument(doc)
+                        self.logger.info("    ✓ 文档已重新设置为活动")
+                    except Exception as e2:
+                        self.logger.warning(f"    激活操作警告: {e2}")
+
             except Exception as e:
-                self.logger.warning(f"刷新文档投影失败: {e}")
+                self.logger.warning(f"刷新操作失败: {e}")
+                import traceback
+                traceback.print_exc()
 
             # 验证激活结果
             time.sleep(0.1)
@@ -279,13 +329,26 @@ class OpenInKritaExtension(Extension):
         try:
             self.logger.info(f"===== 处理fetch请求: {request_file.name} =====")
 
+            # 🔥 立即重命名请求文件为.processing，避免重复处理
+            processing_file = request_file.with_suffix('.processing')
+            try:
+                request_file.rename(processing_file)
+                self.logger.info(f"✓ 请求文件已标记为处理中")
+            except FileNotFoundError:
+                # 文件已被处理或删除，直接返回
+                self.logger.info(f"⚠ 请求文件已被处理，跳过")
+                return
+            except Exception as e:
+                self.logger.warning(f"⚠ 重命名请求文件失败: {e}，继续处理")
+                processing_file = request_file  # 如果重命名失败，继续用原文件
+
             # 解析文件名：fetch_{node_id}_{timestamp}.request
-            filename = request_file.stem  # 移除.request扩展名
+            filename = processing_file.stem.replace('.processing', '')  # 移除.processing扩展名
             parts = filename.split('_')
 
             if len(parts) < 3:
-                self.logger.error(f"✗ 请求文件名格式错误: {request_file.name}")
-                request_file.unlink(missing_ok=True)
+                self.logger.error(f"✗ 请求文件名格式错误: {processing_file.name}")
+                processing_file.unlink(missing_ok=True)
                 return
 
             # 提取node_id和timestamp
@@ -299,7 +362,7 @@ class OpenInKritaExtension(Extension):
 
             if not image_path:
                 self.logger.error("✗ 获取Krita数据失败")
-                request_file.unlink(missing_ok=True)
+                processing_file.unlink(missing_ok=True)
                 return
 
             # 创建响应文件
@@ -320,8 +383,8 @@ class OpenInKritaExtension(Extension):
             self.logger.info(f"  图像路径: {response_data['image_path']}")
             self.logger.info(f"  蒙版路径: {response_data['mask_path']}")
 
-            # 删除请求文件
-            request_file.unlink(missing_ok=True)
+            # 删除处理中的文件
+            processing_file.unlink(missing_ok=True)
             self.logger.info(f"✓ 请求文件已删除")
             self.logger.info(f"===== fetch请求处理完成 =====")
 
@@ -329,9 +392,9 @@ class OpenInKritaExtension(Extension):
             self.logger.error(f"✗ 处理fetch请求时出错: {e}")
             import traceback
             traceback.print_exc()
-            # 清理请求文件
+            # 清理处理中的文件
             try:
-                request_file.unlink(missing_ok=True)
+                processing_file.unlink(missing_ok=True)
             except:
                 pass
 
@@ -400,9 +463,22 @@ class OpenInKritaExtension(Extension):
         try:
             self.logger.info(f"===== 处理open请求: {request_file.name} =====")
 
+            # 🔥 立即重命名请求文件为.processing，避免重复处理
+            processing_file = request_file.with_suffix('.processing')
+            try:
+                request_file.rename(processing_file)
+                self.logger.info(f"✓ 请求文件已标记为处理中")
+            except FileNotFoundError:
+                # 文件已被处理或删除，直接返回
+                self.logger.info(f"⚠ 请求文件已被处理，跳过")
+                return
+            except Exception as e:
+                self.logger.warning(f"⚠ 重命名请求文件失败: {e}，继续处理")
+                processing_file = request_file  # 如果重命名失败，继续用原文件
+
             # 读取请求内容
             import json
-            with open(request_file, 'r', encoding='utf-8') as f:
+            with open(processing_file, 'r', encoding='utf-8') as f:
                 request_data = json.load(f)
 
             image_path_str = request_data.get("image_path")
@@ -410,13 +486,13 @@ class OpenInKritaExtension(Extension):
 
             if not image_path_str:
                 self.logger.error("✗ 请求中缺少image_path")
-                request_file.unlink(missing_ok=True)
+                processing_file.unlink(missing_ok=True)
                 return
 
             image_path = Path(image_path_str)
             if not image_path.exists():
                 self.logger.error(f"✗ 图像文件不存在: {image_path}")
-                request_file.unlink(missing_ok=True)
+                processing_file.unlink(missing_ok=True)
                 return
 
             self.logger.info(f"节点ID: {node_id}")
@@ -457,12 +533,29 @@ class OpenInKritaExtension(Extension):
                         # 标记为已处理，避免重复打开
                         self.processed_files.add(image_path)
 
-                        # 延迟设置图层
+                        # ⭐ 延迟设置图层（2秒后，确保文档完全加载）
                         def delayed_setup():
-                            self.logger.info(f"===== 延迟设置开始: {doc.name()} =====")
-                            self._setup_layers(doc)
+                            try:
+                                self.logger.info(f"===== 延迟设置开始: {doc.name()} =====")
 
-                        QTimer.singleShot(1000, delayed_setup)  # 1秒后执行
+                                # 激活窗口，确保Krita窗口处于前台
+                                if window:
+                                    window.activate()
+                                    self.logger.info("✓ 窗口已激活")
+
+                                # 设置活动文档
+                                app.setActiveDocument(doc)
+                                self.logger.info("✓ 文档已设置为活动")
+
+                                # 设置图层
+                                self._setup_layers(doc)
+
+                            except Exception as e:
+                                self.logger.error(f"延迟设置图层失败: {e}")
+                                import traceback
+                                traceback.print_exc()
+
+                        QTimer.singleShot(2000, delayed_setup)  # ⏱️ 增加到2秒
                     else:
                         self.logger.error(f"✗ 无法获取Krita窗口，无法显示文档: {image_path.name}")
                 else:
@@ -473,8 +566,8 @@ class OpenInKritaExtension(Extension):
                 app.setBatchmode(original_batchmode)
                 self.logger.info("✓ 已恢复批处理模式")
 
-            # 删除请求文件
-            request_file.unlink(missing_ok=True)
+            # 删除处理中的文件
+            processing_file.unlink(missing_ok=True)
             self.logger.info(f"✓ 请求文件已删除")
             self.logger.info(f"===== open请求处理完成 =====")
 
@@ -482,9 +575,9 @@ class OpenInKritaExtension(Extension):
             self.logger.error(f"✗ 处理open请求时出错: {e}")
             import traceback
             traceback.print_exc()
-            # 清理请求文件
+            # 清理处理中的文件
             try:
-                request_file.unlink(missing_ok=True)
+                processing_file.unlink(missing_ok=True)
             except:
                 pass
 

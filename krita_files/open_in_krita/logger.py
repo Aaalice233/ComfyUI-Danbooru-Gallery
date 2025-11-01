@@ -21,7 +21,9 @@ class KritaLogger:
     def _setup_log_file(self):
         """设置日志文件 - 增强错误处理"""
         try:
-            # 使用与ComfyUI相同的临时目录
+            # 🔥 动态获取用户目录，确保跨用户兼容性
+            # Windows: C:\Users\<用户名>\AppData\Local\Temp\open_in_krita
+            # Linux/Mac: /tmp/open_in_krita 或 ~/tmp/open_in_krita
             log_dir = Path(tempfile.gettempdir()) / "open_in_krita"
 
             # 确保目录存在
