@@ -153,8 +153,9 @@ class ToastManager {
                 white-space: pre-wrap !important;
                 word-break: break-word !important;
                 word-wrap: break-word !important;
-                width: 500px !important; /* 多行时使用更舒适的宽度 */
-                max-width: 70vw !important; /* 在小屏幕上限制宽度 */
+                width: fit-content !important; /* 自适应内容宽度 */
+                max-width: 550px !important; /* 最大宽度限制 */
+                min-width: 120px !important; /* 最小宽度限制 */
             }
               
             .mce-toast-container .mce-toast.removing {
@@ -250,7 +251,7 @@ class ToastManager {
 
                 .mce-toast.multi-line {
                     max-width: calc(100vw - 40px);
-                    width: calc(100vw - 40px);
+                    width: fit-content;
                 }
             }
         `;
@@ -387,9 +388,7 @@ class ToastManager {
             message.length > 40 ||
             message.includes('\n')) {
             toast.classList.add('multi-line');
-            // 对于多行toast，使用更舒适的宽度
-            const multiLineWidth = Math.min(500, window.innerWidth * 0.7);
-            toast.style.width = `${multiLineWidth}px`;
+            // 不再强制设置固定宽度，让CSS的fit-content生效
             toast.style.whiteSpace = 'pre-wrap';
             toast.style.wordBreak = 'break-word';
             toast.style.wordWrap = 'break-word';
