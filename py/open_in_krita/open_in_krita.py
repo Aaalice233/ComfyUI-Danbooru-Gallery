@@ -55,6 +55,9 @@ class OpenInKrita:
                     "tooltip": "最长等待时间（秒）：60秒-24小时，默认1小时"
                 }),
             },
+            "optional": {
+                "mask": ("MASK",),
+            },
             "hidden": {
                 "unique_id": "UNIQUE_ID",
             },
@@ -79,6 +82,32 @@ class OpenInKrita:
         self.manager = get_manager()
         self.temp_dir = Path(tempfile.gettempdir()) / "open_in_krita"
         self.temp_dir.mkdir(exist_ok=True)
+
+    def _get_final_mask(self, krita_mask: Optional[torch.Tensor], input_mask: Optional[torch.Tensor],
+                        image_shape: Tuple[int, ...]) -> torch.Tensor:
+        """
+        决定最终返回的mask，遵循优先级规则
+
+        优先级：krita_mask > input_mask > empty_mask
+
+        Args:
+            krita_mask: 从Krita返回的蒙版
+            input_mask: 节点的蒙版输入
+            image_shape: 图像形状，可以是 (H, W) 或 (B, H, W)，用于创建空蒙版
+
+        Returns:
+            torch.Tensor: 最终的蒙版张量，shape与image_shape一致
+        """
+        # 优先使用Krita返回的mask（如果有效）
+        if krita_mask is not None and not torch.all(krita_mask == 0):
+            return krita_mask
+
+        # 其次使用输入的mask
+        if input_mask is not None:
+            return input_mask
+
+        # 最后返回空mask
+        return torch.zeros(image_shape)
 
     def _is_krita_running(self) -> bool:
         """检查Krita进程是否正在运行"""
@@ -180,7 +209,7 @@ class OpenInKrita:
             print(f"[OpenInKrita] Check document error: {e}")
             return False
 
-    def process(self, image: torch.Tensor, active: bool, max_wait_time: float, unique_id: str):
+    def process(self, image: torch.Tensor, active: bool, max_wait_time: float, unique_id: str, mask: Optional[torch.Tensor] = None):
         """
         处理节点执行
 
@@ -189,17 +218,18 @@ class OpenInKrita:
             active: 是否启用（False时直接返回输入）
             max_wait_time: 最长等待时间（秒），范围60-86400
             unique_id: 节点唯一ID
+            mask: 可选的蒙版输入 [B, H, W]，作为后备蒙版使用
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: (编辑后的图像, 蒙版)
         """
         print(f"[OpenInKrita] Node {unique_id} processing (active={active})")
 
-        # 如果未启用，直接返回输入图像和空蒙版
+        # 如果未启用，直接返回输入图像和蒙版（使用输入mask或空mask）
         if not active:
             print(f"[OpenInKrita] Node disabled, passing through")
-            empty_mask = torch.zeros((image.shape[0], image.shape[1], image.shape[2]))
-            return (image, empty_mask)
+            final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
+            return (image, final_mask)
 
         # ===== 第一步：版本检查和自动更新 =====
         try:
@@ -246,8 +276,8 @@ class OpenInKrita:
                     print(f"[OpenInKrita] Plugin updated, execution stopped. User must execute again.")
 
                     # 🔥 直接返回空结果，中断执行
-                    empty_mask = torch.zeros((image.shape[0], image.shape[1], image.shape[2]))
-                    return (image, empty_mask)
+                    final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
+                    return (image, final_mask)
                 else:
                     print(f"[OpenInKrita] ✗ Plugin update failed")
                     PromptServer.instance.send_sync("open-in-krita-notification", {
@@ -257,8 +287,8 @@ class OpenInKrita:
                     })
 
                     # 更新失败也返回空结果，中断执行
-                    empty_mask = torch.zeros((image.shape[0], image.shape[1], image.shape[2]))
-                    return (image, empty_mask)
+                    final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
+                    return (image, final_mask)
             else:
                 print(f"[OpenInKrita] Plugin version check OK: v{installer.source_version}")
 
@@ -280,8 +310,8 @@ class OpenInKrita:
                     "message": "⚠ Krita未运行\n请先点击'执行'按钮启动Krita并打开图像",
                     "type": "warning"
                 })
-                empty_mask = torch.zeros((image.shape[0], image.shape[1], image.shape[2]))
-                return (image, empty_mask)
+                final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
+                return (image, final_mask)
 
             # 创建fetch请求并等待响应（通过response超时来判断Krita是否有文档打开）
             print(f"[OpenInKrita] Creating fetch request...")
@@ -302,8 +332,8 @@ class OpenInKrita:
                     "message": f"❌ 创建请求文件失败: {str(e)}",
                     "type": "error"
                 })
-                empty_mask = torch.zeros((image.shape[0], image.shape[1], image.shape[2]))
-                return (image, empty_mask)
+                final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
+                return (image, final_mask)
 
             # 等待响应文件
             print(f"[OpenInKrita] Waiting for response...")
@@ -331,8 +361,8 @@ class OpenInKrita:
                     "message": "⏳ 请等待Krita启动完毕并打开图像\n然后再次点击'从Krita获取数据'",
                     "type": "info"
                 })
-                empty_mask = torch.zeros((image.shape[0], image.shape[1], image.shape[2]))
-                return (image, empty_mask)
+                final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
+                return (image, final_mask)
 
             # 读取响应
             try:
@@ -377,7 +407,8 @@ class OpenInKrita:
                     "type": "success"
                 })
 
-                return (result_image, result_mask)
+                final_mask = self._get_final_mask(result_mask, mask, (result_image.shape[1], result_image.shape[2]))
+                return (result_image, final_mask)
 
             except Exception as e:
                 print(f"[OpenInKrita] ✗ Error processing response: {e}")
@@ -396,8 +427,8 @@ class OpenInKrita:
                     "message": f"❌ 处理Krita数据失败: {str(e)}",
                     "type": "error"
                 })
-                empty_mask = torch.zeros((image.shape[0], image.shape[1], image.shape[2]))
-                return (image, empty_mask)
+                final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
+                return (image, final_mask)
 
         # 优先检查是否有pending data（用户已编辑完成）
         if unique_id in _pending_data:
@@ -416,7 +447,8 @@ class OpenInKrita:
                 "type": "success"
             })
 
-            return (result_image, result_mask)
+            final_mask = self._get_final_mask(result_mask, mask, (result_image.shape[1], result_image.shape[2]))
+            return (result_image, final_mask)
 
         # 确保Krita插件已安装（兼容性检查，正常情况下版本检查已处理）
         try:
@@ -473,8 +505,8 @@ class OpenInKrita:
                     "message": "❌ 保存临时图像失败",
                     "type": "error"
                 })
-                empty_mask = torch.zeros((image.shape[0], image.shape[1], image.shape[2]))
-                return (image, empty_mask)
+                final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
+                return (image, final_mask)
 
             # 启动Krita
             success = self.manager.launch_krita(str(temp_image_path))
@@ -486,8 +518,8 @@ class OpenInKrita:
                     "message": "❌ 启动Krita失败\n请检查Krita路径是否正确",
                     "type": "error"
                 })
-                empty_mask = torch.zeros((image.shape[0], image.shape[1], image.shape[2]))
-                return (image, empty_mask)
+                final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
+                return (image, final_mask)
 
             # 等待Krita启动
             if not self._wait_for_krita_start():
@@ -540,8 +572,8 @@ class OpenInKrita:
                             "message": "❌ 保存临时图像失败",
                             "type": "error"
                         })
-                        empty_mask = torch.zeros((image.shape[0], image.shape[1], image.shape[2]))
-                        return (image, empty_mask)
+                        final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
+                        return (image, final_mask)
 
                     # 记录新图像
                     OpenInKrita._current_image_hash = current_hash
@@ -577,8 +609,8 @@ class OpenInKrita:
                         "message": "❌ 保存临时图像失败",
                         "type": "error"
                     })
-                    empty_mask = torch.zeros((image.shape[0], image.shape[1], image.shape[2]))
-                    return (image, empty_mask)
+                    final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
+                    return (image, final_mask)
 
                 # 记录新图像
                 OpenInKrita._current_image_hash = current_hash
@@ -630,7 +662,8 @@ class OpenInKrita:
                         "type": "success"
                     })
 
-                    return (result_image, result_mask)
+                    final_mask = self._get_final_mask(result_mask, mask, (result_image.shape[1], result_image.shape[2]))
+                    return (result_image, final_mask)
 
                 # 检查是否取消
                 if unique_id in _waiting_nodes and _waiting_nodes[unique_id].get("cancelled"):
