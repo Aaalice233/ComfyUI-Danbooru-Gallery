@@ -220,10 +220,10 @@ try:
             data = await request.json()
             excluded_groups = data.get('excluded_groups', [])
 
-            print(f"\n[HasNextExecutorGroup API] 📥 收到排除组保存请求")
-            print(f"[HasNextExecutorGroup API] 📦 排除组数量: {len(excluded_groups)}")
-            if excluded_groups:
-                print(f"[HasNextExecutorGroup API] 📦 排除组: {', '.join(excluded_groups)}")
+            # print(f"\n[HasNextExecutorGroup API] 📥 收到排除组保存请求")
+            # print(f"[HasNextExecutorGroup API] 📦 排除组数量: {len(excluded_groups)}")
+            # if excluded_groups:
+            #     print(f"[HasNextExecutorGroup API] 📦 排除组: {', '.join(excluded_groups)}")
 
             # 保存到setting.json
             success = HasNextExecutorGroup.save_excluded_groups(excluded_groups)
@@ -257,7 +257,7 @@ try:
             node = HasNextExecutorGroup()
             excluded_groups = node.load_excluded_groups()
 
-            print(f"\n[HasNextExecutorGroup API] 📤 返回排除组配置: {len(excluded_groups)} 个组")
+            # print(f"\n[HasNextExecutorGroup API] 📤 返回排除组配置: {len(excluded_groups)} 个组")
 
             return web.json_response({
                 "status": "success",
@@ -282,10 +282,10 @@ try:
             data = await request.json()
             disabled_groups = data.get('disabled_groups', [])
 
-            print(f"\n[HasNextExecutorGroup API] 📥 接收组内节点都被禁用的组列表")
-            print(f"[HasNextExecutorGroup API] 📦 被禁用组数量: {len(disabled_groups)}")
-            if disabled_groups:
-                print(f"[HasNextExecutorGroup API] 📦 被禁用组: {', '.join(disabled_groups)}")
+            # print(f"\n[HasNextExecutorGroup API] 📥 接收组内节点都被禁用的组列表")
+            # print(f"[HasNextExecutorGroup API] 📦 被禁用组数量: {len(disabled_groups)}")
+            # if disabled_groups:
+            #     print(f"[HasNextExecutorGroup API] 📦 被禁用组: {', '.join(disabled_groups)}")
 
             # 更新全局被禁用组列表
             _disabled_node_groups = set(disabled_groups)
