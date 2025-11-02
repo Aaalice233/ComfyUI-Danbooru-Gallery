@@ -40,6 +40,10 @@ from .py.text_cache_viewer import NODE_DISPLAY_NAME_MAPPINGS as text_cache_viewe
 from .py.open_in_krita import NODE_CLASS_MAPPINGS as open_in_krita_mappings
 from .py.open_in_krita import NODE_DISPLAY_NAME_MAPPINGS as open_in_krita_display_mappings
 
+# 导入下一执行组是否有效节点
+from .py.has_next_executor_group import NODE_CLASS_MAPPINGS as has_next_executor_group_mappings
+from .py.has_next_executor_group import NODE_DISPLAY_NAME_MAPPINGS as has_next_executor_group_display_mappings
+
 # 优化执行系统映射
 opt_mappings = {
     "GroupExecutorTrigger": GroupExecutorTrigger,
@@ -74,7 +78,8 @@ NODE_CLASS_MAPPINGS = {
     **opt_mappings,
     **workflow_description_mappings,
     **text_cache_viewer_mappings,
-    **open_in_krita_mappings
+    **open_in_krita_mappings,
+    **has_next_executor_group_mappings
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -98,7 +103,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **opt_display_mappings,
     **workflow_description_display_mappings,
     **text_cache_viewer_display_mappings,
-    **open_in_krita_display_mappings
+    **open_in_krita_display_mappings,
+    **has_next_executor_group_display_mappings
 }
 
 # 设置JavaScript文件目录

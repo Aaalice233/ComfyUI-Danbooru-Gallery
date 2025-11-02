@@ -96,8 +96,12 @@ app.registerExtension({
             this.properties = {
                 groups: [],  // 组配置列表
                 selectedColorFilter: '',  // 选中的颜色过滤器
-                groupOrder: []  // 组显示顺序（用于自定义拖拽排序）
+                groupOrder: [],  // 组显示顺序（用于自定义拖拽排序）
+                groupStatesCache: {}  // 组状态缓存（用于检测手动静音）
             };
+
+            // 初始化组引用跟踪（用于组重命名检测）
+            this.groupReferences = new WeakMap();
 
             // 初始化循环检测栈
             this._processingStack = new Set();
@@ -173,6 +177,12 @@ app.registerExtension({
                 setTimeout(() => {
                     this.refreshColorFilter();
                 }, 50);
+
+                // 启动定时器：检测组状态变化和重命名
+                this.stateCheckInterval = setInterval(() => {
+                    this.checkGroupStatesChange();
+                }, 3000); // 每3秒检查一次
+                console.log('[GMM-UI] 状态检测定时器已启动（3秒间隔）');
 
                 console.log('[GMM-UI] 自定义UI创建完成');
 
@@ -818,6 +828,11 @@ app.registerExtension({
                     groupConfig.enabled = this.isGroupEnabled(group);
                 }
 
+                // 建立组对象到组名的引用映射（用于重命名检测）
+                if (!this.groupReferences.has(group)) {
+                    this.groupReferences.set(group, group.title);
+                }
+
                 const groupItem = this.createGroupItem(groupConfig, group);
                 listContainer.appendChild(groupItem);
             });
@@ -912,6 +927,68 @@ app.registerExtension({
                 }
             });
             return hasActiveNode;
+        };
+
+        // 检测组状态变化和重命名
+        nodeType.prototype.checkGroupStatesChange = function () {
+            if (!app.graph || !app.graph._groups) return;
+
+            let hasStateChange = false;
+            let hasRename = false;
+
+            app.graph._groups.forEach(group => {
+                if (!group || !group.title) return;
+
+                // 1. 检测组重命名（通过WeakMap）
+                const cachedName = this.groupReferences.get(group);
+                if (cachedName && cachedName !== group.title) {
+                    console.log('[GMM] 检测到组重命名:', cachedName, '→', group.title);
+
+                    // 更新配置中的组名
+                    const config = this.properties.groups.find(g => g.group_name === cachedName);
+                    if (config) {
+                        config.group_name = group.title;
+                    }
+
+                    // 更新组顺序中的组名
+                    const orderIndex = this.properties.groupOrder.indexOf(cachedName);
+                    if (orderIndex !== -1) {
+                        this.properties.groupOrder[orderIndex] = group.title;
+                    }
+
+                    // 更新状态缓存中的组名
+                    if (this.properties.groupStatesCache[cachedName] !== undefined) {
+                        this.properties.groupStatesCache[group.title] = this.properties.groupStatesCache[cachedName];
+                        delete this.properties.groupStatesCache[cachedName];
+                    }
+
+                    // 更新WeakMap
+                    this.groupReferences.set(group, group.title);
+
+                    hasRename = true;
+                }
+
+                // 2. 检测组状态变化（手动静音检测）
+                const currentState = this.isGroupEnabled(group);
+                const cachedState = this.properties.groupStatesCache[group.title];
+
+                if (cachedState !== undefined && cachedState !== currentState) {
+                    console.log('[GMM] 检测到组状态变化:', group.title,
+                        cachedState ? '启用 → 禁用' : '禁用 → 启用');
+                    hasStateChange = true;
+                }
+
+                // 更新状态缓存
+                this.properties.groupStatesCache[group.title] = currentState;
+            });
+
+            // 3. 如果有变化，刷新UI
+            if (hasStateChange || hasRename) {
+                console.log('[GMM] 自动刷新UI',
+                    hasStateChange ? '(状态变化)' : '',
+                    hasRename ? '(组重命名)' : '');
+                this.updateGroupsList();
+            }
         };
 
         // 获取组内的所有节点
@@ -1617,6 +1694,13 @@ app.registerExtension({
         nodeType.prototype.onRemoved = function () {
             console.log('[GMM] 清理节点资源:', this.id);
 
+            // 清除状态检测定时器
+            if (this.stateCheckInterval) {
+                clearInterval(this.stateCheckInterval);
+                this.stateCheckInterval = null;
+                console.log('[GMM] 状态检测定时器已清理');
+            }
+
             // 移除事件监听器（使用 window 对象）
             if (this._gmmEventHandler) {
                 window.removeEventListener('group-mute-changed', this._gmmEventHandler);
@@ -1625,7 +1709,12 @@ app.registerExtension({
             }
 
             // 清理自定义属性
-            this.properties = { groups: [], selectedColorFilter: '', groupOrder: [] };
+            this.properties = { groups: [], selectedColorFilter: '', groupOrder: [], groupStatesCache: {} };
+
+            // 清理组引用
+            if (this.groupReferences) {
+                this.groupReferences = new WeakMap();
+            }
 
             // 调用原始移除方法
             onRemoved?.apply?.(this, arguments);

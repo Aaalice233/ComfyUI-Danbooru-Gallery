@@ -81,6 +81,9 @@ py/workflow_description/settings.json
 # Open In Krita specific
 py/open_in_krita/settings.json
 
+# Has Next Executor Group specific
+py/has_next_executor_group/setting.json
+
 # 参考项目/外部项目
 Comfyui-LG_GroupExecutor-main/
 rgthree-comfy-main/
