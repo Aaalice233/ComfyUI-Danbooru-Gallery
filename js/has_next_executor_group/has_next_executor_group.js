@@ -87,10 +87,7 @@ app.registerExtension({
             // 创建自定义UI
             this.createCustomUI();
 
-            // 从后端加载配置
-            setTimeout(() => {
-                this.loadConfigFromBackend();
-            }, 100);
+            // 注意：排除组配置现在从工作流序列化中获取，不再从后端加载
 
             // 监听图表变化，自动刷新和检测重命名
             this.setupGraphChangeListener();
@@ -553,7 +550,7 @@ app.registerExtension({
             const newGroup = '';
             this.properties.excludedGroups.push(newGroup);
             this.updateExcludedList();
-            this.syncConfig();
+            // 配置会在保存工作流时自动通过 onSerialize 持久化
         };
 
         // 删除排除组
@@ -562,7 +559,7 @@ app.registerExtension({
 
             this.properties.excludedGroups.splice(index, 1);
             this.updateExcludedList();
-            this.syncConfig();
+            // 配置会在保存工作流时自动通过 onSerialize 持久化
         };
 
         // 更新排除组列表
@@ -621,7 +618,7 @@ app.registerExtension({
                         }
                     }
 
-                    this.syncConfig();
+                    // 配置会在保存工作流时自动通过 onSerialize 持久化
                 }
             );
             dropdownContainer.appendChild(searchableDropdown);
@@ -832,7 +829,7 @@ app.registerExtension({
                         // 组名不存在，清空选择
                         this.properties.excludedGroups[index] = '';
                         searchableDropdown.updateValue('');
-                        this.syncConfig();
+                        // 配置会在保存工作流时自动通过 onSerialize 持久化
                     }
                 }
             });
@@ -869,9 +866,9 @@ app.registerExtension({
                         }
                     });
 
-                    // 如果发生重命名，同步到后端
+                    // 配置已更新，会在保存工作流时自动通过 onSerialize 持久化
                     if (hasRename) {
-                        this.syncConfig();
+                        console.log('[HasNextExecutorGroup] 组名已更新，配置会在保存工作流时持久化');
                     }
                 }
 
@@ -885,42 +882,8 @@ app.registerExtension({
             }, 2000); // 每2秒检查一次
         };
 
-        // 同步配置到后端
-        nodeType.prototype.syncConfig = async function () {
-            try {
-                const response = await api.fetchApi("/danbooru_gallery/has_next/save_excluded", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        excluded_groups: this.properties.excludedGroups
-                    })
-                });
-
-                const result = await response.json();
-                console.log('[HasNextExecutorGroup] 配置已同步到后端:', result);
-
-            } catch (error) {
-                console.error('[HasNextExecutorGroup] 同步配置到后端失败:', error);
-            }
-        };
-
-        // 从后端加载配置
-        nodeType.prototype.loadConfigFromBackend = async function () {
-            try {
-                const response = await api.fetchApi("/danbooru_gallery/has_next/load_excluded");
-                const result = await response.json();
-
-                if (result.status === 'success') {
-                    this.properties.excludedGroups = result.excluded_groups || [];
-                    this.updateExcludedList();
-                    console.log('[HasNextExecutorGroup] 从后端加载配置成功:',
-                        this.properties.excludedGroups);
-                }
-
-            } catch (error) {
-                console.error('[HasNextExecutorGroup] 从后端加载配置失败:', error);
-            }
-        };
+        // 注意：syncConfig 和 loadConfigFromBackend 方法已移除
+        // 排除组配置现在完全通过工作流序列化机制管理（onSerialize/onConfigure）
 
         // 切换锁定模式
         nodeType.prototype.toggleLock = function () {
@@ -992,10 +955,33 @@ app.registerExtension({
                 this.properties.locked = false;
             }
 
-            // 恢复排除组列表
+            // 恢复排除组列表（带组名验证）
             if (info.excludedGroups && Array.isArray(info.excludedGroups)) {
-                this.properties.excludedGroups = info.excludedGroups;
-                console.log('[HasNextExecutorGroup] ✅ 恢复排除组:', this.properties.excludedGroups.length, '个');
+                // 获取当前可用的组列表
+                const availableGroups = app.graph && app.graph._groups
+                    ? app.graph._groups.filter(g => g && g.title).map(g => g.title)
+                    : [];
+
+                // 过滤掉不存在的组名
+                const originalCount = info.excludedGroups.length;
+                const validGroups = info.excludedGroups.filter(groupName => {
+                    if (!groupName) return false; // 过滤空值
+
+                    const exists = availableGroups.includes(groupName);
+                    if (!exists) {
+                        console.warn(`[HasNextExecutorGroup] ⚠️ 组 "${groupName}" 不存在，已自动清理`);
+                    }
+                    return exists;
+                });
+
+                this.properties.excludedGroups = validGroups;
+
+                if (originalCount !== validGroups.length) {
+                    console.log('[HasNextExecutorGroup] ✅ 恢复排除组:', validGroups.length, '个（已清理',
+                        originalCount - validGroups.length, '个无效组）');
+                } else {
+                    console.log('[HasNextExecutorGroup] ✅ 恢复排除组:', validGroups.length, '个');
+                }
             } else {
                 this.properties.excludedGroups = [];
             }

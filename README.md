@@ -30,6 +30,7 @@
   - [🎨 Krita 集成 (Open In Krita)](#-krita-集成-open-in-krita)
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
   - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
+  - [🔍 后续执行组是否有效 (Has Next Executor Group)](#-后续执行组是否有效-has-next-executor-group)
   - [🖼️ 图像缓存节点 (Image Cache Nodes)](#-图像缓存节点-image-cache-nodes)
   - [📝 文本缓存节点 (Text Cache Nodes)](#-文本缓存节点-text-cache-nodes)
   - [📐 分辨率大师简化版 (Resolution Master Simplify)](#-分辨率大师简化版-resolution-master-simplify)
@@ -59,6 +60,7 @@
   - [🎨 Open In Krita](#-open-in-krita)
   - [⚡ Group Executor Manager](#-group-executor-manager)
   - [🔇 Group Mute Manager](#-group-mute-manager)
+  - [🔍 Has Next Executor Group](#-has-next-executor-group)
   - [🖼️ Image Cache Nodes](#-image-cache-nodes)
   - [📝 Text Cache Nodes](#-text-cache-nodes-1)
   - [📐 Resolution Master Simplify](#-resolution-master-simplify)
@@ -818,6 +820,168 @@ Open In Krita 节点实现了 ComfyUI 与 Krita 之间的双向数据交互，�
 
 ---
 
+### 🔍 后续执行组是否有效 (Has Next Executor Group)
+
+**智能工作流条件执行节点**
+
+后续执行组是否有效节点与组执行管理器深度集成，用于检测当前执行组之后是否还有待执行的组，帮助实现智能的工作流条件分支和优化执行流程。
+
+#### 核心功能
+- 🔍 **智能检测**: 自动检测后续是否有待执行的组
+- 🚫 **排除组配置**: 可视化配置界面，灵活管理需要排除检测的组
+- 🔒 **锁定模式**: 防止误操作的双击锁定功能
+- 🔄 **组重命名跟踪**: 自动检测并更新重命名后的组名
+- 💾 **工作流集成**: 配置随工作流保存，支持跨环境迁移
+- 🎯 **精确控制**: 自动过滤被禁用的组和无效组名
+- 📊 **详细输出**: 提供后续组列表和布尔判断两种输出
+
+#### 输出类型
+- **next_groups** (STRING): 所有后续待执行的组名，每行一个
+- **has_next** (BOOLEAN): 是否还有下一个待执行的组
+
+#### 使用场景
+- **条件分支**: 根据是否有后续组来决定执行路径
+  ```
+  示例：只在最后一个组时执行最终保存
+  后续执行组检测 → Switch节点 → 保存图像 / 跳过保存
+  ```
+
+- **流程优化**: 避免不必要的处理步骤
+  ```
+  示例：只在有后续组时保留中间结果
+  后续执行组检测 → 条件缓存 → 清理临时文件
+  ```
+
+- **资源管理**: 智能控制资源使用
+  ```
+  示例：最后一个组时释放GPU显存
+  后续执行组检测 → 显存管理 → 卸载模型
+  ```
+
+- **批量处理**: 在批量工作流中区分中间步骤和最终步骤
+  ```
+  示例：批量生成时只在最后输出通知
+  后续执行组检测 → 通知节点 → "全部完成！"
+  ```
+
+#### 使用方法
+1. 添加 `Danbooru > 后续执行组是否有效 (Has Next Executor Group)` 节点
+2. 双击节点打开配置界面
+3. 点击"添加排除组"按钮，从下拉菜单选择要排除的组
+4. 可选：双击锁定按钮🔒防止误操作
+5. 连接 `has_next` 输出到 Switch 或其他条件节点
+6. 保存工作流，配置会自动随工作流保存
+
+#### 配置说明
+
+**排除组列表**：
+- 可搜索的下拉框选择组名
+- 支持多个排除组配置
+- 点击删除按钮❌移除排除组
+- 点击刷新按钮🔄更新组列表
+
+**锁定模式**：
+- 双击锁定按钮切换锁定状态
+- 锁定后无法添加/删除/修改配置
+- 适合在生产环境防止误操作
+
+**组名验证**：
+- 加载工作流时自动验证组名是否存在
+- 自动清理不存在的组（如工作流迁移后）
+- 控制台输出详细的清理信息
+
+#### 智能特性
+
+**自动组重命名跟踪**：
+```
+1. 配置排除组："测试组A"
+2. 在ComfyUI中重命名组为："生产组A"
+3. 节点自动检测并更新配置为："生产组A"
+4. 保存工作流时更新后的配置会被保存
+```
+
+**跨环境迁移**：
+```
+1. 在项目A中配置排除组："项目A特定组"
+2. 工作流复制到项目B
+3. 加载时自动清理不存在的组
+4. 控制台提示：⚠️ 组 "项目A特定组" 不存在，已自动清理
+```
+
+**状态检测机制**：
+- ✅ 自动检测组内所有节点是否被禁用
+- ✅ 支持深度优先遍历（包括子图节点）
+- ✅ 实时同步禁用状态到后端
+- ✅ 执行前主动检测最新状态
+
+#### 配置持久化
+
+**工作流序列化**：
+- 配置通过 `onSerialize`/`onConfigure` 机制保存
+- 随工作流 JSON 文件一起保存和加载
+- 不依赖本地配置文件，支持工作流自由迁移
+- 每个工作流拥有独立的配置，互不影响
+
+#### 与组执行管理器集成
+
+**完美配合**：
+```
+组执行管理器配置：
+├── 组1：预处理
+├── 组2：主生成
+├── 组3：后处理（排除）
+└── 组4：保存
+
+后续执行组检测节点会自动：
+- 跳过"组3：后处理"（在排除列表中）
+- 跳过组内节点全部被禁用的组
+- 返回实际会执行的后续组
+```
+
+#### 使用示例
+
+**示例1：条件保存**
+```
+[组1: 生成] → 图像
+           ↓
+[组2: 后处理] → 图像 → 后续执行组检测
+                              ↓
+                         has_next → Switch
+                              ↓           ↓
+                           True(跳过)  False(保存)
+```
+
+**示例2：资源优化**
+```
+后续执行组检测 → has_next
+                    ↓
+                  False → 卸载模型 → 清理缓存 → 发送通知
+```
+
+**示例3：批量任务通知**
+```
+[for each item]
+    ↓
+执行任务 → 后续执行组检测
+                ↓
+            has_next == False → 简易通知("全部任务完成!")
+```
+
+#### 技术细节
+- 基于组执行管理器的全局配置进行检测
+- 使用 WeakMap 追踪组对象引用，支持重命名检测
+- 每2秒自动检查组列表和重命名变化
+- 配置通过ComfyUI原生序列化机制保存
+- 自动过滤空组名和无效引用
+
+#### 注意事项
+- ⚠️ 节点仅检测组配置，不检查组内节点是否被静音/bypass
+- ⚠️ 需要配合组执行管理器使用才能发挥作用
+- ⚠️ 锁定模式需要双击锁定按钮才能切换
+- ⚠️ 旧工作流加载时排除组配置为空，需要重新配置
+
+---
+
 ### 🖼️ 图像缓存节点 (Image Cache Nodes)
 
 **智能图像缓存和获取节点组**
@@ -1259,6 +1423,9 @@ ComfyUI-Danbooru-Gallery/
 ├── group_mute_manager/             # 组静音管理器
 │   ├── __init__.py
 │   └── group_mute_manager.py
+├── has_next_executor_group/        # 后续执行组是否有效节点
+│   ├── __init__.py
+│   └── has_next_executor_group.py
 ├── image_cache_save/               # 图像缓存保存节点
 │   ├── __init__.py
 │   └── image_cache_save.py
@@ -2117,6 +2284,168 @@ If configured with "Group A enable → enable Group B" and "Group B enable → e
 
 ---
 
+### 🔍 Has Next Executor Group
+
+**Intelligent Workflow Conditional Execution Node**
+
+Has Next Executor Group node integrates deeply with Group Executor Manager to detect whether there are pending groups to execute after the current group, enabling smart workflow conditional branching and optimized execution flow.
+
+#### Core Features
+- 🔍 **Smart Detection**: Automatically detect if there are pending groups to execute
+- 🚫 **Exclude Group Configuration**: Visual configuration interface to flexibly manage groups to exclude from detection
+- 🔒 **Lock Mode**: Double-click lock feature to prevent accidental operations
+- 🔄 **Group Rename Tracking**: Automatically detect and update renamed group names
+- 💾 **Workflow Integration**: Configuration saved with workflow, supports cross-environment migration
+- 🎯 **Precise Control**: Automatically filter disabled groups and invalid group names
+- 📊 **Detailed Output**: Provides both next group list and boolean judgment outputs
+
+#### Output Types
+- **next_groups** (STRING): All pending group names to execute, one per line
+- **has_next** (BOOLEAN): Whether there is a next group to execute
+
+#### Use Cases
+- **Conditional Branching**: Decide execution path based on whether there are subsequent groups
+  ```
+  Example: Only execute final save on the last group
+  Next Group Detection → Switch Node → Save Image / Skip Save
+  ```
+
+- **Flow Optimization**: Avoid unnecessary processing steps
+  ```
+  Example: Only keep intermediate results when there are subsequent groups
+  Next Group Detection → Conditional Cache → Clean Temp Files
+  ```
+
+- **Resource Management**: Intelligently control resource usage
+  ```
+  Example: Release GPU memory on the last group
+  Next Group Detection → Memory Management → Unload Models
+  ```
+
+- **Batch Processing**: Distinguish between intermediate and final steps in batch workflows
+  ```
+  Example: Only output notification at the end of batch generation
+  Next Group Detection → Notification Node → "All Complete!"
+  ```
+
+#### Usage
+1. Add `Danbooru > Has Next Executor Group` node
+2. Double-click node to open configuration interface
+3. Click "Add Exclude Group" button, select group from dropdown
+4. Optional: Double-click lock button 🔒 to prevent accidental changes
+5. Connect `has_next` output to Switch or other conditional nodes
+6. Save workflow, configuration will automatically save with workflow
+
+#### Configuration
+
+**Exclude Group List**:
+- Searchable dropdown for group name selection
+- Support multiple exclude group configurations
+- Click delete button ❌ to remove exclude group
+- Click refresh button 🔄 to update group list
+
+**Lock Mode**:
+- Double-click lock button to toggle lock status
+- Cannot add/delete/modify configuration when locked
+- Suitable for preventing accidental changes in production environment
+
+**Group Name Validation**:
+- Automatically validate group names exist when loading workflow
+- Automatically clean non-existent groups (e.g., after workflow migration)
+- Output detailed cleaning information to console
+
+#### Smart Features
+
+**Automatic Group Rename Tracking**:
+```
+1. Configure exclude group: "Test Group A"
+2. Rename group in ComfyUI to: "Production Group A"
+3. Node automatically detects and updates config to: "Production Group A"
+4. Updated configuration saved when workflow is saved
+```
+
+**Cross-Environment Migration**:
+```
+1. Configure exclude group in Project A: "Project A Specific Group"
+2. Copy workflow to Project B
+3. Automatically clean non-existent groups on load
+4. Console prompt: ⚠️ Group "Project A Specific Group" not found, auto-cleaned
+```
+
+**Status Detection Mechanism**:
+- ✅ Automatically detect if all nodes in group are disabled
+- ✅ Support depth-first traversal (including subgraph nodes)
+- ✅ Real-time sync disabled status to backend
+- ✅ Proactively detect latest status before execution
+
+#### Configuration Persistence
+
+**Workflow Serialization**:
+- Configuration saved via `onSerialize`/`onConfigure` mechanism
+- Saved and loaded with workflow JSON file
+- Not dependent on local config files, supports free workflow migration
+- Each workflow has independent configuration without interference
+
+#### Integration with Group Executor Manager
+
+**Perfect Cooperation**:
+```
+Group Executor Manager Configuration:
+├── Group 1: Preprocessing
+├── Group 2: Main Generation
+├── Group 3: Post-processing (Excluded)
+└── Group 4: Save
+
+Next Group Detection node automatically:
+- Skip "Group 3: Post-processing" (in exclude list)
+- Skip groups where all nodes are disabled
+- Return actually executing subsequent groups
+```
+
+#### Usage Examples
+
+**Example 1: Conditional Save**
+```
+[Group 1: Generate] → Image
+           ↓
+[Group 2: Post-process] → Image → Has Next Executor Group
+                              ↓
+                         has_next → Switch
+                              ↓           ↓
+                           True(Skip)  False(Save)
+```
+
+**Example 2: Resource Optimization**
+```
+Has Next Executor Group → has_next
+                    ↓
+                  False → Unload Models → Clean Cache → Send Notification
+```
+
+**Example 3: Batch Task Notification**
+```
+[for each item]
+    ↓
+Execute Task → Has Next Executor Group
+                ↓
+            has_next == False → Simple Notify("All tasks complete!")
+```
+
+#### Technical Details
+- Detection based on Group Executor Manager's global configuration
+- Use WeakMap to track group object references, supports rename detection
+- Auto check group list and rename changes every 2 seconds
+- Configuration saved via ComfyUI native serialization mechanism
+- Automatically filter empty group names and invalid references
+
+#### Notes
+- ⚠️ Node only checks group configuration, not whether nodes in group are muted/bypassed
+- ⚠️ Needs to work with Group Executor Manager to function properly
+- ⚠️ Lock mode requires double-click on lock button to toggle
+- ⚠️ Old workflows will have empty exclude group config on load, needs reconfiguration
+
+---
+
 ### 🖼️ Image Cache Nodes
 
 **Smart Image Caching and Retrieval Node Group**
@@ -2558,6 +2887,9 @@ ComfyUI-Danbooru-Gallery/
 ├── group_mute_manager/             # Group Mute Manager
 │   ├── __init__.py
 │   └── group_mute_manager.py
+├── has_next_executor_group/        # Has Next Executor Group node
+│   ├── __init__.py
+│   └── has_next_executor_group.py
 ├── image_cache_save/               # Image Cache Save node
 │   ├── __init__.py
 │   └── image_cache_save.py

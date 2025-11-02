@@ -71,8 +71,9 @@ class HasNextExecutorGroup:
 
             print(f"[HasNextExecutorGroup] │  配置组数: {len(groups_config)}")
 
-            # 3. 加载排除组配置
-            excluded_groups = self.load_excluded_groups()
+            # 3. 排除组配置已从工作流序列化中获取（前端维护）
+            # 注意：排除组现在由前端通过 widget 管理，不再从 setting.json 读取
+            excluded_groups = []
             print(f"[HasNextExecutorGroup] │  排除组数: {len(excluded_groups)}")
             if excluded_groups:
                 print(f"[HasNextExecutorGroup] │  排除组: {', '.join(excluded_groups)}")
@@ -134,67 +135,6 @@ class HasNextExecutorGroup:
             # 返回错误状态
             return ("", False)
 
-    def load_excluded_groups(self):
-        """
-        从setting.json加载排除组配置
-
-        Returns:
-            list: 排除组名称列表
-        """
-        try:
-            # 获取setting.json的路径
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            setting_file = os.path.join(current_dir, "setting.json")
-
-            # 如果文件不存在,返回空列表
-            if not os.path.exists(setting_file):
-                return []
-
-            # 读取配置文件
-            with open(setting_file, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-
-            # 获取排除组列表
-            excluded_groups = config.get('excluded_groups', [])
-
-            return excluded_groups
-
-        except Exception as e:
-            print(f"[HasNextExecutorGroup] 加载排除组配置失败: {str(e)}")
-            return []
-
-    @staticmethod
-    def save_excluded_groups(excluded_groups):
-        """
-        保存排除组配置到setting.json
-
-        Args:
-            excluded_groups: 排除组名称列表
-        """
-        try:
-            # 获取setting.json的路径
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            setting_file = os.path.join(current_dir, "setting.json")
-
-            # 准备配置数据
-            config = {
-                "excluded_groups": excluded_groups
-            }
-
-            # 保存配置文件
-            with open(setting_file, 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=4)
-
-            print(f"[HasNextExecutorGroup] ✅ 已保存排除组配置: {len(excluded_groups)} 个组")
-
-            return True
-
-        except Exception as e:
-            print(f"[HasNextExecutorGroup] ❌ 保存排除组配置失败: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return False
-
 
 # 节点映射 - 用于ComfyUI注册
 NODE_CLASS_MAPPINGS = {
@@ -206,73 +146,12 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 }
 
 
-# ✅ 添加API端点 - 用于前后端配置同步
+# ✅ 添加API端点 - 用于前端同步组内节点被禁用状态
 try:
     from server import PromptServer
     from aiohttp import web
 
     routes = PromptServer.instance.routes
-
-    @routes.post('/danbooru_gallery/has_next/save_excluded')
-    async def save_excluded_groups(request):
-        """保存前端传入的排除组配置"""
-        try:
-            data = await request.json()
-            excluded_groups = data.get('excluded_groups', [])
-
-            # print(f"\n[HasNextExecutorGroup API] 📥 收到排除组保存请求")
-            # print(f"[HasNextExecutorGroup API] 📦 排除组数量: {len(excluded_groups)}")
-            # if excluded_groups:
-            #     print(f"[HasNextExecutorGroup API] 📦 排除组: {', '.join(excluded_groups)}")
-
-            # 保存到setting.json
-            success = HasNextExecutorGroup.save_excluded_groups(excluded_groups)
-
-            if success:
-                return web.json_response({
-                    "status": "success",
-                    "message": f"已保存 {len(excluded_groups)} 个排除组"
-                })
-            else:
-                return web.json_response({
-                    "status": "error",
-                    "message": "保存失败"
-                }, status=500)
-
-        except Exception as e:
-            error_msg = f"[HasNextExecutorGroup API] 保存排除组错误: {str(e)}"
-            print(error_msg)
-            import traceback
-            traceback.print_exc()
-            return web.json_response({
-                "status": "error",
-                "message": str(e)
-            }, status=500)
-
-    @routes.get('/danbooru_gallery/has_next/load_excluded')
-    async def load_excluded_groups_api(request):
-        """获取已保存的排除组配置"""
-        try:
-            # 创建临时实例来调用load方法
-            node = HasNextExecutorGroup()
-            excluded_groups = node.load_excluded_groups()
-
-            # print(f"\n[HasNextExecutorGroup API] 📤 返回排除组配置: {len(excluded_groups)} 个组")
-
-            return web.json_response({
-                "status": "success",
-                "excluded_groups": excluded_groups
-            })
-
-        except Exception as e:
-            error_msg = f"[HasNextExecutorGroup API] 读取排除组错误: {str(e)}"
-            print(error_msg)
-            import traceback
-            traceback.print_exc()
-            return web.json_response({
-                "status": "error",
-                "message": str(e)
-            }, status=500)
 
     @routes.post('/danbooru_gallery/has_next/sync_disabled_node_groups')
     async def sync_disabled_node_groups_api(request):
