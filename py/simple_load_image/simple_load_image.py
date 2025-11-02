@@ -105,20 +105,44 @@ class SimpleLoadImage:
             }
         }
 
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
+    RETURN_TYPES = ("IMAGE", "MASK")
+    RETURN_NAMES = ("image", "mask")
     FUNCTION = "load_image"
     CATEGORY = CATEGORY_TYPE
 
-    def load_image(self, image: str) -> Tuple[torch.Tensor]:
+    @classmethod
+    def VALIDATE_INPUTS(cls, image):
         """
-        加载图像
+        验证输入的图像文件是否存在（支持带标记的文件名）
+
+        Args:
+            image: 图像文件名（可能包含 [input]、[output]、[temp] 等标记）
+
+        Returns:
+            True: 文件有效
+            str: 错误信息（文件无效时）
+        """
+        if not folder_paths:
+            return True  # folder_paths不可用时跳过验证
+
+        # 使用ComfyUI的exists_annotated_filepath来验证文件
+        # 这个函数会正确处理带标记的文件名，如 'clipspace/xxx.png [input]'
+        if not folder_paths.exists_annotated_filepath(image):
+            return f"Invalid image file: {image}"
+
+        return True
+
+    def load_image(self, image: str) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        加载图像和mask
 
         Args:
             image: 图像文件名
 
         Returns:
-            (IMAGE,): 图像张量，形状为 (batch, height, width, channels)
+            (IMAGE, MASK): 图像张量和mask张量
+                IMAGE形状为 (batch, height, width, channels)
+                MASK形状为 (batch, height, width)
         """
         # 如果要加载默认黑色图像，确保文件存在（用户可能误删）
         if image == BLACK_IMAGE_FILENAME:
@@ -127,9 +151,10 @@ class SimpleLoadImage:
         # 检查folder_paths和node_helpers是否可用
         if not folder_paths or not node_helpers:
             print("[SimpleLoadImage] 错误: folder_paths 或 node_helpers 不可用")
-            # 返回黑色图像作为后备
+            # 返回黑色图像和空mask作为后备
             black_image = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE, 3), dtype=torch.float32)
-            return (black_image,)
+            black_mask = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE), dtype=torch.float32)
+            return (black_image, black_mask)
 
         try:
             # 获取图像完整路径（使用ComfyUI原生方法）
@@ -138,15 +163,17 @@ class SimpleLoadImage:
             # 检查文件是否存在
             if not os.path.exists(image_path):
                 print(f"[SimpleLoadImage] 图像文件不存在: {image_path}")
-                # 返回黑色图像作为后备
+                # 返回黑色图像和空mask作为后备
                 black_image = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE, 3), dtype=torch.float32)
-                return (black_image,)
+                black_mask = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE), dtype=torch.float32)
+                return (black_image, black_mask)
 
             # 使用PIL打开图像（ComfyUI原生方法）
             img = node_helpers.pillow(Image.open, image_path)
 
             # 处理图像序列（如GIF）
             output_images = []
+            output_masks = []
 
             for i in ImageSequence.Iterator(img):
                 # 处理EXIF方向信息
@@ -165,27 +192,45 @@ class SimpleLoadImage:
                 # 转换为torch张量，添加batch维度
                 image_tensor = torch.from_numpy(image_np)[None,]
 
+                # 提取mask（从alpha通道）
+                if 'A' in i.getbands():
+                    # 图像有alpha通道，提取它作为mask
+                    mask = np.array(i.getchannel('A')).astype(np.float32) / 255.0
+                    mask = 1. - torch.from_numpy(mask)
+                elif i.mode == 'P' and 'transparency' in i.info:
+                    # 调色板模式且有透明度信息
+                    mask = np.array(i.convert('RGBA').getchannel('A')).astype(np.float32) / 255.0
+                    mask = 1. - torch.from_numpy(mask)
+                else:
+                    # 没有alpha通道，创建全零mask（全白，即不透明）
+                    mask = torch.zeros((image_tensor.shape[1], image_tensor.shape[2]), dtype=torch.float32)
+
                 output_images.append(image_tensor)
+                output_masks.append(mask.unsqueeze(0))
 
-            # 合并所有图像帧
+            # 合并所有图像帧和mask
             if len(output_images) > 1:
-                result = torch.cat(output_images, dim=0)
+                result_image = torch.cat(output_images, dim=0)
+                result_mask = torch.cat(output_masks, dim=0)
             elif len(output_images) == 1:
-                result = output_images[0]
+                result_image = output_images[0]
+                result_mask = output_masks[0]
             else:
-                # 如果没有加载到图像，返回黑色图像
+                # 如果没有加载到图像，返回黑色图像和空mask
                 print(f"[SimpleLoadImage] 图像加载失败: {image}")
-                result = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE, 3), dtype=torch.float32)
+                result_image = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE, 3), dtype=torch.float32)
+                result_mask = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE), dtype=torch.float32)
 
-            return (result,)
+            return (result_image, result_mask)
 
         except Exception as e:
             print(f"[SimpleLoadImage] 加载图像时出错: {e}")
             import traceback
             traceback.print_exc()
-            # 发生错误时返回黑色图像
+            # 发生错误时返回黑色图像和空mask
             black_image = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE, 3), dtype=torch.float32)
-            return (black_image,)
+            black_mask = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE), dtype=torch.float32)
+            return (black_image, black_mask)
 
 
 # ==================== 节点映射 ====================
