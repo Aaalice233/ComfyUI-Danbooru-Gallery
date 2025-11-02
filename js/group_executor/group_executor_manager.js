@@ -37,6 +37,9 @@ app.registerExtension({
                 locked: false  // 锁定模式状态
             };
 
+            // 🔴 初始化组对象引用跟踪（用于支持组重命名）
+            this.groupReferences = new WeakMap();
+
             // 设置节点初始大小
             this.size = [450, 600];
 
@@ -1213,6 +1216,16 @@ app.registerExtension({
                 group.group_name,
                 (selectedValue) => {
                     group.group_name = selectedValue;
+
+                    // 🔴 建立组对象到配置的引用映射（支持重命名检测）
+                    if (app.graph && app.graph._groups && selectedValue) {
+                        const groupObj = app.graph._groups.find(g => g.title === selectedValue);
+                        if (groupObj) {
+                            this.groupReferences.set(groupObj, group);
+                            console.log('[GEM] 建立组引用映射:', selectedValue);
+                        }
+                    }
+
                     this.syncConfig();
                 }
             );
@@ -1336,23 +1349,11 @@ app.registerExtension({
             }
         };
 
-        // 同步配置到widget
+        // 同步配置到后端
+        // 注意：此节点使用converted-widget，不需要手动同步到widget
+        // ComfyUI会在序列化时自动从properties读取数据
         nodeType.prototype.syncConfig = function () {
-            const configWidget = this.widgets?.find(w => w.name === "group_config");
-            if (!configWidget) {
-                console.error('[SimplifiedGEM] 未找到 group_config widget');
-                return;
-            }
-
-            const newConfig = JSON.stringify(this.properties.groups);
-            configWidget.value = newConfig;
-
-            // ✅ 调试日志：打印配置顺序
-            console.log('[GEM-UI] ========== 同步配置到widget ==========');
-            console.log('[GEM-UI] 配置顺序:', this.properties.groups.map((g, i) => `${i + 1}.${g.group_name}`).join(' → '));
-            console.log('[GEM-UI] 完整配置JSON:', newConfig);
-
-            // ✅ 新增：同步配置到后端API
+            // 直接同步到后端API
             this.syncConfigToBackend();
         };
 
@@ -1403,22 +1404,66 @@ app.registerExtension({
                 // 更新下拉框选项
                 searchableDropdown.updateOptions(availableGroups);
 
-                // 如果当前值不在新的组列表中，清空选择
-                if (group.group_name && !availableGroups.includes(group.group_name)) {
-                    group.group_name = '';
-                    searchableDropdown.updateValue('');
-                    this.syncConfig();
+                // 🔴 建立组对象引用映射（支持初始化时的重命名检测）
+                if (group.group_name && app.graph && app.graph._groups) {
+                    const groupObj = app.graph._groups.find(g => g.title === group.group_name);
+                    if (groupObj && !this.groupReferences.has(groupObj)) {
+                        this.groupReferences.set(groupObj, group);
+                        console.log('[GEM] 在刷新时建立组引用映射:', group.group_name);
+                    }
+                }
+
+                // 🔴 同步下拉框的显示值（支持重命名后UI更新）
+                if (group.group_name) {
+                    if (availableGroups.includes(group.group_name)) {
+                        // 组名存在，同步UI显示
+                        searchableDropdown.updateValue(group.group_name);
+                    } else {
+                        // 组名不存在，清空选择
+                        group.group_name = '';
+                        searchableDropdown.updateValue('');
+                        this.syncConfig();
+                    }
                 }
             });
         };
 
         // 设置图表变化监听器
         nodeType.prototype.setupGraphChangeListener = function () {
+            // 🔴 初始化组对象引用映射（支持重命名检测）
+            if (app.graph && app.graph._groups) {
+                app.graph._groups.forEach(group => {
+                    const config = this.properties.groups.find(c => c.group_name === group.title);
+                    if (config) {
+                        this.groupReferences.set(group, config);
+                        console.log('[GEM] 初始化组引用映射:', group.title);
+                    }
+                });
+            }
+
             // 保存上次的组列表
             this.lastGroupsList = this.getAvailableGroups().join(',');
 
             // 定期检查组列表是否发生变化
             this.groupsCheckInterval = setInterval(() => {
+                // 🔴 检测组重命名并自动更新配置
+                if (app.graph && app.graph._groups) {
+                    let hasRename = false;
+                    app.graph._groups.forEach(group => {
+                        const config = this.groupReferences.get(group);
+                        if (config && config.group_name !== group.title) {
+                            console.log('[GEM] 检测到组重命名:', config.group_name, '→', group.title);
+                            config.group_name = group.title;
+                            hasRename = true;
+                        }
+                    });
+
+                    // 如果发生重命名，同步到后端
+                    if (hasRename) {
+                        this.syncConfig();
+                    }
+                }
+
                 const currentGroupsList = this.getAvailableGroups().join(',');
                 if (currentGroupsList !== this.lastGroupsList) {
                     console.log('[GEM] 检测到组列表变化，自动刷新');
