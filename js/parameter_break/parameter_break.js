@@ -436,6 +436,24 @@ app.registerExtension({
                 });
             }
 
+            // 🔴 关键修复：断开被删除参数的连接
+            const newParamIds = new Set(paramMeta.map(meta => meta.param_id));
+            connectionsByParamId.forEach((linkIds, paramId) => {
+                if (!newParamIds.has(paramId)) {
+                    // 这个参数已被删除，需要断开其连接
+                    console.log('[PB] 检测到已删除的参数:', paramId, ', 断开其连接:', linkIds.length, '个');
+                    linkIds.forEach(linkId => {
+                        // 使用LiteGraph的API安全地移除连接
+                        if (this.graph && this.graph.removeLink) {
+                            this.graph.removeLink(linkId);
+                            console.log('[PB] 已断开连接:', linkId);
+                        }
+                    });
+                    // 从map中移除，避免恢复时使用
+                    connectionsByParamId.delete(paramId);
+                }
+            });
+
             // 根据参数结构生成新输出，基于参数ID恢复连接
             const newOutputs = paramMeta.map((meta, index) => {
                 // 根据参数ID恢复连接
@@ -461,6 +479,20 @@ app.registerExtension({
 
             // 更新节点输出
             this.outputs = newOutputs;
+
+            // ⚠️ 重要：在赋值 outputs 之后再更新 origin_slot
+            // 这样可以避免 LiteGraph 内部逻辑覆盖我们的修改
+            this.outputs.forEach((output, index) => {
+                if (output.links && output.links.length > 0) {
+                    output.links.forEach(linkId => {
+                        const link = this.graph.links[linkId];
+                        if (link && link.origin_slot !== index) {
+                            console.log('[PB] 同步连接', linkId, '的 origin_slot:', link.origin_slot, '→', index);
+                            link.origin_slot = index;
+                        }
+                    });
+                }
+            });
 
             // 触发节点图更新
             if (this.graph && this.graph.setDirtyCanvas) {
