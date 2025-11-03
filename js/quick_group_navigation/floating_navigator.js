@@ -295,25 +295,55 @@ export class FloatingNavigator {
 
     /**
      * 更新面板位置（相对于悬浮球）
+     * 智能计算位置，确保面板不会超出屏幕边界
      */
     updatePanelPosition() {
         const ballSize = 60;
         const panelWidth = 360;
+        const panelMaxHeight = 500;  // 面板最大高度（与CSS中的max-height一致）
         const gap = 10;
+        const edgeMargin = 20;  // 距离屏幕边缘的最小间距
 
+        // ========== 水平方向位置计算 ==========
         // 判断应该显示在左侧还是右侧
         const shouldShowOnLeft = (this.position.x + ballSize + gap + panelWidth) > window.innerWidth;
 
+        let panelLeft;
         if (shouldShowOnLeft) {
             // 显示在左侧
-            this.panelElement.style.left = `${this.position.x - panelWidth - gap}px`;
+            panelLeft = this.position.x - panelWidth - gap;
+            // 确保不超出左边界
+            if (panelLeft < edgeMargin) {
+                panelLeft = edgeMargin;
+            }
         } else {
             // 显示在右侧
-            this.panelElement.style.left = `${this.position.x + ballSize + gap}px`;
+            panelLeft = this.position.x + ballSize + gap;
+            // 确保不超出右边界
+            if (panelLeft + panelWidth > window.innerWidth - edgeMargin) {
+                panelLeft = window.innerWidth - panelWidth - edgeMargin;
+            }
         }
 
-        // 垂直对齐悬浮球顶部
-        this.panelElement.style.top = `${this.position.y}px`;
+        // ========== 垂直方向位置计算 ==========
+        let panelTop = this.position.y;
+
+        // 检测面板是否会超出底部
+        const wouldExceedBottom = (this.position.y + panelMaxHeight) > (window.innerHeight - edgeMargin);
+
+        if (wouldExceedBottom) {
+            // 面板会超出底部，尝试向上对齐悬浮球底部
+            panelTop = this.position.y + ballSize - panelMaxHeight;
+
+            // 确保不超出顶部
+            if (panelTop < edgeMargin) {
+                panelTop = edgeMargin;
+            }
+        }
+
+        // 应用计算后的位置
+        this.panelElement.style.left = `${panelLeft}px`;
+        this.panelElement.style.top = `${panelTop}px`;
     }
 
     /**
