@@ -1231,6 +1231,7 @@ app.registerExtension({
                             }));
 
                             this.renderContent();
+                            this.updateOutput();  // 同步工作流状态，防止刷新后选中状态丢失
                             const contentArea = mainContainer.querySelector(".prompt-selector-content-area");
                             if (contentArea) {
                                 contentArea.scrollTop = contentArea.scrollHeight;
