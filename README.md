@@ -30,6 +30,7 @@
   - [🎨 Krita 集成 (Open In Krita)](#-krita-集成-open-in-krita)
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
   - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
+  - [🧭 快速组导航器 (Quick Group Navigation)](#-快速组导航器-quick-group-navigation)
   - [🔍 后续执行组是否有效 (Has Next Executor Group)](#-后续执行组是否有效-has-next-executor-group)
   - [🖼️ 图像缓存节点 (Image Cache Nodes)](#-图像缓存节点-image-cache-nodes)
   - [📝 文本缓存节点 (Text Cache Nodes)](#-文本缓存节点-text-cache-nodes)
@@ -60,6 +61,7 @@
   - [🎨 Open In Krita](#-open-in-krita)
   - [⚡ Group Executor Manager](#-group-executor-manager)
   - [🔇 Group Mute Manager](#-group-mute-manager)
+  - [🧭 Quick Group Navigation](#-quick-group-navigation)
   - [🔍 Has Next Executor Group](#-has-next-executor-group)
   - [🖼️ Image Cache Nodes](#-image-cache-nodes)
   - [📝 Text Cache Nodes](#-text-cache-nodes-1)
@@ -820,6 +822,56 @@ Open In Krita 节点实现了 ComfyUI 与 Krita 之间的双向数据交互，�
 
 ---
 
+### 🧭 快速组导航器 (Quick Group Navigation)
+
+**全局悬浮球式组导航和快捷键跳转工具**
+
+快速组导航器提供了一个优雅的悬浮球界面，让您可以快速跳转到工作流中的任意组，并支持自定义快捷键一键导航。
+
+#### 核心功能
+- 🎯 **悬浮球导航**: 全局可拖拽悬浮球，随时访问组导航
+- ⌨️ **快捷键跳转**: 为每个组分配数字或字母快捷键，一键跳转
+- 🔍 **智能缩放**: 自动计算最佳缩放比例，完整显示目标组
+- 🔒 **锁定模式**: 防止误操作的锁定功能
+- 🎨 **智能定位**: 面板自动避开屏幕边界，确保完整显示
+- 💾 **工作流集成**: 导航配置随工作流保存和迁移
+- 🔄 **自动居中**: 跳转时自动居中到目标组
+- 📍 **位置记忆**: 悬浮球位置本地保存
+
+#### 快捷键系统
+- **数字键 1-9**: 优先分配给前9个组
+- **字母键 A-Z**: 数字键用完后自动分配字母键
+- **冲突检测**: 自动检测并提示快捷键冲突
+- **实时录制**: 点击按钮录制新快捷键
+- **全局响应**: 在画布任意位置都能使用快捷键
+
+#### 使用方法
+1. 悬浮球会自动显示在屏幕右侧中央
+2. 点击悬浮球展开导航面板
+3. 点击"添加组"选择要导航的组
+4. 点击快捷键按钮录制自定义快捷键
+5. 使用快捷键或点击导航按钮快速跳转
+
+#### 智能定位特性
+- **水平自适应**: 悬浮球在右侧时面板显示在左侧，反之亦然
+- **垂直自适应**: 悬浮球在底部时面板自动向上展开
+- **边界保护**: 确保面板始终完整显示，不被屏幕边缘遮挡
+- **拖拽友好**: 拖拽悬浮球不会误触发面板展开
+
+#### 使用场景
+- **大型工作流**: 快速在复杂工作流的不同区域间跳转
+- **调试优化**: 高效定位需要调试的组
+- **演示讲解**: 快速展示工作流的不同功能模块
+- **批量操作**: 配合其他管理器快速切换工作区域
+
+#### 提示通知
+快速组导航器使用全局 Toast 通知系统，提供：
+- ✅ **成功提示**: 添加组、设置快捷键成功
+- ⚠️ **警告提示**: 组不存在、快捷键冲突
+- ℹ️ **信息提示**: 所有组已添加等状态信息
+
+---
+
 ### 🔍 后续执行组是否有效 (Has Next Executor Group)
 
 **智能工作流条件执行节点**
@@ -1423,6 +1475,8 @@ ComfyUI-Danbooru-Gallery/
 ├── group_mute_manager/             # 组静音管理器
 │   ├── __init__.py
 │   └── group_mute_manager.py
+├── quick_group_navigation/         # 快速组导航器
+│   └── __init__.py
 ├── has_next_executor_group/        # 后续执行组是否有效节点
 │   ├── __init__.py
 │   └── has_next_executor_group.py
@@ -1494,6 +1548,11 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── group_executor_manager.js
 │   ├── group_mute_manager/         # 组静音管理器前端
 │   │   └── group_mute_manager.js
+│   ├── quick_group_navigation/     # 快速组导航器前端
+│   │   ├── quick_group_navigation.js
+│   │   ├── floating_navigator.js
+│   │   ├── styles.css
+│   │   └── README.md
 │   ├── resolution_master_simplify/ # 分辨率大师简化版前端
 │   │   └── resolution_master_simplify.js
 │   ├── parameter_control_panel/    # 参数控制面板前端
@@ -2281,6 +2340,56 @@ Each linkage rule can:
 
 **Anti-Loop Example**:
 If configured with "Group A enable → enable Group B" and "Group B enable → enable Group A", the system will automatically detect and terminate the loop.
+
+---
+
+### 🧭 Quick Group Navigation
+
+**Global Floating Ball Navigation and Keyboard Shortcut Group Jump Tool**
+
+Quick Group Navigation provides an elegant floating ball interface that allows you to quickly jump to any group in your workflow, with support for custom keyboard shortcuts for one-key navigation.
+
+#### Core Features
+- 🎯 **Floating Ball Navigation**: Global draggable floating ball for instant group navigation access
+- ⌨️ **Keyboard Shortcuts**: Assign number or letter shortcuts to each group for one-key jumping
+- 🔍 **Smart Zoom**: Automatically calculates optimal zoom level to display target group completely
+- 🔒 **Lock Mode**: Lock feature to prevent accidental operations
+- 🎨 **Smart Positioning**: Panel automatically avoids screen edges for complete display
+- 💾 **Workflow Integration**: Navigation configuration saved and migrated with workflow
+- 🔄 **Auto-Center**: Automatically centers on target group when jumping
+- 📍 **Position Memory**: Floating ball position saved locally
+
+#### Keyboard Shortcut System
+- **Number Keys 1-9**: Priority assignment to first 9 groups
+- **Letter Keys A-Z**: Automatically assigned when number keys are exhausted
+- **Conflict Detection**: Automatically detects and alerts shortcut conflicts
+- **Live Recording**: Click button to record new keyboard shortcuts
+- **Global Response**: Shortcuts work from anywhere on the canvas
+
+#### Usage
+1. Floating ball automatically appears on the right side center of screen
+2. Click floating ball to expand navigation panel
+3. Click "Add Group" to select groups for navigation
+4. Click shortcut button to record custom keyboard shortcut
+5. Use shortcuts or click navigation buttons for quick jumping
+
+#### Smart Positioning Features
+- **Horizontal Adaptive**: Panel shows on left when ball is on right, and vice versa
+- **Vertical Adaptive**: Panel automatically expands upward when ball is at bottom
+- **Boundary Protection**: Ensures panel is always fully displayed without being cut off by screen edges
+- **Drag-Friendly**: Dragging floating ball doesn't accidentally trigger panel expansion
+
+#### Use Cases
+- **Large Workflows**: Quickly jump between different areas of complex workflows
+- **Debug & Optimize**: Efficiently locate groups that need debugging
+- **Presentation**: Quickly demonstrate different functional modules of workflow
+- **Batch Operations**: Work with other managers to quickly switch work areas
+
+#### Toast Notifications
+Quick Group Navigation uses the global Toast notification system, providing:
+- ✅ **Success Notifications**: Group added, shortcut set successfully
+- ⚠️ **Warning Notifications**: Group not found, shortcut conflicts
+- ℹ️ **Info Notifications**: All groups added and other status information
 
 ---
 
