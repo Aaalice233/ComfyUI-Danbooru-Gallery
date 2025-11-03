@@ -9,6 +9,10 @@ import os
 # 全局变量：存储组内节点都被禁用的组列表（由前端扩展自动同步）
 _disabled_node_groups = set()
 
+# 全局变量：存储每个节点的排除组配置（由前端扩展自动同步）
+# 格式: {unique_id: set(group_names)}
+_excluded_groups_by_node = {}
+
 
 class HasNextExecutorGroup:
     """
@@ -71,9 +75,8 @@ class HasNextExecutorGroup:
 
             print(f"[HasNextExecutorGroup] │  配置组数: {len(groups_config)}")
 
-            # 3. 排除组配置已从工作流序列化中获取（前端维护）
-            # 注意：排除组现在由前端通过 widget 管理，不再从 setting.json 读取
-            excluded_groups = []
+            # 3. 从全局变量读取该节点的排除组配置（由前端自动同步）
+            excluded_groups = _excluded_groups_by_node.get(unique_id, set())
             print(f"[HasNextExecutorGroup] │  排除组数: {len(excluded_groups)}")
             if excluded_groups:
                 print(f"[HasNextExecutorGroup] │  排除组: {', '.join(excluded_groups)}")
@@ -176,6 +179,37 @@ try:
 
         except Exception as e:
             error_msg = f"[HasNextExecutorGroup API] 同步被禁用组错误: {str(e)}"
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    @routes.post('/danbooru_gallery/has_next/sync_excluded_groups')
+    async def sync_excluded_groups_api(request):
+        """接收前端同步的排除组配置（由 has_next 前端扩展自动调用）"""
+        try:
+            global _excluded_groups_by_node
+            data = await request.json()
+            unique_id = data.get('unique_id')
+            excluded_groups = data.get('excluded_groups', [])
+
+            if unique_id:
+                _excluded_groups_by_node[unique_id] = set(excluded_groups)
+
+                print(f"[HasNextExecutorGroup API] 💾 节点 {unique_id} 同步排除组: {len(excluded_groups)} 个")
+                if excluded_groups:
+                    print(f"[HasNextExecutorGroup API] 📋 排除组列表: {', '.join(excluded_groups)}")
+
+            return web.json_response({
+                "status": "success",
+                "message": f"已同步 {len(excluded_groups)} 个排除组"
+            })
+
+        except Exception as e:
+            error_msg = f"[HasNextExecutorGroup API] 同步排除组错误: {str(e)}"
             print(error_msg)
             import traceback
             traceback.print_exc()

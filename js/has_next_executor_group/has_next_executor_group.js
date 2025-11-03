@@ -30,6 +30,8 @@ app.registerExtension({
                 api.queuePrompt = async function () {
                     // 执行前立即同步最新状态
                     await syncDisabledGroupsToBackend();
+                    // 同步所有节点的排除组配置
+                    await syncAllExcludedGroups();
                     // 调用原始方法
                     return originalQueuePrompt.apply(this, arguments);
                 };
@@ -88,6 +90,11 @@ app.registerExtension({
             this.createCustomUI();
 
             // 注意：排除组配置现在从工作流序列化中获取，不再从后端加载
+
+            // 添加同步方法
+            this.syncExcludedGroups = async () => {
+                await syncExcludedGroupsToBackend(this);
+            };
 
             // 监听图表变化，自动刷新和检测重命名
             this.setupGraphChangeListener();
@@ -551,6 +558,9 @@ app.registerExtension({
             this.properties.excludedGroups.push(newGroup);
             this.updateExcludedList();
             // 配置会在保存工作流时自动通过 onSerialize 持久化
+
+            // 立即同步到后端
+            this.syncExcludedGroups?.();
         };
 
         // 删除排除组
@@ -560,6 +570,9 @@ app.registerExtension({
             this.properties.excludedGroups.splice(index, 1);
             this.updateExcludedList();
             // 配置会在保存工作流时自动通过 onSerialize 持久化
+
+            // 立即同步到后端
+            this.syncExcludedGroups?.();
         };
 
         // 更新排除组列表
@@ -619,6 +632,9 @@ app.registerExtension({
                     }
 
                     // 配置会在保存工作流时自动通过 onSerialize 持久化
+
+                    // 立即同步到后端
+                    this.syncExcludedGroups?.();
                 }
             );
             dropdownContainer.appendChild(searchableDropdown);
@@ -869,6 +885,8 @@ app.registerExtension({
                     // 配置已更新，会在保存工作流时自动通过 onSerialize 持久化
                     if (hasRename) {
                         console.log('[HasNextExecutorGroup] 组名已更新，配置会在保存工作流时持久化');
+                        // 立即同步到后端
+                        this.syncExcludedGroups?.();
                     }
                 }
 
@@ -1129,5 +1147,47 @@ async function syncDisabledGroupsToBackend() {
 
     } catch (error) {
         console.error('[HasNext] 同步被禁用组到后端时出错:', error);
+    }
+}
+
+/**
+ * 同步单个节点的排除组配置到后端
+ * @param {Object} node - 节点实例
+ */
+async function syncExcludedGroupsToBackend(node) {
+    if (!node || !node.id || !node.properties) return;
+
+    try {
+        const excludedGroups = node.properties.excludedGroups || [];
+
+        const response = await api.fetchApi("/danbooru_gallery/has_next/sync_excluded_groups", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                unique_id: node.id.toString(),
+                excluded_groups: excludedGroups
+            })
+        });
+
+        const result = await response.json();
+        if (result.status === 'success') {
+            console.log(`[HasNext] 节点 ${node.id} 排除组已同步:`, result.message);
+        }
+
+    } catch (error) {
+        console.error(`[HasNext] 节点 ${node.id} 同步排除组到后端时出错:`, error);
+    }
+}
+
+/**
+ * 同步所有 HasNextExecutorGroup 节点的排除组配置
+ */
+async function syncAllExcludedGroups() {
+    if (!app.graph || !app.graph._nodes) return;
+
+    const nodes = app.graph._nodes.filter(node => node.type === "HasNextExecutorGroup");
+
+    for (const node of nodes) {
+        await syncExcludedGroupsToBackend(node);
     }
 }
