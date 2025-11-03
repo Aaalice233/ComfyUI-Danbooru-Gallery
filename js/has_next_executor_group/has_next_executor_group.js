@@ -955,43 +955,50 @@ app.registerExtension({
                 this.properties.locked = false;
             }
 
-            // 恢复排除组列表（带组名验证）
+            // 恢复排除组列表（先无条件恢复，延迟验证）
             if (info.excludedGroups && Array.isArray(info.excludedGroups)) {
-                // 获取当前可用的组列表
-                const availableGroups = app.graph && app.graph._groups
-                    ? app.graph._groups.filter(g => g && g.title).map(g => g.title)
-                    : [];
-
-                // 过滤掉不存在的组名
-                const originalCount = info.excludedGroups.length;
-                const validGroups = info.excludedGroups.filter(groupName => {
-                    if (!groupName) return false; // 过滤空值
-
-                    const exists = availableGroups.includes(groupName);
-                    if (!exists) {
-                        console.warn(`[HasNextExecutorGroup] ⚠️ 组 "${groupName}" 不存在，已自动清理`);
-                    }
-                    return exists;
-                });
-
-                this.properties.excludedGroups = validGroups;
-
-                if (originalCount !== validGroups.length) {
-                    console.log('[HasNextExecutorGroup] ✅ 恢复排除组:', validGroups.length, '个（已清理',
-                        originalCount - validGroups.length, '个无效组）');
-                } else {
-                    console.log('[HasNextExecutorGroup] ✅ 恢复排除组:', validGroups.length, '个');
-                }
+                // 先无条件恢复配置，不立即验证
+                this.properties.excludedGroups = [...info.excludedGroups];
+                console.log('[HasNextExecutorGroup] 📥 恢复排除组配置:', this.properties.excludedGroups.length, '个');
             } else {
                 this.properties.excludedGroups = [];
             }
 
-            // 等待UI准备就绪后更新界面
+            // 延迟 200ms 后验证和更新 UI（确保组列表已加载）
             if (this.customUI) {
                 setTimeout(() => {
+                    // 此时组列表应该已经加载完成，可以安全验证
+                    const availableGroups = app.graph && app.graph._groups
+                        ? app.graph._groups.filter(g => g && g.title).map(g => g.title)
+                        : [];
+
+                    // 清理无效组（如果组列表已加载且有排除组）
+                    if (availableGroups.length > 0 && this.properties.excludedGroups.length > 0) {
+                        const originalCount = this.properties.excludedGroups.length;
+                        const validGroups = this.properties.excludedGroups.filter(groupName => {
+                            if (!groupName) return false; // 过滤空值
+
+                            const exists = availableGroups.includes(groupName);
+                            if (!exists) {
+                                console.warn(`[HasNextExecutorGroup] ⚠️ 组 "${groupName}" 不存在，已自动清理`);
+                            }
+                            return exists;
+                        });
+
+                        this.properties.excludedGroups = validGroups;
+
+                        if (originalCount !== validGroups.length) {
+                            console.log('[HasNextExecutorGroup] ✅ 验证完成: 保留', validGroups.length, '个有效组（清理',
+                                originalCount - validGroups.length, '个无效组）');
+                        } else {
+                            console.log('[HasNextExecutorGroup] ✅ 验证完成: 所有', validGroups.length, '个组均有效');
+                        }
+                    }
+
+                    // 更新 UI
                     this.updateExcludedList?.();
                     this.updateLockUI?.();
-                }, 50);
+                }, 200); // 从 50ms 增加到 200ms，确保组列表已加载
             }
         };
 
