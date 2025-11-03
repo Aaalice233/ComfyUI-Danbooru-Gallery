@@ -11,6 +11,7 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
+import { globalToastManager } from "../global/toast_manager.js";
 
 // Debug辅助函数
 const COMPONENT_NAME = 'execution_engine';
@@ -296,6 +297,11 @@ class OptimizedExecutionEngine {
         // ✅ 清除当前缓存组，防止后续操作使用旧的组名
         await this.setCurrentCacheGroup(null);
 
+        // ✅ 隐藏执行状态栏
+        if (globalToastManager) {
+            globalToastManager.hideExecutionStatus();
+        }
+
         const totalExecutionTime = Date.now() - context.startTime;
         console.log(`[OptimizedExecutionEngine] ⏱️ 总执行时间: ${totalExecutionTime}ms (${Math.round(totalExecutionTime / 1000)}秒)`);
         window._groupExecutorActive = false; // Reset the flag
@@ -309,6 +315,17 @@ class OptimizedExecutionEngine {
         window._currentExecutingGroup = groupName;
 
         console.log(`[OptimizedExecutionEngine] 🎯 开始执行组: ${groupName}`);
+
+        // ✅ 显示执行状态栏
+        if (globalToastManager) {
+            if (groupIndex === 1) {
+                // 第一次执行时显示状态栏
+                globalToastManager.showExecutionStatus(groupName, groupIndex, totalGroups);
+            } else {
+                // 后续执行更新状态栏
+                globalToastManager.updateExecutionProgress(groupName, groupIndex, totalGroups);
+            }
+        }
 
         // ✅ 增强日志：显示当前执行进度和组信息
         console.log(`[OptimizedExecutionEngine] 📍 执行进度: ${groupIndex}/${totalGroups}`);
@@ -672,6 +689,12 @@ class OptimizedExecutionEngine {
         this.executionContexts.delete(executionId);
         this.cacheControlStates.delete(executionId);
         this.cancelledExecutions.delete(executionId);  // 清理取消标记
+
+        // ✅ 隐藏执行状态栏
+        if (globalToastManager) {
+            globalToastManager.hideExecutionStatus();
+        }
+
         console.log(`[OptimizedExecutionEngine] 🧹 清理执行上下文: ${executionId}`);
     }
 

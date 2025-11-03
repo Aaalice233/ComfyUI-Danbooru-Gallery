@@ -9,11 +9,13 @@ class ToastManager {
         this.toasts = [];
         this.maxVisibleToasts = 8; // 增加最大同时显示的提示数量
         this.toastContainer = null;
+        this.executionStatusBar = null; // 执行状态栏元素
         this.init();
     }
 
     init() {
         this.createToastContainer();
+        this.createExecutionStatusBar();
         this.addStyles();
     }
 
@@ -51,6 +53,36 @@ class ToastManager {
             document.addEventListener('DOMContentLoaded', () => {
                 if (document.body && !document.getElementById('mce-toast-container')) {
                     document.body.appendChild(this.toastContainer);
+                }
+            });
+        }
+    }
+
+    createExecutionStatusBar() {
+        // 创建执行状态栏容器
+        this.executionStatusBar = document.createElement('div');
+        this.executionStatusBar.className = 'gem-execution-status-bar';
+        this.executionStatusBar.id = 'gem-execution-status-bar';
+        this.executionStatusBar.style.cssText = `
+            position: fixed;
+            top: 110px;
+            right: 20px;
+            z-index: 99998;
+            display: none;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        `;
+
+        // 简化DOM加载检查
+        if (document.body) {
+            if (!document.getElementById('gem-execution-status-bar')) {
+                document.body.appendChild(this.executionStatusBar);
+            }
+        } else {
+            document.addEventListener('DOMContentLoaded', () => {
+                if (document.body && !document.getElementById('gem-execution-status-bar')) {
+                    document.body.appendChild(this.executionStatusBar);
                 }
             });
         }
@@ -252,6 +284,81 @@ class ToastManager {
                 .mce-toast.multi-line {
                     max-width: calc(100vw - 40px);
                     width: fit-content;
+                }
+            }
+
+            /* 执行状态栏样式 */
+            .gem-execution-status-bar {
+                position: fixed !important;
+                top: 110px !important;
+                right: 20px !important;
+                z-index: 99998 !important;
+                display: none !important;
+                padding: 12px 20px !important;
+                border-radius: 10px !important;
+                background: linear-gradient(135deg, rgba(16, 185, 129, 0.95) 0%, rgba(5, 150, 105, 0.95) 100%) !important;
+                border: 1px solid rgba(16, 185, 129, 0.3) !important;
+                backdrop-filter: blur(12px) !important;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+                color: #ffffff !important;
+                font-size: 13px !important;
+                font-weight: 600 !important;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+                pointer-events: auto !important;
+                transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+                opacity: 0 !important;
+                transform: translateY(-10px) !important;
+                white-space: nowrap !important;
+                max-width: 400px !important;
+                box-sizing: border-box !important;
+            }
+
+            .gem-execution-status-bar.show {
+                display: flex !important;
+                opacity: 1 !important;
+                transform: translateY(0) !important;
+                align-items: center !important;
+                gap: 12px !important;
+            }
+
+            .gem-execution-status-bar .status-text {
+                flex: 1 !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+            }
+
+            .gem-execution-status-bar .status-close {
+                margin-left: 10px !important;
+                cursor: pointer !important;
+                opacity: 0.7 !important;
+                transition: opacity 0.2s !important;
+                font-size: 18px !important;
+                line-height: 1 !important;
+                flex-shrink: 0 !important;
+            }
+
+            .gem-execution-status-bar .status-close:hover {
+                opacity: 1 !important;
+            }
+
+            .gem-execution-status-bar::before {
+                content: '' !important;
+                display: inline-block !important;
+                width: 20px !important;
+                height: 20px !important;
+                flex-shrink: 0 !important;
+                background-size: contain !important;
+                background-repeat: no-repeat !important;
+                background-position: center !important;
+                background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3e%3cpath fill-rule='evenodd' d='M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z' clip-rule='evenodd'/%3e%3c/svg%3e") !important;
+            }
+
+            /* 响应式设计 - 执行状态栏 */
+            @media (max-width: 768px) {
+                .gem-execution-status-bar {
+                    top: 100px !important;
+                    right: 10px !important;
+                    max-width: calc(100vw - 80px) !important;
                 }
             }
         `;
@@ -509,6 +616,83 @@ class ToastManager {
      */
     removeResizeListener() {
         // 简化：不再需要移除监听器
+    }
+
+    /**
+     * 显示执行状态栏
+     * @param {string} groupName - 组名称
+     * @param {number} currentIndex - 当前组索引（从1开始）
+     * @param {number} totalGroups - 总组数
+     */
+    showExecutionStatus(groupName, currentIndex, totalGroups) {
+        if (!this.executionStatusBar) return;
+
+        // 创建状态文本
+        const statusText = `当前执行组：${groupName} (${currentIndex}/${totalGroups})`;
+
+        // 清空现有内容
+        this.executionStatusBar.innerHTML = '';
+
+        // 创建文本元素
+        const textElement = document.createElement('span');
+        textElement.className = 'status-text';
+        textElement.textContent = statusText;
+        this.executionStatusBar.appendChild(textElement);
+
+        // 添加关闭按钮
+        const closeBtn = document.createElement('span');
+        closeBtn.className = 'status-close';
+        closeBtn.innerHTML = '×';
+        closeBtn.addEventListener('click', () => {
+            this.hideExecutionStatus();
+        });
+        this.executionStatusBar.appendChild(closeBtn);
+
+        // 显示状态栏
+        this.executionStatusBar.style.display = 'flex';
+
+        // 触发动画
+        setTimeout(() => {
+            this.executionStatusBar.classList.add('show');
+        }, 10);
+    }
+
+    /**
+     * 更新执行进度
+     * @param {string} groupName - 组名称
+     * @param {number} currentIndex - 当前组索引（从1开始）
+     * @param {number} totalGroups - 总组数
+     */
+    updateExecutionProgress(groupName, currentIndex, totalGroups) {
+        if (!this.executionStatusBar) return;
+
+        // 查找文本元素并更新
+        const textElement = this.executionStatusBar.querySelector('.status-text');
+        if (textElement) {
+            const statusText = `当前执行组：${groupName} (${currentIndex}/${totalGroups})`;
+            textElement.textContent = statusText;
+        } else {
+            // 如果文本元素不存在，重新显示
+            this.showExecutionStatus(groupName, currentIndex, totalGroups);
+        }
+    }
+
+    /**
+     * 隐藏执行状态栏
+     */
+    hideExecutionStatus() {
+        if (!this.executionStatusBar) return;
+
+        // 移除 show 类触发动画
+        this.executionStatusBar.classList.remove('show');
+
+        // 等待动画完成后隐藏
+        setTimeout(() => {
+            if (this.executionStatusBar) {
+                this.executionStatusBar.style.display = 'none';
+                this.executionStatusBar.innerHTML = '';
+            }
+        }, 300);
     }
 }
 
