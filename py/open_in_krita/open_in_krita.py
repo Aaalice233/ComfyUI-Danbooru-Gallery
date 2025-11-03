@@ -93,10 +93,10 @@ class OpenInKrita:
         Args:
             krita_mask: 从Krita返回的蒙版
             input_mask: 节点的蒙版输入
-            image_shape: 图像形状，可以是 (H, W) 或 (B, H, W)，用于创建空蒙版
+            image_shape: 图像形状 (B, H, W)，用于创建空蒙版
 
         Returns:
-            torch.Tensor: 最终的蒙版张量，shape与image_shape一致
+            torch.Tensor: 最终的蒙版张量 [B, H, W]
         """
         # 优先使用Krita返回的mask（如果有效）
         if krita_mask is not None and not torch.all(krita_mask == 0):
@@ -405,8 +405,8 @@ class OpenInKrita:
                     mask_path = Path(mask_path_str)
                     result_mask = self._load_mask_from_file(mask_path)
                 else:
-                    # 没有蒙版，创建空蒙版
-                    result_mask = torch.zeros((result_image.shape[1], result_image.shape[2]))
+                    # 没有蒙版，创建空蒙版 [B, H, W]
+                    result_mask = torch.zeros((1, result_image.shape[1], result_image.shape[2]))
 
                 # 清理文件
                 try:
@@ -422,7 +422,7 @@ class OpenInKrita:
                     "type": "success"
                 })
 
-                final_mask = self._get_final_mask(result_mask, mask, (result_image.shape[1], result_image.shape[2]))
+                final_mask = self._get_final_mask(result_mask, mask, (1, result_image.shape[1], result_image.shape[2]))
                 return (result_image, final_mask)
 
             except Exception as e:
@@ -713,7 +713,7 @@ class OpenInKrita:
                         "type": "success"
                     })
 
-                    final_mask = self._get_final_mask(result_mask, mask, (result_image.shape[1], result_image.shape[2]))
+                    final_mask = self._get_final_mask(result_mask, mask, (1, result_image.shape[1], result_image.shape[2]))
                     return (result_image, final_mask)
 
                 # 检查是否取消
@@ -821,12 +821,12 @@ class OpenInKrita:
             file_path: 蒙版文件路径
 
         Returns:
-            torch.Tensor: 蒙版张量 [H, W]
+            torch.Tensor: 蒙版张量 [B, H, W]
         """
         try:
             pil_mask = Image.open(file_path).convert('L')  # 转换为灰度
             np_mask = np.array(pil_mask).astype(np.float32) / 255.0
-            tensor = torch.from_numpy(np_mask)  # [H, W]
+            tensor = torch.from_numpy(np_mask).unsqueeze(0)  # [B, H, W]
             print(f"[OpenInKrita] Loaded mask: {file_path.name}, shape: {tensor.shape}")
             return tensor
         except Exception as e:
@@ -862,14 +862,14 @@ class OpenInKrita:
             mask_bytes: PNG蒙版字节数据
 
         Returns:
-            torch.Tensor: 蒙版张量 [H, W]
+            torch.Tensor: 蒙版张量 [B, H, W]
         """
         import io
         pil_mask = Image.open(io.BytesIO(mask_bytes))
         pil_mask = pil_mask.convert('L')  # 转换为灰度
 
         np_mask = np.array(pil_mask).astype(np.float32) / 255.0
-        tensor = torch.from_numpy(np_mask)  # [H, W]
+        tensor = torch.from_numpy(np_mask).unsqueeze(0)  # [B, H, W]
 
         return tensor
 

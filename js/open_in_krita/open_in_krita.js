@@ -69,7 +69,7 @@ app.registerExtension({
                         </svg>
                         <span>检查Krita插件</span>
                     </button>
-                    <button class="oik-button oik-button-danger" data-action="cancelWait">
+                    <button class="oik-button oik-button-danger oik-button-inactive" data-action="cancelWait" disabled>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="10"></circle>
                             <line x1="15" y1="9" x2="9" y2="15"></line>
@@ -111,6 +111,10 @@ app.registerExtension({
                 const fetchButton = container.querySelector('[data-action="fetchFromKrita"]');
                 startKritaStatusMonitor(node, fetchButton);
 
+                // 启动等待状态监控
+                const cancelButton = container.querySelector('[data-action="cancelWait"]');
+                startWaitingStatusMonitor(node, cancelButton);
+
                 // 处理节点大小调整，确保最小尺寸
                 this.onResize = function (size) {
                     // 强制限制最小尺寸
@@ -127,6 +131,7 @@ app.registerExtension({
                 const originalOnRemoved = this.onRemoved;
                 this.onRemoved = function () {
                     stopKritaStatusMonitor(node);
+                    stopWaitingStatusMonitor(node);
                     if (originalOnRemoved) {
                         originalOnRemoved.apply(this, arguments);
                     }
@@ -474,6 +479,9 @@ async function cancelWait(node) {
 // 存储每个节点的状态监控定时器
 const nodeStatusTimers = new Map();
 
+// 存储每个节点的等待状态监控定时器
+const nodeWaitingTimers = new Map();
+
 /**
  * 检查Krita运行状态和文档打开状态
  */
@@ -548,6 +556,102 @@ async function checkAndUpdateStatus(fetchButton) {
 
     const status = await checkKritaStatus();
     updateFetchButtonStatus(fetchButton, status);
+}
+
+/**
+ * 检查节点等待状态
+ */
+async function checkWaitingStatus(nodeId) {
+    try {
+        const response = await api.fetchApi(`/open_in_krita/check_waiting_status?node_id=${nodeId}`, {
+            method: "GET"
+        });
+
+        if (!response.ok) {
+            return { is_waiting: false };
+        }
+
+        const result = await response.json();
+        return {
+            is_waiting: result.is_waiting || false
+        };
+
+    } catch (error) {
+        console.error("[OpenInKrita] Error checking waiting status:", error);
+        return { is_waiting: false };
+    }
+}
+
+/**
+ * 启动等待状态监控
+ */
+function startWaitingStatusMonitor(node, cancelButton) {
+    if (!node || !cancelButton) return;
+
+    const nodeId = node.id;
+
+    // 清除已有的定时器（如果存在）
+    stopWaitingStatusMonitor(node);
+
+    // 立即执行一次状态检测
+    checkAndUpdateWaitingStatus(nodeId, cancelButton);
+
+    // 启动定时器，每1秒检测一次（比Krita状态检测更频繁，因为等待状态变化更快）
+    const timerId = setInterval(async () => {
+        await checkAndUpdateWaitingStatus(nodeId, cancelButton);
+    }, 1000);
+
+    // 存储定时器ID
+    nodeWaitingTimers.set(nodeId, timerId);
+
+    console.log(`[OpenInKrita] Started waiting status monitor for node ${nodeId}`);
+}
+
+/**
+ * 停止等待状态监控
+ */
+function stopWaitingStatusMonitor(node) {
+    if (!node) return;
+
+    const nodeId = node.id;
+    const timerId = nodeWaitingTimers.get(nodeId);
+
+    if (timerId) {
+        clearInterval(timerId);
+        nodeWaitingTimers.delete(nodeId);
+        console.log(`[OpenInKrita] Stopped waiting status monitor for node ${nodeId}`);
+    }
+}
+
+/**
+ * 检测并更新等待状态
+ */
+async function checkAndUpdateWaitingStatus(nodeId, cancelButton) {
+    if (!cancelButton) return;
+
+    const status = await checkWaitingStatus(nodeId);
+    updateCancelButtonStatus(cancelButton, status);
+}
+
+/**
+ * 更新"终止执行"按钮的状态显示
+ */
+function updateCancelButtonStatus(button, status) {
+    if (!button) return;
+
+    const isWaiting = status.is_waiting || false;
+
+    if (isWaiting) {
+        // 节点正在等待：启用按钮，添加高亮样式
+        button.classList.remove('oik-button-inactive');
+        button.classList.add('oik-button-active');
+        button.disabled = false;
+    } else {
+        // 节点未等待：禁用按钮，移除高亮样式
+        button.classList.remove('oik-button-active');
+        button.classList.add('oik-button-inactive');
+        button.disabled = true;
+    }
 }
 
 /**
