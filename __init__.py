@@ -954,6 +954,38 @@ try:
                     "message": "缺少node_id参数"
                 }, status=400)
 
+            # 创建临时节点实例用于检查Krita状态
+            temp_node = OpenInKrita()
+
+            # 检查1: Krita进程是否存在
+            if not temp_node._is_krita_running():
+                print(f"[OpenInKrita] Krita进程未运行，无法获取数据")
+                # 发送Toast通知
+                PromptServer.instance.send_sync("open-in-krita-notification", {
+                    "node_id": node_id,
+                    "message": "⚠ Krita未运行\n请先启动Krita",
+                    "type": "warning"
+                })
+                return web.json_response({
+                    "status": "error",
+                    "message": "⚠ Krita未运行，请先启动Krita"
+                }, status=400)
+
+            # 检查2: Krita中是否打开了图像
+            has_document = temp_node._check_krita_has_document(node_id)
+            if not has_document:
+                print(f"[OpenInKrita] Krita中未打开图像")
+                # 发送Toast通知
+                PromptServer.instance.send_sync("open-in-krita-notification", {
+                    "node_id": node_id,
+                    "message": "⚠ Krita中未打开图像\n请先在Krita中打开或创建图像",
+                    "type": "warning"
+                })
+                return web.json_response({
+                    "status": "error",
+                    "message": "⚠ Krita中未打开图像"
+                }, status=400)
+
             import tempfile
             from pathlib import Path
             import asyncio

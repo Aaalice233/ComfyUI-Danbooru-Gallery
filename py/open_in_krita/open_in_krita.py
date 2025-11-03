@@ -709,6 +709,19 @@ class OpenInKrita:
                 # 直接调用throw_exception_if_processing_interrupted()来中断执行
                 comfy.model_management.throw_exception_if_processing_interrupted()
 
+                # 🔥 检查Krita进程是否还在运行
+                if not self._is_krita_running():
+                    print(f"[OpenInKrita] Krita process terminated during wait")
+                    # 发送Toast通知
+                    PromptServer.instance.send_sync("open-in-krita-notification", {
+                        "node_id": unique_id,
+                        "message": "⚠ Krita进程已关闭\n等待已中断",
+                        "type": "warning"
+                    })
+                    # _waiting_nodes的清理由finally块统一处理
+                    # 抛出异常，中断执行流程
+                    raise RuntimeError("⚠️ Krita进程在等待过程中关闭，等待已中断")
+
                 # 检查是否有pending data（用户点击了"从Krita获取数据"按钮）
                 if unique_id in _pending_data:
                     print(f"[OpenInKrita] Data received from button click")
