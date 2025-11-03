@@ -18,6 +18,29 @@ app.registerExtension({
             const duration = type === "success" ? 3000 : 5000;
             globalToastManager.showToast(message, type || "info", duration);
         });
+
+        // 监听等待状态变化事件
+        api.addEventListener("open-in-krita-waiting-changed", (event) => {
+            const { node_id, is_waiting } = event.detail;
+            console.log(`[OpenInKrita] Waiting status changed: node_id=${node_id}, is_waiting=${is_waiting}`);
+
+            // 更新所有终止按钮的状态
+            allCancelButtons.forEach(button => {
+                if (button && button.parentElement) {  // 确保按钮还在DOM中
+                    if (is_waiting) {
+                        button.classList.remove('oik-button-inactive');
+                        button.classList.add('oik-button-active');
+                        button.disabled = false;
+                        console.log("[OpenInKrita] Cancel button ENABLED (waiting)");
+                    } else {
+                        button.classList.remove('oik-button-active');
+                        button.classList.add('oik-button-inactive');
+                        button.disabled = true;
+                        console.log("[OpenInKrita] Cancel button DISABLED (not waiting)");
+                    }
+                }
+            });
+        });
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
@@ -111,9 +134,12 @@ app.registerExtension({
                 const fetchButton = container.querySelector('[data-action="fetchFromKrita"]');
                 startKritaStatusMonitor(node, fetchButton);
 
-                // 启动等待状态监控
+                // 将终止按钮添加到全局列表（用于WebSocket事件更新）
                 const cancelButton = container.querySelector('[data-action="cancelWait"]');
-                startWaitingStatusMonitor(node, cancelButton);
+                if (cancelButton) {
+                    allCancelButtons.push(cancelButton);
+                    console.log(`[OpenInKrita] Added cancel button to global list, total: ${allCancelButtons.length}`);
+                }
 
                 // 处理节点大小调整，确保最小尺寸
                 this.onResize = function (size) {
@@ -127,11 +153,21 @@ app.registerExtension({
                     app.graph.setDirtyCanvas(true);
                 };
 
-                // 清理：节点移除时停止监控
+                // 清理：节点移除时停止监控并移除按钮引用
                 const originalOnRemoved = this.onRemoved;
                 this.onRemoved = function () {
                     stopKritaStatusMonitor(node);
-                    stopWaitingStatusMonitor(node);
+
+                    // 从全局列表中移除终止按钮
+                    const cancelButton = container.querySelector('[data-action="cancelWait"]');
+                    if (cancelButton) {
+                        const index = allCancelButtons.indexOf(cancelButton);
+                        if (index > -1) {
+                            allCancelButtons.splice(index, 1);
+                            console.log(`[OpenInKrita] Removed cancel button from global list, remaining: ${allCancelButtons.length}`);
+                        }
+                    }
+
                     if (originalOnRemoved) {
                         originalOnRemoved.apply(this, arguments);
                     }
@@ -479,8 +515,8 @@ async function cancelWait(node) {
 // 存储每个节点的状态监控定时器
 const nodeStatusTimers = new Map();
 
-// 存储每个节点的等待状态监控定时器
-const nodeWaitingTimers = new Map();
+// 存储所有OpenInKrita节点的终止按钮（用于WebSocket事件更新）
+const allCancelButtons = [];
 
 /**
  * 检查Krita运行状态和文档打开状态
@@ -556,102 +592,6 @@ async function checkAndUpdateStatus(fetchButton) {
 
     const status = await checkKritaStatus();
     updateFetchButtonStatus(fetchButton, status);
-}
-
-/**
- * 检查节点等待状态
- */
-async function checkWaitingStatus(nodeId) {
-    try {
-        const response = await api.fetchApi(`/open_in_krita/check_waiting_status?node_id=${nodeId}`, {
-            method: "GET"
-        });
-
-        if (!response.ok) {
-            return { is_waiting: false };
-        }
-
-        const result = await response.json();
-        return {
-            is_waiting: result.is_waiting || false
-        };
-
-    } catch (error) {
-        console.error("[OpenInKrita] Error checking waiting status:", error);
-        return { is_waiting: false };
-    }
-}
-
-/**
- * 启动等待状态监控
- */
-function startWaitingStatusMonitor(node, cancelButton) {
-    if (!node || !cancelButton) return;
-
-    const nodeId = node.id;
-
-    // 清除已有的定时器（如果存在）
-    stopWaitingStatusMonitor(node);
-
-    // 立即执行一次状态检测
-    checkAndUpdateWaitingStatus(nodeId, cancelButton);
-
-    // 启动定时器，每1秒检测一次（比Krita状态检测更频繁，因为等待状态变化更快）
-    const timerId = setInterval(async () => {
-        await checkAndUpdateWaitingStatus(nodeId, cancelButton);
-    }, 1000);
-
-    // 存储定时器ID
-    nodeWaitingTimers.set(nodeId, timerId);
-
-    console.log(`[OpenInKrita] Started waiting status monitor for node ${nodeId}`);
-}
-
-/**
- * 停止等待状态监控
- */
-function stopWaitingStatusMonitor(node) {
-    if (!node) return;
-
-    const nodeId = node.id;
-    const timerId = nodeWaitingTimers.get(nodeId);
-
-    if (timerId) {
-        clearInterval(timerId);
-        nodeWaitingTimers.delete(nodeId);
-        console.log(`[OpenInKrita] Stopped waiting status monitor for node ${nodeId}`);
-    }
-}
-
-/**
- * 检测并更新等待状态
- */
-async function checkAndUpdateWaitingStatus(nodeId, cancelButton) {
-    if (!cancelButton) return;
-
-    const status = await checkWaitingStatus(nodeId);
-    updateCancelButtonStatus(cancelButton, status);
-}
-
-/**
- * 更新"终止执行"按钮的状态显示
- */
-function updateCancelButtonStatus(button, status) {
-    if (!button) return;
-
-    const isWaiting = status.is_waiting || false;
-
-    if (isWaiting) {
-        // 节点正在等待：启用按钮，添加高亮样式
-        button.classList.remove('oik-button-inactive');
-        button.classList.add('oik-button-active');
-        button.disabled = false;
-    } else {
-        // 节点未等待：禁用按钮，移除高亮样式
-        button.classList.remove('oik-button-active');
-        button.classList.add('oik-button-inactive');
-        button.disabled = true;
-    }
 }
 
 /**

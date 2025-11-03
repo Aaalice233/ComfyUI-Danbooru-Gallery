@@ -683,6 +683,12 @@ class OpenInKrita:
         # 设置等待状态
         _waiting_nodes[unique_id] = {"waiting": True, "cancelled": False}
 
+        # 通知前端节点开始等待
+        PromptServer.instance.send_sync("open-in-krita-waiting-changed", {
+            "node_id": unique_id,
+            "is_waiting": True
+        })
+
         print(f"[OpenInKrita] Waiting for user to click 'Fetch from Krita' button...")
 
         # 参数验证和准备
@@ -749,6 +755,11 @@ class OpenInKrita:
             # 无论如何都清理等待状态（正常返回、取消或异常）
             if unique_id in _waiting_nodes:
                 del _waiting_nodes[unique_id]
+                # 通知前端节点停止等待
+                PromptServer.instance.send_sync("open-in-krita-waiting-changed", {
+                    "node_id": unique_id,
+                    "is_waiting": False
+                })
                 print(f"[OpenInKrita] Cleaned up waiting state for node {unique_id}")
 
     def _save_image_to_temp(self, image: torch.Tensor, unique_id: str) -> Optional[Path]:
