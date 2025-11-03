@@ -1,0 +1,559 @@
+/**
+ * 快速组导航器 - 样式表
+ * Quick Group Navigation - Styles
+ *
+ * @author 哈雷酱 (大小姐工程师)
+ * @version 1.0.0
+ */
+
+/* ========== 悬浮球 ========== */
+.qgn-floating-ball {
+    position: fixed;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
+    cursor: move;
+    z-index: 999999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 28px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.qgn-floating-ball:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4), 0 3px 6px rgba(0, 0, 0, 0.3);
+}
+
+.qgn-floating-ball:active {
+    transform: scale(0.95);
+}
+
+/* ========== 导航面板 ========== */
+.qgn-panel {
+    position: fixed;
+    width: 360px;
+    max-height: 500px;
+    background: rgba(30, 30, 30, 0.98);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 999999998;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 0;
+    transform: scale(0.9);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.qgn-panel-visible {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* ========== 面板标题栏 ========== */
+.qgn-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    user-select: none;
+}
+
+.qgn-panel-title {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.qgn-panel-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.qgn-lock-button,
+.qgn-close-button {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+}
+
+.qgn-lock-button:hover,
+.qgn-close-button:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* ========== 搜索框 ========== */
+.qgn-search-container {
+    padding: 12px 16px;
+    background: rgba(40, 40, 40, 0.8);
+}
+
+.qgn-search-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: rgba(50, 50, 50, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.qgn-search-input::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.qgn-search-input:focus {
+    border-color: #667eea;
+    background: rgba(60, 60, 60, 0.9);
+}
+
+/* ========== 组列表容器 ========== */
+.qgn-groups-list-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 200px;
+    max-height: 350px;
+}
+
+/* 自定义滚动条 */
+.qgn-groups-list-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.qgn-groups-list-container::-webkit-scrollbar-track {
+    background: rgba(50, 50, 50, 0.3);
+}
+
+.qgn-groups-list-container::-webkit-scrollbar-thumb {
+    background: rgba(102, 126, 234, 0.5);
+    border-radius: 4px;
+}
+
+.qgn-groups-list-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(102, 126, 234, 0.7);
+}
+
+.qgn-groups-list {
+    padding: 8px;
+}
+
+/* ========== 组条目 ========== */
+.qgn-group-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(50, 50, 50, 0.6);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    transition: background 0.2s ease, transform 0.1s ease;
+    cursor: default;
+}
+
+.qgn-group-item:hover {
+    background: rgba(60, 60, 60, 0.8);
+    transform: translateX(2px);
+}
+
+.qgn-group-color {
+    width: 8px;
+    height: 40px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.qgn-group-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.qgn-group-name {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qgn-group-shortcut {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 12px;
+}
+
+.qgn-group-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.qgn-set-shortcut-button,
+.qgn-navigate-button,
+.qgn-remove-group-button {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: rgba(102, 126, 234, 0.3);
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.qgn-set-shortcut-button:hover,
+.qgn-navigate-button:hover {
+    background: rgba(102, 126, 234, 0.5);
+    transform: scale(1.05);
+}
+
+.qgn-remove-group-button {
+    background: rgba(220, 53, 69, 0.3);
+}
+
+.qgn-remove-group-button:hover {
+    background: rgba(220, 53, 69, 0.5);
+    transform: scale(1.05);
+}
+
+.qgn-set-shortcut-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.qgn-set-shortcut-button:disabled:hover {
+    background: rgba(102, 126, 234, 0.3);
+    transform: none;
+}
+
+/* ========== 空状态 ========== */
+.qgn-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.qgn-empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.qgn-empty-text {
+    font-size: 16px;
+    margin-bottom: 8px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.qgn-empty-hint {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* ========== 面板底部 ========== */
+.qgn-panel-footer {
+    padding: 12px 16px;
+    background: rgba(40, 40, 40, 0.8);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.qgn-add-group-button {
+    width: 100%;
+    padding: 10px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s ease, transform 0.1s ease;
+}
+
+.qgn-add-group-button:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.qgn-add-group-button:active {
+    transform: translateY(0);
+}
+
+.qgn-add-group-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ========== 对话框 ========== */
+.qgn-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999999999;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+}
+
+.qgn-dialog {
+    width: 400px;
+    max-height: 500px;
+    background: rgba(30, 30, 30, 0.98);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: dialogSlideIn 0.3s ease;
+}
+
+@keyframes dialogSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.qgn-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.qgn-dialog-title {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.qgn-dialog-close {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+}
+
+.qgn-dialog-close:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.qgn-dialog-body {
+    padding: 16px;
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.qgn-dialog-search {
+    width: 100%;
+    padding: 10px 12px;
+    background: rgba(50, 50, 50, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+    margin-bottom: 12px;
+    transition: border-color 0.2s ease;
+}
+
+.qgn-dialog-search:focus {
+    border-color: #667eea;
+}
+
+.qgn-dialog-groups-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.qgn-dialog-groups-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.qgn-dialog-groups-list::-webkit-scrollbar-track {
+    background: rgba(50, 50, 50, 0.3);
+}
+
+.qgn-dialog-groups-list::-webkit-scrollbar-thumb {
+    background: rgba(102, 126, 234, 0.5);
+    border-radius: 4px;
+}
+
+.qgn-dialog-group-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(50, 50, 50, 0.6);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.qgn-dialog-group-item:hover {
+    background: rgba(102, 126, 234, 0.3);
+    transform: translateX(4px);
+}
+
+.qgn-dialog-group-item .qgn-group-color {
+    width: 8px;
+    height: 36px;
+    border-radius: 4px;
+}
+
+.qgn-dialog-group-item span {
+    color: #fff;
+    font-size: 14px;
+}
+
+/* ========== 快捷键录制器 ========== */
+.qgn-shortcut-recorder-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999999999;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.qgn-shortcut-recorder {
+    width: 360px;
+    background: rgba(30, 30, 30, 0.98);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    padding: 32px;
+    text-align: center;
+    animation: recorderPulse 0.5s ease;
+}
+
+@keyframes recorderPulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+.qgn-recorder-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+    animation: iconBounce 1s ease infinite;
+}
+
+@keyframes iconBounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+.qgn-recorder-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 12px;
+}
+
+.qgn-recorder-group {
+    font-size: 16px;
+    color: rgba(102, 126, 234, 1);
+    margin-bottom: 24px;
+    font-weight: 500;
+}
+
+.qgn-recorder-hint {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 16px;
+}
+
+.qgn-recorder-current {
+    display: inline-block;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 8px;
+    color: white;
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 24px;
+    min-width: 80px;
+}
+
+.qgn-recorder-cancel {
+    padding: 10px 24px;
+    background: rgba(220, 53, 69, 0.3);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.qgn-recorder-cancel:hover {
+    background: rgba(220, 53, 69, 0.5);
+}
+
+/* ========== 通知 ========== */
+/* 已迁移到全局 Toast 管理器 (js/global/toast_manager.js) */
