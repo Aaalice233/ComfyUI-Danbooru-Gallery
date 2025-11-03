@@ -37,6 +37,9 @@ class OpenInKrita:
     # 类变量：跟踪fetch模式的节点
     _fetch_mode_nodes = set()
 
+    # 类变量：跟踪最近的open请求，避免重复打开 {unique_id: (image_hash, timestamp)}
+    _last_open_request = {}
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -949,6 +952,22 @@ class OpenInKrita:
             bool: 是否成功创建请求
         """
         try:
+            # 检查是否在短时间内为同一图像创建过请求（避免重复打开）
+            current_time = time.time()
+            image_key = str(image_path.resolve())  # 使用绝对路径作为key
+
+            if unique_id in self._last_open_request:
+                last_image, last_time = self._last_open_request[unique_id]
+                # 如果在5秒内为同一图像创建过请求，跳过
+                if last_image == image_key and (current_time - last_time) < 5.0:
+                    print(f"[OpenInKrita] ⚠ Skip duplicate open request (same image within 5s)")
+                    print(f"[OpenInKrita] Image: {image_path.name}")
+                    print(f"[OpenInKrita] Last request: {current_time - last_time:.1f}s ago")
+                    return True  # 返回成功，避免重复创建
+
+            # 记录本次请求
+            self._last_open_request[unique_id] = (image_key, current_time)
+
             timestamp = int(time.time() * 1000)
             request_file = self.temp_dir / f"open_{unique_id}_{timestamp}.request"
 

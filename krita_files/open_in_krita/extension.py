@@ -50,6 +50,7 @@ class OpenInKritaExtension(Extension):
         self.monitor_dir.mkdir(exist_ok=True)
         self.processed_files = set()  # 跟踪已处理的文件，避免重复打开
         self.opened_documents = {}  # 映射：文件路径 -> 文档对象（用于fetch请求）
+        self.processed_requests = set()  # 跟踪已处理的请求文件名，避免重复处理
 
         self.logger.info("扩展已初始化")
         self.logger.info(f"监控目录: {self.monitor_dir}")
@@ -461,7 +462,15 @@ class OpenInKritaExtension(Extension):
     def _handle_open_request(self, request_file: Path):
         """处理open请求文件，主动打开指定图像"""
         try:
-            self.logger.info(f"===== 处理open请求: {request_file.name} =====")
+            # 🔥 首先检查是否已经处理过这个请求（防止重复处理）
+            request_name = request_file.name
+            if request_name in self.processed_requests:
+                self.logger.info(f"⚠ 请求已处理过，跳过: {request_name}")
+                return
+
+            # 🔥 立即标记为已处理（在处理之前，防止并发）
+            self.processed_requests.add(request_name)
+            self.logger.info(f"===== 处理open请求: {request_name} =====")
 
             # 🔥 立即重命名请求文件为.processing，避免重复处理
             processing_file = request_file.with_suffix('.processing')
@@ -497,6 +506,17 @@ class OpenInKritaExtension(Extension):
 
             self.logger.info(f"节点ID: {node_id}")
             self.logger.info(f"图像路径: {image_path}")
+
+            # 🔥 检查是否已经打开了相同的图像（避免重复打开）
+            file_key = str(image_path.resolve())
+            if file_key in self.opened_documents:
+                existing_doc = self.opened_documents[file_key]
+                # 检查文档是否仍然有效（未被关闭）
+                if existing_doc and existing_doc.name():
+                    self.logger.info(f"⚠ 图像已打开，跳过重复打开: {image_path.name}")
+                    self.logger.info(f"✓ 已跳过请求，删除处理文件")
+                    processing_file.unlink(missing_ok=True)
+                    return
 
             # 🔥 主动打开图像（与_check_new_files中的逻辑相同）
             app = Krita.instance()
