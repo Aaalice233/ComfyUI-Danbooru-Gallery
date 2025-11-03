@@ -3069,6 +3069,11 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── group_executor_manager.js
 │   ├── group_mute_manager/         # Group Mute Manager frontend
 │   │   └── group_mute_manager.js
+│   ├── quick_group_navigation/     # Quick Group Navigation frontend
+│   │   ├── quick_group_navigation.js
+│   │   ├── floating_navigator.js
+│   │   ├── styles.css
+│   │   └── README.md
 │   ├── resolution_master_simplify/ # Resolution Master Simplify frontend
 │   │   └── resolution_master_simplify.js
 │   ├── parameter_control_panel/    # Parameter Control Panel frontend
