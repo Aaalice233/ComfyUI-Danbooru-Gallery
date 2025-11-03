@@ -236,17 +236,32 @@ class OptimizedExecutionEngine {
         console.log(`[OptimizedExecutionEngine] 📋 执行模式: ${context.executionMode}`);
         console.log(`[OptimizedExecutionEngine] 🎛️ 缓存控制: ${context.cacheControlMode}`);
 
+        // 重置执行状态栏显示标志
+        this.executionStatusShown = false;
+
         const configuredGroups = context.executionPlan?.groups || [];
 
-        // ✅ 只执行已配置的组
+        // ✅ 预过滤：只保留未静音的有效组
         console.log(`[OptimizedExecutionEngine] 📋 已配置的组: [${configuredGroups.map(g => g.group_name).join(', ')}]`);
-        console.log(`[OptimizedExecutionEngine] 📊 总执行顺序: ${configuredGroups.length} 个组`);
 
-        configuredGroups.forEach((g, i) => {
-            console.log(`   ${i + 1}. ${g.group_name}`);
-        });
+        const activeGroups = [];
+        const mutedGroups = [];
+        for (const groupInfo of configuredGroups) {
+            const outputNodes = this.findGroupOutputNodes(groupInfo.group_name);
+            if (outputNodes.length > 0) {
+                activeGroups.push(groupInfo);
+            } else {
+                mutedGroups.push(groupInfo.group_name);
+            }
+        }
 
-        const groups = configuredGroups;
+        // 输出过滤结果
+        if (mutedGroups.length > 0) {
+            console.log(`[OptimizedExecutionEngine] ⏭️ 已跳过 ${mutedGroups.length} 个静音组: [${mutedGroups.join(', ')}]`);
+        }
+        console.log(`[OptimizedExecutionEngine] ✅ 将执行 ${activeGroups.length} 个组: [${activeGroups.map(g => g.group_name).join(', ')}]`);
+
+        const groups = activeGroups;
 
         for (let i = 0; i < groups.length; i++) {
             // ✅ 检查是否被取消
@@ -258,12 +273,12 @@ class OptimizedExecutionEngine {
             const groupInfo = groups[i];
 
             console.log(`[OptimizedExecutionEngine] ====================`);
-            console.log(`[OptimizedExecutionEngine] 🎯 执行组 ${i + 1}/${groups.length}: ${groupInfo.group_name}`);
+            console.log(`[OptimizedExecutionEngine] 🎯 执行组: ${groupInfo.group_name}`);
             console.log(`[OptimizedExecutionEngine] ⏱️ 开始时间: ${new Date().toLocaleTimeString()}`);
 
             try {
                 // 执行组
-                await this.executeGroup(context, groupInfo, i + 1, groups.length);
+                await this.executeGroup(context, groupInfo);
 
                 // 标记组完成
                 context.completedGroups.push(groupInfo.group_name);
@@ -307,7 +322,7 @@ class OptimizedExecutionEngine {
         window._groupExecutorActive = false; // Reset the flag
     }
 
-    async executeGroup(context, groupInfo, groupIndex, totalGroups) {
+    async executeGroup(context, groupInfo) {
         /** 执行单个组 */
         const groupName = groupInfo.group_name;
 
@@ -316,19 +331,19 @@ class OptimizedExecutionEngine {
 
         console.log(`[OptimizedExecutionEngine] 🎯 开始执行组: ${groupName}`);
 
-        // ✅ 显示执行状态栏
+        // ✅ 显示/更新执行状态栏
         if (globalToastManager) {
-            if (groupIndex === 1) {
+            if (!this.executionStatusShown) {
                 // 第一次执行时显示状态栏
-                globalToastManager.showExecutionStatus(groupName, groupIndex, totalGroups);
+                globalToastManager.showExecutionStatus(groupName);
+                this.executionStatusShown = true;
             } else {
                 // 后续执行更新状态栏
-                globalToastManager.updateExecutionProgress(groupName, groupIndex, totalGroups);
+                globalToastManager.updateExecutionProgress(groupName);
             }
         }
 
-        // ✅ 增强日志：显示当前执行进度和组信息
-        console.log(`[OptimizedExecutionEngine] 📍 执行进度: ${groupIndex}/${totalGroups}`);
+        // ✅ 增强日志：显示组信息
         const nodeIds = groupInfo.nodes || [];
         console.log(`[OptimizedExecutionEngine] 📋 组内节点数: ${nodeIds.length}`);
         if (nodeIds.length > 0) {

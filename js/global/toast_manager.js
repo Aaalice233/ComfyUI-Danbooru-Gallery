@@ -137,7 +137,7 @@ class ToastManager {
 
             .mce-toast-container .mce-toast {
                 position: relative !important;
-                padding: 12px 16px !important;
+                padding: 12px 20px !important;
                 border-radius: 10px !important;
                 color: #ffffff !important;
                 font-size: 13px !important;
@@ -461,7 +461,7 @@ class ToastManager {
             font-family: var(--comfy-font-family, sans-serif);
             font-size: 13px;
             font-weight: 500;
-            padding: 12px 16px;
+            padding: 12px 20px;
         `;
         measureElement.textContent = message;
         document.body.appendChild(measureElement);
@@ -471,7 +471,7 @@ class ToastManager {
 
 
         // 计算合适的toast宽度：文本宽度 + 左右padding + 关闭按钮宽度(如果有)
-        const paddingWidth = 32; // 左右padding各16px
+        const paddingWidth = 40; // 左右padding各20px
         const closeButtonWidth = 20; // 关闭按钮宽度
         const minToastWidth = 120; // 减小最小宽度
         const maxToastWidth = Math.min(550, window.innerWidth * 0.7); // 增加最大宽度，不超过屏幕宽度的70%
@@ -621,14 +621,12 @@ class ToastManager {
     /**
      * 显示执行状态栏
      * @param {string} groupName - 组名称
-     * @param {number} currentIndex - 当前组索引（从1开始）
-     * @param {number} totalGroups - 总组数
      */
-    showExecutionStatus(groupName, currentIndex, totalGroups) {
+    showExecutionStatus(groupName) {
         if (!this.executionStatusBar) return;
 
         // 创建状态文本
-        const statusText = `当前执行组：${groupName} (${currentIndex}/${totalGroups})`;
+        const statusText = `当前执行组：${groupName}`;
 
         // 清空现有内容
         this.executionStatusBar.innerHTML = '';
@@ -660,20 +658,18 @@ class ToastManager {
     /**
      * 更新执行进度
      * @param {string} groupName - 组名称
-     * @param {number} currentIndex - 当前组索引（从1开始）
-     * @param {number} totalGroups - 总组数
      */
-    updateExecutionProgress(groupName, currentIndex, totalGroups) {
+    updateExecutionProgress(groupName) {
         if (!this.executionStatusBar) return;
 
         // 查找文本元素并更新
         const textElement = this.executionStatusBar.querySelector('.status-text');
         if (textElement) {
-            const statusText = `当前执行组：${groupName} (${currentIndex}/${totalGroups})`;
+            const statusText = `当前执行组：${groupName}`;
             textElement.textContent = statusText;
         } else {
             // 如果文本元素不存在，重新显示
-            this.showExecutionStatus(groupName, currentIndex, totalGroups);
+            this.showExecutionStatus(groupName);
         }
     }
 
