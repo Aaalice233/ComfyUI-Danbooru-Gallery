@@ -1819,6 +1819,9 @@ app.registerExtension({
 
             // 通知连接的 ParameterBreak 节点更新
             this.notifyConnectedBreakNodes();
+
+            // 检查并修复from_connection类型的dropdown缺失options问题
+            this.recheckFromConnectionDropdowns();
         };
 
         // 恢复所有需要显示的左上角提示
@@ -1869,6 +1872,83 @@ app.registerExtension({
                 });
             } catch (error) {
                 console.error('[PCP] 通知连接节点时出错:', error);
+            }
+        };
+
+        // 检查并修复from_connection类型的dropdown缺失options问题
+        nodeType.prototype.recheckFromConnectionDropdowns = function () {
+            try {
+                // 查找所有from_connection类型但options为空的dropdown参数
+                const brokenDropdowns = this.properties.parameters.filter(param => {
+                    return param.type === 'dropdown' &&
+                           param.config?.data_source === 'from_connection' &&
+                           (!param.config.options || param.config.options.length === 0);
+                });
+
+                if (brokenDropdowns.length === 0) {
+                    return;
+                }
+
+                console.log('[PCP] 发现', brokenDropdowns.length, '个from_connection类型dropdown缺失options，准备修复...');
+
+                // 查找连接的ParameterBreak节点
+                if (!this.outputs || this.outputs.length === 0) {
+                    console.warn('[PCP] 没有输出连接，无法修复dropdown选项');
+                    return;
+                }
+
+                const output = this.outputs[0];
+                if (!output.links || output.links.length === 0) {
+                    console.warn('[PCP] 没有连接到ParameterBreak节点');
+                    return;
+                }
+
+                // 遍历所有连接
+                output.links.forEach(linkId => {
+                    const link = this.graph.links[linkId];
+                    if (!link) return;
+
+                    const targetNode = this.graph.getNodeById(link.target_id);
+                    if (!targetNode || targetNode.type !== "ParameterBreak") return;
+
+                    // 对每个损坏的dropdown，清除ParameterBreak的缓存并重新同步
+                    brokenDropdowns.forEach(param => {
+                        // 清除缓存
+                        if (targetNode.properties.optionsSyncCache && param.id) {
+                            console.log(`[PCP] 清除参数 '${param.name}' 的缓存，强制重新同步`);
+                            delete targetNode.properties.optionsSyncCache[param.id];
+                        }
+
+                        // 找到该参数在ParameterBreak中的输出索引
+                        const paramStructure = targetNode.properties.paramStructure || [];
+                        const paramIndex = paramStructure.findIndex(p => p.param_id === param.id);
+
+                        if (paramIndex === -1) {
+                            console.warn(`[PCP] 在ParameterBreak中未找到参数 '${param.name}'`);
+                            return;
+                        }
+
+                        // 检查该输出是否有连接
+                        if (targetNode.outputs && targetNode.outputs[paramIndex]) {
+                            const paramOutput = targetNode.outputs[paramIndex];
+                            if (paramOutput.links && paramOutput.links.length > 0) {
+                                // 触发该输出的重新同步
+                                setTimeout(() => {
+                                    console.log(`[PCP] 触发参数 '${param.name}' 重新同步选项`);
+                                    const linkInfo = this.graph.links[paramOutput.links[0]];
+                                    if (linkInfo && typeof targetNode.handleOutputConnection === 'function') {
+                                        targetNode.handleOutputConnection(paramIndex, linkInfo);
+                                    }
+                                }, 100);
+                            } else {
+                                console.warn(`[PCP] 参数 '${param.name}' 的输出未连接，无法同步选项`);
+                            }
+                        }
+                    });
+                });
+
+            } catch (error) {
+                console.error('[PCP] 修复from_connection dropdown时出错:', error);
             }
         };
 
@@ -3341,7 +3421,11 @@ app.registerExtension({
 
                             defaultValue = config.options[0];
                         } else {
-                            // 动态数据源，默认值为空字符串
+                            // 动态数据源或从连接获取
+                            // 保留原有的options,避免丢失已同步的选项
+                            if (param?.config?.options) {
+                                config.options = param.config.options;
+                            }
                             defaultValue = '';
                         }
                         break;
