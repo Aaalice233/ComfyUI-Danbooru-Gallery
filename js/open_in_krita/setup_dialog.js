@@ -303,7 +303,7 @@ class KritaSetupDialog {
         console.log("[KritaSetupDialog] Opening Krita website...");
 
         // 打开Krita官网下载页
-        window.open('https://krita.org/download', '_blank');
+        window.open('https://krita.org/zh-cn/download/', '_blank');
 
         // 显示提示
         globalToastManager.showToast(
