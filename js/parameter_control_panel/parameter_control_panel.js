@@ -405,6 +405,20 @@ class MarkdownTooltipManager {
         this.currentTooltip = tooltip;
         this.currentTarget = target;
 
+        // 添加鼠标事件监听，允许鼠标移动到tooltip上
+        tooltip.addEventListener('mouseenter', () => {
+            // 鼠标进入tooltip，取消隐藏操作
+            if (this.hideTimeout) {
+                clearTimeout(this.hideTimeout);
+                this.hideTimeout = null;
+            }
+        });
+
+        tooltip.addEventListener('mouseleave', () => {
+            // 鼠标离开tooltip，触发隐藏操作
+            this.hideTooltip();
+        });
+
         // 添加淡入动画
         setTimeout(() => {
             tooltip.style.opacity = '1';
@@ -1493,11 +1507,11 @@ app.registerExtension({
                     border-radius: 8px;
                     padding: 12px 16px;
                     max-width: 400px;
-                    max-height: 300px;
+                    max-height: 500px;
                     overflow-y: auto;
                     z-index: 999999;
                     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 20px rgba(116, 55, 149, 0.3);
-                    pointer-events: none;
+                    pointer-events: auto;
                     opacity: 0;
                     transition: opacity 0.15s ease-in-out;
                     font-size: 13px;
