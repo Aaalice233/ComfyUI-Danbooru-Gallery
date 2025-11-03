@@ -27,7 +27,7 @@ app.registerExtension({
 
                 // 🔥 方案2: 执行前主动检测（监听queue prompt）
                 const originalQueuePrompt = api.queuePrompt;
-                api.queuePrompt = async function() {
+                api.queuePrompt = async function () {
                     // 执行前立即同步最新状态
                     await syncDisabledGroupsToBackend();
                     // 调用原始方法
@@ -36,7 +36,7 @@ app.registerExtension({
 
                 // 🔥 方案3: 监听节点模式变化（作为快速响应的补充）
                 const originalOnNodeModeChange = app.graph.onNodeModeChange;
-                app.graph.onNodeModeChange = function(node) {
+                app.graph.onNodeModeChange = function (node) {
                     if (originalOnNodeModeChange) {
                         originalOnNodeModeChange.apply(this, arguments);
                     }
@@ -45,7 +45,7 @@ app.registerExtension({
 
                 // 监听图表配置加载（工作流加载时）
                 const originalConfigure = app.graph.configure;
-                app.graph.configure = function(data) {
+                app.graph.configure = function (data) {
                     if (originalConfigure) {
                         originalConfigure.apply(this, arguments);
                     }
@@ -1095,7 +1095,7 @@ function getAllDisabledNodeGroups(app) {
         }
     }
 
-    console.log(`[HasNext] 检测到 ${disabledGroups.length} 个组内节点都被禁用的组:`, disabledGroups);
+    //console.log(`[HasNext] 检测到 ${disabledGroups.length} 个组内节点都被禁用的组:`, disabledGroups);
 
     return disabledGroups;
 }
@@ -1116,9 +1116,9 @@ async function syncDisabledGroupsToBackend() {
         });
 
         const result = await response.json();
-        if (result.status === 'success') {
-            console.log('[HasNext] 被禁用组已同步到后端:', result.message);
-        }
+        // if (result.status === 'success') {
+        //     console.log('[HasNext] 被禁用组已同步到后端:', result.message);
+        // }
 
     } catch (error) {
         console.error('[HasNext] 同步被禁用组到后端时出错:', error);
