@@ -2996,6 +2996,8 @@ ComfyUI-Danbooru-Gallery/
 ├── group_mute_manager/             # Group Mute Manager
 │   ├── __init__.py
 │   └── group_mute_manager.py
+├── quick_group_navigation/         # Quick Group Navigation
+│   └── __init__.py
 ├── has_next_executor_group/        # Has Next Executor Group node
 │   ├── __init__.py
 │   └── has_next_executor_group.py
