@@ -10,6 +10,6 @@
     "text_cache_manager": true,
     "parameter_control_panel": false,
     "workflow_description": false,
-    "tag_sync": true
+    "tag_sync": false
   }
 }
