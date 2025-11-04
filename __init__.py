@@ -125,6 +125,9 @@ try:
     from .py.utils import debug_config
     import time
 
+    # 导入 tag sync API 以注册API端点
+    from .py.shared.sync import tag_sync_api
+
     @PromptServer.instance.routes.post("/danbooru_gallery/clear_cache")
     async def clear_image_cache(request):
         """清空图像缓存的API端点"""
@@ -1089,8 +1092,15 @@ try:
                 "message": str(e)
             }, status=500)
 
-except ImportError:
+except ImportError as e:
     # ComfyUI 环境不可用时的静默处理
-    pass
+    print(f"[DanbooruGallery] Warning: Could not initialize API routes: {e}")
+    import traceback
+    traceback.print_exc()
+except Exception as e:
+    # 捕获其他异常并输出
+    print(f"[DanbooruGallery] Error during API initialization: {e}")
+    import traceback
+    traceback.print_exc()
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']

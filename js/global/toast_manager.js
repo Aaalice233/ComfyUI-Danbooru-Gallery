@@ -9,7 +9,9 @@ class ToastManager {
         this.toasts = [];
         this.maxVisibleToasts = 8; // 增加最大同时显示的提示数量
         this.toastContainer = null;
-        this.executionStatusBar = null; // 执行状态栏元素
+        this.executionStatusBar = null; // 执行状态栏元素（保留兼容性）
+        this.statusBars = new Map(); // 多状态栏支持：id -> element
+        this.statusBarOrder = []; // 状态栏显示顺序
         this.init();
     }
 
@@ -689,6 +691,154 @@ class ToastManager {
                 this.executionStatusBar.innerHTML = '';
             }
         }, 300);
+    }
+
+    /**
+     * 多状态栏系统 - 显示状态栏
+     * @param {string} id - 状态栏唯一ID
+     * @param {string} message - 状态消息
+     * @param {Object} options - 选项
+     * @param {boolean} options.closable - 是否显示关闭按钮
+     * @param {Function} options.onClose - 关闭回调
+     */
+    showStatusBar(id, message, options = {}) {
+        const { closable = true, onClose = null } = options;
+
+        // 检查是否已存在
+        let statusBar = this.statusBars.get(id);
+
+        if (!statusBar) {
+            // 创建新状态栏
+            statusBar = document.createElement('div');
+            statusBar.className = 'gem-execution-status-bar';
+            statusBar.dataset.statusId = id;
+            statusBar.style.cssText = `
+                position: fixed;
+                right: 20px;
+                z-index: 99998;
+                display: none;
+                opacity: 0;
+                transform: translateY(-10px);
+                transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            `;
+
+            // 添加到DOM
+            if (document.body) {
+                document.body.appendChild(statusBar);
+            }
+
+            // 保存到Map
+            this.statusBars.set(id, statusBar);
+            this.statusBarOrder.push(id);
+        }
+
+        // 更新内容
+        statusBar.innerHTML = '';
+
+        // 创建文本元素
+        const textElement = document.createElement('span');
+        textElement.className = 'status-text';
+        textElement.textContent = message;
+        statusBar.appendChild(textElement);
+
+        // 添加关闭按钮
+        if (closable) {
+            const closeBtn = document.createElement('span');
+            closeBtn.className = 'status-close';
+            closeBtn.innerHTML = '×';
+            closeBtn.addEventListener('click', () => {
+                this.hideStatusBar(id);
+                if (onClose) onClose();
+            });
+            statusBar.appendChild(closeBtn);
+        }
+
+        // 更新所有状态栏位置
+        this.repositionStatusBars();
+
+        // 显示状态栏
+        statusBar.style.display = 'flex';
+
+        // 触发动画
+        setTimeout(() => {
+            statusBar.classList.add('show');
+        }, 10);
+    }
+
+    /**
+     * 多状态栏系统 - 更新状态栏
+     * @param {string} id - 状态栏唯一ID
+     * @param {string} message - 状态消息
+     */
+    updateStatusBar(id, message) {
+        const statusBar = this.statusBars.get(id);
+        if (!statusBar) {
+            // 如果不存在，创建新的
+            this.showStatusBar(id, message);
+            return;
+        }
+
+        // 查找文本元素并更新
+        const textElement = statusBar.querySelector('.status-text');
+        if (textElement) {
+            textElement.textContent = message;
+        }
+    }
+
+    /**
+     * 多状态栏系统 - 隐藏状态栏
+     * @param {string} id - 状态栏唯一ID
+     */
+    hideStatusBar(id) {
+        const statusBar = this.statusBars.get(id);
+        if (!statusBar) return;
+
+        // 移除 show 类触发动画
+        statusBar.classList.remove('show');
+
+        // 等待动画完成后隐藏
+        setTimeout(() => {
+            statusBar.style.display = 'none';
+            statusBar.innerHTML = '';
+
+            // 从Map和顺序数组中移除
+            this.statusBars.delete(id);
+            const index = this.statusBarOrder.indexOf(id);
+            if (index > -1) {
+                this.statusBarOrder.splice(index, 1);
+            }
+
+            // 移除DOM元素
+            if (statusBar.parentNode) {
+                statusBar.parentNode.removeChild(statusBar);
+            }
+
+            // 重新排列剩余状态栏
+            this.repositionStatusBars();
+        }, 300);
+    }
+
+    /**
+     * 重新计算并更新所有状态栏位置
+     */
+    repositionStatusBars() {
+        // 计算基础位置：考虑旧的executionStatusBar
+        let baseTop = 110; // 基础top值
+        const spacing = 60; // 状态栏之间的间距
+
+        // 检查旧系统状态栏是否显示
+        if (this.executionStatusBar && this.executionStatusBar.style.display === 'flex') {
+            // 如果旧状态栏显示，将新状态栏从170px开始排列
+            baseTop = 170;
+        }
+
+        this.statusBarOrder.forEach((id, index) => {
+            const statusBar = this.statusBars.get(id);
+            if (statusBar && statusBar.style.display !== 'none') {
+                const topValue = baseTop + (index * spacing);
+                statusBar.style.top = `${topValue}px`;
+            }
+        });
     }
 }
 

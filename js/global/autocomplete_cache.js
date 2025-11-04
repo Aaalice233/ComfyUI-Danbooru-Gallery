@@ -321,7 +321,7 @@ class AutocompleteCache {
                 headers: {
                     'Accept': 'application/json',
                 },
-                signal: AbortSignal.timeout(10000) // 10秒超时
+                signal: AbortSignal.timeout(5000) // 5秒超时 (后端2秒+缓冲)
             });
 
             if (!response.ok) {
@@ -445,7 +445,7 @@ class AutocompleteCache {
                 headers: {
                     'Accept': 'application/json',
                 },
-                signal: AbortSignal.timeout(10000) // 10秒超时
+                signal: AbortSignal.timeout(5000) // 5秒超时 (后端2秒+缓冲)
             });
 
             if (!response.ok) {
