@@ -4,5 +4,6 @@ Simple Checkpoint Loader Module
 """
 
 from .simple_checkpoint_loader_with_name import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+from .preview_api import register_preview_api
 
-__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
+__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'register_preview_api']

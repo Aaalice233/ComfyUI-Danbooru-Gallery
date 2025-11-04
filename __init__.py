@@ -128,6 +128,10 @@ try:
     # 导入 tag sync API 以注册API端点
     from .py.shared.sync import tag_sync_api
 
+    # 导入并注册 checkpoint 预览图 API
+    from .py.simple_checkpoint_loader_with_name import register_preview_api
+    register_preview_api(PromptServer.instance.routes)
+
     @PromptServer.instance.routes.post("/danbooru_gallery/clear_cache")
     async def clear_image_cache(request):
         """清空图像缓存的API端点"""
