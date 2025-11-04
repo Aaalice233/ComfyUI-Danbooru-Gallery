@@ -48,6 +48,15 @@ async function loadPreviewList() {
 }
 
 /**
+ * 判断URL是否为视频格式
+ */
+function isVideoUrl(url) {
+    const videoExtensions = ['.mp4', '.webm'];
+    const lowerUrl = url.toLowerCase();
+    return videoExtensions.some(ext => lowerUrl.includes(ext));
+}
+
+/**
  * 计算预览图的最佳显示位置
  */
 function calculateImagePosition(targetElement, bodyRect, imageWidth, imageHeight) {
@@ -77,25 +86,37 @@ function calculateImagePosition(targetElement, bodyRect, imageWidth, imageHeight
 }
 
 /**
- * 显示预览图
+ * 显示预览图（支持图片和视频）
  */
-function showPreview(targetElement, imageUrl, previewImage) {
-    console.log("[CheckpointPreview] 显示预览图:", imageUrl);
+function showPreview(targetElement, mediaUrl) {
+    console.log("[CheckpointPreview] 显示预览:", mediaUrl);
     const bodyRect = document.body.getBoundingClientRect();
     if (!bodyRect) return;
 
-    // 先设置图片源
-    previewImage.src = imageUrl;
+    // 根据URL类型动态创建元素
+    const isVideo = isVideoUrl(mediaUrl);
+    const previewElement = isVideo ? document.createElement("video") : document.createElement("img");
+    previewElement.className = "checkpoint-preview-image";
 
-    // 等待图片加载完成后再定位（确保获取到正确的尺寸）
-    previewImage.onload = () => {
-        // 获取图片的原始尺寸
-        const naturalWidth = previewImage.naturalWidth;
-        const naturalHeight = previewImage.naturalHeight;
+    // 为元素添加标记，方便后续识别和清理
+    previewElement.setAttribute("data-preview", "true");
 
+    // 设置媒体源
+    previewElement.src = mediaUrl;
+
+    // 如果是视频，设置自动播放属性
+    if (isVideo) {
+        previewElement.autoplay = true;
+        previewElement.loop = true;
+        previewElement.muted = true;  // 静音播放
+        previewElement.playsInline = true;  // 移动设备内联播放
+    }
+
+    // 定义尺寸计算和定位的通用逻辑
+    const positionElement = (width, height) => {
         // 计算在约束条件下的实际显示尺寸
-        let displayWidth = naturalWidth;
-        let displayHeight = naturalHeight;
+        let displayWidth = width;
+        let displayHeight = height;
 
         // 应用最大宽度约束
         if (displayWidth > IMAGE_WIDTH) {
@@ -111,41 +132,62 @@ function showPreview(targetElement, imageUrl, previewImage) {
             displayWidth = displayWidth * ratio;
         }
 
-        // 设置图片的实际显示尺寸
-        previewImage.style.width = `${Math.round(displayWidth)}px`;
-        previewImage.style.height = `${Math.round(displayHeight)}px`;
+        // 设置元素的实际显示尺寸
+        previewElement.style.width = `${Math.round(displayWidth)}px`;
+        previewElement.style.height = `${Math.round(displayHeight)}px`;
 
-        console.log(`[CheckpointPreview] 图片尺寸 - 原始: ${naturalWidth}x${naturalHeight}, 显示: ${Math.round(displayWidth)}x${Math.round(displayHeight)}`);
+        console.log(`[CheckpointPreview] 媒体尺寸 - 原始: ${width}x${height}, 显示: ${Math.round(displayWidth)}x${Math.round(displayHeight)}`);
 
         const { left, top, isLeft } = calculateImagePosition(targetElement, bodyRect, displayWidth, displayHeight);
 
-        previewImage.style.left = `${left}px`;
-        previewImage.style.top = `${top}px`;
+        previewElement.style.left = `${left}px`;
+        previewElement.style.top = `${top}px`;
 
-        // 根据位置调整图片对齐方式
+        // 根据位置调整对齐方式
         if (isLeft) {
-            previewImage.classList.add("left");
+            previewElement.classList.add("left");
         } else {
-            previewImage.classList.remove("left");
+            previewElement.classList.remove("left");
         }
     };
 
-    document.body.appendChild(previewImage);
+    // 等待媒体加载完成后再定位（确保获取到正确的尺寸）
+    if (isVideo) {
+        // 视频使用 loadedmetadata 事件
+        previewElement.addEventListener("loadedmetadata", () => {
+            const width = previewElement.videoWidth;
+            const height = previewElement.videoHeight;
+            positionElement(width, height);
+        }, { once: true });
+    } else {
+        // 图片使用 load 事件
+        previewElement.addEventListener("load", () => {
+            const width = previewElement.naturalWidth;
+            const height = previewElement.naturalHeight;
+            positionElement(width, height);
+        }, { once: true });
+    }
+
+    document.body.appendChild(previewElement);
 }
 
 /**
- * 隐藏预览图
+ * 隐藏预览图（清理所有预览元素）
  */
-function hidePreview(previewImage) {
-    if (previewImage.parentNode) {
-        previewImage.parentNode.removeChild(previewImage);
-    }
+function hidePreview() {
+    // 查找所有预览元素并移除
+    const previewElements = document.querySelectorAll('[data-preview="true"]');
+    previewElements.forEach(element => {
+        if (element.parentNode) {
+            element.parentNode.removeChild(element);
+        }
+    });
 }
 
 /**
  * 为下拉菜单项添加预览处理器
  */
-async function attachPreviewHandlers(menu, previewImage) {
+async function attachPreviewHandlers(menu) {
     console.log("[CheckpointPreview] 开始附加预览处理器");
     const previews = await loadPreviewList();
     const items = menu.querySelectorAll(".litemenu-entry");
@@ -162,8 +204,10 @@ async function attachPreviewHandlers(menu, previewImage) {
         // 检查是否有预览图
         if (previews[modelName]) {
             foundCount++;
-            const imageUrl = previews[modelName];
-            console.log("[CheckpointPreview] 找到预览图:", modelName, "->", imageUrl);
+            const mediaUrl = previews[modelName];
+            const isVideo = isVideoUrl(mediaUrl);
+            const mediaType = isVideo ? "视频" : "图片";
+            console.log(`[CheckpointPreview] 找到预览${mediaType}:`, modelName, "->", mediaUrl);
 
             // 添加视觉指示器（小星号）
             const indicator = document.createTextNode(" ★");
@@ -171,19 +215,19 @@ async function attachPreviewHandlers(menu, previewImage) {
 
             // 鼠标悬停显示预览
             item.addEventListener("mouseover", () => {
-                console.log("[CheckpointPreview] 鼠标悬停:", modelName);
-                showPreview(item, imageUrl, previewImage);
+                console.log(`[CheckpointPreview] 鼠标悬停（${mediaType}）:`, modelName);
+                showPreview(item, mediaUrl);
             }, { passive: true });
 
             // 鼠标离开隐藏预览
             item.addEventListener("mouseout", () => {
                 console.log("[CheckpointPreview] 鼠标离开:", modelName);
-                hidePreview(previewImage);
+                hidePreview();
             }, { passive: true });
 
             // 点击时也隐藏预览
             item.addEventListener("click", () => {
-                hidePreview(previewImage);
+                hidePreview();
             }, { passive: true });
         }
     });
@@ -197,7 +241,7 @@ app.registerExtension({
     name: "danbooru.SimpleCheckpointLoaderPreview",
 
     async init(app) {
-        // 添加CSS样式
+        // 添加CSS样式（支持图片和视频）
         const style = document.createElement("style");
         style.textContent = `
             .checkpoint-preview-image {
@@ -211,6 +255,7 @@ app.registerExtension({
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
                 background: transparent;
                 animation: fadeIn 0.15s ease-in;
+                object-fit: contain;
             }
 
             @keyframes fadeIn {
@@ -226,10 +271,6 @@ app.registerExtension({
         `;
         document.head.appendChild(style);
 
-        // 创建预览图元素（复用）
-        const previewImage = document.createElement("img");
-        previewImage.className = "checkpoint-preview-image";
-
         // 监听DOM变化，检测下拉菜单打开
         const observer = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
@@ -237,7 +278,7 @@ app.registerExtension({
                 for (const removed of mutation.removedNodes) {
                     if (removed.classList?.contains("litecontextmenu")) {
                         console.log("[CheckpointPreview] 菜单关闭");
-                        hidePreview(previewImage);
+                        hidePreview();
                     }
                 }
 
@@ -267,7 +308,7 @@ app.registerExtension({
                                     console.log("[CheckpointPreview] 筛选输入框存在:", !!hasFilter);
                                     if (!hasFilter) return;
 
-                                    attachPreviewHandlers(added, previewImage);
+                                    attachPreviewHandlers(added);
                                 });
                             } else {
                                 console.log("[CheckpointPreview] ✗ 不是SimpleCheckpointLoaderWithName节点，跳过");
@@ -285,7 +326,7 @@ app.registerExtension({
             subtree: false
         });
 
-        console.log("[CheckpointPreview] ✓ 预览功能已加载");
+        console.log("[CheckpointPreview] ✓ 预览功能已加载（支持图片和视频）");
 
         // 刷新时清除缓存
         const originalRefresh = app.refreshComboInNodes;

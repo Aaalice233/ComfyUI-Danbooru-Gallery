@@ -36,8 +36,9 @@ def get_preview_path(model_name):
             parent_dir = model_path.parent
 
             # 按优先级查找预览图
-            # 支持的图片格式：png, jpg, jpeg, webp
-            preview_extensions = ['.png', '.jpg', '.jpeg', '.webp', '.preview.png']
+            # 支持的图片格式：png, jpg, jpeg, webp, gif
+            # 支持的视频格式：mp4
+            preview_extensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.preview.png']
 
             for ext in preview_extensions:
                 preview_path = parent_dir / f"{base_name}{ext}"
@@ -136,7 +137,9 @@ async def get_preview_image(request):
             '.png': 'image/png',
             '.jpg': 'image/jpeg',
             '.jpeg': 'image/jpeg',
-            '.webp': 'image/webp'
+            '.webp': 'image/webp',
+            '.gif': 'image/gif',
+            '.mp4': 'video/mp4'
         }
         content_type = mime_types.get(ext, 'application/octet-stream')
 
