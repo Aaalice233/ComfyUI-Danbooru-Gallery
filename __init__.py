@@ -126,11 +126,21 @@ try:
     import time
 
     # 导入 tag sync API 以注册API端点
-    from .py.shared.sync import tag_sync_api
+    try:
+        from .py.shared.sync import tag_sync_api
+        print("[DanbooruGallery] ✓ Tag sync API 已加载")
+    except ImportError as e:
+        print(f"[DanbooruGallery] Warning: Tag sync API 加载失败: {e}")
+        print("[DanbooruGallery] 智能补全缓存同步功能将不可用，但其他功能正常")
+        tag_sync_api = None
 
     # 导入并注册 checkpoint 预览图 API
-    from .py.simple_checkpoint_loader_with_name import register_preview_api
-    register_preview_api(PromptServer.instance.routes)
+    try:
+        from .py.simple_checkpoint_loader_with_name import register_preview_api
+        register_preview_api(PromptServer.instance.routes)
+        print("[DanbooruGallery] ✓ Checkpoint预览图API已注册")
+    except Exception as e:
+        print(f"[DanbooruGallery] Warning: Checkpoint预览图API注册失败: {e}")
 
     @PromptServer.instance.routes.post("/danbooru_gallery/clear_cache")
     async def clear_image_cache(request):
