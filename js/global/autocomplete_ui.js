@@ -165,16 +165,11 @@ class AutocompleteUI {
         const textBeforeCursor = value.substring(0, cursorPosition);
         const lastWord = this.getLastWord(textBeforeCursor);
 
-        // 如果输入长度不够，不显示新建议，但保持已有菜单打开
-        // 只有在菜单未激活时才跳过
+        // 如果输入长度不够，隐藏菜单
         if (!lastWord || lastWord.length < this.minQueryLength) {
-            // 如果菜单还没显示，就不显示
-            // 如果菜单已经显示，保持显示状态，不自动关闭
-            if (!this.isActive) {
-                return;
+            if (this.isActive) {
+                this.hide();
             }
-            // 菜单已激活，清空建议但不隐藏
-            // 用户可以通过失焦或ESC键关闭
             return;
         }
 
