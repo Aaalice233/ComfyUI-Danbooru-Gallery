@@ -10,7 +10,7 @@ from pathlib import Path
 
 def force_delete_database():
     """强制删除数据库文件"""
-    db_path = Path(__file__).parent / "data" / "tags_cache.db"
+    db_path = Path(__file__).parent.parent / "data" / "tags_cache.db"
 
     print(f"[ForceDelete] Target file: {db_path}")
 
