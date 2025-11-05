@@ -27,6 +27,7 @@
   - [📝 工作流说明 (Workflow Description)](#-工作流说明-workflow-description)
   - [🖼️ 简易图像对比 (Simple Image Compare)](#-简易图像对比-simple-image-compare)
   - [🖼️ 简易加载图像 (Simple Load Image)](#-简易加载图像-simple-load-image)
+  - [💾 增强保存图像 (Save Image Plus)](#-增强保存图像-save-image-plus)
   - [🎨 Krita 集成 (Open In Krita)](#-krita-集成-open-in-krita)
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
   - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
@@ -58,6 +59,7 @@
   - [📝 Workflow Description](#-workflow-description-1)
   - [🖼️ Simple Image Compare](#-simple-image-compare)
   - [🖼️ Simple Load Image](#-simple-load-image)
+  - [💾 Save Image Plus](#-save-image-plus)
   - [🎨 Open In Krita](#-open-in-krita)
   - [⚡ Group Executor Manager](#-group-executor-manager)
   - [🔇 Group Mute Manager](#-group-mute-manager)
@@ -622,6 +624,66 @@ Parameter Break
 - **完全原生**: 使用ComfyUI原生文件加载机制，无自定义前端代码
 - **自动维护**: 默认黑图自动创建和恢复，无需手动管理
 - **简洁高效**: 代码结构简单，性能开销极小
+
+---
+
+### 💾 增强保存图像 (Save Image Plus)
+
+**专业级图像保存节点，支持完整 A1111 格式元数据**
+
+Save Image Plus 是一个功能强大的图像保存节点，自动收集工作流中的所有元数据（模型、提示词、参数等），并以 Auto1111 WebUI 兼容格式嵌入到图像中，使图像可以被 Civitai 等平台正确识别和展示资源信息。
+
+#### 核心功能
+- 📋 **完整元数据收集**: 自动收集 Checkpoint、LoRA、VAE、提示词、采样参数等
+- 🔄 **A1111 格式兼容**: 生成 Auto1111 WebUI 兼容的元数据格式
+- 🌐 **Civitai 资源识别**: 图像上传到 Civitai 后可正确显示使用的模型资源
+- 🎯 **独立元数据系统**: 使用自有的 metadata_collector 模块，不依赖其他插件
+- 🔗 **灵活提示词输入**: 支持直接传入提示词或自动从工作流提取
+- 💾 **多格式支持**: PNG/JPEG/WebP 格式，可选工作流嵌入
+- 🧹 **纯净副本**: 可选保存不含元数据的纯净图像副本
+- 👁️ **预览控制**: 可选择是否在界面显示预览（批量生成时提升性能）
+
+#### 主要特性
+- **智能 Hash 计算**: 完整读取模型文件计算准确哈希值（与 LoRA Manager 一致）
+- **链式 Hook 支持**: 与其他元数据收集插件（如 LoRA Manager）共存不冲突
+- **异常隔离**: 元数据收集错误不影响主流程执行
+- **线程安全**: 支持多个实例同时运行
+
+#### 使用方法
+1. 添加 `image > Save Image Plus` 节点
+2. 连接要保存的图像输入
+3. 配置保存选项：
+   - `enable`: 是否启用保存（关闭时跳过执行）
+   - `filename_prefix`: 文件名前缀
+   - `file_format`: 图像格式（PNG/JPEG/WEBP）
+   - `quality`: JPEG/WebP 质量（1-100）
+   - `embed_workflow`: 是否嵌入 ComfyUI 工作流数据（仅 PNG）
+   - `save_clean_copy`: 是否额外保存无元数据的纯净副本
+   - `enable_preview`: 是否在界面显示预览图
+4. 可选连接提示词输入（否则自动从工作流提取）：
+   - `positive_prompt`: 正面提示词
+   - `negative_prompt`: 负面提示词
+   - `lora_syntax`: LoRA 语法字符串
+
+#### 元数据包含内容
+- **模型信息**: Checkpoint 名称和哈希值
+- **提示词**: 正负面提示词（支持 LoRA 语法）
+- **采样参数**: Steps、CFG、Sampler、Scheduler 等
+- **LoRA 列表**: 使用的 LoRA 及其权重
+- **图像尺寸**: 生成的图像宽高
+- **其他参数**: VAE、Clip Skip 等
+
+#### 应用场景
+- **Civitai 展示**: 上传到 Civitai 时自动显示使用的资源
+- **参数记录**: 完整保存生成参数便于复现
+- **工作流分享**: 嵌入工作流数据方便他人使用
+- **批量生成**: 关闭预览提升大批量生成性能
+
+#### 技术特点
+- **独立实现**: 不依赖 LoRA Manager 等其他插件
+- **完整兼容**: 哈希计算方法与 LoRA Manager 完全一致
+- **性能优化**: 128KB 块大小读取文件，高效计算哈希
+- **错误处理**: 完善的异常处理，不影响主流程
 
 ---
 
@@ -1467,6 +1529,16 @@ ComfyUI-Danbooru-Gallery/
 ├── simple_load_image/              # 简易加载图像
 │   ├── __init__.py
 │   └── simple_load_image.py
+├── save_image_plus/                # 增强保存图像
+│   ├── __init__.py
+│   └── save_image_plus.py
+├── metadata_collector/             # 元数据收集模块
+│   ├── __init__.py
+│   ├── metadata_hook.py            # Hook 安装（支持链式调用）
+│   ├── metadata_registry.py       # 元数据注册表
+│   ├── metadata_processor.py      # 元数据处理器
+│   ├── node_extractors.py         # 节点提取器
+│   └── constants.py                # 常量定义
 ├── group_executor_manager/         # 组执行管理器
 │   ├── __init__.py
 │   └── group_executor_manager.py
@@ -2143,6 +2215,66 @@ Simple Load Image provides basic functionality similar to ComfyUI's native uploa
 - **Fully Native**: Uses ComfyUI's native file loading mechanism, no custom frontend code
 - **Auto Maintenance**: Default black image automatically created and recovered, no manual management needed
 - **Simple & Efficient**: Simple code structure with minimal performance overhead
+
+---
+
+### 💾 Save Image Plus
+
+**Professional Image Saving Node with Full A1111 Format Metadata**
+
+Save Image Plus is a powerful image saving node that automatically collects all metadata (models, prompts, parameters, etc.) from your workflow and embeds them into images in Auto1111 WebUI compatible format, enabling platforms like Civitai to correctly recognize and display resource information.
+
+#### Core Features
+- 📋 **Complete Metadata Collection**: Auto-collects Checkpoint, LoRA, VAE, prompts, sampling parameters, etc.
+- 🔄 **A1111 Format Compatible**: Generates Auto1111 WebUI compatible metadata format
+- 🌐 **Civitai Resource Recognition**: Images uploaded to Civitai correctly display used model resources
+- 🎯 **Independent Metadata System**: Uses own metadata_collector module, no dependency on other plugins
+- 🔗 **Flexible Prompt Input**: Supports direct prompt input or automatic extraction from workflow
+- 💾 **Multiple Format Support**: PNG/JPEG/WebP formats with optional workflow embedding
+- 🧹 **Clean Copy**: Optional saving of metadata-free clean image copies
+- 👁️ **Preview Control**: Optional UI preview display (performance boost for batch generation)
+
+#### Key Features
+- **Smart Hash Calculation**: Complete file read for accurate hash values (consistent with LoRA Manager)
+- **Chain Hook Support**: Coexists with other metadata collection plugins (like LoRA Manager) without conflicts
+- **Exception Isolation**: Metadata collection errors don't affect main workflow execution
+- **Thread Safe**: Supports multiple instances running simultaneously
+
+#### Usage
+1. Add `image > Save Image Plus` node
+2. Connect image input to save
+3. Configure save options:
+   - `enable`: Enable/disable saving (skips execution when off)
+   - `filename_prefix`: Filename prefix
+   - `file_format`: Image format (PNG/JPEG/WEBP)
+   - `quality`: JPEG/WebP quality (1-100)
+   - `embed_workflow`: Embed ComfyUI workflow data (PNG only)
+   - `save_clean_copy`: Save additional metadata-free clean copy
+   - `enable_preview`: Show preview in UI
+4. Optionally connect prompt inputs (otherwise auto-extracted from workflow):
+   - `positive_prompt`: Positive prompt
+   - `negative_prompt`: Negative prompt
+   - `lora_syntax`: LoRA syntax string
+
+#### Metadata Contents
+- **Model Info**: Checkpoint name and hash value
+- **Prompts**: Positive and negative prompts (supports LoRA syntax)
+- **Sampling Parameters**: Steps, CFG, Sampler, Scheduler, etc.
+- **LoRA List**: Used LoRAs with their weights
+- **Image Dimensions**: Generated image width and height
+- **Other Parameters**: VAE, Clip Skip, etc.
+
+#### Use Cases
+- **Civitai Display**: Automatically shows used resources when uploaded to Civitai
+- **Parameter Recording**: Complete parameter save for easy reproduction
+- **Workflow Sharing**: Embedded workflow data for others to use
+- **Batch Generation**: Disable preview for better performance in large batches
+
+#### Technical Features
+- **Independent Implementation**: No dependency on LoRA Manager or other plugins
+- **Full Compatibility**: Hash calculation method fully consistent with LoRA Manager
+- **Performance Optimized**: 128KB chunk size for efficient hash calculation
+- **Error Handling**: Comprehensive exception handling without affecting main workflow
 
 ---
 
@@ -2988,6 +3120,16 @@ ComfyUI-Danbooru-Gallery/
 ├── simple_load_image/              # Simple Load Image
 │   ├── __init__.py
 │   └── simple_load_image.py
+├── save_image_plus/                # Save Image Plus
+│   ├── __init__.py
+│   └── save_image_plus.py
+├── metadata_collector/             # Metadata Collector Module
+│   ├── __init__.py
+│   ├── metadata_hook.py            # Hook Installation (Chain Support)
+│   ├── metadata_registry.py       # Metadata Registry
+│   ├── metadata_processor.py      # Metadata Processor
+│   ├── node_extractors.py         # Node Extractors
+│   └── constants.py                # Constant Definitions
 ├── group_executor_manager/         # Group Executor Manager
 │   ├── __init__.py
 │   └── group_executor_manager.py
@@ -3162,7 +3304,7 @@ GPL-3.0-or-later License
 - [ComfyUI_Mira](https://github.com/mirabarukaso/ComfyUI_Mira) - 简易Checkpoint加载器的基础代码来源 | Base code source for Simple Checkpoint Loader
 - [ComfyUI-Easy-Use](https://github.com/yolain/ComfyUI-Easy-Use) - 简易Checkpoint加载器的VAE选择功能参考 | VAE selection functionality reference for Simple Checkpoint Loader
 - [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) - 文本缓存节点的动态combo实现参考 | Dynamic combo implementation reference for Text Cache nodes
-- [ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager) - 节点设计和功能参考 | Node design and functionality reference
+- [ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager) - Save Image Plus 的哈希计算方法参考，元数据收集思路来源 | Hash calculation method reference for Save Image Plus, metadata collection inspiration
 - [ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts) - 简易通知节点的功能参考 | Functionality reference for Simple Notify node
 - [cg-image-filter](https://github.com/chrisgoringe/cg-image-filter) - 简易字符串分隔节点的基础代码来源 | Base code source for Simple String Split node
 - [cg-krita](https://github.com/chrisgoringe/cg-krita) - Open In Krita节点的设计思路来源 | Design inspiration for Open In Krita node
