@@ -18,6 +18,7 @@ from .py.parameter_control_panel import NODE_CLASS_MAPPINGS as pcp_mappings, NOD
 from .py.parameter_break import NODE_CLASS_MAPPINGS as pb_mappings, NODE_DISPLAY_NAME_MAPPINGS as pb_display_mappings
 from .py.simple_load_image import NODE_CLASS_MAPPINGS as sli_mappings, NODE_DISPLAY_NAME_MAPPINGS as sli_display_mappings
 from .py.simple_string_split import NODE_CLASS_MAPPINGS as sss_mappings, NODE_DISPLAY_NAME_MAPPINGS as sss_display_mappings
+from .py.save_image_plus import NODE_CLASS_MAPPINGS as sip_mappings, NODE_DISPLAY_NAME_MAPPINGS as sip_display_mappings
 
 # 导入优化执行系统
 from .py.group_executor_manager import NODE_CLASS_MAPPINGS as group_manager_mappings
@@ -79,6 +80,7 @@ NODE_CLASS_MAPPINGS = {
     **pb_mappings,
     **sli_mappings,
     **sss_mappings,
+    **sip_mappings,
     **opt_mappings,
     **workflow_description_mappings,
     **text_cache_viewer_mappings,
@@ -105,6 +107,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **pb_display_mappings,
     **sli_display_mappings,
     **sss_display_mappings,
+    **sip_display_mappings,
     **opt_display_mappings,
     **workflow_description_display_mappings,
     **text_cache_viewer_display_mappings,
@@ -125,13 +128,13 @@ try:
     from .py.utils import debug_config
     import time
 
-    # 导入 tag sync API 以注册API端点
+    # 导入 tag sync API 以注册API端点（可选功能）
     try:
         from .py.shared.sync import tag_sync_api
         print("[DanbooruGallery] ✓ Tag sync API 已加载")
-    except ImportError as e:
-        print(f"[DanbooruGallery] Warning: Tag sync API 加载失败: {e}")
-        print("[DanbooruGallery] 智能补全缓存同步功能将不可用，但其他功能正常")
+    except (ImportError, ModuleNotFoundError):
+        # Tag sync API 依赖 cache 模块，如果 cache 不可用则此功能不可用
+        # 这不影响其他核心功能（如 SaveImagePlus）
         tag_sync_api = None
 
     # 导入并注册 checkpoint 预览图 API

@@ -15,8 +15,8 @@ except ImportError as e:
 
 try:
     from .cache.memory_cache import HotTagsCache, get_hot_tags_cache
-except ImportError as e:
-    print(f"[DanbooruGallery.shared] Warning: memory_cache import failed: {e}")
+except (ImportError, ModuleNotFoundError):
+    # cache 模块是可选的（用于智能补全缓存）
     HotTagsCache = None
     get_hot_tags_cache = None
 
@@ -35,16 +35,16 @@ except ImportError as e:
 
 try:
     from .sync.tag_sync_manager import TagSyncManager, get_sync_manager, initialize_tag_system
-except ImportError as e:
-    print(f"[DanbooruGallery.shared] Warning: tag_sync_manager import failed: {e}")
+except (ImportError, ModuleNotFoundError):
+    # sync 模块依赖 cache 模块，如果 cache 不可用则 sync 也不可用
     TagSyncManager = None
     get_sync_manager = None
     initialize_tag_system = None
 
 try:
     from .sync.async_tag_sync import BackgroundSyncManager, get_background_sync_manager, SyncStatus
-except ImportError as e:
-    print(f"[DanbooruGallery.shared] Warning: async_tag_sync import failed: {e}")
+except (ImportError, ModuleNotFoundError):
+    # async_tag_sync 依赖其他模块，可能不可用
     BackgroundSyncManager = None
     get_background_sync_manager = None
     SyncStatus = None

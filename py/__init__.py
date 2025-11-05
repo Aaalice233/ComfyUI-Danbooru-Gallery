@@ -14,3 +14,15 @@ try:
     __all__ = ["path"]
 except ImportError:
     pass
+
+# Initialize metadata collector（独立初始化，支持链式调用）
+try:
+    from .metadata_collector import MetadataHook
+
+    print("[Danbooru Gallery] Initializing metadata collector...")
+    MetadataHook.install()
+
+except Exception as e:
+    print(f"[Danbooru Gallery] Warning: Metadata collector initialization failed: {e}")
+    import traceback
+    traceback.print_exc()

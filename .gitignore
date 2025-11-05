@@ -10,8 +10,10 @@ user_settings.json
 # Claude相关文件
 .claude/
 
-# 缓存目录
+# 缓存目录（数据文件，不包括代码模块）
 cache/
+# 但是不忽略 py/shared/cache/ 代码模块
+!py/shared/cache/
 
 # 工具相关目录
 .kilocode/
