@@ -528,6 +528,69 @@ async def toggle_favorite(request):
 
 # 确保在启动时 data.json 文件存在，如果不存在则创建一个空的结构
 def initialize_data_file():
+    # === 词库自动迁移逻辑 ===
+    # 检测旧版本词库路径并自动迁移到新位置
+    OLD_BASE_DIR = os.path.join(CUSTOM_NODE_DIR, "prompt_selector")
+    OLD_DATA_FILE = os.path.join(OLD_BASE_DIR, "data.json")
+    OLD_PREVIEW_DIR = os.path.join(OLD_BASE_DIR, "preview")
+    MIGRATION_MARKER = os.path.join(OLD_BASE_DIR, "MIGRATED.txt")
+
+    # 迁移条件：旧数据存在 + 新数据不存在 + 未标记已迁移
+    if (os.path.exists(OLD_DATA_FILE) and
+        not os.path.exists(DATA_FILE) and
+        not os.path.exists(MIGRATION_MARKER)):
+
+        try:
+            print("[PromptSelector] 🔍 检测到旧版本词库数据")
+
+            # 1. 备份旧数据
+            backup_file = OLD_DATA_FILE + ".backup"
+            shutil.copy2(OLD_DATA_FILE, backup_file)
+            print(f"[PromptSelector] 📦 备份已创建: {backup_file}")
+
+            # 2. 创建新目录结构
+            os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+            os.makedirs(PREVIEW_DIR, exist_ok=True)
+
+            # 3. 迁移 data.json
+            print("[PromptSelector] 🚀 开始自动迁移词库...")
+            shutil.copy2(OLD_DATA_FILE, DATA_FILE)
+            print("[PromptSelector] ✓ 词库数据迁移完成")
+
+            # 4. 迁移 preview 目录
+            preview_count = 0
+            if os.path.exists(OLD_PREVIEW_DIR):
+                for filename in os.listdir(OLD_PREVIEW_DIR):
+                    src = os.path.join(OLD_PREVIEW_DIR, filename)
+                    dst = os.path.join(PREVIEW_DIR, filename)
+                    if os.path.isfile(src):
+                        shutil.copy2(src, dst)
+                        preview_count += 1
+                print(f"[PromptSelector] ✓ 预览图迁移完成 ({preview_count} 个文件)")
+
+            # 5. 验证数据兼容性
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            data = _ensure_data_compatibility(data)
+            with open(DATA_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+
+            # 6. 创建迁移标记文件
+            with open(MIGRATION_MARKER, 'w', encoding='utf-8') as f:
+                f.write(f"迁移完成时间: {datetime.now().isoformat()}\n")
+                f.write(f"新数据位置: {DATA_FILE}\n")
+                f.write("注意: 此目录下的文件已迁移到新位置，可以手动删除\n")
+
+            print(f"[PromptSelector] 📍 旧位置: {OLD_DATA_FILE}")
+            print(f"[PromptSelector] 📍 新位置: {DATA_FILE}")
+            print("[PromptSelector] ✓ 迁移标记已创建")
+
+        except Exception as e:
+            print(f"[PromptSelector] ✗ 词库迁移失败: {str(e)}")
+            print("[PromptSelector] → 将使用默认词库，您的旧数据仍保留在原位置")
+            # 继续执行下面的默认初始化逻辑
+
+    # === 原有逻辑：创建默认数据 ===
     if not os.path.exists(DATA_FILE):
         default_data = {
             "version": "1.6",
