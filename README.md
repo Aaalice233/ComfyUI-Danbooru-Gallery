@@ -3142,7 +3142,7 @@ Issues and Pull Requests are welcome!
 
 ## 许可证 | License
 
-MIT License
+GPL-3.0-or-later License
 
 ---
 
