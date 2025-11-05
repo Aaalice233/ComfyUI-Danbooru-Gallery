@@ -10,7 +10,7 @@ from pathlib import Path
 
 def force_delete_database():
     """强制删除数据库文件"""
-    db_path = Path(__file__).parent.parent / "data" / "tags_cache.db"
+    db_path = Path(__file__).parent / "py" / "shared" / "data" / "tags_cache.db"
 
     print(f"[ForceDelete] Target file: {db_path}")
 
@@ -21,8 +21,8 @@ def force_delete_database():
     try:
         # 尝试导入 db_manager 并关闭所有连接
         try:
-            sys.path.insert(0, str(Path(__file__).parent.parent))
-            from db.db_manager import get_db_manager
+            sys.path.insert(0, str(Path(__file__).parent))
+            from py.shared.db.db_manager import get_db_manager
 
             print("[ForceDelete] Closing database connections...")
             db = get_db_manager()

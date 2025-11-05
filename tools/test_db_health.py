@@ -6,10 +6,10 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))
 
-from db.db_manager import get_db_manager
-from sync.tag_sync_manager import get_sync_manager
+from py.shared.db.db_manager import get_db_manager
+from py.shared.sync.tag_sync_manager import get_sync_manager
 
 
 async def test_health_check():
