@@ -654,15 +654,15 @@ class CR_ApplyControlNetStackExtractor(NodeMetadataExtractor):
     def extract(node_id, inputs, outputs, metadata):
         if not inputs:
             return
-            
+
         # Save the original conditioning inputs
         base_positive = inputs.get("base_positive")
         base_negative = inputs.get("base_negative")
-        
+
         if base_positive is not None or base_negative is not None:
             if node_id not in metadata[PROMPTS]:
                 metadata[PROMPTS][node_id] = {"node_id": node_id}
-            
+
             metadata[PROMPTS][node_id]["orig_pos_cond"] = base_positive
             metadata[PROMPTS][node_id]["orig_neg_cond"] = base_negative
 
@@ -675,13 +675,53 @@ class CR_ApplyControlNetStackExtractor(NodeMetadataExtractor):
             if isinstance(first_output, tuple) and len(first_output) >= 2:
                 transformed_positive = first_output[0]
                 transformed_negative = first_output[1]
-                
+
                 # Save transformed conditioning objects in metadata
                 if node_id not in metadata[PROMPTS]:
                     metadata[PROMPTS][node_id] = {"node_id": node_id}
-                    
+
                 metadata[PROMPTS][node_id]["positive_encoded"] = transformed_positive
                 metadata[PROMPTS][node_id]["negative_encoded"] = transformed_negative
+
+class PixelKSampleUpscalerProviderExtractor(BaseSamplerExtractor):
+    """提取 Impact Pack 的 PixelKSampleUpscalerProvider 节点参数"""
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs:
+            return
+
+        # 提取标准采样参数
+        BaseSamplerExtractor.extract_sampling_params(
+            node_id, inputs, metadata,
+            ["seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"]
+        )
+
+class IterativeUpscaleExtractor(BaseSamplerExtractor):
+    """提取 Impact Pack 的 IterativeUpscale 节点参数"""
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs:
+            return
+
+        # IterativeUpscale 节点可能不直接包含采样参数
+        # 但我们仍然尝试提取可能存在的参数
+        BaseSamplerExtractor.extract_sampling_params(
+            node_id, inputs, metadata,
+            ["seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"]
+        )
+
+class UltimateSDUpscaleExtractor(BaseSamplerExtractor):
+    """提取 Ultimate SD Upscale 节点参数"""
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs:
+            return
+
+        # 提取标准采样参数
+        BaseSamplerExtractor.extract_sampling_params(
+            node_id, inputs, metadata,
+            ["seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"]
+        )
 
 # Registry of node-specific extractors
 # Keys are node class names
@@ -736,5 +776,8 @@ NODE_EXTRACTORS = {
     "UpscaleModelLoader": UpscaleModelLoaderExtractor,  # Standard upscale model loader
     "ImageUpscaleWithModel": UpscaleModelLoaderExtractor,  # Image upscale with model
     "UpscaleImageByModelThenResize": UpscaleModelLoaderExtractor,  # Mira Plugin
+    "PixelKSampleUpscalerProvider": PixelKSampleUpscalerProviderExtractor,  # ComfyUI-Impact-Pack
+    "IterativeUpscale": IterativeUpscaleExtractor,  # ComfyUI-Impact-Pack
+    "UltimateSDUpscale": UltimateSDUpscaleExtractor,  # ComfyUI_UltimateSDUpscale
     # Add other nodes as needed
 }
