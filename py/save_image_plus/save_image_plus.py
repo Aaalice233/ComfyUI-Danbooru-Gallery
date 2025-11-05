@@ -87,7 +87,7 @@ class SaveImagePlus:
                     "tooltip": "图像保存格式"
                 }),
                 "quality": ("INT", {
-                    "default": 95,
+                    "default": 100,
                     "min": 1,
                     "max": 100,
                     "step": 1,
@@ -102,7 +102,7 @@ class SaveImagePlus:
                     "tooltip": "额外保存无工作流和元数据的纯净副本"
                 }),
                 "enable_preview": ("BOOLEAN", {
-                    "default": True,
+                    "default": False,
                     "tooltip": "是否在界面显示预览（关闭后仅保存文件）"
                 }),
             },
