@@ -69,6 +69,7 @@ log/*
 
 # Cache files
 py/character_feature_swap/cache/
+py/save_image_plus/hash_cache.json
 
 # Prompt Selector specific
 py/prompt_selector/preview/

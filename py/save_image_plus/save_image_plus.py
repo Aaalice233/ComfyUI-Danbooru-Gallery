@@ -12,6 +12,17 @@ from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 import numpy as np
 import folder_paths
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Tuple
+
+# 导入哈希缓存管理器
+try:
+    from .hash_cache_manager import get_cache_manager
+    HAS_HASH_CACHE = True
+    print("[SaveImagePlus] 哈希缓存管理器已加载")
+except Exception as e:
+    HAS_HASH_CACHE = False
+    print(f"[SaveImagePlus] Warning: 哈希缓存管理器加载失败: {e}")
 
 # 尝试导入本地 metadata_collector 模块
 HAS_METADATA_COLLECTOR = False
@@ -66,6 +77,19 @@ class SaveImagePlus:
             'exponential': 'Exponential',
             'sgm_uniform': 'SGM Uniform',
         }
+
+        # 初始化哈希缓存管理器（如果可用）
+        self.hash_cache_manager = None
+        if HAS_HASH_CACHE:
+            try:
+                self.hash_cache_manager = get_cache_manager()
+                print("[SaveImagePlus] 哈希缓存已启用")
+            except Exception as e:
+                print(f"[SaveImagePlus] Warning: 哈希缓存初始化失败: {e}")
+
+        # 初始化线程池（用于并行计算哈希）
+        # 限制为3个worker，避免IO竞争
+        self.hash_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="HashCalc")
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -268,6 +292,7 @@ class SaveImagePlus:
         """
         LoRA 哈希计算实现（与 LoRA Manager 完全一致）
         计算 LoRA 文件的完整 SHA256 哈希，取前 10 个字符
+        优化：使用缓存管理器加速重复计算
 
         Args:
             lora_name: LoRA 模型名称（不含扩展名）
@@ -289,7 +314,14 @@ class SaveImagePlus:
                 print(f"[SaveImagePlus] 找不到 LoRA 文件: {lora_name}")
                 return ""
 
-            print(f"[SaveImagePlus] 找到 LoRA 文件: {lora_file}")
+            # 如果有缓存管理器，使用缓存计算
+            if self.hash_cache_manager:
+                cached_hash = self.hash_cache_manager.get_hash(lora_file)
+                if cached_hash:
+                    print(f"[SaveImagePlus] 从缓存获取 LoRA 哈希: {lora_name} -> {cached_hash}")
+                    return cached_hash
+
+            print(f"[SaveImagePlus] 计算 LoRA 哈希: {lora_name} -> {lora_file}")
 
             # 计算完整文件的 SHA256 哈希（与 LoRA Manager 一致）
             sha256_hash = hashlib.sha256()
@@ -301,6 +333,11 @@ class SaveImagePlus:
 
             # 返回前 10 个字符（保持小写，符合 A1111 标准）
             hash_result = sha256_hash.hexdigest()[:10]
+
+            # 保存到缓存
+            if self.hash_cache_manager:
+                self.hash_cache_manager.set_hash(lora_file, hash_result)
+
             print(f"[SaveImagePlus] 计算哈希成功: {hash_result}")
             return hash_result
 
@@ -325,6 +362,7 @@ class SaveImagePlus:
         """
         checkpoint 哈希计算实现
         计算 checkpoint 文件的完整 SHA256 哈希（与 LoRA Manager 一致，取前 10 个字符）
+        优化：使用缓存管理器加速重复计算
 
         Args:
             checkpoint_name: checkpoint 模型路径或名称
@@ -353,7 +391,14 @@ class SaveImagePlus:
                 print(f"[SaveImagePlus] 找不到 checkpoint 文件: {checkpoint_name}")
                 return ""
 
-            print(f"[SaveImagePlus] 找到 checkpoint 文件: {checkpoint_file}")
+            # 如果有缓存管理器，使用缓存计算
+            if self.hash_cache_manager:
+                cached_hash = self.hash_cache_manager.get_hash(checkpoint_file)
+                if cached_hash:
+                    print(f"[SaveImagePlus] 从缓存获取 checkpoint 哈希: {checkpoint_name} -> {cached_hash}")
+                    return cached_hash
+
+            print(f"[SaveImagePlus] 计算 checkpoint 哈希: {checkpoint_name} -> {checkpoint_file}")
 
             # 计算完整文件的 SHA256 哈希（与 LoRA Manager 一致）
             sha256_hash = hashlib.sha256()
@@ -365,12 +410,61 @@ class SaveImagePlus:
 
             # 返回前 10 个字符（保持小写，符合 A1111 标准）
             hash_result = sha256_hash.hexdigest()[:10]
+
+            # 保存到缓存
+            if self.hash_cache_manager:
+                self.hash_cache_manager.set_hash(checkpoint_file, hash_result)
+
             print(f"[SaveImagePlus] 计算 checkpoint 哈希成功: {hash_result}")
             return hash_result
 
         except Exception as e:
             print(f"[SaveImagePlus] 计算 checkpoint 哈希失败 ({checkpoint_name}): {e}")
             return ""
+
+    def _calculate_lora_hashes_parallel(self, lora_names: List[str]) -> Dict[str, str]:
+        """
+        并行计算多个LoRA的哈希值（使用线程池）
+
+        Args:
+            lora_names: LoRA名称列表
+
+        Returns:
+            LoRA名称到哈希值的字典 {lora_name: hash_value}
+        """
+        if not lora_names:
+            return {}
+
+        result = {}
+
+        # 如果只有一个LoRA或没有线程池，直接顺序计算
+        if len(lora_names) == 1 or not hasattr(self, 'hash_executor'):
+            for lora_name in lora_names:
+                hash_value = self._calculate_lora_hash(lora_name)
+                if hash_value:
+                    result[lora_name] = hash_value
+            return result
+
+        # 使用线程池并行计算
+        print(f"[SaveImagePlus] 并行计算 {len(lora_names)} 个 LoRA 哈希...")
+        futures = {}
+
+        for lora_name in lora_names:
+            future = self.hash_executor.submit(self._calculate_lora_hash, lora_name)
+            futures[future] = lora_name
+
+        # 等待所有任务完成
+        for future in as_completed(futures):
+            lora_name = futures[future]
+            try:
+                hash_value = future.result()
+                if hash_value:
+                    result[lora_name] = hash_value
+            except Exception as e:
+                print(f"[SaveImagePlus] 并行计算 LoRA 哈希失败 ({lora_name}): {e}")
+
+        print(f"[SaveImagePlus] 并行计算完成，成功获取 {len(result)}/{len(lora_names)} 个哈希")
+        return result
 
     def _collect_metadata(
         self,
@@ -526,16 +620,22 @@ class SaveImagePlus:
         negative_prompt = metadata.get("negative_prompt", "")
         loras_text = metadata.get("loras", "")
 
-        # 计算 LoRA hashes
+        # 计算 LoRA hashes（使用并行计算优化）
         lora_hashes = {}
         if loras_text:
             # 匹配格式: <lora:name:strength> 或 <lora:name>
             lora_matches = re.findall(r'<lora:([^:>]+)(?::([^>]+))?>', loras_text)
-            for match in lora_matches:
-                lora_name = match[0]
-                hash_value = self._get_lora_hash(lora_name)
-                if hash_value:
-                    lora_hashes[lora_name] = hash_value
+            lora_names = [match[0] for match in lora_matches]
+
+            # 使用并行计算（如果有多个LoRA）
+            if len(lora_names) > 1:
+                lora_hashes = self._calculate_lora_hashes_parallel(lora_names)
+            else:
+                # 单个LoRA直接计算
+                for lora_name in lora_names:
+                    hash_value = self._get_lora_hash(lora_name)
+                    if hash_value:
+                        lora_hashes[lora_name] = hash_value
 
         # 第一部分：prompt（不包含 LoRA）
         metadata_parts = []
