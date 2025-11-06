@@ -962,6 +962,9 @@ app.registerExtension({
                         delete this.properties.groupStatesCache[cachedName];
                     }
 
+                    // 更新联动配置中的组名引用
+                    this.updateLinkageReferences(cachedName, group.title);
+
                     // 更新WeakMap
                     this.groupReferences.set(group, group.title);
 
@@ -989,6 +992,50 @@ app.registerExtension({
                     hasRename ? '(组重命名)' : '');
                 this.updateGroupsList();
             }
+        };
+
+        /**
+         * 更新所有组配置中联动规则里的目标组名
+         * 当某个组重命名后,需要更新其他组的联动配置中对该组的引用
+         *
+         * @param {string} oldName - 旧组名
+         * @param {string} newName - 新组名
+         */
+        nodeType.prototype.updateLinkageReferences = function (oldName, newName) {
+            if (!oldName || !newName || oldName === newName) return;
+
+            console.log('[GMM-Linkage] 开始更新联动引用:', oldName, '→', newName);
+
+            let updatedCount = 0;
+
+            // 遍历所有组配置
+            this.properties.groups.forEach(groupConfig => {
+                if (!groupConfig.linkage) return;
+
+                // 更新 on_enable 规则
+                if (Array.isArray(groupConfig.linkage.on_enable)) {
+                    groupConfig.linkage.on_enable.forEach(rule => {
+                        if (rule.target_group === oldName) {
+                            console.log(`[GMM-Linkage] 更新规则: ${groupConfig.group_name} -> on_enable -> ${oldName} => ${newName}`);
+                            rule.target_group = newName;
+                            updatedCount++;
+                        }
+                    });
+                }
+
+                // 更新 on_disable 规则
+                if (Array.isArray(groupConfig.linkage.on_disable)) {
+                    groupConfig.linkage.on_disable.forEach(rule => {
+                        if (rule.target_group === oldName) {
+                            console.log(`[GMM-Linkage] 更新规则: ${groupConfig.group_name} -> on_disable -> ${oldName} => ${newName}`);
+                            rule.target_group = newName;
+                            updatedCount++;
+                        }
+                    });
+                }
+            });
+
+            console.log(`[GMM-Linkage] 联动引用更新完成,共更新 ${updatedCount} 条规则`);
         };
 
         // 获取组内的所有节点
