@@ -167,6 +167,35 @@ export class FloatingNavigator {
                 this.stopDrag(e);
             }
         });
+
+        // 监听窗口大小变化,确保悬浮球始终在可见范围内
+        window.addEventListener('resize', () => {
+            const ballSize = 60;
+            const maxX = window.innerWidth - ballSize;
+            const maxY = window.innerHeight - ballSize;
+
+            // 如果悬浮球超出屏幕,自动调整位置
+            let needsUpdate = false;
+            if (this.position.x > maxX) {
+                this.position.x = maxX;
+                needsUpdate = true;
+            }
+            if (this.position.y > maxY) {
+                this.position.y = maxY;
+                needsUpdate = true;
+            }
+
+            // 更新位置并保存
+            if (needsUpdate) {
+                this.updateBallPosition();
+                this.savePosition();
+
+                // 如果面板展开,也更新面板位置
+                if (this.isExpanded) {
+                    this.updatePanelPosition();
+                }
+            }
+        });
     }
 
     /**
@@ -647,22 +676,39 @@ export class FloatingNavigator {
 
     /**
      * 从localStorage加载悬浮球位置
+     * 增加边界检查,确保悬浮球永远在屏幕可见范围内
      */
     loadPosition() {
+        const ballSize = 60;  // 悬浮球大小
+        const defaultPadding = 20;  // 默认边距
+
+        let position = null;
+
         try {
             const saved = localStorage.getItem('qgn_floating_ball_position');
             if (saved) {
-                return JSON.parse(saved);
+                position = JSON.parse(saved);
             }
         } catch (e) {
             console.warn('[QGN] 加载位置失败:', e);
         }
 
-        // 默认位置（右下角）
-        return {
-            x: window.innerWidth - 80,
-            y: window.innerHeight - 150
-        };
+        // 如果没有保存的位置,使用默认位置
+        if (!position) {
+            position = {
+                x: window.innerWidth - ballSize - defaultPadding,
+                y: window.innerHeight - ballSize - 90
+            };
+        }
+
+        // 边界检查和修正（关键修复:防止悬浮球跑到屏幕外）
+        const maxX = window.innerWidth - ballSize;
+        const maxY = window.innerHeight - ballSize;
+
+        position.x = Math.max(0, Math.min(position.x, maxX));
+        position.y = Math.max(0, Math.min(position.y, maxY));
+
+        return position;
     }
 
     /**
