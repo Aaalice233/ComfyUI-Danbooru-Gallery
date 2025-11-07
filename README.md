@@ -27,6 +27,7 @@
   - [📝 工作流说明 (Workflow Description)](#-工作流说明-workflow-description)
   - [🖼️ 简易图像对比 (Simple Image Compare)](#-简易图像对比-simple-image-compare)
   - [🖼️ 简易加载图像 (Simple Load Image)](#-简易加载图像-simple-load-image)
+  - [🔺 像素放大器(锐化) (PixelKSampleUpscaler Sharpening)](#-像素放大器锐化-pixelksampleupscaler-sharpening)
   - [💾 增强保存图像 (Save Image Plus)](#-增强保存图像-save-image-plus)
   - [🎨 Krita 集成 (Open In Krita)](#-krita-集成-open-in-krita)
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
@@ -59,6 +60,7 @@
   - [📝 Workflow Description](#-workflow-description-1)
   - [🖼️ Simple Image Compare](#-simple-image-compare)
   - [🖼️ Simple Load Image](#-simple-load-image)
+  - [🔺 PixelKSampleUpscaler Sharpening](#-pixelksampleupscaler-sharpening)
   - [💾 Save Image Plus](#-save-image-plus)
   - [🎨 Open In Krita](#-open-in-krita)
   - [⚡ Group Executor Manager](#-group-executor-manager)
@@ -624,6 +626,61 @@ Parameter Break
 - **完全原生**: 使用ComfyUI原生文件加载机制，无自定义前端代码
 - **自动维护**: 默认黑图自动创建和恢复，无需手动管理
 - **简洁高效**: 代码结构简单，性能开销极小
+
+---
+
+### 🔺 像素放大器(锐化) (PixelKSampleUpscaler Sharpening)
+
+**增强版放大器提供者，集成 AMD FidelityFX CAS 锐化**
+
+PixelKSampleUpscaler Sharpening 是一个带锐化功能的迭代放大器提供者节点，为 Impact Pack 的 Iterative Upscale 工作流提供快速的锐化放大方案。集成了 AMD FidelityFX CAS (Contrast Adaptive Sharpening) 算法，可作为慢速放大模型的高性能替代方案。
+
+#### 核心功能
+- 🚀 **三种放大模式**: 智能切换模型放大/锐化放大/简单放大
+- ✨ **CAS 锐化算法**: 基于 AMD FidelityFX 的对比度自适应锐化
+- ⚡ **快速方案**: 简单放大 + 锐化作为放大模型的高性能替代
+- 🎛️ **可调节锐化**: 锐化强度 0-1 可调，默认 0.6
+- 🔄 **完美兼容**: 完全兼容 Impact Pack 的 Iterative Upscale 节点
+- 🧩 **分块 VAE 支持**: 支持分块 VAE 处理超大图像
+- 🎯 **采样预览**: 支持实时采样预览和进度显示
+- 🔌 **Hook 集成**: 完整支持 Impact Pack 的 Hook 系统
+
+#### 工作模式
+1. **模型放大模式**: 连接 upscale_model 时使用模型放大（高质量但慢）
+2. **锐化放大模式**: 未连接模型且启用锐化时，使用简单放大 + CAS 锐化（快速）
+3. **简单放大模式**: 未连接模型且禁用锐化时，仅使用简单放大
+
+#### 使用方法
+1. 添加 `Danbooru > PixelKSampleUpscalerProvider(Sharpening)` 节点
+2. 连接基础参数：
+   - `model`: ComfyUI 模型
+   - `vae`: VAE 模型
+   - `positive/negative`: 正负面条件
+   - `scale_method`: 缩放方法（bilinear, lanczos 等）
+3. 配置采样参数：
+   - `seed`, `steps`, `cfg`: 标准采样参数
+   - `sampler_name`, `scheduler`: 采样器和调度器
+   - `denoise`: 去噪强度
+4. 配置锐化参数：
+   - `enable_sharpening`: 是否启用锐化（默认 True）
+   - `sharpening_amount`: 锐化强度 0-1（默认 0.6）
+5. 可选连接：
+   - `upscale_model_opt`: 放大模型（连接后将使用模型而非锐化）
+   - `pk_hook_opt`: Impact Pack Hook
+6. 输出 `upscaler` 连接到 `Iterative Upscale (Image)` 节点
+
+#### 技术特点
+- **独立实现**: 完全独立实现，不依赖 Impact Pack 或 ComfyUI Essential
+- **高性能**: CAS 锐化算法基于 3x3 邻域，计算高效
+- **智能切换**: 根据是否连接放大模型自动切换工作模式
+- **完整 Hook 支持**: 支持 Impact Pack 的 5 个 Hook 点
+- **预览支持**: 集成 latent_preview 系统，显示采样进度
+
+#### 应用场景
+- **快速迭代**: 在测试工作流时使用锐化模式快速预览效果
+- **资源节约**: 锐化模式无需加载大型放大模型，节省显存
+- **灵活切换**: 预览阶段用锐化，最终生成时切换到模型放大
+- **高分辨率**: 配合分块 VAE 处理超大图像放大
 
 ---
 
@@ -2215,6 +2272,61 @@ Simple Load Image provides basic functionality similar to ComfyUI's native uploa
 - **Fully Native**: Uses ComfyUI's native file loading mechanism, no custom frontend code
 - **Auto Maintenance**: Default black image automatically created and recovered, no manual management needed
 - **Simple & Efficient**: Simple code structure with minimal performance overhead
+
+---
+
+### 🔺 PixelKSampleUpscaler Sharpening
+
+**Enhanced Upscaler Provider with AMD FidelityFX CAS Sharpening**
+
+PixelKSampleUpscaler Sharpening is an enhanced upscaler provider node with integrated sharpening capabilities, designed for Impact Pack's Iterative Upscale workflow. It features the AMD FidelityFX CAS (Contrast Adaptive Sharpening) algorithm as a high-performance alternative to slow upscale models.
+
+#### Core Features
+- 🚀 **Three Upscale Modes**: Smart switching between model upscale/sharpening upscale/simple upscale
+- ✨ **CAS Sharpening Algorithm**: Contrast adaptive sharpening based on AMD FidelityFX
+- ⚡ **Fast Solution**: Simple upscale + sharpening as high-performance alternative to upscale models
+- 🎛️ **Adjustable Sharpening**: Sharpening intensity 0-1, default 0.6
+- 🔄 **Perfect Compatibility**: Fully compatible with Impact Pack's Iterative Upscale node
+- 🧩 **Tiled VAE Support**: Support tiled VAE for processing ultra-large images
+- 🎯 **Sampling Preview**: Support real-time sampling preview and progress display
+- 🔌 **Hook Integration**: Full support for Impact Pack's Hook system
+
+#### Working Modes
+1. **Model Upscale Mode**: When upscale_model is connected, use model upscaling (high quality but slow)
+2. **Sharpening Upscale Mode**: When no model connected and sharpening enabled, use simple upscale + CAS sharpening (fast)
+3. **Simple Upscale Mode**: When no model connected and sharpening disabled, use simple upscale only
+
+#### Usage
+1. Add `Danbooru > PixelKSampleUpscalerProvider(Sharpening)` node
+2. Connect basic parameters:
+   - `model`: ComfyUI model
+   - `vae`: VAE model
+   - `positive/negative`: Positive/negative conditioning
+   - `scale_method`: Scaling method (bilinear, lanczos, etc.)
+3. Configure sampling parameters:
+   - `seed`, `steps`, `cfg`: Standard sampling parameters
+   - `sampler_name`, `scheduler`: Sampler and scheduler
+   - `denoise`: Denoise strength
+4. Configure sharpening parameters:
+   - `enable_sharpening`: Enable sharpening (default True)
+   - `sharpening_amount`: Sharpening intensity 0-1 (default 0.6)
+5. Optional connections:
+   - `upscale_model_opt`: Upscale model (when connected, will use model instead of sharpening)
+   - `pk_hook_opt`: Impact Pack Hook
+6. Output `upscaler` connects to `Iterative Upscale (Image)` node
+
+#### Technical Features
+- **Independent Implementation**: Fully independent, no dependency on Impact Pack or ComfyUI Essential
+- **High Performance**: CAS sharpening algorithm based on 3x3 neighborhood, computationally efficient
+- **Smart Switching**: Automatically switch working mode based on upscale model connection
+- **Complete Hook Support**: Supports all 5 Hook points from Impact Pack
+- **Preview Support**: Integrated latent_preview system for sampling progress display
+
+#### Use Cases
+- **Rapid Iteration**: Use sharpening mode for quick preview during workflow testing
+- **Resource Saving**: Sharpening mode doesn't require loading large upscale models, saves VRAM
+- **Flexible Switching**: Use sharpening for preview, switch to model upscale for final generation
+- **High Resolution**: Work with tiled VAE for ultra-large image upscaling
 
 ---
 
