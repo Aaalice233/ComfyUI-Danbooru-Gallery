@@ -19,6 +19,7 @@ from .py.parameter_break import NODE_CLASS_MAPPINGS as pb_mappings, NODE_DISPLAY
 from .py.simple_load_image import NODE_CLASS_MAPPINGS as sli_mappings, NODE_DISPLAY_NAME_MAPPINGS as sli_display_mappings
 from .py.simple_string_split import NODE_CLASS_MAPPINGS as sss_mappings, NODE_DISPLAY_NAME_MAPPINGS as sss_display_mappings
 from .py.save_image_plus import NODE_CLASS_MAPPINGS as sip_mappings, NODE_DISPLAY_NAME_MAPPINGS as sip_display_mappings
+from .py.pixel_ksample_upscaler_sharpening import NODE_CLASS_MAPPINGS as pkus_mappings, NODE_DISPLAY_NAME_MAPPINGS as pkus_display_mappings
 
 # 导入优化执行系统
 from .py.group_executor_manager import NODE_CLASS_MAPPINGS as group_manager_mappings
@@ -81,6 +82,7 @@ NODE_CLASS_MAPPINGS = {
     **sli_mappings,
     **sss_mappings,
     **sip_mappings,
+    **pkus_mappings,
     **opt_mappings,
     **workflow_description_mappings,
     **text_cache_viewer_mappings,
@@ -108,6 +110,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **sli_display_mappings,
     **sss_display_mappings,
     **sip_display_mappings,
+    **pkus_display_mappings,
     **opt_display_mappings,
     **workflow_description_display_mappings,
     **text_cache_viewer_display_mappings,

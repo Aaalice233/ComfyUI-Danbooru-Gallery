@@ -723,6 +723,31 @@ class UltimateSDUpscaleExtractor(BaseSamplerExtractor):
             ["seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"]
         )
 
+class PixelKSampleUpscalerSharpeningExtractor(BaseSamplerExtractor):
+    """提取 PixelKSampleUpscalerSharpening 节点参数（包含锐化参数）"""
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs:
+            return
+
+        # 提取标准采样参数
+        BaseSamplerExtractor.extract_sampling_params(
+            node_id, inputs, metadata,
+            ["seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"]
+        )
+
+        # 提取锐化参数（本小姐添加的特殊参数！）
+        if node_id in metadata[SAMPLING]:
+            sharpening_params = {}
+            if "enable_sharpening" in inputs:
+                sharpening_params["enable_sharpening"] = inputs["enable_sharpening"]
+            if "sharpening_amount" in inputs:
+                sharpening_params["sharpening_amount"] = inputs["sharpening_amount"]
+
+            # 将锐化参数添加到采样参数中
+            if sharpening_params:
+                metadata[SAMPLING][node_id]["sharpening"] = sharpening_params
+
 # Registry of node-specific extractors
 # Keys are node class names
 NODE_EXTRACTORS = {
@@ -777,6 +802,7 @@ NODE_EXTRACTORS = {
     "ImageUpscaleWithModel": UpscaleModelLoaderExtractor,  # Image upscale with model
     "UpscaleImageByModelThenResize": UpscaleModelLoaderExtractor,  # Mira Plugin
     "PixelKSampleUpscalerProvider": PixelKSampleUpscalerProviderExtractor,  # ComfyUI-Impact-Pack
+    "PixelKSampleUpscalerSharpening": PixelKSampleUpscalerSharpeningExtractor,  # ComfyUI-Danbooru-Gallery (本小姐的作品！)
     "IterativeUpscale": IterativeUpscaleExtractor,  # ComfyUI-Impact-Pack
     "UltimateSDUpscale": UltimateSDUpscaleExtractor,  # ComfyUI_UltimateSDUpscale
     # Add other nodes as needed
