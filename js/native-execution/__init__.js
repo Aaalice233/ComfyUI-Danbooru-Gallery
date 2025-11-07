@@ -145,6 +145,21 @@ if (!window.optimizedExecutionSystemLoaded) {
                         const oldOutput = prompt.output;
                         let newOutput = {};
 
+                        // ✅ 兼容性修复：保留全局影响节点（如 easy globalSeed）
+                        // 这些节点虽然不在组内，但会影响组内节点的执行（通过 ComfyUI 的 on_prompt_handler）
+                        const GLOBAL_INFLUENCE_NODES = [
+                            'easy globalSeed',      // Easy Use 全局种子节点
+                            'easy seed',            // Easy Use 普通种子节点
+                            // 未来可扩展其他全局影响节点
+                        ];
+
+                        for (const [nodeId, node] of Object.entries(oldOutput)) {
+                            if (GLOBAL_INFLUENCE_NODES.includes(node.class_type)) {
+                                newOutput[nodeId] = node;
+                                console.log('[OptimizedExecutionSystem] 🌍 保留全局影响节点:', nodeId, node.class_type);
+                            }
+                        }
+
                         // Recursively add specified nodes and dependencies
                         // 包含下游OUTPUT_NODE（收集上游节点的预览节点）
                         for (const queueNodeId of window._queueNodeIds) {
