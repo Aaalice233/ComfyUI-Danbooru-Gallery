@@ -14,15 +14,19 @@ import numpy as np
 import folder_paths
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
 
 # 导入哈希缓存管理器
 try:
     from .hash_cache_manager import get_cache_manager
     HAS_HASH_CACHE = True
-    print("[SaveImagePlus] 哈希缓存管理器已加载")
+    logger.info("哈希缓存管理器已加载")
 except Exception as e:
     HAS_HASH_CACHE = False
-    print(f"[SaveImagePlus] Warning: 哈希缓存管理器加载失败: {e}")
+    logger.warning(f"哈希缓存管理器加载失败: {e}")
 
 # 尝试导入本地 metadata_collector 模块
 HAS_METADATA_COLLECTOR = False
@@ -31,10 +35,10 @@ try:
     from ..metadata_collector import get_metadata
     from ..metadata_collector.metadata_processor import MetadataProcessor
     HAS_METADATA_COLLECTOR = True
-    print("[SaveImagePlus] 本地元数据收集模块已加载")
+    logger.info("本地元数据收集模块已加载")
 except Exception as e:
-    print(f"[SaveImagePlus] Warning: 本地元数据收集模块加载失败: {e}")
-    print("[SaveImagePlus] 将使用有限的元数据功能")
+    logger.warning(f"本地元数据收集模块加载失败: {e}")
+    logger.info("将使用有限的元数据功能")
 
 
 class SaveImagePlus:
@@ -83,9 +87,9 @@ class SaveImagePlus:
         if HAS_HASH_CACHE:
             try:
                 self.hash_cache_manager = get_cache_manager()
-                print("[SaveImagePlus] 哈希缓存已启用")
+                logger.info("哈希缓存已启用")
             except Exception as e:
-                print(f"[SaveImagePlus] Warning: 哈希缓存初始化失败: {e}")
+                logger.warning(f"哈希缓存初始化失败: {e}")
 
         # 初始化线程池（用于并行计算哈希）
         # 限制为3个worker，避免IO竞争
@@ -219,28 +223,28 @@ class SaveImagePlus:
         Returns:
             seed 值，找不到返回 None
         """
-        print("[SaveImagePlus] 开始提取 seed...")
+        logger.debug("开始提取 seed...")
 
         if not prompt_obj:
-            print("[SaveImagePlus] prompt_obj 为空，无法提取 seed")
+            logger.debug("prompt_obj 为空，无法提取 seed")
             return None
 
         # 处理放大阶段：检查是否有 original_prompt 属性
         actual_prompt = prompt_obj
         if hasattr(prompt_obj, 'original_prompt') and prompt_obj.original_prompt:
             actual_prompt = prompt_obj.original_prompt
-            print("[SaveImagePlus] 检测到 original_prompt 属性（hasattr），使用 original_prompt")
+            logger.debug("检测到 original_prompt 属性（hasattr），使用 original_prompt")
         elif isinstance(prompt_obj, dict) and 'original_prompt' in prompt_obj:
             actual_prompt = prompt_obj['original_prompt']
-            print("[SaveImagePlus] 检测到 original_prompt 字典键，使用 original_prompt")
+            logger.debug("检测到 original_prompt 字典键，使用 original_prompt")
         else:
-            print("[SaveImagePlus] 使用当前 prompt_obj")
+            logger.debug("使用当前 prompt_obj")
 
         # 优先处理的 sampler 节点类型
         sampler_types = ['KSampler', 'KSamplerAdvanced', 'SamplerCustom']
 
         # 第一阶段：优先查找 sampler 节点的 seed
-        print("[SaveImagePlus] 阶段1 - 查找 sampler 节点...")
+        logger.debug("阶段1 - 查找 sampler 节点...")
         for node_id, node_data in actual_prompt.items():
             if isinstance(node_data, dict):
                 class_type = node_data.get("class_type", "")
@@ -249,30 +253,30 @@ class SaveImagePlus:
                     # 检查 seed 或 noise_seed
                     if "seed" in inputs:
                         seed_value = inputs["seed"]
-                        print(f"[SaveImagePlus] 在 sampler 节点 {node_id} ({class_type}) 中找到 seed: {seed_value}")
+                        logger.debug(f"在 sampler 节点 {node_id} ({class_type}) 中找到 seed: {seed_value}")
                         return seed_value
                     if "noise_seed" in inputs:
                         seed_value = inputs["noise_seed"]
-                        print(f"[SaveImagePlus] 在 sampler 节点 {node_id} ({class_type}) 中找到 noise_seed: {seed_value}")
+                        logger.debug(f"在 sampler 节点 {node_id} ({class_type}) 中找到 noise_seed: {seed_value}")
                         return seed_value
 
         # 第二阶段：查找任何包含 seed 的节点
-        print("[SaveImagePlus] 阶段2 - 查找任何包含 seed 的节点...")
+        logger.debug("阶段2 - 查找任何包含 seed 的节点...")
         for node_id, node_data in actual_prompt.items():
             if isinstance(node_data, dict) and "inputs" in node_data:
                 inputs = node_data.get("inputs", {})
                 if "seed" in inputs:
                     seed_value = inputs["seed"]
                     class_type = node_data.get("class_type", "未知")
-                    print(f"[SaveImagePlus] 在节点 {node_id} ({class_type}) 中找到 seed: {seed_value}")
+                    logger.debug(f"在节点 {node_id} ({class_type}) 中找到 seed: {seed_value}")
                     return seed_value
                 if "noise_seed" in inputs:
                     seed_value = inputs["noise_seed"]
                     class_type = node_data.get("class_type", "未知")
-                    print(f"[SaveImagePlus] 在节点 {node_id} ({class_type}) 中找到 noise_seed: {seed_value}")
+                    logger.debug(f"在节点 {node_id} ({class_type}) 中找到 noise_seed: {seed_value}")
                     return seed_value
 
-        print("[SaveImagePlus] 未找到任何 seed 值")
+        logger.debug("未找到任何 seed 值")
         return None
 
     def _get_lora_hash(self, lora_name: str) -> str:
@@ -285,7 +289,7 @@ class SaveImagePlus:
         Returns:
             哈希值字符串（前10个字符）
         """
-        print(f"[SaveImagePlus] 计算 LoRA 哈希: {lora_name}")
+        logger.debug(f"计算 LoRA 哈希: {lora_name}")
         return self._calculate_lora_hash(lora_name)
 
     def _calculate_lora_hash(self, lora_name: str) -> str:
@@ -311,17 +315,17 @@ class SaveImagePlus:
                     break
 
             if not lora_file or not os.path.exists(lora_file):
-                print(f"[SaveImagePlus] 找不到 LoRA 文件: {lora_name}")
+                logger.warning(f"找不到 LoRA 文件: {lora_name}")
                 return ""
 
             # 如果有缓存管理器，使用缓存计算
             if self.hash_cache_manager:
                 cached_hash = self.hash_cache_manager.get_hash(lora_file)
                 if cached_hash:
-                    print(f"[SaveImagePlus] 从缓存获取 LoRA 哈希: {lora_name} -> {cached_hash}")
+                    logger.debug(f"从缓存获取 LoRA 哈希: {lora_name} -> {cached_hash}")
                     return cached_hash
 
-            print(f"[SaveImagePlus] 计算 LoRA 哈希: {lora_name} -> {lora_file}")
+            logger.debug(f"计算 LoRA 哈希: {lora_name} -> {lora_file}")
 
             # 计算完整文件的 SHA256 哈希（与 LoRA Manager 一致）
             sha256_hash = hashlib.sha256()
@@ -338,11 +342,11 @@ class SaveImagePlus:
             if self.hash_cache_manager:
                 self.hash_cache_manager.set_hash(lora_file, hash_result)
 
-            print(f"[SaveImagePlus] 计算哈希成功: {hash_result}")
+            logger.debug(f"计算哈希成功: {hash_result}")
             return hash_result
 
         except Exception as e:
-            print(f"[SaveImagePlus] 计算 LoRA 哈希失败 ({lora_name}): {e}")
+            logger.error(f"计算 LoRA 哈希失败 ({lora_name}): {e}")
             return ""
 
     def _get_checkpoint_hash(self, checkpoint_name: str) -> str:
@@ -355,7 +359,7 @@ class SaveImagePlus:
         Returns:
             哈希值字符串（前10个字符）
         """
-        print(f"[SaveImagePlus] 计算 checkpoint 哈希: {checkpoint_name}")
+        logger.debug(f"计算 checkpoint 哈希: {checkpoint_name}")
         return self._calculate_checkpoint_hash(checkpoint_name)
 
     def _calculate_checkpoint_hash(self, checkpoint_name: str) -> str:
@@ -388,17 +392,17 @@ class SaveImagePlus:
                         break
 
             if not checkpoint_file or not os.path.exists(checkpoint_file):
-                print(f"[SaveImagePlus] 找不到 checkpoint 文件: {checkpoint_name}")
+                logger.warning(f"找不到 checkpoint 文件: {checkpoint_name}")
                 return ""
 
             # 如果有缓存管理器，使用缓存计算
             if self.hash_cache_manager:
                 cached_hash = self.hash_cache_manager.get_hash(checkpoint_file)
                 if cached_hash:
-                    print(f"[SaveImagePlus] 从缓存获取 checkpoint 哈希: {checkpoint_name} -> {cached_hash}")
+                    logger.debug(f"从缓存获取 checkpoint 哈希: {checkpoint_name} -> {cached_hash}")
                     return cached_hash
 
-            print(f"[SaveImagePlus] 计算 checkpoint 哈希: {checkpoint_name} -> {checkpoint_file}")
+            logger.debug(f"计算 checkpoint 哈希: {checkpoint_name} -> {checkpoint_file}")
 
             # 计算完整文件的 SHA256 哈希（与 LoRA Manager 一致）
             sha256_hash = hashlib.sha256()
@@ -415,11 +419,11 @@ class SaveImagePlus:
             if self.hash_cache_manager:
                 self.hash_cache_manager.set_hash(checkpoint_file, hash_result)
 
-            print(f"[SaveImagePlus] 计算 checkpoint 哈希成功: {hash_result}")
+            logger.debug(f"计算 checkpoint 哈希成功: {hash_result}")
             return hash_result
 
         except Exception as e:
-            print(f"[SaveImagePlus] 计算 checkpoint 哈希失败 ({checkpoint_name}): {e}")
+            logger.error(f"计算 checkpoint 哈希失败 ({checkpoint_name}): {e}")
             return ""
 
     def _calculate_lora_hashes_parallel(self, lora_names: List[str]) -> Dict[str, str]:
@@ -446,7 +450,7 @@ class SaveImagePlus:
             return result
 
         # 使用线程池并行计算
-        print(f"[SaveImagePlus] 并行计算 {len(lora_names)} 个 LoRA 哈希...")
+        logger.debug(f"并行计算 {len(lora_names)} 个 LoRA 哈希...")
         futures = {}
 
         for lora_name in lora_names:
@@ -461,9 +465,9 @@ class SaveImagePlus:
                 if hash_value:
                     result[lora_name] = hash_value
             except Exception as e:
-                print(f"[SaveImagePlus] 并行计算 LoRA 哈希失败 ({lora_name}): {e}")
+                logger.error(f"并行计算 LoRA 哈希失败 ({lora_name}): {e}")
 
-        print(f"[SaveImagePlus] 并行计算完成，成功获取 {len(result)}/{len(lora_names)} 个哈希")
+        logger.debug(f"并行计算完成，成功获取 {len(result)}/{len(lora_names)} 个哈希")
         return result
 
     def _collect_metadata(
@@ -485,7 +489,7 @@ class SaveImagePlus:
         Returns:
             包含完整生成参数的字典（A1111 格式所需的所有字段）
         """
-        print("[SaveImagePlus] 开始收集元数据...")
+        logger.debug("开始收集元数据...")
 
         # 初始化结果字典，包含所有可能的字段
         result = {
@@ -502,7 +506,7 @@ class SaveImagePlus:
         }
 
         # 级别 1: 优先使用直接传入的值
-        print(f"[SaveImagePlus] 级别1 - 直接传入: positive={bool(positive_prompt)}, negative={bool(negative_prompt)}, loras={bool(lora_syntax)}")
+        logger.debug(f"级别1 - 直接传入: positive={bool(positive_prompt)}, negative={bool(negative_prompt)}, loras={bool(lora_syntax)}")
         if positive_prompt:
             result["prompt"] = positive_prompt
         if negative_prompt:
@@ -512,94 +516,94 @@ class SaveImagePlus:
 
         # 级别 2: 尝试使用 元数据收集器 的元数据收集
         if HAS_METADATA_COLLECTOR and prompt_obj:
-            print("[SaveImagePlus] 级别2 - 尝试使用 元数据收集器 元数据收集...")
+            logger.debug("级别2 - 尝试使用 元数据收集器 元数据收集...")
             try:
                 # 获取原始元数据（使用顶部已导入的模块）
                 raw_metadata = get_metadata()
-                print(f"[SaveImagePlus] 获取到原始元数据: {bool(raw_metadata)}")
+                logger.debug(f"获取到原始元数据: {bool(raw_metadata)}")
 
                 # 使用静态方法提取参数
                 if raw_metadata:
                     params = MetadataProcessor.extract_generation_params(raw_metadata)
-                    print(f"[SaveImagePlus] 提取的参数键: {list(params.keys()) if params else None}")
+                    logger.debug(f"提取的参数键: {list(params.keys()) if params else None}")
 
                     # 提取所有参数（只在当前值为空时填充）
                     if not result["prompt"] and "prompt" in params:
                         result["prompt"] = params["prompt"]
-                        print("[SaveImagePlus] 从 元数据收集器 获取 prompt")
+                        logger.debug("从 元数据收集器 获取 prompt")
                     if not result["negative_prompt"] and "negative_prompt" in params:
                         result["negative_prompt"] = params["negative_prompt"]
-                        print("[SaveImagePlus] 从 元数据收集器 获取 negative_prompt")
+                        logger.debug("从 元数据收集器 获取 negative_prompt")
                     if not result["loras"] and "loras" in params:
                         result["loras"] = params["loras"]
-                        print("[SaveImagePlus] 从 元数据收集器 获取 loras")
+                        logger.debug("从 元数据收集器 获取 loras")
 
                     # 提取生成参数
                     if result["steps"] is None and "steps" in params:
                         result["steps"] = params["steps"]
-                        print(f"[SaveImagePlus] 从 元数据收集器 获取 steps: {result['steps']}")
+                        logger.debug(f"从 元数据收集器 获取 steps: {result['steps']}")
 
                     if result["sampler"] is None and "sampler" in params:
                         result["sampler"] = params["sampler"]
-                        print(f"[SaveImagePlus] 从 元数据收集器 获取 sampler: {result['sampler']}")
+                        logger.debug(f"从 元数据收集器 获取 sampler: {result['sampler']}")
 
                     if result["scheduler"] is None and "scheduler" in params:
                         result["scheduler"] = params["scheduler"]
-                        print(f"[SaveImagePlus] 从 元数据收集器 获取 scheduler: {result['scheduler']}")
+                        logger.debug(f"从 元数据收集器 获取 scheduler: {result['scheduler']}")
 
                     # CFG scale 可能有多个字段名
                     if result["cfg_scale"] is None:
                         for cfg_key in ["cfg_scale", "cfg", "guidance"]:
                             if cfg_key in params:
                                 result["cfg_scale"] = params[cfg_key]
-                                print(f"[SaveImagePlus] 从 元数据收集器 获取 cfg_scale: {result['cfg_scale']}")
+                                logger.debug(f"从 元数据收集器 获取 cfg_scale: {result['cfg_scale']}")
                                 break
 
                     if result["seed"] is None and "seed" in params:
                         result["seed"] = params["seed"]
-                        print(f"[SaveImagePlus] 从 元数据收集器 获取 seed: {result['seed']}")
+                        logger.debug(f"从 元数据收集器 获取 seed: {result['seed']}")
 
                     if result["size"] is None and "size" in params:
                         result["size"] = params["size"]
-                        print(f"[SaveImagePlus] 从 元数据收集器 获取 size: {result['size']}")
+                        logger.debug(f"从 元数据收集器 获取 size: {result['size']}")
 
                     if result["checkpoint"] is None and "checkpoint" in params:
                         result["checkpoint"] = params["checkpoint"]
-                        print(f"[SaveImagePlus] 从 元数据收集器 获取 checkpoint: {result['checkpoint']}")
+                        logger.debug(f"从 元数据收集器 获取 checkpoint: {result['checkpoint']}")
                 else:
-                    print("[SaveImagePlus] raw_metadata 为空")
+                    logger.debug("raw_metadata 为空")
             except Exception as e:
-                print(f"[SaveImagePlus] 元数据收集器 元数据收集失败: {e}")
+                logger.error(f"元数据收集器 元数据收集失败: {e}")
                 import traceback
-                traceback.print_exc()
+                logger.debug(traceback.format_exc())
         else:
-            print(f"[SaveImagePlus] 跳过级别2: HAS_METADATA_COLLECTOR={HAS_METADATA_COLLECTOR}, prompt_obj={bool(prompt_obj)}")
+            logger.debug(f"跳过级别2: HAS_METADATA_COLLECTOR={HAS_METADATA_COLLECTOR}, prompt_obj={bool(prompt_obj)}")
 
         # 级别 3: 从正面提示词中提取 LoRA（如果仍未获取）
         if not result["loras"] and result["prompt"]:
-            print("[SaveImagePlus] 级别3 - 从 prompt 提取 LoRA...")
+            logger.debug("级别3 - 从 prompt 提取 LoRA...")
             lora_pattern = r'<lora:[^>]+>'
             loras_found = re.findall(lora_pattern, result["prompt"])
             if loras_found:
                 result["loras"] = ", ".join(loras_found)
-                print(f"[SaveImagePlus] 提取到 {len(loras_found)} 个 LoRA")
+                logger.debug(f"提取到 {len(loras_found)} 个 LoRA")
             else:
-                print("[SaveImagePlus] 未找到 LoRA 语法")
+                logger.debug("未找到 LoRA 语法")
         else:
-            print(f"[SaveImagePlus] 跳过级别3: loras已有={bool(result['loras'])}, prompt={bool(result['prompt'])}")
+            logger.debug(f"跳过级别3: loras已有={bool(result['loras'])}, prompt={bool(result['prompt'])}")
 
         # 级别 4: 返回结果（可能部分为空）
-        print(f"[SaveImagePlus] 元数据收集完成:")
-        print(f"  - prompt: {bool(result['prompt'])}")
-        print(f"  - negative_prompt: {bool(result['negative_prompt'])}")
-        print(f"  - loras: {bool(result['loras'])}")
-        print(f"  - steps: {result['steps']}")
-        print(f"  - sampler: {result['sampler']}")
-        print(f"  - scheduler: {result['scheduler']}")
-        print(f"  - cfg_scale: {result['cfg_scale']}")
-        print(f"  - seed: {result['seed']}")
-        print(f"  - size: {result['size']}")
-        print(f"  - checkpoint: {result['checkpoint']}")
+        logger.debug(f"元数据收集完成:")
+        logger.debug(f"  - prompt: {bool(result['prompt'])}")
+        logger.debug(f"  - negative_prompt: {bool(result['negative_prompt'])}")
+        logger.debug(f"  - loras: {bool(result['loras'])}")
+        logger.debug(f"  - steps: {result['steps']}")
+        logger.debug(f"  - sampler: {result['sampler']}")
+        logger.debug(f"  - scheduler: {result['scheduler']}")
+        logger.debug(f"  - cfg_scale: {result['cfg_scale']}")
+        logger.debug(f"  - seed: {result['seed']}")
+        logger.debug(f"  - size: {result['size']}")
+        logger.debug(f"  - checkpoint: {result['checkpoint']}")
         return result
 
     def _format_metadata(self, metadata: dict) -> str:
@@ -714,7 +718,7 @@ class SaveImagePlus:
 
         # 返回最终文本（换行分隔）
         result = "\n".join(metadata_parts)
-        print(f"[SaveImagePlus] 生成的 A1111 元数据（前 300 字符）:\n{result[:300]}")
+        logger.debug(f"生成的 A1111 元数据（前 300 字符）:\n{result[:300]}")
         return result
 
     def save_images(

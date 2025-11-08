@@ -9,6 +9,10 @@ import time
 from typing import List, Dict, Optional, Callable
 from pathlib import Path
 
+# Logger导入
+from ...utils.logger import get_logger
+logger = get_logger(__name__)
+
 
 class DanbooruTagFetcher:
     """Fetch tags from Danbooru API"""
@@ -84,25 +88,25 @@ class DanbooruTagFetcher:
                         return await response.json()
                     elif response.status == 429:  # Rate limited
                         wait_time = backoff_factor ** (attempt + 1)
-                        print(f"[TagFetcher] ⚠️ Rate limited, waiting {wait_time}s...")
+                        logger.warning(f"⚠️ Rate limited, waiting {wait_time}s...")
                         await asyncio.sleep(wait_time)
                     elif response.status == 404:
                         # No more results
                         return []
                     else:
-                        print(f"[TagFetcher] ⚠️ HTTP {response.status}, retry {attempt + 1}/{max_retries}")
+                        logger.warning(f"⚠️ HTTP {response.status}, retry {attempt + 1}/{max_retries}")
                         await asyncio.sleep(backoff_factor ** attempt)
 
             except asyncio.TimeoutError:
-                print(f"[TagFetcher] ⚠️ Timeout, retry {attempt + 1}/{max_retries}")
+                logger.warning(f"⚠️ Timeout, retry {attempt + 1}/{max_retries}")
                 await asyncio.sleep(backoff_factor ** attempt)
 
             except aiohttp.ClientError as e:
-                print(f"[TagFetcher] ⚠️ Network error: {e}, retry {attempt + 1}/{max_retries}")
+                logger.warning(f"⚠️ Network error: {e}, retry {attempt + 1}/{max_retries}")
                 await asyncio.sleep(backoff_factor ** attempt)
 
             except Exception as e:
-                print(f"[TagFetcher] ❌ Unexpected error: {e}")
+                logger.error(f"❌ Unexpected error: {e}")
                 break
 
         return None
@@ -171,7 +175,7 @@ class DanbooruTagFetcher:
         tags_per_page = 1000
         estimated_pages = (max_tags + tags_per_page - 1) // tags_per_page
 
-        print(f"[TagFetcher] 📥 Starting to fetch {max_tags} hot tags (min_count={min_post_count})...")
+        logger.info(f"📥 Starting to fetch {max_tags} hot tags (min_count={min_post_count})...")
 
         page = start_page
         consecutive_empty = 0
@@ -181,13 +185,13 @@ class DanbooruTagFetcher:
             tags = await self.fetch_tags_page(page, tags_per_page, min_post_count)
 
             if tags is None:
-                print(f"[TagFetcher] ❌ Failed to fetch page {page}, stopping...")
+                logger.error(f"❌ Failed to fetch page {page}, stopping...")
                 break
 
             if not tags or len(tags) == 0:
                 consecutive_empty += 1
                 if consecutive_empty >= 2:
-                    print(f"[TagFetcher] ✓ No more tags available (page {page})")
+                    logger.info(f"✓ No more tags available (page {page})")
                     break
             else:
                 consecutive_empty = 0
@@ -200,7 +204,7 @@ class DanbooruTagFetcher:
             if progress_callback:
                 progress_callback(page, estimated_pages, len(all_tags))
             else:
-                print(f"[TagFetcher] 📥 Page {page}/{estimated_pages} | "
+                logger.info(f"📥 Page {page}/{estimated_pages} | "
                       f"Fetched: {len(all_tags)}/{max_tags} tags")
 
             # Check if we have enough
@@ -212,10 +216,10 @@ class DanbooruTagFetcher:
 
             # Safety limit: don't go beyond 200 pages
             if page > 200:
-                print(f"[TagFetcher] ⚠️ Reached page limit (200), stopping...")
+                logger.warning(f"⚠️ Reached page limit (200), stopping...")
                 break
 
-        print(f"[TagFetcher] ✅ Fetched {len(all_tags)} tags successfully!")
+        logger.info(f"✅ Fetched {len(all_tags)} tags successfully!")
         return all_tags
 
     async def fetch_tag_details(self, tag_name: str) -> Optional[Dict]:
@@ -262,7 +266,7 @@ class DanbooruTagFetcher:
         Returns:
             List of updated tag dictionaries
         """
-        print(f"[TagFetcher] 🔄 Incremental update: checking top {update_count} tags...")
+        logger.info(f"🔄 Incremental update: checking top {update_count} tags...")
 
         # Fetch top N tags
         updated_tags = []
@@ -280,7 +284,7 @@ class DanbooruTagFetcher:
             if progress_callback:
                 progress_callback(len(updated_tags), update_count)
             else:
-                print(f"[TagFetcher] 🔄 Checked {len(updated_tags)}/{update_count} tags")
+                logger.info(f"🔄 Checked {len(updated_tags)}/{update_count} tags")
 
             if len(updated_tags) >= update_count:
                 updated_tags = updated_tags[:update_count]
@@ -292,10 +296,10 @@ class DanbooruTagFetcher:
         existing_set = set(existing_tags)
         new_tags = [t for t in updated_tags if t['tag'] not in existing_set]
 
-        print(f"[TagFetcher] ✅ Incremental update complete!")
-        print(f"[TagFetcher]    Total checked: {len(updated_tags)}")
-        print(f"[TagFetcher]    New tags: {len(new_tags)}")
-        print(f"[TagFetcher]    Updated: {len(updated_tags) - len(new_tags)}")
+        logger.info(f"✅ Incremental update complete!")
+        logger.info(f"Total checked: {len(updated_tags)}")
+        logger.info(f"New tags: {len(new_tags)}")
+        logger.info(f"Updated: {len(updated_tags) - len(new_tags)}")
 
         return updated_tags
 
@@ -306,18 +310,18 @@ async def test_fetcher():
 
     try:
         # Test fetching one page
-        print("Testing single page fetch...")
+        logger.info("Testing single page fetch...")
         tags = await fetcher.fetch_tags_page(1, limit=10)
         if tags:
-            print(f"✓ Fetched {len(tags)} tags")
+            logger.info(f"✓ Fetched {len(tags)} tags")
             for tag in tags[:3]:
-                print(f"  - {tag['tag']} (count: {tag['post_count']}, category: {tag['category']})")
+                logger.info(f"  - {tag['tag']} (count: {tag['post_count']}, category: {tag['category']})")
 
         # Test fetching specific tag
-        print("\nTesting specific tag fetch...")
+        logger.info("\nTesting specific tag fetch...")
         tag = await fetcher.fetch_tag_details("1girl")
         if tag:
-            print(f"✓ Found tag: {tag}")
+            logger.info(f"✓ Found tag: {tag}")
 
     finally:
         await fetcher.close()

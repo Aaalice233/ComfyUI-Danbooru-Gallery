@@ -1,5 +1,9 @@
 # ComfyUI Danbooru Gallery 自定义节点集合
 
+# 导入logger
+from .py.utils.logger import get_logger
+logger = get_logger(__name__)
+
 # 导入各个模块的节点映射
 from .py.danbooru_gallery import NODE_CLASS_MAPPINGS as danbooru_mappings, NODE_DISPLAY_NAME_MAPPINGS as danbooru_display_mappings
 from .py.character_feature_swap import NODE_CLASS_MAPPINGS as swap_mappings, NODE_DISPLAY_NAME_MAPPINGS as swap_display_mappings
@@ -135,7 +139,7 @@ try:
     # 导入 tag sync API 以注册API端点（可选功能）
     try:
         from .py.shared.sync import tag_sync_api
-        print("[DanbooruGallery] ✓ Tag sync API 已加载")
+        logger.info("✓ Tag sync API 已加载")
     except (ImportError, ModuleNotFoundError):
         # Tag sync API 依赖 cache 模块，如果 cache 不可用则此功能不可用
         # 这不影响其他核心功能（如 SaveImagePlus）
@@ -145,9 +149,9 @@ try:
     try:
         from .py.simple_checkpoint_loader_with_name import register_preview_api
         register_preview_api(PromptServer.instance.routes)
-        print("[DanbooruGallery] ✓ Checkpoint预览图API已注册")
+        logger.info("✓ Checkpoint预览图API已注册")
     except Exception as e:
-        print(f"[DanbooruGallery] Warning: Checkpoint预览图API注册失败: {e}")
+        logger.warning(f" Checkpoint预览图API注册失败: {e}")
 
     @PromptServer.instance.routes.post("/danbooru_gallery/clear_cache")
     async def clear_image_cache(request):
@@ -245,10 +249,10 @@ try:
                         "triggered_by": triggered_by[:50] if triggered_by else ""  # 限制长度
                     })
                 except Exception as ws_error:
-                    print(f"[TextCache] WebSocket发送失败: {ws_error}")
+                    logger.warning(f"[TextCache] WebSocket发送失败: {ws_error}")
                     # 不阻塞API响应
             else:
-                print(f"[TextCache] ⏭️ 内容未变化，跳过缓存更新: 通道={channel_name}, 长度={len(text)}")
+                logger.warning(f"[TextCache] ⏭️ 内容未变化，跳过缓存更新: 通道={channel_name}, 长度={len(text)}")
 
             return web.json_response({
                 "status": "success",
@@ -258,8 +262,8 @@ try:
             })
         except Exception as e:
             import traceback
-            print(f"[TextCache] API异常: {e}")
-            print(traceback.format_exc())
+            logger.warning(f"[TextCache] API异常: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({"status": "error", "error": str(e)}, status=500)
 
     @PromptServer.instance.routes.get("/danbooru/text_cache/channels")
@@ -323,8 +327,8 @@ try:
             })
         except Exception as e:
             import traceback
-            print(f"[TextCache] 获取所有通道详情失败: {e}")
-            print(traceback.format_exc())
+            logger.warning(f"[TextCache] 获取所有通道详情失败: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({"status": "error", "error": str(e)}, status=500)
 
     @PromptServer.instance.routes.post("/danbooru/text_cache/ensure_channel")
@@ -503,7 +507,7 @@ try:
                     return json.load(f)
             return {"opened_versions": {}}
         except Exception as e:
-            print(f"[WorkflowDescription] 加载设置失败: {e}")
+            logger.error(f"[WorkflowDescription] 加载设置失败: {e}")
             return {"opened_versions": {}}
 
     def save_workflow_description_settings(settings):
@@ -514,7 +518,7 @@ try:
                 json.dump(settings, f, ensure_ascii=False, indent=2)
             return True
         except Exception as e:
-            print(f"[WorkflowDescription] 保存设置失败: {e}")
+            logger.error(f"[WorkflowDescription] 保存设置失败: {e}")
             return False
 
     @PromptServer.instance.routes.get("/workflow_description/get_settings")
@@ -586,13 +590,13 @@ try:
     try:
         installer = KritaPluginInstaller()
         if not installer.check_plugin_installed():
-            print("[OpenInKrita] 检测到Krita插件未安装，正在自动安装...")
+            logger.info("[OpenInKrita] 检测到Krita插件未安装，正在自动安装...")
             installer.install_plugin()
-            print("[OpenInKrita] Krita插件安装完成")
+            logger.info("[OpenInKrita] Krita插件安装完成")
         else:
-            print("[OpenInKrita] Krita插件已安装")
+            logger.info("[OpenInKrita] Krita插件已安装")
     except Exception as e:
-        print(f"[OpenInKrita] 插件安装检查失败: {e}")
+        logger.error(f"[OpenInKrita] 插件安装检查失败: {e}")
 
     @PromptServer.instance.routes.post("/open_in_krita/get_data")
     async def get_data_from_krita(request):
@@ -623,8 +627,8 @@ try:
 
         except Exception as e:
             import traceback
-            print(f"[OpenInKrita] 获取数据失败: {e}")
-            print(traceback.format_exc())
+            logger.error(f"[OpenInKrita] 获取数据失败: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -667,7 +671,7 @@ try:
             # 存储待处理数据
             OpenInKrita.set_pending_data(node_id, image_tensor, mask_tensor)
 
-            print(f"[OpenInKrita] 接收到Krita数据: node_id={node_id}, image_shape={image_tensor.shape}, mask_shape={mask_tensor.shape}")
+            logger.error(f"[OpenInKrita] 接收到Krita数据: node_id={node_id}, image_shape={image_tensor.shape}, mask_shape={mask_tensor.shape}")
 
             return web.json_response({
                 "status": "success",
@@ -676,8 +680,8 @@ try:
 
         except Exception as e:
             import traceback
-            print(f"[OpenInKrita] 接收数据失败: {e}")
-            print(traceback.format_exc())
+            logger.error(f"[OpenInKrita] 接收数据失败: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -743,8 +747,8 @@ try:
             }, status=500)
         except Exception as e:
             import traceback
-            print(f"[OpenInKrita] 文件选择对话框失败: {e}")
-            print(traceback.format_exc())
+            logger.error(f"[OpenInKrita] 文件选择对话框失败: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -789,7 +793,7 @@ try:
                     "message": f"路径验证失败: {path}"
                 }, status=400)
 
-            print(f"[OpenInKrita] Krita路径已设置: {krita_path}")
+            logger.error(f"[OpenInKrita] Krita路径已设置: {krita_path}")
 
             return web.json_response({
                 "status": "success",
@@ -799,8 +803,8 @@ try:
 
         except Exception as e:
             import traceback
-            print(f"[OpenInKrita] 设置路径失败: {e}")
-            print(traceback.format_exc())
+            logger.error(f"[OpenInKrita] 设置路径失败: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -828,8 +832,8 @@ try:
 
         except Exception as e:
             import traceback
-            print(f"[OpenInKrita] 检查插件状态失败: {e}")
-            print(traceback.format_exc())
+            logger.error(f"[OpenInKrita] 检查插件状态失败: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -857,8 +861,8 @@ try:
 
         except Exception as e:
             import traceback
-            print(f"[OpenInKrita] 重新安装插件失败: {e}")
-            print(traceback.format_exc())
+            logger.error(f"[OpenInKrita] 重新安装插件失败: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -887,8 +891,8 @@ try:
 
         except Exception as e:
             import traceback
-            print(f"[OpenInKrita] 取消等待失败: {e}")
-            print(traceback.format_exc())
+            logger.error(f"[OpenInKrita] 取消等待失败: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -908,8 +912,8 @@ try:
             })
         except Exception as e:
             import traceback
-            print(f"[OpenInKrita] 检查Krita状态失败: {e}")
-            print(traceback.format_exc())
+            logger.error(f"[OpenInKrita] 检查Krita状态失败: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e),
@@ -940,8 +944,8 @@ try:
 
         except Exception as e:
             import traceback
-            print(f"[OpenInKrita] 检查等待状态失败: {e}")
-            print(traceback.format_exc())
+            logger.error(f"[OpenInKrita] 检查等待状态失败: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e),
@@ -964,7 +968,7 @@ try:
             # 设置fetch模式标志
             OpenInKrita.set_fetch_mode(node_id)
 
-            print(f"[OpenInKrita] Set fetch mode for node {node_id}")
+            logger.error(f"[OpenInKrita] Set fetch mode for node {node_id}")
 
             return web.json_response({
                 "status": "success",
@@ -973,8 +977,8 @@ try:
 
         except Exception as e:
             import traceback
-            print(f"[OpenInKrita] 设置fetch模式失败: {e}")
-            print(traceback.format_exc())
+            logger.error(f"[OpenInKrita] 设置fetch模式失败: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -998,7 +1002,7 @@ try:
 
             # 检查1: Krita进程是否存在
             if not temp_node._is_krita_running():
-                print(f"[OpenInKrita] Krita进程未运行，无法获取数据")
+                logger.error(f"[OpenInKrita] Krita进程未运行，无法获取数据")
                 # 发送Toast通知
                 PromptServer.instance.send_sync("open-in-krita-notification", {
                     "node_id": node_id,
@@ -1013,7 +1017,7 @@ try:
             # 检查2: Krita中是否打开了图像
             has_document = temp_node._check_krita_has_document(node_id)
             if not has_document:
-                print(f"[OpenInKrita] Krita中未打开图像")
+                logger.error(f"[OpenInKrita] Krita中未打开图像")
                 # 发送Toast通知
                 PromptServer.instance.send_sync("open-in-krita-notification", {
                     "node_id": node_id,
@@ -1040,7 +1044,7 @@ try:
 
             # 写入请求文件（空文件作为信号）
             request_file.write_text("", encoding='utf-8')
-            print(f"[OpenInKrita] 已创建fetch请求: {request_file.name}")
+            logger.error(f"[OpenInKrita] 已创建fetch请求: {request_file.name}")
 
             # 等待响应文件出现（超时10秒）
             max_wait = 10.0
@@ -1049,13 +1053,13 @@ try:
 
             while elapsed < max_wait:
                 if response_file.exists():
-                    print(f"[OpenInKrita] 检测到响应文件: {response_file.name}")
+                    logger.error(f"[OpenInKrita] 检测到响应文件: {response_file.name}")
                     break
                 await asyncio.sleep(check_interval)
                 elapsed += check_interval
 
             if not response_file.exists():
-                print(f"[OpenInKrita] 等待响应超时 ({max_wait}s)")
+                logger.error(f"[OpenInKrita] 等待响应超时 ({max_wait}s)")
                 # 清理请求文件
                 request_file.unlink(missing_ok=True)
                 return web.json_response({
@@ -1093,7 +1097,7 @@ try:
             # 存储到pending data
             OpenInKrita.set_pending_data(node_id, image_tensor, mask_tensor)
 
-            print(f"[OpenInKrita] ✓ 数据已获取: node_id={node_id}, image={image_tensor.shape}, mask={mask_tensor.shape}")
+            logger.error(f"[OpenInKrita] ✓ 数据已获取: node_id={node_id}, image={image_tensor.shape}, mask={mask_tensor.shape}")
 
             # 发送成功Toast到ComfyUI前端
             PromptServer.instance.send_sync("open-in-krita-notification", {
@@ -1115,8 +1119,8 @@ try:
 
         except Exception as e:
             import traceback
-            print(f"[OpenInKrita] 从Krita获取数据失败: {e}")
-            print(traceback.format_exc())
+            logger.error(f"[OpenInKrita] 从Krita获取数据失败: {e}")
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -1124,13 +1128,13 @@ try:
 
 except ImportError as e:
     # ComfyUI 环境不可用时的静默处理
-    print(f"[DanbooruGallery] Warning: Could not initialize API routes: {e}")
+    logger.warning(f"Could not initialize API routes: {e}")
     import traceback
-    traceback.print_exc()
+    logger.debug(traceback.format_exc())
 except Exception as e:
     # 捕获其他异常并输出
-    print(f"[DanbooruGallery] Error during API initialization: {e}")
+    logger.error(f"Error during API initialization: {e}")
     import traceback
-    traceback.print_exc()
+    logger.debug(traceback.format_exc())
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']

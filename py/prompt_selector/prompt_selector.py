@@ -12,6 +12,10 @@ import time
 import uuid
 from datetime import datetime
 
+# Logger导入
+from ..utils.logger import get_logger
+logger = get_logger(__name__)
+
 # 插件目录
 # 插件目录
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -541,21 +545,21 @@ def initialize_data_file():
         not os.path.exists(MIGRATION_MARKER)):
 
         try:
-            print("[PromptSelector] 🔍 检测到旧版本词库数据")
+            logger.info("🔍 检测到旧版本词库数据")
 
             # 1. 备份旧数据
             backup_file = OLD_DATA_FILE + ".backup"
             shutil.copy2(OLD_DATA_FILE, backup_file)
-            print(f"[PromptSelector] 📦 备份已创建: {backup_file}")
+            logger.info(f"📦 备份已创建: {backup_file}")
 
             # 2. 创建新目录结构
             os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
             os.makedirs(PREVIEW_DIR, exist_ok=True)
 
             # 3. 迁移 data.json
-            print("[PromptSelector] 🚀 开始自动迁移词库...")
+            logger.info("🚀 开始自动迁移词库...")
             shutil.copy2(OLD_DATA_FILE, DATA_FILE)
-            print("[PromptSelector] ✓ 词库数据迁移完成")
+            logger.info("✓ 词库数据迁移完成")
 
             # 4. 迁移 preview 目录
             preview_count = 0
@@ -566,7 +570,7 @@ def initialize_data_file():
                     if os.path.isfile(src):
                         shutil.copy2(src, dst)
                         preview_count += 1
-                print(f"[PromptSelector] ✓ 预览图迁移完成 ({preview_count} 个文件)")
+                logger.info(f"✓ 预览图迁移完成 ({preview_count} 个文件)")
 
             # 5. 验证数据兼容性
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
@@ -581,13 +585,13 @@ def initialize_data_file():
                 f.write(f"新数据位置: {DATA_FILE}\n")
                 f.write("注意: 此目录下的文件已迁移到新位置，可以手动删除\n")
 
-            print(f"[PromptSelector] 📍 旧位置: {OLD_DATA_FILE}")
-            print(f"[PromptSelector] 📍 新位置: {DATA_FILE}")
-            print("[PromptSelector] ✓ 迁移标记已创建")
+            logger.info(f"📍 旧位置: {OLD_DATA_FILE}")
+            logger.info(f"📍 新位置: {DATA_FILE}")
+            logger.info("✓ 迁移标记已创建")
 
         except Exception as e:
-            print(f"[PromptSelector] ✗ 词库迁移失败: {str(e)}")
-            print("[PromptSelector] → 将使用默认词库，您的旧数据仍保留在原位置")
+            logger.error(f"✗ 词库迁移失败: {str(e)}")
+            logger.info("→ 将使用默认词库，您的旧数据仍保留在原位置")
             # 继续执行下面的默认初始化逻辑
 
     # === 原有逻辑：创建默认数据 ===

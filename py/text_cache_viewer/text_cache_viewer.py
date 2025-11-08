@@ -6,10 +6,12 @@
 import time
 from typing import Dict, Any
 from ..text_cache_manager.text_cache_manager import text_cache_manager
-from ..utils.debug_config import debug_print
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
 
 CATEGORY_TYPE = "danbooru"
-COMPONENT_NAME = "text_cache_viewer"
 
 
 class TextCacheViewer:
@@ -57,7 +59,7 @@ class TextCacheViewer:
             包含UI显示数据的字典
         """
         try:
-            debug_print(COMPONENT_NAME, f"[TextCacheViewer] 节点ID: {unique_id}")
+            logger.debug(f"节点ID: {unique_id}")
 
             # 获取所有通道信息
             all_channels = text_cache_manager.get_all_channels()
@@ -97,7 +99,7 @@ class TextCacheViewer:
             # 按时间戳排序（最新的在前）
             channel_data.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
 
-            debug_print(COMPONENT_NAME, f"[TextCacheViewer] 共 {len(channel_data)} 个通道")
+            logger.debug(f"[TextCacheViewer] 共 {len(channel_data)} 个通道")
 
             # 返回UI数据
             return {
@@ -108,9 +110,9 @@ class TextCacheViewer:
             }
 
         except Exception as e:
-            debug_print(COMPONENT_NAME, f"[TextCacheViewer] 错误: {str(e)}")
+            logger.error(f"[TextCacheViewer] 错误: {str(e)}")
             import traceback
-            debug_print(COMPONENT_NAME, traceback.format_exc())
+            logger.debug(traceback.format_exc())
 
             return {
                 "ui": {

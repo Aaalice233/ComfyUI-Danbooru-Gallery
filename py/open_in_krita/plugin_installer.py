@@ -9,13 +9,17 @@ import shutil
 import time
 from pathlib import Path
 from typing import Optional
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
 
 try:
     import psutil
     HAS_PSUTIL = True
 except ImportError:
     HAS_PSUTIL = False
-    print("[OpenInKrita] Warning: psutil not available, Krita process management will be limited")
+    logger.warning("psutil not available, Krita process management will be limited")
 
 
 class KritaPluginInstaller:
@@ -38,7 +42,7 @@ class KritaPluginInstaller:
                     if match:
                         return match.group(1)
         except Exception as e:
-            print(f"[OpenInKrita] Error reading source version: {e}")
+            logger.error(f"Error reading source version: {e}")
         return "unknown"
 
     def _get_plugin_source_dir(self) -> Path:
@@ -68,7 +72,7 @@ class KritaPluginInstaller:
             if appdata:
                 pykrita = Path(appdata) / 'krita' / 'pykrita'
             else:
-                print("[OpenInKrita] Warning: APPDATA environment variable not found")
+                logger.warning("Warning: APPDATA environment variable not found")
                 return None
 
         elif sys.platform == "darwin":
@@ -133,7 +137,7 @@ class KritaPluginInstaller:
                     if match:
                         return match.group(1)
         except Exception as e:
-            print(f"[OpenInKrita] Error reading installed version: {e}")
+            logger.error(f"Error reading installed version: {e}")
 
         return None
 
@@ -150,21 +154,21 @@ class KritaPluginInstaller:
         try:
             # 检查pykrita目录
             if not self.pykrita_dir:
-                print("[OpenInKrita] Could not determine Krita pykrita directory")
+                logger.info("Could not determine Krita pykrita directory")
                 return False
 
             # 创建pykrita目录（如果不存在）
             self.pykrita_dir.mkdir(parents=True, exist_ok=True)
-            print(f"[OpenInKrita] Target directory: {self.pykrita_dir}")
+            logger.info(f"Target directory: {self.pykrita_dir}")
 
             # 检查是否已安装
             if self.check_plugin_installed() and not force:
                 installed_version = self.get_installed_version()
                 if installed_version == self.source_version:
-                    print(f"[OpenInKrita] Plugin v{self.source_version} already installed, skipping")
+                    logger.info(f"Plugin v{self.source_version} already installed, skipping")
                     return True
                 else:
-                    print(f"[OpenInKrita] Updating plugin from v{installed_version} to v{self.source_version}")
+                    logger.info(f"Updating plugin from v{installed_version} to v{self.source_version}")
 
             # 复制.desktop文件
             desktop_source = self.plugin_source_dir / "open_in_krita.desktop"
@@ -172,9 +176,9 @@ class KritaPluginInstaller:
 
             if desktop_source.exists():
                 shutil.copy2(desktop_source, desktop_dest)
-                print(f"[OpenInKrita] Copied: {desktop_source.name}")
+                logger.info(f"Copied: {desktop_source.name}")
             else:
-                print(f"[OpenInKrita] Warning: {desktop_source.name} not found")
+                logger.info(f"Warning: {desktop_source.name} not found")
 
             # 复制插件目录
             plugin_source = self.plugin_source_dir / "open_in_krita"
@@ -187,21 +191,21 @@ class KritaPluginInstaller:
 
                 # 复制整个目录
                 shutil.copytree(plugin_source, plugin_dest)
-                print(f"[OpenInKrita] Copied: {plugin_source.name}/ directory")
+                logger.info(f"Copied: {plugin_source.name}/ directory")
             else:
-                print(f"[OpenInKrita] Error: Plugin directory not found: {plugin_source}")
+                logger.error(f"Error: Plugin directory not found: {plugin_source}")
                 return False
 
-            print(f"[OpenInKrita] Plugin v{self.source_version} installed successfully")
-            print("[OpenInKrita] Please restart Krita and enable the plugin in:")
-            print("[OpenInKrita]   Settings → Configure Krita → Python Plugin Manager")
+            logger.info(f"Plugin v{self.source_version} installed successfully")
+            logger.info("Please restart Krita and enable the plugin in:")
+            logger.info("  Settings → Configure Krita → Python Plugin Manager")
 
             return True
 
         except Exception as e:
-            print(f"[OpenInKrita] Error installing plugin: {e}")
+            logger.error(f"Error installing plugin: {e}")
             import traceback
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
             return False
 
     def uninstall_plugin(self) -> bool:
@@ -213,26 +217,26 @@ class KritaPluginInstaller:
         """
         try:
             if not self.check_plugin_installed():
-                print("[OpenInKrita] Plugin not installed")
+                logger.info("Plugin not installed")
                 return True
 
             # 删除.desktop文件
             desktop_file = self.pykrita_dir / "open_in_krita.desktop"
             if desktop_file.exists():
                 desktop_file.unlink()
-                print(f"[OpenInKrita] Removed: {desktop_file.name}")
+                logger.info(f"Removed: {desktop_file.name}")
 
             # 删除插件目录
             plugin_dir = self.pykrita_dir / "open_in_krita"
             if plugin_dir.exists():
                 shutil.rmtree(plugin_dir)
-                print(f"[OpenInKrita] Removed: {plugin_dir.name}/ directory")
+                logger.info(f"Removed: {plugin_dir.name}/ directory")
 
-            print("[OpenInKrita] Plugin uninstalled successfully")
+            logger.info("Plugin uninstalled successfully")
             return True
 
         except Exception as e:
-            print(f"[OpenInKrita] Error uninstalling plugin: {e}")
+            logger.error(f"Error uninstalling plugin: {e}")
             return False
 
     def kill_krita_process(self) -> bool:
@@ -243,7 +247,7 @@ class KritaPluginInstaller:
             bool: 成功杀掉至少一个进程返回True
         """
         if not HAS_PSUTIL:
-            print("[OpenInKrita] psutil not available, cannot kill Krita process")
+            logger.info("psutil not available, cannot kill Krita process")
             return False
 
         try:
@@ -251,23 +255,23 @@ class KritaPluginInstaller:
             for proc in psutil.process_iter(['name', 'pid']):
                 try:
                     if proc.info['name'] and 'krita' in proc.info['name'].lower():
-                        print(f"[OpenInKrita] Killing Krita process: PID={proc.info['pid']}")
+                        logger.info(f"Killing Krita process: PID={proc.info['pid']}")
                         proc.kill()
                         killed_count += 1
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
 
             if killed_count > 0:
-                print(f"[OpenInKrita] Killed {killed_count} Krita process(es)")
+                logger.info(f"Killed {killed_count} Krita process(es)")
                 # 等待进程真正结束
                 time.sleep(1)
                 return True
             else:
-                print("[OpenInKrita] No Krita process found")
+                logger.info("No Krita process found")
                 return False
 
         except Exception as e:
-            print(f"[OpenInKrita] Error killing Krita process: {e}")
+            logger.error(f"Error killing Krita process: {e}")
             return False
 
     @staticmethod
@@ -285,10 +289,10 @@ class KritaPluginInstaller:
 # 测试代码
 if __name__ == "__main__":
     installer = KritaPluginInstaller()
-    print(f"Plugin source: {installer.plugin_source_dir}")
-    print(f"Pykrita directory: {installer.pykrita_dir}")
-    print(f"Plugin installed: {installer.check_plugin_installed()}")
+    logger.info(f"Plugin source: {installer.plugin_source_dir}")
+    logger.info(f"Pykrita directory: {installer.pykrita_dir}")
+    logger.info(f"Plugin installed: {installer.check_plugin_installed()}")
 
     if installer.check_plugin_installed():
         version = installer.get_installed_version()
-        print(f"Installed version: {version}")
+        logger.info(f"Installed version: {version}")

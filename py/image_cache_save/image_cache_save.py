@@ -12,11 +12,13 @@ from PIL import Image
 from typing import List, Dict, Any, Optional, Tuple
 from ..image_cache_manager.image_cache_manager import cache_manager
 
-# 导入debug配置
-from ..utils.debug_config import debug_print
+# 导入日志系统
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
 
 CATEGORY_TYPE = "danbooru"
-COMPONENT_NAME = "image_cache_save"
 
 
 class AnyType(str):
@@ -76,15 +78,15 @@ class ImageCache:
             if isinstance(workflow_data, dict):
                 for node_id, node_data in workflow_data.items():
                     if isinstance(node_data, dict) and node_data.get("class_type") == "GroupExecutorManager":
-                        print(f"[ImageCacheSave] ✓ 检测到GroupExecutorManager节点（已缓存）")
+                        logger.info(f"✓ 检测到GroupExecutorManager节点（已缓存）")
                         cls._has_manager_cache = True
                         return True
 
-            print(f"[ImageCacheSave] ⚠ 未检测到GroupExecutorManager节点（已缓存）")
+            logger.warning(f"⚠ 未检测到GroupExecutorManager节点（已缓存）")
             cls._has_manager_cache = False
             return False
         except Exception as e:
-            print(f"[ImageCacheSave] 检测GroupExecutorManager失败: {str(e)}")
+            logger.error(f"检测GroupExecutorManager失败: {str(e)}")
             cls._has_manager_cache = False
             return False
 
@@ -101,11 +103,11 @@ class ImageCache:
                 "message": "图像缓存节点需要配合组执行管理器使用，请添加组执行管理器和触发器后刷新网页\nImage cache nodes require Group Executor Manager. Please add Manager and Trigger, then refresh."
             })
             cls._warning_sent_cache = True
-            print(f"[ImageCacheSave] 已发送WebSocket警告")
+            logger.warning(f"已发送WebSocket警告")
         except ImportError:
-            print("[ImageCacheSave] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+            logger.warning("警告: 不在ComfyUI环境中，跳过WebSocket通知")
         except Exception as e:
-            print(f"[ImageCacheSave] WebSocket警告发送失败: {e}")
+            logger.error(f"WebSocket警告发送失败: {e}")
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -150,11 +152,11 @@ class ImageCache:
         """
         try:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
-            debug_print(COMPONENT_NAME, f"\n{'='*60}")
-            debug_print(COMPONENT_NAME, f"[ImageCacheSave] ⏰ 执行时间: {timestamp}")
-            debug_print(COMPONENT_NAME, f"[ImageCacheSave] 🔍 当前组名: {cache_manager.current_group_name}")
-            debug_print(COMPONENT_NAME, f"[ImageCacheSave] ┌─ 开始保存图像")
-            debug_print(COMPONENT_NAME, f"{'='*60}\n")
+            logger.debug(f"\n{'='*60}")
+            logger.debug(f"⏰ 执行时间: {timestamp}")
+            logger.debug(f"🔍 当前组名: {cache_manager.current_group_name}")
+            logger.debug(f"┌─ 开始保存图像")
+            logger.debug(f"{'='*60}\n")
 
             # ✅ 检测工作流中是否有GroupExecutorManager节点（使用缓存，只检测一次）
             has_manager = ImageCache._check_for_group_executor_manager(prompt)
@@ -169,10 +171,10 @@ class ImageCache:
 
             processed_enable_preview = enable_preview[0] if isinstance(enable_preview, list) else enable_preview
 
-            debug_print(COMPONENT_NAME, f"[ImageCacheSave] 📁 通道: {processed_channel_name}")
+            logger.debug(f"📁 通道: {processed_channel_name}")
 
             # ✅ 保存前清空指定通道的缓存
-            debug_print(COMPONENT_NAME, f"[ImageCacheSave] 🗑️ 清空通道 '{processed_channel_name}' 的缓存")
+            logger.debug(f"🗑️ 清空通道 '{processed_channel_name}' 的缓存")
             cache_manager.clear_cache(channel_name=processed_channel_name)
 
             # 将输入的批次列表展开为单个图像张量列表
@@ -192,7 +194,7 @@ class ImageCache:
                 channel_name=processed_channel_name
             )
 
-            debug_print(COMPONENT_NAME, f"[ImageCacheSave] └─ 保存完成: {len(results)} 张")
+            logger.info(f"[ImageCacheSave] └─ 保存完成: {len(results)} 张")
 
             # 返回原始图像供下游节点使用（强制执行顺序）
             if unpacked_images:
@@ -212,9 +214,9 @@ class ImageCache:
                 return {"ui": {"images": []}, "result": (output_batch,)}
 
         except Exception as e:
-            debug_print(COMPONENT_NAME, f"[ImageCacheSave] └─ ✗ 保存失败: {str(e)}")
+            logger.error(f"[ImageCacheSave] └─ ✗ 保存失败: {str(e)}")
             import traceback
-            debug_print(COMPONENT_NAME, traceback.format_exc())
+            logger.debug(traceback.format_exc())
 
             # 异常时返回黑色占位图
             empty_batch = torch.zeros((1, 64, 64, 3), dtype=torch.float32)

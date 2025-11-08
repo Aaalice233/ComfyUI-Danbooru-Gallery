@@ -10,6 +10,10 @@ import torch
 import numpy as np
 from PIL import Image
 from typing import List, Dict, Any, Optional, Tuple
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
 
 class ImageCacheManager:
     """
@@ -27,7 +31,7 @@ class ImageCacheManager:
         if not self._initialized:
             # 实例ID，用于追踪是否为同一个对象
             self.instance_id = id(self)
-            print(f"[ImageCacheManager DEBUG] New instance created with ID: {self.instance_id}")
+            logger.debug(f" New instance created with ID: {self.instance_id}")
 
             # 线程锁，确保线程安全
             self._lock = threading.RLock()  # 使用RLock支持递归锁定
@@ -65,23 +69,23 @@ class ImageCacheManager:
                 # 如果在ComfyUI环境外，使用临时目录
                 import tempfile
                 self.output_dir = tempfile.gettempdir()
-                print("[ImageCacheManager] Warning: Not in ComfyUI environment, using system temp directory")
+                logger.warning(" Not in ComfyUI environment, using system temp directory")
             except Exception:
                 import tempfile
                 self.output_dir = tempfile.gettempdir()
-                print("[ImageCacheManager] Warning: Cannot import folder_paths, using system temp directory")
+                logger.warning(" Cannot import folder_paths, using system temp directory")
             self.type = "temp"
             self.compress_level = 1
             self._initialized = True
-            print(f"[ImageCacheManager] Initialized global image cache manager (Session ID: {self.session_id})")
+            logger.info(f" Initialized global image cache manager (Session ID: {self.session_id})")
 
     def set_current_group(self, group_name: Optional[str]) -> None:
         """设置当前执行的组名（由组执行管理器调用）"""
         self.current_group_name = group_name
         if group_name:
-            print(f"[ImageCacheManager] >>> 设置当前执行组: {group_name}")
+            logger.info(f" >>> 设置当前执行组: {group_name}")
         else:
-            print(f"[ImageCacheManager] >>> 清除当前执行组")
+            logger.info(f" >>> 清除当前执行组")
 
     def get_cache_channel(self, channel_name: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -108,7 +112,7 @@ class ImageCacheManager:
                 "timestamp": 0,
                 "metadata": {}
             }
-            print(f"[ImageCacheManager] 创建新缓存通道: {channel_name}")
+            logger.info(f" 创建新缓存通道: {channel_name}")
 
         return self.cache_channels[channel_name]
 
@@ -123,7 +127,7 @@ class ImageCacheManager:
             try:
                 if channel_name is None:
                     # 清空所有通道
-                    print(f"[ImageCacheManager] 清空所有缓存通道")
+                    logger.info(f" 清空所有缓存通道")
 
                     # 清空默认通道
                     self.cache_data["images"] = []
@@ -133,18 +137,18 @@ class ImageCacheManager:
                     # 清空所有命名通道
                     self.cache_channels.clear()
 
-                    print(f"[ImageCacheManager] ✓ 已清空所有缓存通道")
+                    logger.info(f" ✓ 已清空所有缓存通道")
                 else:
                     # 清空指定通道
-                    print(f"[ImageCacheManager] 清空缓存通道: {channel_name}")
+                    logger.info(f" 清空缓存通道: {channel_name}")
 
                     if channel_name in self.cache_channels:
                         self.cache_channels[channel_name]["images"] = []
                         self.cache_channels[channel_name]["timestamp"] = 0
                         self.cache_channels[channel_name]["metadata"] = {}
-                        print(f"[ImageCacheManager] ✓ 已清空缓存通道: {channel_name}")
+                        logger.info(f" ✓ 已清空缓存通道: {channel_name}")
                     else:
-                        print(f"[ImageCacheManager] 缓存通道不存在，无需清空: {channel_name}")
+                        logger.info(f" 缓存通道不存在，无需清空: {channel_name}")
 
                 # 重置会话追踪信息
                 self.has_saved_this_session = False
@@ -170,14 +174,14 @@ class ImageCacheManager:
                         "all_channels": all_channels
                     })
                 except ImportError:
-                    print("[ImageCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+                    logger.warning(" 不在ComfyUI环境中，跳过WebSocket通知")
                 except Exception as e:
-                    print(f"[ImageCacheManager] WebSocket通知失败: {e}")
+                    logger.info(f" WebSocket通知失败: {e}")
 
             except Exception as e:
-                print(f"[ImageCacheManager] ✗ 清空缓存失败: {str(e)}")
+                logger.error(f"✗ 清空缓存失败: {str(e)}")
                 import traceback
-                print(traceback.format_exc())
+                logger.debug(traceback.format_exc())
 
     def cache_images(self,
                     images: List[torch.Tensor],
@@ -205,8 +209,8 @@ class ImageCacheManager:
                 actual_channel_name = channel_name or self.current_group_name or "default"
 
                 # 简化日志 - 只显示关键通道信息
-                print(f"[ImageCacheManager] ┌─ 通道: '{actual_channel_name}'")
-                print(f"[ImageCacheManager] │  当前: {len(cache_channel['images'])} 张 → 新增: {len(images)} 张")
+                logger.info(f" ┌─ 通道: '{actual_channel_name}'")
+                logger.info(f" │  当前: {len(cache_channel['images'])} 张 → 新增: {len(images)} 张")
 
                 timestamp = int(time.time() * 1000)
                 results = []
@@ -216,9 +220,9 @@ class ImageCacheManager:
                 if clear_before_save and len(cache_channel["images"]) > 0:
                     old_count = len(cache_channel["images"])
                     cache_channel["images"] = []
-                    print(f"[ImageCacheManager] │  模式: 覆盖 (已清除 {old_count} 张旧图)")
+                    logger.info(f" │  模式: 覆盖 (已清除 {old_count} 张旧图)")
                 else:
-                    print(f"[ImageCacheManager] │  模式: {'追加' if not clear_before_save else '覆盖'}")
+                    logger.info(f" │  模式: {'追加' if not clear_before_save else '覆盖'}")
 
                 for idx, image_batch in enumerate(images):
                     try:
@@ -264,7 +268,7 @@ class ImageCacheManager:
                             results.append(cache_item)
 
                     except Exception as e:
-                        print(f"[ImageCacheManager] 处理图像 {idx+1} 时出错: {str(e)}")
+                        logger.info(f" 处理图像 {idx+1} 时出错: {str(e)}")
                         continue
 
                 # 更新缓存通道（追加到当前通道）
@@ -283,7 +287,7 @@ class ImageCacheManager:
                 self.has_saved_this_session = True
 
                 # 输出结果日志
-                print(f"[ImageCacheManager] └─ 完成: {len(cache_data)} 张图像 → 总计: {len(cache_channel['images'])} 张")
+                logger.info(f" └─ 完成: {len(cache_data)} 张图像 → 总计: {len(cache_channel['images'])} 张")
 
                 # 发送WebSocket事件通知缓存更新（延迟导入）
                 if cache_data:
@@ -301,16 +305,16 @@ class ImageCacheManager:
                             }
                         })
                     except ImportError:
-                        print("[ImageCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+                        logger.warning(" 不在ComfyUI环境中，跳过WebSocket通知")
                     except Exception as e:
-                        print(f"[ImageCacheManager] WebSocket通知失败: {e}")
+                        logger.info(f" WebSocket通知失败: {e}")
 
                 return results
 
             except Exception as e:
-                print(f"[ImageCacheManager] ✗ 缓存失败: {str(e)}")
+                logger.error(f"✗ 缓存失败: {str(e)}")
                 import traceback
-                print(traceback.format_exc())
+                logger.debug(traceback.format_exc())
                 return []
 
     def get_cached_images(self,
@@ -338,12 +342,12 @@ class ImageCacheManager:
                 actual_channel_name = channel_name or self.current_group_name or "default"
 
                 # 简化日志 - 只显示关键获取信息
-                print(f"[ImageCacheManager] ┌─ 从通道 '{actual_channel_name}' 获取")
-                print(f"[ImageCacheManager] │  可用: {len(cache_channel['images'])} 张")
+                logger.info(f" ┌─ 从通道 '{actual_channel_name}' 获取")
+                logger.info(f" │  可用: {len(cache_channel['images'])} 张")
 
                 # 检查缓存中是否有图像
                 if not cache_channel["images"]:
-                    print(f"[ImageCacheManager] └─ 缓存为空，返回空列表")
+                    logger.info(f" └─ 缓存为空，返回空列表")
                     # ✅ 修复：返回空列表，让调用者决定使用默认图像
                     return []
 
@@ -367,7 +371,7 @@ class ImageCacheManager:
                         if index < len(cache_channel["images"]):
                             images_to_get = [cache_channel["images"][index]]
                         else:
-                            print(f"[ImageCacheManager] └─ 索引 {index} 超出范围 (总数: {len(cache_channel['images'])})")
+                            logger.info(f" └─ 索引 {index} 超出范围 (总数: {len(cache_channel['images'])})")
                             empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
                             return [empty_image]
 
@@ -378,7 +382,7 @@ class ImageCacheManager:
                             img_path = os.path.join(temp_dir, img_file)
 
                             if not os.path.exists(img_path):
-                                print(f"[ImageCacheManager] 文件不存在: {img_path}")
+                                logger.info(f" 文件不存在: {img_path}")
                                 continue
 
                             img = Image.open(img_path)
@@ -413,26 +417,26 @@ class ImageCacheManager:
                             output_images.append(image)
 
                         except Exception as e:
-                            print(f"[ImageCacheManager] 处理文件时出错: {str(e)}")
+                            logger.info(f" 处理文件时出错: {str(e)}")
                             continue
 
                     if not output_images:
-                        print(f"[ImageCacheManager] └─ 没有加载到任何图像，返回空白")
+                        logger.info(f" └─ 没有加载到任何图像，返回空白")
                         empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
                         return [empty_image]
 
-                    print(f"[ImageCacheManager] └─ 成功获取: {len(output_images)} 张图像")
+                    logger.info(f" └─ 成功获取: {len(output_images)} 张图像")
                     return output_images
 
                 except Exception as e:
-                    print(f"[ImageCacheManager] └─ 获取失败: {str(e)}")
+                    logger.info(f" └─ 获取失败: {str(e)}")
                     empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
                     return [empty_image]
 
             except Exception as e:
-                print(f"[ImageCacheManager] ✗ 获取缓存失败: {str(e)}")
+                logger.error(f"✗ 获取缓存失败: {str(e)}")
                 import traceback
-                print(traceback.format_exc())
+                logger.debug(traceback.format_exc())
                 empty_image = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
                 return [empty_image]
 
@@ -529,13 +533,13 @@ class ImageCacheManager:
                     "timestamp": int(time.time() * 1000),
                     "metadata": {}
                 }
-                print(f"[ImageCacheManager] 预注册空通道: {channel_name}")
+                logger.info(f" 预注册空通道: {channel_name}")
                 return True
             else:
-                print(f"[ImageCacheManager] 通道已存在: {channel_name}")
+                logger.info(f" 通道已存在: {channel_name}")
                 return True
         except Exception as e:
-            print(f"[ImageCacheManager] 创建通道失败: {channel_name}, 错误: {e}")
+            logger.info(f" 创建通道失败: {channel_name}, 错误: {e}")
             return False
 
     def rename_channel(self, old_name: str, new_name: str) -> bool:
@@ -553,17 +557,17 @@ class ImageCacheManager:
             try:
                 # 检查旧通道是否存在
                 if old_name not in self.cache_channels:
-                    print(f"[ImageCacheManager] ⚠️ 旧通道 '{old_name}' 不存在，无法重命名")
+                    logger.warning(f"⚠️ 旧通道 '{old_name}' 不存在，无法重命名")
                     return False
 
                 # 检查新通道名是否与旧通道名相同
                 if old_name == new_name:
-                    print(f"[ImageCacheManager] ⚠️ 新旧通道名相同，无需重命名")
+                    logger.warning(f"⚠️ 新旧通道名相同，无需重命名")
                     return True
 
                 # 检查新通道是否已存在
                 if new_name in self.cache_channels:
-                    print(f"[ImageCacheManager] ⚠️ 新通道 '{new_name}' 已存在，将覆盖")
+                    logger.warning(f"⚠️ 新通道 '{new_name}' 已存在，将覆盖")
 
                 # 复制旧通道数据到新通道
                 self.cache_channels[new_name] = self.cache_channels[old_name].copy()
@@ -571,7 +575,7 @@ class ImageCacheManager:
                 # 删除旧通道
                 del self.cache_channels[old_name]
 
-                print(f"[ImageCacheManager] ✅ 通道已重命名: '{old_name}' -> '{new_name}'")
+                logger.info(f" ✅ 通道已重命名: '{old_name}' -> '{new_name}'")
 
                 # 记录操作
                 self._last_operation = {
@@ -592,16 +596,16 @@ class ImageCacheManager:
                         "all_channels": all_channels
                     })
                 except ImportError:
-                    print("[ImageCacheManager] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+                    logger.warning(" 不在ComfyUI环境中，跳过WebSocket通知")
                 except Exception as e:
-                    print(f"[ImageCacheManager] WebSocket通知失败: {e}")
+                    logger.info(f" WebSocket通知失败: {e}")
 
                 return True
 
             except Exception as e:
-                print(f"[ImageCacheManager] ❌ 重命名通道失败: {str(e)}")
+                logger.error(f"❌ 重命名通道失败: {str(e)}")
                 import traceback
-                print(traceback.format_exc())
+                logger.debug(traceback.format_exc())
                 return False
 
 # 全局缓存管理器实例

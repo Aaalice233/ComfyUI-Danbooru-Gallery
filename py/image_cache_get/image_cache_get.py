@@ -17,15 +17,12 @@ try:
 except ImportError:
     cache_manager = None
 
-import logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("ImageCacheGet")
+from ..utils.logger import get_logger
 
-# 导入debug配置
-from ..utils.debug_config import should_debug
+# 初始化logger
+logger = get_logger(__name__)
 
 CATEGORY_TYPE = "danbooru"
-COMPONENT_NAME = "image_cache_get"
 
 
 class ImageCacheGet:
@@ -74,15 +71,15 @@ class ImageCacheGet:
             if isinstance(workflow_data, dict):
                 for node_id, node_data in workflow_data.items():
                     if isinstance(node_data, dict) and node_data.get("class_type") == "GroupExecutorManager":
-                        logger.info(f"[ImageCacheGet] ✓ 检测到GroupExecutorManager节点（已缓存）")
+                        logger.info("✓ 检测到GroupExecutorManager节点（已缓存）")
                         cls._has_manager_cache = True
                         return True
 
-            logger.warning(f"[ImageCacheGet] ⚠ 未检测到GroupExecutorManager节点（已缓存）")
+            logger.warning(f"⚠ 未检测到GroupExecutorManager节点（已缓存）")
             cls._has_manager_cache = False
             return False
         except Exception as e:
-            logger.warning(f"[ImageCacheGet] 检测GroupExecutorManager失败: {str(e)}")
+            logger.warning(f"检测GroupExecutorManager失败: {str(e)}")
             cls._has_manager_cache = False
             return False
 
@@ -99,11 +96,11 @@ class ImageCacheGet:
                 "message": "图像缓存节点需要配合组执行管理器使用，请添加组执行管理器和触发器后刷新网页\nImage cache nodes require Group Executor Manager. Please add Manager and Trigger, then refresh."
             })
             cls._warning_sent_cache = True
-            logger.info(f"[ImageCacheGet] 已发送WebSocket警告")
+            logger.info(f"已发送WebSocket警告")
         except ImportError:
-            logger.warning("[ImageCacheGet] 警告: 不在ComfyUI环境中，跳过WebSocket通知")
+            logger.warning("警告: 不在ComfyUI环境中，跳过WebSocket通知")
         except Exception as e:
-            logger.warning(f"[ImageCacheGet] WebSocket警告发送失败: {e}")
+            logger.warning(f"WebSocket警告发送失败: {e}")
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -225,15 +222,15 @@ class ImageCacheGet:
 
             # ✅ 安全提取默认图像
             # 调试日志：查看传入的 default_image 参数
-            logger.info(f"[ImageCacheGet] 🔍 DEBUG - default_image 参数类型: {type(default_image)}")
-            logger.info(f"[ImageCacheGet] 🔍 DEBUG - default_image 是否为None: {default_image is None}")
+            logger.info(f"🔍 DEBUG - default_image 参数类型: {type(default_image)}")
+            logger.info(f"🔍 DEBUG - default_image 是否为None: {default_image is None}")
             if default_image is not None:
-                logger.info(f"[ImageCacheGet] 🔍 DEBUG - default_image 长度: {len(default_image)}")
+                logger.info(f"🔍 DEBUG - default_image 长度: {len(default_image)}")
                 if len(default_image) > 0:
-                    logger.info(f"[ImageCacheGet] 🔍 DEBUG - default_image[0] 类型: {type(default_image[0])}")
-                    logger.info(f"[ImageCacheGet] 🔍 DEBUG - default_image[0] 是否为None: {default_image[0] is None}")
+                    logger.info(f"🔍 DEBUG - default_image[0] 类型: {type(default_image[0])}")
+                    logger.info(f"🔍 DEBUG - default_image[0] 是否为None: {default_image[0] is None}")
                     if default_image[0] is not None and hasattr(default_image[0], 'shape'):
-                        logger.info(f"[ImageCacheGet] 🔍 DEBUG - default_image[0] shape: {default_image[0].shape}")
+                        logger.info(f"🔍 DEBUG - default_image[0] shape: {default_image[0].shape}")
 
             # 检查列表非空 且 第一个元素有效
             safe_default_image = None
@@ -242,21 +239,20 @@ class ImageCacheGet:
             if default_image and len(default_image) > 0 and default_image[0] is not None:
                 safe_default_image = default_image[0]
                 has_user_default = True
-                logger.info(f"[ImageCacheGet] ✅ DEBUG - 使用用户提供的默认图像，shape: {safe_default_image.shape}")
+                logger.info(f"✅ DEBUG - 使用用户提供的默认图像，shape: {safe_default_image.shape}")
             else:
                 # 只有在没有传入任何默认图像时，才使用黑色占位图
                 safe_default_image = torch.zeros((1, 64, 64, 3))
                 has_user_default = False
-                logger.info(f"[ImageCacheGet] ⚠️ DEBUG - 未传入有效默认图像，使用黑色占位图 shape: {safe_default_image.shape}")
+                logger.info(f"⚠️ DEBUG - 未传入有效默认图像，使用黑色占位图 shape: {safe_default_image.shape}")
 
-            if should_debug(COMPONENT_NAME):
-                logger.info(f"\n{'='*60}")
-                logger.info(f"[ImageCacheGet] ⏰ 执行时间: {time.strftime('%H:%M:%S', time.localtime())}")
-                logger.info(f"[ImageCacheGet] 🎯 节点ID: {unique_id}")
-                logger.info(f"[ImageCacheGet] 📁 通道: {processed_channel}")
-                logger.info(f"[ImageCacheGet] 📷 显示预览: {enable_preview}")
-                logger.info(f"[ImageCacheGet] 🔍 当前组名: {cache_manager.current_group_name if cache_manager else 'N/A'}")
-                logger.info(f"{'='*60}\n")
+            logger.debug(f"\n{'='*60}")
+            logger.debug(f"⏰ 执行时间: {time.strftime('%H:%M:%S', time.localtime())}")
+            logger.debug(f"🎯 节点ID: {unique_id}")
+            logger.debug(f"📁 通道: {processed_channel}")
+            logger.debug(f"📷 显示预览: {enable_preview}")
+            logger.debug(f"🔍 当前组名: {cache_manager.current_group_name if cache_manager else 'N/A'}")
+            logger.debug(f"{'='*60}\n")
 
             # ✅ 检测工作流中是否有GroupExecutorManager节点（使用缓存，只检测一次）
             has_manager = ImageCacheGet._check_for_group_executor_manager(prompt)
@@ -269,10 +265,10 @@ class ImageCacheGet:
             using_default_image = False
 
             if cache_manager is None:
-                logger.warning("[ImageCacheGet] ⚠️ 缓存管理器不可用，使用默认图像")
+                logger.warning("⚠️ 缓存管理器不可用，使用默认图像")
                 cached_image = safe_default_image
                 using_default_image = True
-                logger.info(f"[ImageCacheGet] 🔍 DEBUG - 缓存管理器不可用，使用 safe_default_image，shape: {cached_image.shape}")
+                logger.info(f"🔍 DEBUG - 缓存管理器不可用，使用 safe_default_image，shape: {cached_image.shape}")
             else:
                 try:
                     # 从指定通道获取所有缓存图像
@@ -286,37 +282,35 @@ class ImageCacheGet:
                         # 需要合并成(N, H, W, C)的批次张量
                         cached_image = torch.cat(cached_images, dim=0)
                         using_default_image = False
-                        if should_debug(COMPONENT_NAME):
-                            logger.info(f"[ImageCacheGet] ✅ 成功获取通道'{processed_channel}'缓存图像 (共{len(cached_images)}张，批次shape: {cached_image.shape})")
-                        logger.info(f"[ImageCacheGet] 🔍 DEBUG - 从缓存获取图像，shape: {cached_image.shape}")
+                        logger.debug(f"✅ 成功获取通道'{processed_channel}'缓存图像 (共{len(cached_images)}张，批次shape: {cached_image.shape})")
+                        logger.debug(f"🔍 从缓存获取图像，shape: {cached_image.shape}")
                     else:
-                        logger.info(f"[ImageCacheGet] 📌 通道'{processed_channel}'缓存为空，使用默认图像")
+                        logger.info(f"📌 通道'{processed_channel}'缓存为空，使用默认图像")
                         cached_image = safe_default_image
                         using_default_image = True
-                        logger.info(f"[ImageCacheGet] 🔍 DEBUG - 通道缓存为空，使用 safe_default_image，shape: {cached_image.shape}")
+                        logger.info(f"🔍 DEBUG - 通道缓存为空，使用 safe_default_image，shape: {cached_image.shape}")
                 except Exception as e:
-                    logger.warning(f"[ImageCacheGet] ⚠️ 缓存获取失败: {str(e)}")
+                    logger.warning(f"⚠️ 缓存获取失败: {str(e)}")
                     import traceback
                     logger.warning(traceback.format_exc())
                     cached_image = safe_default_image
                     using_default_image = True
-                    logger.info(f"[ImageCacheGet] 🔍 DEBUG - 缓存获取异常，使用 safe_default_image，shape: {cached_image.shape}")
+                    logger.info(f"🔍 DEBUG - 缓存获取异常，使用 safe_default_image，shape: {cached_image.shape}")
 
             # 确保图像是正确的格式
             if isinstance(cached_image, torch.Tensor):
                 result_image = cached_image
-                logger.info(f"[ImageCacheGet] 🔍 DEBUG - cached_image 是 Tensor，result_image shape: {result_image.shape}")
+                logger.info(f"🔍 DEBUG - cached_image 是 Tensor，result_image shape: {result_image.shape}")
             else:
                 result_image = safe_default_image
-                logger.info(f"[ImageCacheGet] 🔍 DEBUG - cached_image 不是 Tensor，使用 safe_default_image，shape: {result_image.shape}")
+                logger.info(f"🔍 DEBUG - cached_image 不是 Tensor，使用 safe_default_image，shape: {result_image.shape}")
 
             execution_time = time.time() - start_time
-            if should_debug(COMPONENT_NAME):
-                logger.info(f"[ImageCacheGet] ⏱️ 执行耗时: {execution_time:.3f}秒\n")
+            logger.debug(f"⏱️ 执行耗时: {execution_time:.3f}秒\n")
 
             # 返回前最终确认
-            logger.info(f"[ImageCacheGet] 🔍 DEBUG - 最终返回的 result_image shape: {result_image.shape}")
-            logger.info(f"[ImageCacheGet] 🔍 DEBUG - result_image 最小值: {result_image.min():.4f}, 最大值: {result_image.max():.4f}")
+            logger.info(f"🔍 DEBUG - 最终返回的 result_image shape: {result_image.shape}")
+            logger.info(f"🔍 DEBUG - result_image 最小值: {result_image.min():.4f}, 最大值: {result_image.max():.4f}")
 
             # 返回标准格式：(图像张量,) 和 ui 数据
             # 如果启用预览，从全局缓存通道获取图像文件信息
@@ -327,9 +321,9 @@ class ImageCacheGet:
                     if using_default_image:
                         # 区分是用户提供的默认图还是黑色占位图
                         if has_user_default:
-                            logger.info(f"[ImageCacheGet] 📸 使用用户提供的默认图像，生成预览...")
+                            logger.info(f"📸 使用用户提供的默认图像，生成预览...")
                         else:
-                            logger.info(f"[ImageCacheGet] 📸 使用黑色占位图，生成预览...")
+                            logger.info(f"📸 使用黑色占位图，生成预览...")
 
                         # 将默认图像保存为临时文件
                         try:
@@ -362,9 +356,9 @@ class ImageCacheGet:
 
                         ui_data = {"images": preview_images}
                         if has_user_default:
-                            logger.info(f"[ImageCacheGet] ✅ 用户默认图像预览已生成: {len(preview_images)}张图像")
+                            logger.info(f"✅ 用户默认图像预览已生成: {len(preview_images)}张图像")
                         else:
-                            logger.info(f"[ImageCacheGet] ✅ 黑色占位图预览已生成: {len(preview_images)}张图像")
+                            logger.info(f"✅ 黑色占位图预览已生成: {len(preview_images)}张图像")
 
                     # ✅ 否则从缓存获取预览数据
                     elif cache_manager is not None:
@@ -372,17 +366,15 @@ class ImageCacheGet:
                         if cache_channel and "images" in cache_channel and cache_channel["images"]:
                             # 返回缓存的图像文件信息用于预览
                             ui_data = {"images": cache_channel["images"]}
-                            if should_debug(COMPONENT_NAME):
-                                logger.info(f"[ImageCacheGet] ✅ 预览数据已准备: {len(cache_channel['images'])}张图像")
+                            logger.debug(f"✅ 预览数据已准备: {len(cache_channel['images'])}张图像")
                         else:
-                            if should_debug(COMPONENT_NAME):
-                                logger.info(f"[ImageCacheGet] 📌 通道'{processed_channel}'无图像，不显示预览")
+                            logger.debug(f"📌 通道'{processed_channel}'无图像，不显示预览")
                             ui_data = {"images": []}
                     else:
                         ui_data = {"images": []}
 
                 except Exception as e:
-                    logger.warning(f"[ImageCacheGet] ⚠️ 获取预览数据失败: {str(e)}")
+                    logger.warning(f"⚠️ 获取预览数据失败: {str(e)}")
                     import traceback
                     logger.warning(traceback.format_exc())
                     ui_data = {"images": []}
@@ -393,7 +385,7 @@ class ImageCacheGet:
             }
 
         except Exception as e:
-            logger.error(f"[ImageCacheGet] ❌ 执行异常: {str(e)}")
+            logger.error(f"❌ 执行异常: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
 

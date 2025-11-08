@@ -8,6 +8,10 @@ import os
 from typing import Any, List
 from pathlib import Path
 
+# Logger导入
+from .logger import get_logger
+logger = get_logger(__name__)
+
 # 配置文件路径（指向项目根目录的config.json）
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
 
@@ -29,7 +33,7 @@ def load_config() -> dict[str, Any]:
             _config_cache = {}
             return _config_cache
     except Exception as e:
-        print(f"[Config] 加载配置文件失败: {str(e)}")
+        logger.error(f"加载配置文件失败: {str(e)}")
         _config_cache = {}
         return _config_cache
 
@@ -109,10 +113,10 @@ def save_config(config: dict[str, Any]) -> bool:
         # 更新缓存
         _config_cache = config
 
-        print(f"[Config] 配置已保存")
+        logger.info(f"配置已保存")
         return True
     except Exception as e:
-        print(f"[Config] 保存配置文件失败: {str(e)}")
+        logger.error(f"保存配置文件失败: {str(e)}")
         return False
 
 

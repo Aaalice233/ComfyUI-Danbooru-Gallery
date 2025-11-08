@@ -11,8 +11,12 @@
 
 import json
 import time
-import logging
 from typing import Dict, Any
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
+
 try:
     from server import PromptServer
 except ImportError:
@@ -28,10 +32,6 @@ except ImportError:
 from ..utils.debug_config import should_debug
 
 COMPONENT_NAME = "group_executor_trigger"
-
-# 设置日志
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("OptimizedGET")
 
 
 # ✅ 全局执行状态追踪 - 防止重复执行同一execution_id
@@ -118,9 +118,9 @@ class GroupExecutorTrigger:
         """
         try:
             if should_debug(COMPONENT_NAME):
-                print(f"\n{'='*80}")
-                print(f"[GroupExecutorTrigger] 🎯 trigger_optimized_execution 被调用")
-                print(f"{'='*80}")
+                logger.debug(f"\n{'='*80}")
+                logger.debug(f"🎯 trigger_optimized_execution 被调用")
+                logger.debug(f"{'='*80}")
 
             start_time = time.time()
 
@@ -475,8 +475,8 @@ NODE_CLASS_MAPPINGS = get_node_class_mappings()
 NODE_DISPLAY_NAME_MAPPINGS = get_node_display_name_mappings()
 
 if __name__ == "__main__":
-    print("[GroupExecutorTrigger] ✅ 优化组执行触发器模块测试加载完成")
-    print("[GroupExecutorTrigger] 📋 节点类: GroupExecutorTrigger")
-    print("[GroupExecutorTrigger] 🏷️ 显示名称: 优化组执行触发器 v2.0")
-    print("[GroupExecutorTrigger] 🔧 基于ComfyUI原生机制")
-    print("[GroupExecutorTrigger] ✅ 技术错误已修正")
+    logger.info("✅ 优化组执行触发器模块测试加载完成")
+    logger.info("📋 节点类: GroupExecutorTrigger")
+    logger.info("🏷️ 显示名称: 优化组执行触发器 v2.0")
+    logger.info("🔧 基于ComfyUI原生机制")
+    logger.info("✅ 技术错误已修正")

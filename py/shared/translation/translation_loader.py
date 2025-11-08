@@ -8,6 +8,10 @@ import csv
 from pathlib import Path
 from typing import Dict, Optional, List, Set
 
+# Logger导入
+from ...utils.logger import get_logger
+logger = get_logger(__name__)
+
 
 class TranslationLoader:
     """Load and manage translation data"""
@@ -44,7 +48,7 @@ class TranslationLoader:
         json_file = self.zh_cn_dir / "all_tags_cn.json"
 
         if not json_file.exists():
-            print(f"[Translation] ⚠️ File not found: {json_file}")
+            logger.warning(f"⚠️ File not found: {json_file}")
             return
 
         try:
@@ -60,10 +64,10 @@ class TranslationLoader:
                 if cn_trans_norm:
                     self.cn_to_en[cn_trans_norm] = en_tag_norm
 
-            print(f"[Translation] ✓ Loaded {len(data)} translations from JSON")
+            logger.info(f"✓ Loaded {len(data)} translations from JSON")
 
         except Exception as e:
-            print(f"[Translation] ❌ Error loading JSON: {e}")
+            logger.error(f"❌ Error loading JSON: {e}")
 
     def _load_csv_translations(self, csv_file: Path, reverse: bool = False):
         """
@@ -74,7 +78,7 @@ class TranslationLoader:
             reverse: If True, first column is CN, second is EN
         """
         if not csv_file.exists():
-            print(f"[Translation] ⚠️ File not found: {csv_file}")
+            logger.warning(f"⚠️ File not found: {csv_file}")
             return
 
         try:
@@ -102,17 +106,17 @@ class TranslationLoader:
                             self.cn_to_en[cn_trans] = en_tag
                         count += 1
 
-            print(f"[Translation] ✓ Loaded {count} translations from {csv_file.name}")
+            logger.info(f"✓ Loaded {count} translations from {csv_file.name}")
 
         except Exception as e:
-            print(f"[Translation] ❌ Error loading CSV {csv_file.name}: {e}")
+            logger.error(f"❌ Error loading CSV {csv_file.name}: {e}")
 
     def load_all(self):
         """Load all translation files"""
         if self._loaded:
             return
 
-        print(f"[Translation] 📚 Loading translation data from {self.zh_cn_dir}...")
+        logger.info(f"📚 Loading translation data from {self.zh_cn_dir}...")
 
         # Load in priority order (later sources don't overwrite earlier ones)
         self._load_json_translations()
@@ -120,7 +124,7 @@ class TranslationLoader:
         self._load_csv_translations(self.zh_cn_dir / "wai_characters.csv", reverse=True)
 
         self._loaded = True
-        print(f"[Translation] ✅ Total: {len(self.en_to_cn)} EN->CN, {len(self.cn_to_en)} CN->EN")
+        logger.info(f"✅ Total: {len(self.en_to_cn)} EN->CN, {len(self.cn_to_en)} CN->EN")
 
     def get_chinese(self, english_tag: str) -> Optional[str]:
         """
@@ -257,30 +261,30 @@ def test_translation_loader():
     loader.load_all()
 
     # Test EN -> CN
-    print("\nTest EN -> CN:")
+    logger.info("\nTest EN -> CN:")
     test_tags = ["1girl", "solo", "long_hair", "white_hair", "red_eyes"]
     for tag in test_tags:
         cn = loader.get_chinese(tag)
-        print(f"  {tag} -> {cn}")
+        logger.info(f"  {tag} -> {cn}")
 
     # Test CN -> EN
-    print("\nTest CN -> EN:")
+    logger.info("\nTest CN -> EN:")
     test_cn = ["1个女孩", "独自", "长发"]
     for cn in test_cn:
         en = loader.get_english(cn)
-        print(f"  {cn} -> {en}")
+        logger.info(f"  {cn} -> {en}")
 
     # Test search
-    print("\nTest CN search:")
+    logger.info("\nTest CN search:")
     results = loader.search_chinese("白发", limit=5)
     for en, cn in results:
-        print(f"  {en} -> {cn}")
+        logger.info(f"  {en} -> {cn}")
 
     # Test stats
-    print("\nStats:")
+    logger.info("\nStats:")
     stats = loader.get_stats()
-    print(f"  EN->CN: {stats['en_to_cn_count']}")
-    print(f"  CN->EN: {stats['cn_to_en_count']}")
+    logger.info(f"  EN->CN: {stats['en_to_cn_count']}")
+    logger.info(f"  CN->EN: {stats['cn_to_en_count']}")
 
 
 if __name__ == "__main__":

@@ -15,6 +15,10 @@ from ..fetcher.tag_fetcher import DanbooruTagFetcher
 from ..translation.translation_loader import get_translation_loader
 from ..cache.memory_cache import get_hot_tags_cache
 
+# Logger导入
+from ...utils.logger import get_logger
+logger = get_logger(__name__)
+
 
 class TagSyncManager:
     """Manage tag synchronization and caching"""
@@ -79,7 +83,7 @@ class TagSyncManager:
                         default_config[key].update(loaded_config[key])
                 return default_config
             except Exception as e:
-                print(f"[TagSync] ⚠️ Error loading config: {e}, using defaults")
+                logger.error(f"⚠️ Error loading config: {e}, using defaults")
 
         return default_config
 
@@ -90,14 +94,14 @@ class TagSyncManager:
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"[TagSync] ⚠️ Error saving config: {e}")
+            logger.error(f"⚠️ Error saving config: {e}")
 
     async def _first_time_init(self):
         """First time initialization - fetch and build database"""
-        print("\n" + "=" * 60)
-        print("[TagSync] 🔄 First startup detected, initializing tag database...")
-        print("[TagSync] ⏱️  This will take 5-10 minutes, please wait...")
-        print("=" * 60 + "\n")
+        logger.info("\n" + "=" * 60)
+        logger.info("🔄 First startup detected, initializing tag database...")
+        logger.info("⏱️  This will take 5-10 minutes, please wait...")
+        logger.info("=" * 60 + "\n")
 
         # Initialize database
         await self.db_manager.initialize_database()
@@ -106,7 +110,7 @@ class TagSyncManager:
         max_tags = self.config['tag_sync']['max_tags']
         min_post_count = self.config['tag_sync']['min_post_count']
 
-        print(f"[TagSync] 📥 Fetching top {max_tags} hot tags (min_count={min_post_count})...")
+        logger.info(f"📥 Fetching top {max_tags} hot tags (min_count={min_post_count})...")
 
         fetched_tags = await self.fetcher.fetch_hot_tags(
             max_tags=max_tags,
@@ -114,38 +118,38 @@ class TagSyncManager:
         )
 
         if not fetched_tags:
-            print("[TagSync] ❌ Failed to fetch tags!")
+            logger.error("❌ Failed to fetch tags!")
             return False
 
         # Load translations
-        print("[TagSync] 📚 Loading translation data...")
+        logger.info("📚 Loading translation data...")
         self.translation_loader.load_all()
 
         # Add translations to tags
-        print("[TagSync] 🔧 Adding translations...")
+        logger.info("🔧 Adding translations...")
         self.translation_loader.add_translations_to_tags(fetched_tags)
 
         # Save to database in batches
-        print("[TagSync] 💾 Saving to database...")
+        logger.info("💾 Saving to database...")
         batch_size = 1000
         for i in range(0, len(fetched_tags), batch_size):
             batch = fetched_tags[i:i + batch_size]
             await self.db_manager.insert_tags_batch(batch)
-            print(f"[TagSync] 💾 Saved {min(i + batch_size, len(fetched_tags))}/{len(fetched_tags)} tags")
+            logger.info(f"💾 Saved {min(i + batch_size, len(fetched_tags))}/{len(fetched_tags)} tags")
 
         # Update sync metadata
         await self.db_manager.set_last_sync_time()
         await self.db_manager.set_metadata('initial_sync_version', '1.0')
 
-        print("\n" + "=" * 60)
-        print(f"[TagSync] ✅ Initial sync complete! {len(fetched_tags)} tags added.")
-        print("=" * 60 + "\n")
+        logger.info("\n" + "=" * 60)
+        logger.info(f"✅ Initial sync complete! {len(fetched_tags)} tags added.")
+        logger.info("=" * 60 + "\n")
 
         return True
 
     async def _incremental_update(self):
         """Incremental update - refresh top N tags"""
-        print("[TagSync] 🔄 Performing incremental update...")
+        logger.info("🔄 Performing incremental update...")
 
         update_count = self.config['tag_sync']['incremental_update_count']
 
@@ -160,7 +164,7 @@ class TagSyncManager:
         )
 
         if not updated_tags:
-            print("[TagSync] ⚠️ Incremental update failed, skipping...")
+            logger.warning("⚠️ Incremental update failed, skipping...")
             return
 
         # Add translations
@@ -171,32 +175,32 @@ class TagSyncManager:
         await self.db_manager.insert_tags_batch(updated_tags)
         await self.db_manager.set_last_sync_time()
 
-        print(f"[TagSync] ✅ Incremental update complete!")
+        logger.info(f"✅ Incremental update complete!")
 
     async def _load_to_memory(self):
         """Load tags from database to memory cache"""
         # Skip if using database query mode
         if self.config['cache'].get('use_database_query', True):
-            print("[TagSync] ℹ️ Using database query mode, skipping memory preload")
+            logger.info("ℹ️ Using database query mode, skipping memory preload")
             return
 
         if not self.config['cache']['preload_on_startup']:
-            print("[TagSync] ℹ️ Preload disabled, skipping memory cache")
+            logger.info("ℹ️ Preload disabled, skipping memory cache")
             return
 
-        print("[TagSync] 🔧 Loading tags to memory cache...")
+        logger.info("🔧 Loading tags to memory cache...")
 
         # Get all tags from database
         tags = await self.db_manager.get_all_tags(order_by_hot=True)
 
         if not tags:
-            print("[TagSync] ⚠️ No tags found in database")
+            logger.warning("⚠️ No tags found in database")
             return
 
         # Load into cache
         self.cache.load_tags(tags)
 
-        print(f"[TagSync] ✅ Memory cache loaded with {len(tags)} tags")
+        logger.info(f"✅ Memory cache loaded with {len(tags)} tags")
 
     async def initialize(self):
         """Initialize tag system on startup"""
@@ -214,34 +218,34 @@ class TagSyncManager:
                     return False
             else:
                 # Database exists, perform health check first
-                print("[TagSync] Checking database health...")
+                logger.info("Checking database health...")
                 is_healthy, error_msg = await self.db_manager.check_database_health()
 
                 if not is_healthy:
                     # Database is corrupted
-                    print(f"[TagSync] ⚠️ Database corruption detected: {error_msg}")
-                    print("[TagSync] 🔧 Attempting automatic recovery...")
+                    logger.warning(f"⚠️ Database corruption detected: {error_msg}")
+                    logger.info("🔧 Attempting automatic recovery...")
 
                     # Try to recover by removing corrupted database
                     recovery_success = await self.db_manager.recover_from_corruption()
 
                     if recovery_success:
-                        print("[TagSync] ✓ Database recovery successful")
-                        print("[TagSync] 🔄 Performing first-time initialization...")
+                        logger.info("✓ Database recovery successful")
+                        logger.info("🔄 Performing first-time initialization...")
 
                         # Perform first-time init with fresh database
                         success = await self._first_time_init()
                         if not success:
-                            print("[TagSync] ❌ First-time initialization failed after recovery")
+                            logger.error("❌ First-time initialization failed after recovery")
                             return False
                     else:
-                        print("[TagSync] ❌ Database recovery failed")
-                        print("[TagSync] 💡 Please manually delete the database file and restart ComfyUI")
-                        print(f"[TagSync] Database path: {db_path}")
+                        logger.error("❌ Database recovery failed")
+                        logger.info("💡 Please manually delete the database file and restart ComfyUI")
+                        logger.info(f"Database path: {db_path}")
                         return False
                 else:
                     # Database is healthy, proceed with normal initialization
-                    print("[TagSync] ✓ Database health check passed")
+                    logger.info("✓ Database health check passed")
 
                     await self.db_manager.initialize_database()  # Ensure schema is up to date (includes FTS5)
 
@@ -256,7 +260,7 @@ class TagSyncManager:
 
                         if fts_count == 0:
                             # FTS5 index is empty, rebuild it
-                            print(f"[TagSync] 🔧 Detected empty FTS5 index, rebuilding for {tag_count} tags...")
+                            logger.info(f"🔧 Detected empty FTS5 index, rebuilding for {tag_count} tags...")
                             await self.db_manager.rebuild_fts_index()
 
                     last_sync = await self.db_manager.get_last_sync_time()
@@ -266,16 +270,16 @@ class TagSyncManager:
 
                     if last_sync == 0:
                         # Database exists but no sync record, probably from old version
-                        print("[TagSync] ⚠️ No sync metadata found, marking as synced")
+                        logger.warning("⚠️ No sync metadata found, marking as synced")
                         await self.db_manager.set_last_sync_time()
                     elif days_since_sync >= sync_interval:
                         # Need update
-                        print(f"[TagSync] 🔄 Tag database is {days_since_sync:.1f} days old")
+                        logger.info(f"🔄 Tag database is {days_since_sync:.1f} days old")
                         await self._incremental_update()
                     else:
                         # Up to date
                         tag_count = await self.db_manager.get_tags_count()
-                        print(f"[TagSync] ✓ Tag database up to date ({tag_count} tags, "
+                        logger.info(f"✓ Tag database up to date ({tag_count} tags, "
                               f"last sync: {days_since_sync:.1f} days ago)")
 
             # Load to memory cache
@@ -285,9 +289,9 @@ class TagSyncManager:
             return True
 
         except Exception as e:
-            print(f"[TagSync] ❌ Initialization error: {e}")
+            logger.error(f"❌ Initialization error: {e}")
             import traceback
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
             return False
 
         finally:
@@ -295,14 +299,14 @@ class TagSyncManager:
 
     async def force_full_sync(self):
         """Force a full synchronization"""
-        print("[TagSync] 🔄 Force full synchronization...")
+        logger.info("🔄 Force full synchronization...")
 
         # Clear existing data
         await self.db_manager.close()
         db_path = Path(self.db_manager.db_path)
         if db_path.exists():
             os.remove(db_path)
-            print("[TagSync] 🗑️ Removed old database")
+            logger.info("🗑️ Removed old database")
 
         # Perform first time init
         success = await self._first_time_init()
@@ -353,21 +357,21 @@ async def test_sync_manager():
     """Test sync manager"""
     manager = TagSyncManager()
 
-    print("Testing initialization...")
+    logger.info("Testing initialization...")
     success = await manager.initialize()
 
     if success:
-        print("\nStatus:")
+        logger.info("\nStatus:")
         status = manager.get_status()
-        print(json.dumps(status, indent=2, ensure_ascii=False))
+        logger.info(json.dumps(status, indent=2, ensure_ascii=False))
 
         # Test cache
         cache = manager.cache
         if cache.is_loaded():
-            print("\nTesting cache search:")
+            logger.info("\nTesting cache search:")
             results = cache.search_by_prefix("1girl", limit=5)
             for r in results:
-                print(f"  {r['tag']} - {r['translation_cn']} (count: {r['post_count']})")
+                logger.info(f"  {r['tag']} - {r['translation_cn']} (count: {r['post_count']})")
 
     await manager.db_manager.close()
 

@@ -62,6 +62,9 @@ Thumbs.db
 log/*
 !log/.gitkeep
 !log/README.md
+# 新日志系统目录
+logs/*
+!logs/.gitkeep
 
 # 临时文件
 *.tmp

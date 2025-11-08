@@ -1,6 +1,10 @@
 import sys
 import inspect
 from .metadata_registry import MetadataRegistry
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
 
 class MetadataHook:
     """Install hooks for metadata collection with chain support"""
@@ -18,7 +22,7 @@ class MetadataHook:
         """Install hooks to collect metadata during execution (with chain support)"""
         # 避免重复安装
         if MetadataHook._installed:
-            print("[Danbooru Gallery] Metadata hook already installed, skipping")
+            logger.info("Metadata hook already installed, skipping")
             return
 
         try:
@@ -36,7 +40,7 @@ class MetadataHook:
                     
             # If we can't find the execution module, we can't install hooks
             if execution is None:
-                print("[Danbooru Gallery] Could not locate ComfyUI execution module, metadata collection disabled")
+                logger.info("Could not locate ComfyUI execution module, metadata collection disabled")
                 return
 
             # 检测是否已有其他 hook 安装
@@ -44,7 +48,7 @@ class MetadataHook:
             has_existing_hook = False
             if map_node_func and (hasattr(map_node_func, '__wrapped__') or 'metadata' in map_node_func.__name__.lower()):
                 has_existing_hook = True
-                print("[Danbooru Gallery] Detected existing metadata hook (possibly from another plugin)")
+                logger.info("Detected existing metadata hook (possibly from another plugin)")
 
             # Detect whether we're using the new async version of ComfyUI
             is_async = False
@@ -57,18 +61,18 @@ class MetadataHook:
                 is_async = inspect.iscoroutinefunction(execution._map_node_over_list)
 
             if is_async:
-                print("[Danbooru Gallery] Detected async ComfyUI execution, installing async metadata hooks with chain support")
+                logger.info("Detected async ComfyUI execution, installing async metadata hooks with chain support")
                 MetadataHook._install_async_hooks(execution, map_node_func_name)
             else:
-                print("[Danbooru Gallery] Detected sync ComfyUI execution, installing sync metadata hooks with chain support")
+                logger.info("Detected sync ComfyUI execution, installing sync metadata hooks with chain support")
                 MetadataHook._install_sync_hooks(execution)
 
             # 标记为已安装
             MetadataHook._installed = True
-            print("[Danbooru Gallery] ✓ Metadata collection hooks installed successfully")
+            logger.info("✓ Metadata collection hooks installed successfully")
             
         except Exception as e:
-            print(f"Error installing metadata hooks: {str(e)}")
+            logger.error(f"Error installing metadata hooks: {str(e)}")
     
     @staticmethod
     def _install_sync_hooks(execution):
@@ -99,7 +103,7 @@ class MetadataHook:
                         if node_id is not None:
                             registry.record_node_execution(node_id, class_type, input_data_all, None)
                 except Exception as e:
-                    print(f"[Danbooru Gallery] Metadata collection error (pre): {e}")
+                    logger.error(f"Metadata collection error (pre): {e}")
 
             # 调用原始函数（可能包含其他插件的 hook）
             results = original_map_node_over_list(obj, input_data_all, func, allow_interrupt, execution_block_cb, pre_execute_cb)
@@ -125,7 +129,7 @@ class MetadataHook:
                         if node_id is not None:
                             registry.update_node_execution(node_id, class_type, results)
                 except Exception as e:
-                    print(f"[Danbooru Gallery] Metadata collection error (post): {e}")
+                    logger.error(f"Metadata collection error (post): {e}")
 
             return results
 
@@ -150,7 +154,7 @@ class MetadataHook:
                     if hasattr(prompt, 'original_prompt'):
                         registry.set_current_prompt(prompt)
             except Exception as e:
-                print(f"[Danbooru Gallery] Prompt tracking error: {e}")
+                logger.error(f"Prompt tracking error: {e}")
 
             # 调用原始函数（可能包含其他插件的 hook）
             return original_execute(*args, **kwargs)
@@ -183,7 +187,7 @@ class MetadataHook:
                         if node_id is not None:
                             registry.record_node_execution(node_id, class_type, input_data_all, None)
                 except Exception as e:
-                    print(f"[Danbooru Gallery] Async metadata collection error (pre): {e}")
+                    logger.error(f"Async metadata collection error (pre): {e}")
 
             # 调用原始函数（可能包含其他插件的 hook）
             results = await original_map_node_over_list(
@@ -201,7 +205,7 @@ class MetadataHook:
                         if node_id is not None:
                             registry.update_node_execution(node_id, class_type, results)
                 except Exception as e:
-                    print(f"[Danbooru Gallery] Async metadata collection error (post): {e}")
+                    logger.error(f"Async metadata collection error (post): {e}")
 
             return results
 
@@ -226,7 +230,7 @@ class MetadataHook:
                     if hasattr(prompt, 'original_prompt'):
                         registry.set_current_prompt(prompt)
             except Exception as e:
-                print(f"[Danbooru Gallery] Async prompt tracking error: {e}")
+                logger.error(f"Async prompt tracking error: {e}")
 
             # 调用原始函数（可能包含其他插件的 hook）
             return await original_execute(*args, **kwargs)

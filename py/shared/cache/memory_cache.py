@@ -18,6 +18,10 @@ Thread-safe with RLock protection.
 import threading
 import time
 import sys
+
+# Logger导入
+from ...utils.logger import get_logger
+logger = get_logger(__name__)
 from typing import List, Dict, Optional, Tuple
 
 
@@ -61,7 +65,7 @@ class HotTagsCache:
         self._query_cache_size: int = 500  # Max 500 cached queries
         self._query_cache_ttl: float = 300.0  # Cache TTL: 5 minutes
 
-        print(f"[HotTagsCache] 初始化缓存（模式: {'数据库查询' if use_database_query else '内存缓存'}）")
+        logger.info(f"初始化缓存（模式: {'数据库查询' if use_database_query else '内存缓存'}）")
 
     # ==================== Core Query Interfaces ====================
 
@@ -173,10 +177,10 @@ class HotTagsCache:
             - Will build prefix and translation indices
         """
         if self.use_database_query:
-            print("[HotTagsCache] 数据库查询模式下不需要加载标签到内存")
+            logger.info("数据库查询模式下不需要加载标签到内存")
             return
 
-        print(f"[HotTagsCache] 开始加载标签数据: {len(tags)} 个标签")
+        logger.info(f"开始加载标签数据: {len(tags)} 个标签")
         start_time = time.time()
 
         with self._lock:
@@ -188,10 +192,10 @@ class HotTagsCache:
                 self._last_update = time.time()
 
                 elapsed = time.time() - start_time
-                print(f"[HotTagsCache] ✓ 标签数据加载完成，耗时 {elapsed:.2f}s")
+                logger.info(f"✓ 标签数据加载完成，耗时 {elapsed:.2f}s")
 
             except Exception as e:
-                print(f"[HotTagsCache] Error: 标签加载失败: {e}")
+                logger.error(f"Error: 标签加载失败: {e}")
                 self._loaded = False
                 raise
 
@@ -204,7 +208,7 @@ class HotTagsCache:
             self._query_result_cache.clear()
             self._loaded = False
             self._last_update = 0.0
-            print("[HotTagsCache] 缓存已清空")
+            logger.info("缓存已清空")
 
     # ==================== State Query Interfaces ====================
 
@@ -263,7 +267,7 @@ class HotTagsCache:
                 if loop.is_running():
                     # We're in async context, but can't await here
                     # Fall back to sync version or return empty
-                    print("[HotTagsCache] Warning: 在异步上下文中无法同步调用数据库")
+                    logger.warning("Warning: 在异步上下文中无法同步调用数据库")
                     return []
                 else:
                     # Run the async method
@@ -273,11 +277,11 @@ class HotTagsCache:
             except RuntimeError:
                 # No event loop, try sync version
                 # For simplicity, return empty list (caller should use async version)
-                print("[HotTagsCache] Warning: 数据库查询需要异步上下文")
+                logger.warning("Warning: 数据库查询需要异步上下文")
                 return []
 
         except Exception as e:
-            print(f"[HotTagsCache] Warning: 数据库查询失败: {e}")
+            logger.error(f"Warning: 数据库查询失败: {e}")
             return []
 
     def _search_database_by_translation(self, query: str, limit: int) -> List[Dict]:
@@ -291,24 +295,24 @@ class HotTagsCache:
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    print("[HotTagsCache] Warning: 在异步上下文中无法同步调用数据库")
+                    logger.warning("Warning: 在异步上下文中无法同步调用数据库")
                     return []
                 else:
                     return loop.run_until_complete(
                         self.db_manager.search_tags_by_translation(query, limit)
                     )
             except RuntimeError:
-                print("[HotTagsCache] Warning: 数据库查询需要异步上下文")
+                logger.warning("Warning: 数据库查询需要异步上下文")
                 return []
 
         except Exception as e:
-            print(f"[HotTagsCache] Warning: 数据库查询失败: {e}")
+            logger.error(f"Warning: 数据库查询失败: {e}")
             return []
 
     def _search_in_memory_by_prefix(self, prefix: str, limit: int) -> List[Dict]:
         """Search by prefix in memory index"""
         if not self._loaded:
-            print("[HotTagsCache] Warning: 缓存未加载")
+            logger.warning("Warning: 缓存未加载")
             return []
 
         # Find matching indices
@@ -328,7 +332,7 @@ class HotTagsCache:
     def _search_in_memory_by_translation(self, query: str, limit: int) -> List[Dict]:
         """Search by translation in memory index"""
         if not self._loaded:
-            print("[HotTagsCache] Warning: 缓存未加载")
+            logger.warning("Warning: 缓存未加载")
             return []
 
         # Find tags containing the query characters
@@ -371,7 +375,7 @@ class HotTagsCache:
                     self._prefix_index[prefix] = []
                 self._prefix_index[prefix].append(idx)
 
-        print(f"[HotTagsCache] 前缀索引构建完成: {len(self._prefix_index)} 个前缀")
+        logger.info(f"前缀索引构建完成: {len(self._prefix_index)} 个前缀")
 
     def _build_translation_index(self) -> None:
         """Build translation index for Chinese characters"""
@@ -388,7 +392,7 @@ class HotTagsCache:
                     self._translation_index[char] = []
                 self._translation_index[char].append(idx)
 
-        print(f"[HotTagsCache] 翻译索引构建完成: {len(self._translation_index)} 个字符")
+        logger.info(f"翻译索引构建完成: {len(self._translation_index)} 个字符")
 
     def _detect_language(self, query: str) -> str:
         """

@@ -6,6 +6,9 @@ import json
 from server import PromptServer
 from aiohttp import web
 
+# Logger导入
+from ..utils.logger import get_logger
+logger = get_logger(__name__)
 
 # ==================== 节点类 ====================
 
@@ -66,7 +69,7 @@ def load_settings():
         else:
             return DEFAULT_SETTINGS.copy()
     except Exception as e:
-        print(f"[ResolutionMasterSimplify] 加载设置失败: {e}")
+        logger.error(f"加载设置失败: {e}")
         return DEFAULT_SETTINGS.copy()
 
 
@@ -77,7 +80,7 @@ def save_settings(settings):
             json.dump(settings, f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
-        print(f"[ResolutionMasterSimplify] 保存设置失败: {e}")
+        logger.error(f"保存设置失败: {e}")
         return False
 
 
@@ -222,4 +225,4 @@ async def delete_preset_api(request):
         }, status=500)
 
 
-print("[ResolutionMasterSimplify] API 路由已注册")
+logger.info("API 路由已注册")

@@ -9,12 +9,16 @@ import numpy as np
 from PIL import Image, ImageOps, ImageSequence
 from typing import Tuple
 
+# Logger导入
+from ..utils.logger import get_logger
+logger = get_logger(__name__)
+
 # 导入ComfyUI的辅助模块
 try:
     import folder_paths
     import node_helpers
 except ImportError:
-    print("[SimpleLoadImage] 警告: 无法导入 folder_paths 或 node_helpers")
+    logger.warning("警告: 无法导入 folder_paths 或 node_helpers")
     folder_paths = None
     node_helpers = None
 
@@ -32,7 +36,7 @@ def create_black_image_file():
         bool: 创建成功返回True，否则返回False
     """
     if not folder_paths:
-        print("[SimpleLoadImage] folder_paths不可用，无法创建黑色图像文件")
+        logger.info("folder_paths不可用，无法创建黑色图像文件")
         return False
 
     try:
@@ -49,13 +53,13 @@ def create_black_image_file():
 
         # 保存为PNG
         black_image.save(black_image_path, 'PNG')
-        print(f"[SimpleLoadImage] 已创建黑色图像文件: {black_image_path}")
+        logger.info(f"已创建黑色图像文件: {black_image_path}")
         return True
 
     except Exception as e:
-        print(f"[SimpleLoadImage] 创建黑色图像文件失败: {e}")
+        logger.error(f"创建黑色图像文件失败: {e}")
         import traceback
-        traceback.print_exc()
+        logger.debug(traceback.format_exc())
         return False
 
 
@@ -92,7 +96,7 @@ class SimpleLoadImage:
             files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
             files = folder_paths.filter_files_content_types(files, ["image"])
         except Exception as e:
-            print(f"[SimpleLoadImage] 获取图像文件列表失败: {e}")
+            logger.error(f"获取图像文件列表失败: {e}")
 
         # 将黑色图像文件放在最前面
         if BLACK_IMAGE_FILENAME in files:
@@ -150,7 +154,7 @@ class SimpleLoadImage:
 
         # 检查folder_paths和node_helpers是否可用
         if not folder_paths or not node_helpers:
-            print("[SimpleLoadImage] 错误: folder_paths 或 node_helpers 不可用")
+            logger.error("错误: folder_paths 或 node_helpers 不可用")
             # 返回黑色图像和空mask作为后备
             black_image = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE, 3), dtype=torch.float32)
             black_mask = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE), dtype=torch.float32)
@@ -162,7 +166,7 @@ class SimpleLoadImage:
 
             # 检查文件是否存在
             if not os.path.exists(image_path):
-                print(f"[SimpleLoadImage] 图像文件不存在: {image_path}")
+                logger.info(f"图像文件不存在: {image_path}")
                 # 返回黑色图像和空mask作为后备
                 black_image = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE, 3), dtype=torch.float32)
                 black_mask = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE), dtype=torch.float32)
@@ -217,16 +221,16 @@ class SimpleLoadImage:
                 result_mask = output_masks[0]
             else:
                 # 如果没有加载到图像，返回黑色图像和空mask
-                print(f"[SimpleLoadImage] 图像加载失败: {image}")
+                logger.error(f"图像加载失败: {image}")
                 result_image = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE, 3), dtype=torch.float32)
                 result_mask = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE), dtype=torch.float32)
 
             return (result_image, result_mask)
 
         except Exception as e:
-            print(f"[SimpleLoadImage] 加载图像时出错: {e}")
+            logger.info(f"加载图像时出错: {e}")
             import traceback
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
             # 发生错误时返回黑色图像和空mask
             black_image = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE, 3), dtype=torch.float32)
             black_mask = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE), dtype=torch.float32)

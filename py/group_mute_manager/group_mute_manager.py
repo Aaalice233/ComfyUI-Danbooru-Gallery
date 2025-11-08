@@ -3,6 +3,11 @@
 提供可视化的组 mute 控制和联动配置功能
 """
 
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
+
 
 class GroupMuteManager:
     """组静音管理器节点"""
@@ -41,8 +46,8 @@ class GroupMuteManager:
             tuple: 空元组 - 无输出
         """
         # 虚拟节点，仅用于UI控制，不执行任何操作
-        print(f"\n[GroupMuteManager] 节点ID: {unique_id}")
-        print(f"[GroupMuteManager] 组静音管理器已加载（虚拟节点）\n")
+        logger.debug(f"\n节点ID: {unique_id}")
+        logger.debug(f"组静音管理器已加载（虚拟节点）\n")
 
         return ()
 

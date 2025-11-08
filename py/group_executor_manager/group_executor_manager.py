@@ -10,8 +10,11 @@ import hashlib
 import gc
 from typing import Dict, Any, List
 
-# 导入debug配置
-from ..utils.debug_config import debug_print
+# 导入日志系统
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
 
 # 导入内存清理相关模块
 try:
@@ -19,14 +22,14 @@ try:
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    debug_print("group_executor_manager", "[GroupExecutorManager] 警告: torch不可用，显存清理功能将被禁用")
+    logger.warning("torch不可用，显存清理功能将被禁用")
 
 try:
     import comfy.model_management as mm
     COMFY_MM_AVAILABLE = True
 except ImportError:
     COMFY_MM_AVAILABLE = False
-    debug_print("group_executor_manager", "[GroupExecutorManager] 警告: comfy.model_management不可用，激进模式清理将被禁用")
+    logger.warning("comfy.model_management不可用，激进模式清理将被禁用")
 
 # 导入采样器识别功能（已从 metadata_collector 迁移到 utils.config）
 try:
@@ -34,14 +37,12 @@ try:
     SAMPLER_CHECK_AVAILABLE = True
 except ImportError:
     SAMPLER_CHECK_AVAILABLE = False
-    debug_print("group_executor_manager", "[GroupExecutorManager] 警告: utils.config不可用，采样器组检测将被禁用")
+    logger.warning("utils.config不可用，采样器组检测将被禁用")
 
     # 提供一个fallback实现
     def is_sampler_node(class_type):
         """Fallback: 简单的采样器节点判断"""
         return "sampler" in class_type.lower() or "ksampler" in class_type.lower()
-
-COMPONENT_NAME = "group_executor_manager"
 
 
 class AnyType(str):
@@ -69,9 +70,9 @@ def set_group_config(groups):
     global _group_executor_config
     _group_executor_config["groups"] = groups
     _group_executor_config["last_update"] = time.time()
-    debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager] ✅ 配置已更新: {len(groups)} 个组")
+    logger.info(f"\n[GroupExecutorManager] ✅ 配置已更新: {len(groups)} 个组")
     for i, group in enumerate(groups, 1):
-        debug_print(COMPONENT_NAME, f"   {i}. {group.get('group_name', '未命名')}")
+        logger.debug(f"   {i}. {group.get('group_name', '未命名')}")
 
 
 class GroupExecutorManager:
@@ -132,32 +133,32 @@ class GroupExecutorManager:
             tuple: (execution_data,) - 包含执行计划和缓存控制信号的JSON字符串
         """
         try:
-            debug_print(COMPONENT_NAME, f"\n{'='*80}")
-            debug_print(COMPONENT_NAME, f"[GroupExecutorManager] 🎯 create_execution_plan 被调用")
-            debug_print(COMPONENT_NAME, f"{'='*80}")
-            debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager] 🎯 开始生成执行计划")
-            debug_print(COMPONENT_NAME, f"[GroupExecutorManager] 📍 节点ID: {unique_id}")
+            logger.debug(f"\n{'='*80}")
+            logger.debug(f"🎯 create_execution_plan 被调用")
+            logger.debug(f"{'='*80}")
+            logger.debug(f"\n[GroupExecutorManager] 🎯 开始生成执行计划")
+            logger.debug(f"📍 节点ID: {unique_id}")
 
             # ✅ 从全局配置中读取配置
             config_data = get_group_config()
-            debug_print(COMPONENT_NAME, f"[GroupExecutorManager] 📦 从全局配置读取: {len(config_data)} 个组")
+            logger.debug(f"[GroupExecutorManager] 📦 从全局配置读取: {len(config_data)} 个组")
 
             # 🔍 DEBUG: 详细输出每个组的配置
             for i, group in enumerate(config_data, 1):
-                debug_print(COMPONENT_NAME, f"[GroupExecutorManager] 📦 组 {i}: {group.get('group_name', '未命名')}")
+                logger.debug(f"📦 组 {i}: {group.get('group_name', '未命名')}")
                 cleanup_cfg = group.get('cleanup_config')
                 if cleanup_cfg:
-                    debug_print(COMPONENT_NAME, f"[GroupExecutorManager]   ✅ cleanup_config存在")
-                    debug_print(COMPONENT_NAME, f"[GroupExecutorManager]     clear_vram: {cleanup_cfg.get('clear_vram')}")
-                    debug_print(COMPONENT_NAME, f"[GroupExecutorManager]     clear_ram: {cleanup_cfg.get('clear_ram')}")
-                    debug_print(COMPONENT_NAME, f"[GroupExecutorManager]     aggressive_mode: {cleanup_cfg.get('aggressive_mode')}")
-                    debug_print(COMPONENT_NAME, f"[GroupExecutorManager]     delay_seconds: {cleanup_cfg.get('delay_seconds')}")
+                    logger.info(f"✅ cleanup_config存在")
+                    logger.debug(f"clear_vram: {cleanup_cfg.get('clear_vram')}")
+                    logger.debug(f"clear_ram: {cleanup_cfg.get('clear_ram')}")
+                    logger.debug(f"aggressive_mode: {cleanup_cfg.get('aggressive_mode')}")
+                    logger.debug(f"delay_seconds: {cleanup_cfg.get('delay_seconds')}")
                 else:
-                    debug_print(COMPONENT_NAME, f"[GroupExecutorManager]   ❌ cleanup_config不存在或为None")
+                    logger.error(f"❌ cleanup_config不存在或为None")
 
             # ✅ 新增：检测配置是否为空，如果为空则返回禁用状态
             if not config_data or len(config_data) == 0:
-                debug_print(COMPONENT_NAME, f"[GroupExecutorManager] ⚠️  配置为空，返回禁用状态")
+                logger.warning(f"⚠️  配置为空，返回禁用状态")
                 disabled_data = {
                     "execution_plan": {
                         "disabled": True,
@@ -183,11 +184,11 @@ class GroupExecutorManager:
                         "disabled_reason": "empty_groups"
                     }
                 }
-                debug_print(COMPONENT_NAME, f"[GroupExecutorManager] 🚫 已禁用组执行功能（原因：配置为空）\n")
+                logger.info(f"🚫 已禁用组执行功能（原因：配置为空）\n")
                 return (json.dumps(disabled_data, ensure_ascii=False),)
 
             # ✅ 有有效配置，继续生成执行计划
-            debug_print(COMPONENT_NAME, f"[GroupExecutorManager] ✅ 使用用户配置的组")
+            logger.info(f"✅ 使用用户配置的组")
 
             # 固定配置值（内部使用）
             execution_mode = "sequential"  # 顺序执行: sequential, 并行执行: parallel
@@ -197,7 +198,7 @@ class GroupExecutorManager:
 
             # ✅ 每次执行都生成新的execution_id
             execution_id = f"exec_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-            debug_print(COMPONENT_NAME, f"[GroupExecutorManager] ✅ 生成新的execution_id: {execution_id}")
+            logger.info(f"✅ 生成新的execution_id: {execution_id}")
 
             # 创建执行计划 - 包含验证器需要的所有字段
             execution_plan = {
@@ -222,18 +223,18 @@ class GroupExecutorManager:
             }
 
             # 📋 详细调试日志：显示生成的执行计划
-            debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager] 📋 生成执行计划详情:")
-            debug_print(COMPONENT_NAME, f"   执行ID: {execution_id}")
-            debug_print(COMPONENT_NAME, f"   组数量: {len(config_data)}")
-            debug_print(COMPONENT_NAME, f"   执行模式: {execution_mode}")
-            debug_print(COMPONENT_NAME, f"   缓存模式: {cache_control_mode}")
-            debug_print(COMPONENT_NAME, f"   ")
+            logger.debug(f"\n[GroupExecutorManager] 📋 生成执行计划详情:")
+            logger.debug(f"   执行ID: {execution_id}")
+            logger.debug(f"   组数量: {len(config_data)}")
+            logger.debug(f"   执行模式: {execution_mode}")
+            logger.debug(f"   缓存模式: {cache_control_mode}")
+            logger.debug(f"   ")
 
             for i, group in enumerate(config_data, 1):
                 group_name = group.get('group_name', f'未命名组{i}')
-                debug_print(COMPONENT_NAME, f"   ├─ 组{i}: {group_name}")
+                logger.debug(f"   ├─ 组{i}: {group_name}")
 
-            debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager] ✅ 执行计划生成完成\n")
+            logger.info(f"\n[GroupExecutorManager] ✅ 执行计划生成完成\n")
 
             # ✅ 合并为单个execution_data输出
             execution_data = {
@@ -243,16 +244,16 @@ class GroupExecutorManager:
             execution_data_json = json.dumps(execution_data, ensure_ascii=False)
 
             # 📤 输出日志：显示将要发送给GroupExecutorTrigger的内容
-            debug_print(COMPONENT_NAME, f"[GroupExecutorManager] 📤 输出内容:")
-            debug_print(COMPONENT_NAME, f"   └─ execution_data (STRING):")
-            debug_print(COMPONENT_NAME, f"      {execution_data_json[:200]}...")
-            debug_print(COMPONENT_NAME, f"")
+            logger.debug(f"📤 输出内容:")
+            logger.debug(f"   └─ execution_data (STRING):")
+            logger.debug(f"      {execution_data_json[:200]}...")
+            logger.debug(f"")
 
             return (execution_data_json,)
 
         except Exception as e:
             error_msg = f"GroupExecutorManager 执行错误: {str(e)}"
-            debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager] ❌ {error_msg}\n")
+            logger.error(f"\n[GroupExecutorManager] ❌ {error_msg}\n")
             import traceback
             traceback.print_exc()
 
@@ -287,27 +288,27 @@ try:
             data = await request.json()
             groups = data.get('groups', [])
 
-            debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager API] 🔍 ========== 收到配置保存请求 ==========")
-            debug_print(COMPONENT_NAME, f"[GroupExecutorManager API] 📦 组数量: {len(groups)}")
+            logger.debug(f"\n[GroupExecutorManager API] 🔍 ========== 收到配置保存请求 ==========")
+            logger.debug(f"[GroupExecutorManager API] 📦 组数量: {len(groups)}")
 
             # 🔍 DEBUG: 详细输出每个组的配置
             for i, group in enumerate(groups, 1):
-                debug_print(COMPONENT_NAME, f"[GroupExecutorManager API] 📦 组 {i}: {group.get('group_name', '未命名')}")
+                logger.debug(f"📦 组 {i}: {group.get('group_name', '未命名')}")
                 cleanup_cfg = group.get('cleanup_config')
                 if cleanup_cfg:
-                    debug_print(COMPONENT_NAME, f"[GroupExecutorManager API]   ✅ cleanup_config存在:")
-                    debug_print(COMPONENT_NAME, f"[GroupExecutorManager API]     clear_vram: {cleanup_cfg.get('clear_vram')}")
-                    debug_print(COMPONENT_NAME, f"[GroupExecutorManager API]     clear_ram: {cleanup_cfg.get('clear_ram')}")
-                    debug_print(COMPONENT_NAME, f"[GroupExecutorManager API]     aggressive_mode: {cleanup_cfg.get('aggressive_mode')}")
-                    debug_print(COMPONENT_NAME, f"[GroupExecutorManager API]     delay_seconds: {cleanup_cfg.get('delay_seconds')}")
+                    logger.info(f"✅ cleanup_config存在:")
+                    logger.debug(f"clear_vram: {cleanup_cfg.get('clear_vram')}")
+                    logger.debug(f"clear_ram: {cleanup_cfg.get('clear_ram')}")
+                    logger.debug(f"aggressive_mode: {cleanup_cfg.get('aggressive_mode')}")
+                    logger.debug(f"delay_seconds: {cleanup_cfg.get('delay_seconds')}")
                 else:
-                    debug_print(COMPONENT_NAME, f"[GroupExecutorManager API]   ❌ cleanup_config不存在或为None")
+                    logger.error(f"❌ cleanup_config不存在或为None")
 
             # 保存到全局配置
             set_group_config(groups)
 
-            debug_print(COMPONENT_NAME, f"[GroupExecutorManager API] ✅ 配置已保存到全局存储")
-            debug_print(COMPONENT_NAME, f"[GroupExecutorManager API] ========================================\n")
+            logger.info(f"✅ 配置已保存到全局存储")
+            logger.debug(f"========================================\n")
 
             return web.json_response({
                 "status": "success",
@@ -315,8 +316,8 @@ try:
             })
         except Exception as e:
             error_msg = f"[GroupExecutorManager API] ❌ 保存配置错误: {str(e)}"
-            debug_print(COMPONENT_NAME, error_msg)
-            debug_print(COMPONENT_NAME, f"[GroupExecutorManager API] ========================================\n")
+            logger.debug(error_msg)
+            logger.debug(f"========================================\n")
             import traceback
             traceback.print_exc()
             return web.json_response({
@@ -329,7 +330,7 @@ try:
         """获取已保存的组配置"""
         try:
             groups = get_group_config()
-            debug_print(COMPONENT_NAME, f"\n[GroupExecutorManager API] 📤 返回已保存的配置: {len(groups)} 个组")
+            logger.info(f"\n[GroupExecutorManager API] 📤 返回已保存的配置: {len(groups)} 个组")
             
             return web.json_response({
                 "status": "success",
@@ -338,9 +339,9 @@ try:
             })
         except Exception as e:
             error_msg = f"[GroupExecutorManager API] 读取配置错误: {str(e)}"
-            print(error_msg)
+            logger.error(error_msg)
             import traceback
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -350,9 +351,6 @@ try:
     async def perform_cleanup(request):
         """执行内存/显存清理"""
         try:
-            # 🔍 强制输出测试（绕过 debug_print）
-            print(f"\n[清理 API 测试] ========== API 被调用 ==========", flush=True)
-
             # 读取请求数据
             data = await request.json()
 
@@ -361,22 +359,18 @@ try:
             clear_ram = data.get('clear_ram', False)
             aggressive_mode = data.get('aggressive_mode', False)
 
-            # 🔍 强制输出配置（绕过 debug_print）
-            print(f"[清理 API 测试] 组名: {group_name}", flush=True)
-            print(f"[清理 API 测试] VRAM清理: {clear_vram}, RAM清理: {clear_ram}, 激进模式: {aggressive_mode}", flush=True)
-
             # 清理开始通知
-            debug_print(COMPONENT_NAME, f"\n[清理 API] 🚀 ========== 内存清理开始 ==========")
-            debug_print(COMPONENT_NAME, f"[清理 API] 📍 组名: {group_name}")
-            debug_print(COMPONENT_NAME, f"[清理 API] 📦 清理配置:")
-            debug_print(COMPONENT_NAME, f"[清理 API]   - VRAM清理: {'✅ 启用' if clear_vram else '❌ 禁用'}")
-            debug_print(COMPONENT_NAME, f"[清理 API]   - RAM清理: {'✅ 启用' if clear_ram else '❌ 禁用'}")
-            debug_print(COMPONENT_NAME, f"[清理 API]   - 激进模式: {'✅ 启用' if aggressive_mode else '❌ 禁用'}")
+            logger.debug(f"\n[清理 API] 🚀 ========== 内存清理开始 ==========")
+            logger.debug(f"📍 组名: {group_name}")
+            logger.debug(f"📦 清理配置:")
+            logger.error(f"- VRAM清理: {'✅ 启用' if clear_vram else '❌ 禁用'}")
+            logger.error(f"- RAM清理: {'✅ 启用' if clear_ram else '❌ 禁用'}")
+            logger.error(f"- 激进模式: {'✅ 启用' if aggressive_mode else '❌ 禁用'}")
 
             # 检查是否实际需要清理
             if not clear_vram and not clear_ram:
-                debug_print(COMPONENT_NAME, f"[清理 API] ⏭️ 跳过清理：所有选项均已禁用")
-                debug_print(COMPONENT_NAME, f"[清理 API] ========================================\n")
+                logger.info(f"⏭️ 跳过清理：所有选项均已禁用")
+                logger.debug(f"========================================\n")
                 return web.json_response({
                     "status": "skipped",
                     "message": "跳过清理：未启用任何选项",
@@ -397,27 +391,27 @@ try:
 
             # 执行VRAM清理
             if clear_vram:
-                debug_print(COMPONENT_NAME, f"[清理 API] 🔧 正在执行 VRAM 清理...")
+                logger.debug(f"🔧 正在执行 VRAM 清理...")
                 cleanup_vram()
                 results["vram_cleaned"] = True
-                debug_print(COMPONENT_NAME, f"[清理 API] ✅ VRAM 清理完成")
+                logger.info(f"✅ VRAM 清理完成")
 
             # 执行RAM清理
             if clear_ram:
                 mode_text = "激进模式" if aggressive_mode else "普通模式"
-                debug_print(COMPONENT_NAME, f"[清理 API] 🔧 正在执行 RAM 清理（{mode_text}）...")
+                logger.debug(f"🔧 正在执行 RAM 清理（{mode_text}）...")
                 cleanup_ram(aggressive=aggressive_mode)
                 results["ram_cleaned"] = True
                 results["aggressive_used"] = aggressive_mode
-                debug_print(COMPONENT_NAME, f"[清理 API] ✅ RAM 清理完成（{mode_text}）")
+                logger.info(f"✅ RAM 清理完成（{mode_text}）")
 
             # 清理总结
-            debug_print(COMPONENT_NAME, f"[清理 API] 📊 清理总结:")
-            debug_print(COMPONENT_NAME, f"[清理 API]   - VRAM: {'✅ 已清理' if results['vram_cleaned'] else '⏭️ 跳过'}")
-            debug_print(COMPONENT_NAME, f"[清理 API]   - RAM: {'✅ 已清理' if results['ram_cleaned'] else '⏭️ 跳过'}")
+            logger.debug(f"📊 清理总结:")
+            logger.info(f"- VRAM: {'✅ 已清理' if results['vram_cleaned'] else '⏭️ 跳过'}")
+            logger.info(f"- RAM: {'✅ 已清理' if results['ram_cleaned'] else '⏭️ 跳过'}")
             if results['ram_cleaned']:
-                debug_print(COMPONENT_NAME, f"[清理 API]   - 模式: {'激进模式' if results['aggressive_used'] else '普通模式'}")
-            debug_print(COMPONENT_NAME, f"[清理 API] ========================================\n")
+                logger.debug(f"- 模式: {'激进模式' if results['aggressive_used'] else '普通模式'}")
+            logger.debug(f"========================================\n")
 
             return web.json_response({
                 "status": "success",
@@ -426,8 +420,8 @@ try:
 
         except Exception as e:
             error_msg = f"[清理 API] ❌ 异常: {str(e)}"
-            debug_print(COMPONENT_NAME, error_msg)
-            debug_print(COMPONENT_NAME, f"[清理 API] ========================================\n")
+            logger.debug(error_msg)
+            logger.debug(f"========================================\n")
             import traceback
             traceback.print_exc()
             return web.json_response({
@@ -436,32 +430,28 @@ try:
             }, status=500)
 
 except ImportError as e:
-    print(f"[GroupExecutorManager] 警告: 无法导入PromptServer或web模块，API端点将不可用: {e}")
+    logger.warning(f"无法导入PromptServer或web模块，API端点将不可用: {e}")
 
 
 # ==================== 内存显存清理功能 ====================
 
 def cleanup_vram():
     """清理显存（GPU VRAM）"""
-    print("[VRAM清理 测试] cleanup_vram 函数被调用", flush=True)
-
     if not TORCH_AVAILABLE:
-        debug_print(COMPONENT_NAME, "[VRAM清理] ⚠️ 跳过：torch 模块不可用")
+        logger.warning("⚠️ 跳过：torch 模块不可用")
         return
 
     try:
         if torch.cuda.is_available():
-            print("[VRAM清理 测试] 正在执行 torch.cuda.empty_cache()", flush=True)
-            debug_print(COMPONENT_NAME, "[VRAM清理] 🔧 执行 torch.cuda.empty_cache()")
+            logger.debug("[VRAM清理] 🔧 执行 torch.cuda.empty_cache()")
             torch.cuda.empty_cache()
-            debug_print(COMPONENT_NAME, "[VRAM清理] 🔧 执行 torch.cuda.ipc_collect()")
+            logger.debug("[VRAM清理] 🔧 执行 torch.cuda.ipc_collect()")
             torch.cuda.ipc_collect()
-            debug_print(COMPONENT_NAME, "[VRAM清理] ✅ 显存清理成功")
-            print("[VRAM清理 测试] 显存清理完成", flush=True)
+            logger.info("✅ 显存清理成功")
         else:
-            debug_print(COMPONENT_NAME, "[VRAM清理] ⚠️ 跳过：CUDA 不可用")
+            logger.warning("⚠️ 跳过：CUDA 不可用")
     except Exception as e:
-        debug_print(COMPONENT_NAME, f"[VRAM清理] ❌ 清理失败: {e}")
+        logger.error(f"❌ 清理失败: {e}")
 
 
 def cleanup_ram(aggressive=False):
@@ -471,31 +461,27 @@ def cleanup_ram(aggressive=False):
     Args:
         aggressive: 是否启用激进模式（卸载所有模型）
     """
-    print(f"[RAM清理 测试] cleanup_ram 函数被调用，aggressive={aggressive}", flush=True)
-
     try:
         # 基础垃圾回收
-        debug_print(COMPONENT_NAME, "[RAM清理] 🔧 执行垃圾回收 gc.collect()")
+        logger.debug("[RAM清理] 🔧 执行垃圾回收 gc.collect()")
         gc.collect()
 
         if aggressive and COMFY_MM_AVAILABLE:
             # 激进模式：卸载所有模型
-            print("[RAM清理 测试] 激进模式：卸载模型", flush=True)
-            debug_print(COMPONENT_NAME, "[RAM清理] 🚀 激进模式：卸载所有模型")
-            debug_print(COMPONENT_NAME, "[RAM清理] 🔧 执行 mm.unload_all_models()")
+            logger.debug("🚀 激进模式：卸载所有模型")
+            logger.debug("[RAM清理] 🔧 执行 mm.unload_all_models()")
             mm.unload_all_models()
-            debug_print(COMPONENT_NAME, "[RAM清理] 🔧 执行 mm.soft_empty_cache()")
+            logger.debug("[RAM清理] 🔧 执行 mm.soft_empty_cache()")
             mm.soft_empty_cache()
-            debug_print(COMPONENT_NAME, "[RAM清理] ✅ 内存清理完成（激进模式）")
-            print("[RAM清理 测试] 激进模式完成", flush=True)
+            logger.info("✅ 内存清理完成（激进模式）")
         elif aggressive and not COMFY_MM_AVAILABLE:
-            debug_print(COMPONENT_NAME, "[RAM清理] ⚠️ 激进模式不可用（comfy.model_management 不可用），使用普通模式")
-            debug_print(COMPONENT_NAME, "[RAM清理] ✅ 内存清理完成（普通模式）")
+            logger.warning("⚠️ 激进模式不可用（comfy.model_management 不可用），使用普通模式")
+            logger.info("✅ 内存清理完成（普通模式）")
         else:
-            debug_print(COMPONENT_NAME, "[RAM清理] ✅ 内存清理完成（普通模式）")
+            logger.info("✅ 内存清理完成（普通模式）")
 
     except Exception as e:
-        debug_print(COMPONENT_NAME, f"[RAM清理] ❌ 清理失败: {e}")
+        logger.error(f"❌ 清理失败: {e}")
 
 
 def has_next_sampler_group(current_index: int, groups: List[Dict], workflow: Dict) -> bool:
@@ -511,7 +497,7 @@ def has_next_sampler_group(current_index: int, groups: List[Dict], workflow: Dic
         bool: 如果后续有采样器组返回True，否则返回False
     """
     if not SAMPLER_CHECK_AVAILABLE:
-        debug_print(COMPONENT_NAME, "[条件评估] 跳过采样器组检测：metadata_collector不可用")
+        logger.debug("跳过采样器组检测：metadata_collector不可用")
         return False
 
     try:
@@ -535,14 +521,14 @@ def has_next_sampler_group(current_index: int, groups: List[Dict], workflow: Dic
                 # 检查是否是采样器节点
                 class_type = node_data.get("class_type", "")
                 if is_sampler_node(class_type):
-                    debug_print(COMPONENT_NAME, f"[条件评估] 检测到后续采样器组: {group_name} (节点: {node_id}, 类型: {class_type})")
+                    logger.debug(f"[条件评估] 检测到后续采样器组: {group_name} (节点: {node_id}, 类型: {class_type})")
                     return True
 
-        debug_print(COMPONENT_NAME, "[条件评估] 后续无采样器组")
+        logger.debug("后续无采样器组")
         return False
 
     except Exception as e:
-        debug_print(COMPONENT_NAME, f"[条件评估] 采样器组检测失败: {e}")
+        logger.error(f"采样器组检测失败: {e}")
         return False
 
 
@@ -568,14 +554,14 @@ async def get_pcp_param_value(node_id: str, param_name: str) -> Any:
                     data = await response.json()
                     if data.get("status") == "success":
                         value = data.get("value")
-                        debug_print(COMPONENT_NAME, f"[条件评估] 获取PCP参数值: {node_id}.{param_name} = {value}")
+                        logger.debug(f"获取PCP参数值: {node_id}.{param_name} = {value}")
                         return value
 
-        debug_print(COMPONENT_NAME, f"[条件评估] 获取PCP参数值失败: {node_id}.{param_name}")
+        logger.error(f"获取PCP参数值失败: {node_id}.{param_name}")
         return None
 
     except Exception as e:
-        debug_print(COMPONENT_NAME, f"[条件评估] 获取PCP参数值异常: {e}")
+        logger.debug(f"获取PCP参数值异常: {e}")
         return None
 
 
@@ -600,7 +586,7 @@ async def evaluate_condition(condition: Dict, current_index: int, groups: List[D
             # 检测是否有下一个采样器组
             actual_value = has_next_sampler_group(current_index, groups, workflow)
             result = actual_value == expected_value
-            debug_print(COMPONENT_NAME, f"[条件评估] has_next_sampler_group: {actual_value} == {expected_value} => {result}")
+            logger.debug(f"has_next_sampler_group: {actual_value} == {expected_value} => {result}")
             return result
 
         elif condition_type == "pcp_param":
@@ -609,20 +595,20 @@ async def evaluate_condition(condition: Dict, current_index: int, groups: List[D
             param_name = condition.get("param_name")
 
             if not node_id or not param_name:
-                debug_print(COMPONENT_NAME, f"[条件评估] pcp_param条件缺少node_id或param_name")
+                logger.debug(f"pcp_param条件缺少node_id或param_name")
                 return False
 
             actual_value = await get_pcp_param_value(node_id, param_name)
             result = actual_value == expected_value
-            debug_print(COMPONENT_NAME, f"[条件评估] pcp_param: {node_id}.{param_name} = {actual_value} == {expected_value} => {result}")
+            logger.debug(f"pcp_param: {node_id}.{param_name} = {actual_value} == {expected_value} => {result}")
             return result
 
         else:
-            debug_print(COMPONENT_NAME, f"[条件评估] 未知的条件类型: {condition_type}")
+            logger.debug(f"未知的条件类型: {condition_type}")
             return False
 
     except Exception as e:
-        debug_print(COMPONENT_NAME, f"[条件评估] 条件评估异常: {e}")
+        logger.debug(f"条件评估异常: {e}")
         return False
 
 
@@ -640,24 +626,24 @@ async def check_aggressive_conditions(conditions: List[Dict], current_index: int
         bool: 所有条件都满足返回True，否则返回False
     """
     if not conditions:
-        debug_print(COMPONENT_NAME, "[条件评估] 无激进模式条件，默认不启用激进模式")
+        logger.debug("无激进模式条件，默认不启用激进模式")
         return False
 
     try:
-        debug_print(COMPONENT_NAME, f"[条件评估] 开始评估 {len(conditions)} 个激进模式条件")
+        logger.debug(f"[条件评估] 开始评估 {len(conditions)} 个激进模式条件")
 
         # 评估所有条件（AND逻辑）
         for i, condition in enumerate(conditions):
             result = await evaluate_condition(condition, current_index, groups, workflow)
-            debug_print(COMPONENT_NAME, f"[条件评估] 条件 {i+1}/{len(conditions)}: {result}")
+            logger.debug(f"[条件评估] 条件 {i+1}/{len(conditions)}: {result}")
 
             if not result:
-                debug_print(COMPONENT_NAME, f"[条件评估] ❌ 条件 {i+1} 不满足，激进模式不启用")
+                logger.error(f"❌ 条件 {i+1} 不满足，激进模式不启用")
                 return False
 
-        debug_print(COMPONENT_NAME, "[条件评估] ✅ 所有条件都满足，启用激进模式")
+        logger.info("✅ 所有条件都满足，启用激进模式")
         return True
 
     except Exception as e:
-        debug_print(COMPONENT_NAME, f"[条件评估] 条件检查异常: {e}")
+        logger.debug(f"条件检查异常: {e}")
         return False

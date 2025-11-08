@@ -3,6 +3,11 @@
 提供Markdown渲染、基于版本号的首次打开提示弹窗等功能
 """
 
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
+
 
 class WorkflowDescription:
     """工作流说明节点"""
@@ -40,8 +45,8 @@ class WorkflowDescription:
         Returns:
             tuple: 空元组 - 无输出
         """
-        print(f"\n[WorkflowDescription] 节点ID: {unique_id}")
-        print(f"[WorkflowDescription] 工作流说明节点已加载（虚拟节点）\n")
+        logger.debug(f"\n节点ID: {unique_id}")
+        logger.debug(f"工作流说明节点已加载（虚拟节点）\n")
 
         # 节点数据会通过 onSerialize/onConfigure 保存到工作流
         # 这里只需要简单的日志输出

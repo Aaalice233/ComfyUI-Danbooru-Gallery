@@ -8,6 +8,10 @@ import folder_paths
 from aiohttp import web
 from pathlib import Path
 
+# Logger导入
+from ..utils.logger import get_logger
+logger = get_logger(__name__)
+
 
 def get_preview_path(model_name):
     """
@@ -47,7 +51,7 @@ def get_preview_path(model_name):
 
         return None
     except Exception as e:
-        print(f"[CheckpointPreview] 查找预览图失败: {model_name}, 错误: {e}")
+        logger.error(f"查找预览图失败: {model_name}, 错误: {e}")
         return None
 
 
@@ -84,9 +88,9 @@ async def get_preview_list(request):
         })
 
     except Exception as e:
-        print(f"[CheckpointPreview] 获取预览图列表失败: {e}")
+        logger.error(f"获取预览图列表失败: {e}")
         import traceback
-        traceback.print_exc()
+        logger.debug(traceback.format_exc())
         return web.json_response({
             "success": False,
             "error": str(e)
@@ -156,9 +160,9 @@ async def get_preview_image(request):
         )
 
     except Exception as e:
-        print(f"[CheckpointPreview] 获取预览图失败: {e}")
+        logger.error(f"获取预览图失败: {e}")
         import traceback
-        traceback.print_exc()
+        logger.debug(traceback.format_exc())
         return web.Response(status=500, text=str(e))
 
 
@@ -171,4 +175,4 @@ def register_preview_api(routes):
     """
     routes.get("/checkpoint_preview/list")(get_preview_list)
     routes.get("/checkpoint_preview/image")(get_preview_image)
-    print("[CheckpointPreview] ✓ 预览图API已注册")
+    logger.info("✓ 预览图API已注册")

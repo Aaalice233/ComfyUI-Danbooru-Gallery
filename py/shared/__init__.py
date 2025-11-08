@@ -3,13 +3,16 @@ Global shared modules for ComfyUI-Danbooru-Gallery
 Provides database, cache, fetcher, translation and sync functionality
 """
 
+from ..utils.logger import get_logger
+logger = get_logger(__name__)
+
 __version__ = "1.0.0"
 
 # Export main interfaces
 try:
     from .db.db_manager import TagDatabaseManager, get_db_manager
 except ImportError as e:
-    print(f"[DanbooruGallery.shared] Warning: db_manager import failed: {e}")
+    logger.warning(f"[DanbooruGallery.shared] Warning: db_manager import failed: {e}")
     TagDatabaseManager = None
     get_db_manager = None
 
@@ -23,13 +26,13 @@ except (ImportError, ModuleNotFoundError):
 try:
     from .fetcher.tag_fetcher import DanbooruTagFetcher
 except ImportError as e:
-    print(f"[DanbooruGallery.shared] Warning: tag_fetcher import failed: {e}")
+    logger.warning(f"[DanbooruGallery.shared] Warning: tag_fetcher import failed: {e}")
     DanbooruTagFetcher = None
 
 try:
     from .translation.translation_loader import TranslationLoader, get_translation_loader
 except ImportError as e:
-    print(f"[DanbooruGallery.shared] Warning: translation_loader import failed: {e}")
+    logger.warning(f"[DanbooruGallery.shared] Warning: translation_loader import failed: {e}")
     TranslationLoader = None
     get_translation_loader = None
 

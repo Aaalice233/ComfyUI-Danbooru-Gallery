@@ -10,6 +10,10 @@ import json
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 
+# Logger导入
+from ...utils.logger import get_logger
+logger = get_logger(__name__)
+
 
 class TagDatabaseManager:
     """Manage hot tags database for offline autocomplete"""
@@ -121,8 +125,8 @@ class TagDatabaseManager:
         """)
 
         await conn.commit()
-        print(f"[TagDB] ✓ Database initialized at {self.db_path}")
-        print(f"[TagDB] ✓ FTS5 full-text search enabled")
+        logger.info(f"✓ Database initialized at {self.db_path}")
+        logger.info(f"✓ FTS5 full-text search enabled")
 
     async def insert_tag(self, tag: str, category: int, post_count: int,
                         translation_cn: Optional[str] = None,
@@ -457,7 +461,7 @@ class TagDatabaseManager:
         """
         conn = await self.get_connection()
 
-        print("[TagDB] Rebuilding FTS5 index...")
+        logger.info("Rebuilding FTS5 index...")
 
         # Clear existing FTS data
         await conn.execute("DELETE FROM hot_tags_fts")
@@ -475,7 +479,7 @@ class TagDatabaseManager:
         row = await cursor.fetchone()
         count = row[0] if row else 0
 
-        print(f"[TagDB] ✓ FTS5 index rebuilt with {count} entries")
+        logger.info(f"✓ FTS5 index rebuilt with {count} entries")
         return count
 
     async def check_database_health(self) -> Tuple[bool, Optional[str]]:
@@ -537,34 +541,34 @@ class TagDatabaseManager:
             # Check if database file exists
             db_file = Path(self.db_path)
             if not db_file.exists():
-                print("[TagDB] Database file does not exist, no recovery needed")
+                logger.info("Database file does not exist, no recovery needed")
                 return True
 
             # Try to remove the corrupted database file
-            print(f"[TagDB] Attempting to remove corrupted database: {self.db_path}")
+            logger.info(f"Attempting to remove corrupted database: {self.db_path}")
 
             import time
             max_attempts = 3
             for attempt in range(max_attempts):
                 try:
                     os.remove(self.db_path)
-                    print("[TagDB] ✓ Corrupted database file removed successfully")
+                    logger.info("✓ Corrupted database file removed successfully")
                     return True
                 except PermissionError:
                     if attempt < max_attempts - 1:
-                        print(f"[TagDB] File is busy, retrying... ({attempt + 1}/{max_attempts})")
+                        logger.info(f"File is busy, retrying... ({attempt + 1}/{max_attempts})")
                         time.sleep(1)
                     else:
-                        print("[TagDB] ✗ Failed to remove database file (still in use)")
+                        logger.error("✗ Failed to remove database file (still in use)")
                         return False
                 except Exception as e:
-                    print(f"[TagDB] ✗ Failed to remove database file: {e}")
+                    logger.error(f"✗ Failed to remove database file: {e}")
                     return False
 
             return False
 
         except Exception as e:
-            print(f"[TagDB] ✗ Recovery failed: {e}")
+            logger.error(f"✗ Recovery failed: {e}")
             return False
 
 

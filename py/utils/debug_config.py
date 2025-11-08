@@ -7,6 +7,10 @@ import json
 import os
 from typing import Dict, Any
 
+# Logger导入
+from .logger import get_logger
+logger = get_logger(__name__)
+
 # 配置文件路径（指向项目根目录的config.json）
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
 
@@ -36,7 +40,7 @@ def load_config() -> Dict[str, Any]:
             }
             return _debug_config
     except Exception as e:
-        print(f"[DebugConfig] 加载配置文件失败: {str(e)}")
+        logger.error(f"加载配置文件失败: {str(e)}")
         # 发生错误时，默认关闭所有debug
         _debug_config = {}
         return _debug_config
@@ -63,10 +67,10 @@ def save_config(debug_config: Dict[str, Any]) -> bool:
         # 更新缓存
         _debug_config = debug_config
 
-        print(f"[DebugConfig] 配置已保存")
+        logger.info(f"配置已保存")
         return True
     except Exception as e:
-        print(f"[DebugConfig] 保存配置文件失败: {str(e)}")
+        logger.error(f"保存配置文件失败: {str(e)}")
         return False
 
 

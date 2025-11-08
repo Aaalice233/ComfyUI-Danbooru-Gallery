@@ -15,6 +15,10 @@ import threading
 from typing import Dict, Optional, Tuple
 from pathlib import Path
 from collections import OrderedDict
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
 
 
 class HashCacheManager:
@@ -97,10 +101,10 @@ class HashCacheManager:
                             loaded_count += 1
 
             self._stats['disk_loads'] += 1
-            print(f"[HashCache] 从磁盘加载了 {loaded_count} 条缓存记录")
+            logger.info(f"从磁盘加载了 {loaded_count} 条缓存记录")
 
         except Exception as e:
-            print(f"[HashCache] 加载缓存文件失败: {e}")
+            logger.error(f"加载缓存文件失败: {e}")
 
     def _save_cache_to_disk(self):
         """保存缓存到JSON文件"""
@@ -123,7 +127,7 @@ class HashCacheManager:
             self._stats['disk_saves'] += 1
 
         except Exception as e:
-            print(f"[HashCache] 保存缓存文件失败: {e}")
+            logger.error(f"保存缓存文件失败: {e}")
 
     def get_hash(self, file_path: str) -> Optional[str]:
         """
@@ -227,7 +231,7 @@ class HashCacheManager:
                 self._save_cache_to_disk()
 
             self._memory_cache.clear()
-            print("[HashCache] 缓存已清空")
+            logger.info("缓存已清空")
 
     def get_stats(self) -> Dict:
         """获取缓存统计信息"""
@@ -248,16 +252,16 @@ class HashCacheManager:
     def print_stats(self):
         """打印缓存统计信息"""
         stats = self.get_stats()
-        print("\n" + "=" * 50)
-        print("📊 哈希缓存统计信息")
-        print("=" * 50)
-        print(f"内存缓存条目: {stats['memory_entries']} / {stats['max_entries']}")
-        print(f"缓存命中: {stats['hits']} 次")
-        print(f"缓存未命中: {stats['misses']} 次")
-        print(f"命中率: {stats['hit_rate']}")
-        print(f"磁盘加载: {stats['disk_loads']} 次")
-        print(f"磁盘保存: {stats['disk_saves']} 次")
-        print("=" * 50 + "\n")
+        logger.info("\n" + "=" * 50)
+        logger.info("📊 哈希缓存统计信息")
+        logger.info("=" * 50)
+        logger.info(f"内存缓存条目: {stats['memory_entries']} / {stats['max_entries']}")
+        logger.info(f"缓存命中: {stats['hits']} 次")
+        logger.info(f"缓存未命中: {stats['misses']} 次")
+        logger.info(f"命中率: {stats['hit_rate']}")
+        logger.info(f"磁盘加载: {stats['disk_loads']} 次")
+        logger.info(f"磁盘保存: {stats['disk_saves']} 次")
+        logger.info("=" * 50 + "\n")
 
     def remove_file_cache(self, file_path: str):
         """
@@ -278,7 +282,7 @@ class HashCacheManager:
         """强制保存当前缓存到磁盘"""
         with self._cache_lock:
             self._save_cache_to_disk()
-            print("[HashCache] 缓存已强制保存到磁盘")
+            logger.info("缓存已强制保存到磁盘")
 
 
 # 全局缓存管理器实例

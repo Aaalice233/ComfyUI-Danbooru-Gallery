@@ -19,25 +19,19 @@ import urllib3
 from pathlib import Path
 import sys
 
-# 添加shared模块路径
-current_dir = Path(__file__).parent
-shared_dir = current_dir.parent / "shared"
-if str(shared_dir) not in sys.path:
-    sys.path.insert(0, str(shared_dir))
+# 设置日志记录（必须在使用logger之前）
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("DanbooruGallery")
 
 # 导入数据库管理器
 try:
-    from db.db_manager import get_db_manager
-except ImportError:
-    logger.warning("[Autocomplete] 无法导入数据库管理器，将仅使用远程API模式")
+    from ..shared.db.db_manager import get_db_manager
+except ImportError as e:
+    logger.warning(f"[Autocomplete] 无法导入数据库管理器，将仅使用远程API模式: {e}")
     get_db_manager = None
 
 # 禁用 SSL 警告（如果需要禁用证书验证）
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-# 设置日志记录
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("DanbooruGallery")
 
 # Danbooru API文档链接 https://danbooru.donmai.us/wiki_pages/help:api
 

@@ -8,11 +8,13 @@ import hashlib
 from typing import List, Dict, Any, Optional
 from ..text_cache_manager.text_cache_manager import text_cache_manager
 
-# 导入debug配置
-from ..utils.debug_config import debug_print
+# 导入日志系统
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
 
 CATEGORY_TYPE = "danbooru"
-COMPONENT_NAME = "global_text_cache_save"
 
 
 class GlobalTextCacheSave:
@@ -114,10 +116,10 @@ class GlobalTextCacheSave:
         """
         try:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
-            debug_print(COMPONENT_NAME, f"\n{'='*60}")
-            debug_print(COMPONENT_NAME, f"[GlobalTextCacheSave] ⏰ 执行时间: {timestamp}")
-            debug_print(COMPONENT_NAME, f"[GlobalTextCacheSave] ┌─ 开始保存文本")
-            debug_print(COMPONENT_NAME, f"{'='*60}\n")
+            logger.debug(f"\n{'='*60}")
+            logger.debug(f"⏰ 执行时间: {timestamp}")
+            logger.debug(f"┌─ 开始保存文本")
+            logger.debug(f"{'='*60}\n")
 
             # 从kwargs中获取参数（所有参数都是optional，INPUT_IS_LIST=True）
             text = kwargs.get("text", None)
@@ -154,13 +156,13 @@ class GlobalTextCacheSave:
             else:
                 processed_monitor_widget_name = str(monitor_widget_name)
 
-            debug_print(COMPONENT_NAME, f"[GlobalTextCacheSave] 📁 通道: {processed_channel}")
-            debug_print(COMPONENT_NAME, f"[GlobalTextCacheSave] 📝 文本长度: {len(processed_text)} 字符")
+            logger.debug(f"📁 通道: {processed_channel}")
+            logger.debug(f"[GlobalTextCacheSave] 📝 文本长度: {len(processed_text)} 字符")
 
             if processed_monitor_node_id and processed_monitor_widget_name:
-                debug_print(COMPONENT_NAME, f"[GlobalTextCacheSave] 👁 监听配置: 节点ID={processed_monitor_node_id}, Widget={processed_monitor_widget_name}")
+                logger.debug(f"👁 监听配置: 节点ID={processed_monitor_node_id}, Widget={processed_monitor_widget_name}")
             else:
-                debug_print(COMPONENT_NAME, f"[GlobalTextCacheSave] 👁 监听配置: 未配置")
+                logger.debug(f"👁 监听配置: 未配置")
 
             # 准备元数据
             metadata = {
@@ -177,7 +179,7 @@ class GlobalTextCacheSave:
                 metadata=metadata
             )
 
-            debug_print(COMPONENT_NAME, f"[GlobalTextCacheSave] └─ 保存完成")
+            logger.info(f"└─ 保存完成")
 
             # 固定返回预览数据（限制预览长度，避免UI卡顿）
             preview_text = processed_text[:500] + "..." if len(processed_text) > 500 else processed_text
@@ -190,9 +192,9 @@ class GlobalTextCacheSave:
             }
 
         except Exception as e:
-            debug_print(COMPONENT_NAME, f"[GlobalTextCacheSave] └─ ✗ 保存失败: {str(e)}")
+            logger.error(f"[GlobalTextCacheSave] └─ ✗ 保存失败: {str(e)}")
             import traceback
-            debug_print(COMPONENT_NAME, traceback.format_exc())
+            logger.debug(traceback.format_exc())
 
             # 返回空结果但不抛出异常
             return {"ui": {}}

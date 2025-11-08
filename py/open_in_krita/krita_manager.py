@@ -9,6 +9,10 @@ import json
 import subprocess
 from pathlib import Path
 from typing import Optional
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
 
 
 class KritaManager:
@@ -31,7 +35,7 @@ class KritaManager:
                 with open(self.settings_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except Exception as e:
-            print(f"[OpenInKrita] Error loading settings: {e}")
+            logger.error(f"Error loading settings: {e}")
 
         return {}
 
@@ -41,7 +45,7 @@ class KritaManager:
             with open(self.settings_file, 'w', encoding='utf-8') as f:
                 json.dump(self.settings, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"[OpenInKrita] Error saving settings: {e}")
+            logger.error(f"Error saving settings: {e}")
 
     def get_krita_path(self) -> Optional[str]:
         """
@@ -66,16 +70,16 @@ class KritaManager:
 
         # 验证路径
         if not os.path.exists(path):
-            print(f"[OpenInKrita] Path does not exist: {path}")
+            logger.warning(f"Path does not exist: {path}")
             return False
 
         if not path.lower().endswith('.exe') and sys.platform == 'win32':
-            print(f"[OpenInKrita] Invalid executable: {path}")
+            logger.warning(f"Invalid executable: {path}")
             return False
 
         self.settings['krita_path'] = path
         self._save_settings()
-        print(f"[OpenInKrita] Krita path set to: {path}")
+        logger.info(f"Krita path set to: {path}")
         return True
 
 
@@ -92,7 +96,7 @@ class KritaManager:
         krita_path = self.get_krita_path()
 
         if not krita_path:
-            print("[OpenInKrita] Krita path not configured. Please set Krita path manually.")
+            logger.info("Krita path not configured. Please set Krita path manually.")
             return False
 
         try:
@@ -100,11 +104,11 @@ class KritaManager:
             if image_path:
                 # 打开图像
                 cmd = [krita_path, str(image_path)]
-                print(f"[OpenInKrita] Launching Krita with image: {image_path}")
+                logger.warning(f"Launching Krita with image: {image_path}")
             else:
                 # 只启动Krita
                 cmd = [krita_path]
-                print(f"[OpenInKrita] Launching Krita")
+                logger.warning(f"Launching Krita")
 
             # 启动进程（不等待）
             subprocess.Popen(
@@ -113,11 +117,11 @@ class KritaManager:
                 stderr=subprocess.DEVNULL
             )
 
-            print("[OpenInKrita] Krita launched successfully")
+            logger.info("Krita launched successfully")
             return True
 
         except Exception as e:
-            print(f"[OpenInKrita] Error launching Krita: {e}")
+            logger.error(f"Error launching Krita: {e}")
             return False
 
     def is_krita_running(self) -> bool:
@@ -144,7 +148,7 @@ class KritaManager:
                 )
                 return result.returncode == 0
         except Exception as e:
-            print(f"[OpenInKrita] Error checking if Krita is running: {e}")
+            logger.error(f"Error checking if Krita is running: {e}")
             return False
 
 

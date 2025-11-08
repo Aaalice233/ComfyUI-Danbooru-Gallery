@@ -1,23 +1,18 @@
 {
-  "debug": {
-    "group_executor_manager": true,
-    "group_executor_trigger": true,
-    "image_cache_save": true,
-    "image_cache_get": true,
-    "execution_engine": true,
-    "cache_control_events": true,
-    "resolution_master_simplify": false,
-    "text_cache_manager": true,
-    "parameter_control_panel": false,
-    "workflow_description": false,
-    "tag_sync": false
-  },
-  "sampler_node_types": [
-    "KSampler",
-    "KSamplerAdvanced",
-    "PixelKSampleUpscalerProvider",
-    "PixelKSampleUpscalerSharpening",
-    "SamplerCustom",
-    "SamplerCustomAdvanced"
-  ]
+  "logging": {
+    "level": "INFO",
+    "console_output": false,
+    "components": {
+      "group_executor_manager": "DEBUG",
+      "group_executor_trigger": "DEBUG",
+      "image_cache_save": "DEBUG",
+      "image_cache_get": "DEBUG",
+      "execution_engine": "DEBUG",
+      "cache_control_events": "DEBUG",
+      "text_cache_manager": "DEBUG",
+      "parameter_control_panel": "INFO",
+      "workflow_description": "INFO",
+      "tag_sync": "INFO"
+    }
+  }
 }

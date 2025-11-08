@@ -7,6 +7,10 @@ import time
 from typing import Dict, Any, Tuple
 from server import PromptServer
 from aiohttp import web
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
 
 # ==================== 通配符类型 ====================
 
@@ -42,7 +46,7 @@ def set_param_structure(node_id: str, meta: list):
         "meta": meta,
         "last_update": time.time()
     }
-    print(f"[ParameterBreak] 节点 {node_id} 参数结构已更新: {len(meta)} 个参数")
+    logger.info(f" 节点 {node_id} 参数结构已更新: {len(meta)} 个参数")
 
 
 # ==================== 节点类 ====================
@@ -99,14 +103,14 @@ class ParameterBreak:
         outputs = [None] * 20
 
         if not parameters or not isinstance(parameters, dict):
-            print(f"[ParameterBreak] 节点 {unique_id} 接收到无效的参数包")
+            logger.info(f" 节点 {unique_id} 接收到无效的参数包")
             return tuple(outputs)
 
         meta = parameters.get("_meta", [])
         values = parameters.get("_values", {})
 
         if not meta:
-            print(f"[ParameterBreak] 节点 {unique_id} 参数包为空")
+            logger.info(f" 节点 {unique_id} 参数包为空")
             return tuple(outputs)
 
         # 更新节点的参数结构（用于前端同步）
@@ -116,7 +120,7 @@ class ParameterBreak:
         # 按照元数据顺序填充输出（最多20个）
         for i, param_meta in enumerate(meta):
             if i >= 20:
-                print(f"[ParameterBreak] 警告: 参数数量超过20个，后续参数将被忽略")
+                logger.info(f" 警告: 参数数量超过20个，后续参数将被忽略")
                 break
 
             name = param_meta.get("name")
@@ -138,7 +142,7 @@ class ParameterBreak:
                 else:
                     outputs[i] = None
 
-        print(f"[ParameterBreak] 节点 {unique_id} 展开参数: {len([o for o in outputs if o is not None])} 个有效输出")
+        logger.info(f" 节点 {unique_id} 展开参数: {len([o for o in outputs if o is not None])} 个有效输出")
         return tuple(outputs)
 
 
@@ -166,7 +170,7 @@ try:
                 "meta": structure["meta"]
             })
         except Exception as e:
-            print(f"[ParameterBreak API] 获取参数结构错误: {e}")
+            logger.error(f" 获取参数结构错误: {e}")
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -193,7 +197,7 @@ try:
                 "message": f"已更新 {len(meta)} 个参数"
             })
         except Exception as e:
-            print(f"[ParameterBreak API] 更新参数结构错误: {e}")
+            logger.error(f" 更新参数结构错误: {e}")
             import traceback
             traceback.print_exc()
             return web.json_response({
@@ -201,10 +205,10 @@ try:
                 "message": str(e)
             }, status=500)
 
-    print("[ParameterBreak] API 路由已注册")
+    logger.info("API 路由已注册")
 
 except ImportError as e:
-    print(f"[ParameterBreak] 警告: 无法导入 PromptServer，API 端点将不可用: {e}")
+    logger.warning(f"无法导入 PromptServer，API 端点将不可用: {e}")
 
 
 # ==================== 节点映射 ====================

@@ -4,8 +4,11 @@
 可选依赖 LoRA Manager 插件
 """
 
+from ..utils.logger import get_logger
+logger = get_logger(__name__)
+
 from .save_image_plus import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
 
-print("[SaveImagePlus] 保存图像增强版节点已加载")
+logger.info("保存图像增强版节点已加载")

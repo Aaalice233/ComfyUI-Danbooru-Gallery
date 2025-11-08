@@ -13,14 +13,17 @@ from PIL import Image, ImageOps, ImageSequence
 from typing import Dict, List, Any, Tuple
 from server import PromptServer
 from aiohttp import web
-from ..utils import debug_config
+from ..utils.logger import get_logger
+
+# 初始化logger
+logger = get_logger(__name__)
 
 # 导入ComfyUI的辅助模块
 try:
     import folder_paths
     import node_helpers
 except ImportError:
-    print("[ParameterControlPanel] 警告: 无法导入 folder_paths 或 node_helpers")
+    logger.warning("警告: 无法导入 folder_paths 或 node_helpers")
     folder_paths = None
     node_helpers = None
 
@@ -61,19 +64,19 @@ def load_presets():
                             "created_at": first_group.get("created_at", time.time())
                         }
                         migrated = True
-                        debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 迁移预设 '{preset_name}' 从分组格式到全局格式")
+                        logger.debug(f"迁移预设 '{preset_name}' 从分组格式到全局格式")
 
             _presets = loaded_data
 
             if migrated:
-                debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 已迁移旧格式预设数据到新格式（全局共享）")
+                logger.info(f"已迁移旧格式预设数据到新格式（全局共享）")
                 save_presets()  # 保存迁移后的数据
 
-            debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 加载了 {len(_presets)} 个预设")
+            logger.debug(f"[ParameterControlPanel] 加载了 {len(_presets)} 个预设")
         else:
             _presets = {}
     except Exception as e:
-        print(f"[ParameterControlPanel] 加载预设失败: {e}")
+        logger.error(f"加载预设失败: {e}")
         _presets = {}
 
 
@@ -84,7 +87,7 @@ def save_presets():
             json.dump(_presets, f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
-        print(f"[ParameterControlPanel] 保存预设失败: {e}")
+        logger.error(f"保存预设失败: {e}")
         return False
 
 
@@ -109,7 +112,7 @@ def set_node_config(node_id: str, parameters: List[Dict]):
         "parameters": parameters,
         "last_update": time.time()
     }
-    debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 节点 {node_id} 配置已更新: {len(parameters)} 个参数")
+    logger.info(f"[ParameterControlPanel] 节点 {node_id} 配置已更新: {len(parameters)} 个参数")
 
 
 def get_output_type(param_type: str, config: Dict = None) -> str:
@@ -172,7 +175,7 @@ class ParameterControlPanel:
             unique_id = str(unique_id)
 
         if not unique_id or unique_id not in _node_configs:
-            debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 节点 {unique_id} 无配置，返回空参数包")
+            logger.debug(f"节点 {unique_id} 无配置，返回空参数包")
             return ({"_meta": [], "_values": {}},)
 
         config = _node_configs[unique_id]
@@ -244,9 +247,9 @@ class ParameterControlPanel:
                                 # 如果加载失败，创建1024x1024白色图像
                                 value = torch.ones((1, 1024, 1024, 3), dtype=torch.float32)
 
-                            debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 加载图像 '{name}': {value.shape}")
+                            logger.debug(f"加载图像 '{name}': {value.shape}")
                         except Exception as e:
-                            print(f"[ParameterControlPanel] 加载图像失败 '{name}': {e}")
+                            logger.error(f"加载图像失败 '{name}': {e}")
                             # 创建1024x1024白色图像作为默认值
                             value = torch.ones((1, 1024, 1024, 3), dtype=torch.float32)
                     else:
@@ -267,7 +270,7 @@ class ParameterControlPanel:
                 params_pack["_values"][name] = value
                 order += 1
 
-        debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 节点 {unique_id} 输出参数包: {len(params_pack['_meta'])} 个参数")
+        logger.debug(f"[ParameterControlPanel] 节点 {unique_id} 输出参数包: {len(params_pack['_meta'])} 个参数")
         return (params_pack,)
 
 
@@ -297,9 +300,9 @@ try:
                 "message": f"已保存 {len(parameters)} 个参数"
             })
         except Exception as e:
-            print(f"[ParameterControlPanel API] 保存配置错误: {e}")
+            logger.error(f"保存配置错误: {e}")
             import traceback
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -324,7 +327,7 @@ try:
                 "parameters": config["parameters"]
             })
         except Exception as e:
-            print(f"[ParameterControlPanel API] 加载配置错误: {e}")
+            logger.error(f"加载配置错误: {e}")
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -342,7 +345,7 @@ try:
                 "presets": preset_names
             })
         except Exception as e:
-            print(f"[ParameterControlPanel API] 列出预设错误: {e}")
+            logger.error(f"列出预设错误: {e}")
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -376,7 +379,7 @@ try:
                 "message": f"预设 '{preset_name}' 已保存"
             })
         except Exception as e:
-            print(f"[ParameterControlPanel API] 保存预设错误: {e}")
+            logger.error(f"保存预设错误: {e}")
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -409,7 +412,7 @@ try:
                 "parameters": preset_data["parameters"]
             })
         except Exception as e:
-            print(f"[ParameterControlPanel API] 加载预设错误: {e}")
+            logger.error(f"加载预设错误: {e}")
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -446,7 +449,7 @@ try:
                 "message": f"预设 '{preset_name}' 已删除"
             })
         except Exception as e:
-            print(f"[ParameterControlPanel API] 删除预设错误: {e}")
+            logger.error(f"删除预设错误: {e}")
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -487,9 +490,9 @@ try:
                 "options": options
             })
         except Exception as e:
-            print(f"[ParameterControlPanel API] 获取数据源错误: {e}")
+            logger.error(f"获取数据源错误: {e}")
             import traceback
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -525,7 +528,7 @@ try:
                             param["config"] = {}
                         param["config"]["options"] = options
                         param_found = True
-                        debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 参数 '{param_name}' 选项已同步: {len(options)} 个")
+                        logger.info(f"[ParameterControlPanel] 参数 '{param_name}' 选项已同步: {len(options)} 个")
                         break
 
             if not param_found:
@@ -542,9 +545,9 @@ try:
                 "message": f"已同步 {len(options)} 个选项到参数 '{param_name}'"
             })
         except Exception as e:
-            print(f"[ParameterControlPanel API] 同步下拉菜单选项错误: {e}")
+            logger.error(f"同步下拉菜单选项错误: {e}")
             import traceback
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -594,7 +597,7 @@ try:
             with open(file_path, 'wb') as f:
                 f.write(file_data)
 
-            debug_config.debug_print("parameter_control_panel", f"[ParameterControlPanel] 图像已上传: {unique_filename}")
+            logger.info(f"图像已上传: {unique_filename}")
 
             return web.json_response({
                 "status": "success",
@@ -603,9 +606,9 @@ try:
             })
 
         except Exception as e:
-            print(f"[ParameterControlPanel API] 上传图像错误: {e}")
+            logger.error(f"上传图像错误: {e}")
             import traceback
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -635,9 +638,9 @@ try:
                 "accessible_params": accessible_params
             })
         except Exception as e:
-            print(f"[ParameterControlPanel API] 获取可访问参数错误: {e}")
+            logger.error(f"获取可访问参数错误: {e}")
             import traceback
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
@@ -676,18 +679,18 @@ try:
             }, status=404)
 
         except Exception as e:
-            print(f"[ParameterControlPanel API] 获取参数值错误: {e}")
+            logger.error(f"获取参数值错误: {e}")
             import traceback
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
                 "message": str(e)
             }, status=500)
 
-    debug_config.debug_print("parameter_control_panel", "[ParameterControlPanel] API 路由已注册")
+    logger.info("API 路由已注册")
 
 except ImportError as e:
-    print(f"[ParameterControlPanel] 警告: 无法导入 PromptServer，API 端点将不可用: {e}")
+    logger.warning(f"警告: 无法导入 PromptServer，API 端点将不可用: {e}")
 
 
 # ==================== 节点映射 ====================
