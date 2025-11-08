@@ -2626,11 +2626,29 @@ app.registerExtension({
             input.style.fontSize = '12px';
             input.style.fontFamily = 'inherit';
 
+            // 恢复保存的textarea高度（持久化）
+            if (isMultiline && config.textareaHeight) {
+                input.style.height = config.textareaHeight;
+            }
+
             // 输入事件
             input.addEventListener('input', (e) => {
                 param.value = e.target.value;
                 this.syncConfig();
             });
+
+            // 监听textarea高度变化并持久化保存
+            if (isMultiline) {
+                const resizeObserver = new ResizeObserver(() => {
+                    const currentHeight = input.style.height || `${input.offsetHeight}px`;
+                    if (!param.config) param.config = {};
+                    if (param.config.textareaHeight !== currentHeight) {
+                        param.config.textareaHeight = currentHeight;
+                        this.syncConfig();
+                    }
+                });
+                resizeObserver.observe(input);
+            }
 
             // 聚焦样式
             input.addEventListener('focus', () => {
