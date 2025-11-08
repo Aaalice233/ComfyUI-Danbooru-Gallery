@@ -25,6 +25,13 @@ class SimpleCheckpointLoaderWithName:
                     "default": "Baked VAE",
                     "tooltip": "选择VAE模型，默认使用checkpoint内置的VAE"
                 }),
+                "clip_skip": ("INT", {
+                    "default": -2,
+                    "min": -24,
+                    "max": -1,
+                    "step": 1,
+                    "tooltip": "CLIP跳过层数。-1=不跳过（使用最后一层），-2=跳过最后1层，以此类推"
+                }),
             }
         }
 
@@ -42,7 +49,7 @@ class SimpleCheckpointLoaderWithName:
     CATEGORY = CATEGORY_TYPE
     DESCRIPTION = "加载diffusion模型checkpoint，支持使用内置VAE或自定义VAE"
 
-    def load_checkpoint(self, ckpt_name, vae_name):
+    def load_checkpoint(self, ckpt_name, vae_name, clip_skip):
         # 加载checkpoint
         ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
         out = comfy.sd.load_checkpoint_guess_config(
@@ -58,6 +65,11 @@ class SimpleCheckpointLoaderWithName:
         if vae_name != "Baked VAE":
             vae_path = folder_paths.get_full_path_or_raise("vae", vae_name)
             vae = comfy.sd.VAE(sd=comfy.utils.load_torch_file(vae_path))
+
+        # 应用CLIP跳过层设置
+        if clip_skip < -1:
+            clip = clip.clone()
+            clip.clip_layer(clip_skip)
 
         return (model, clip, vae, ckpt_name, vae_name)
 

@@ -39,9 +39,15 @@ class CheckpointLoaderExtractor(NodeMetadataExtractor):
     def extract(node_id, inputs, outputs, metadata):
         if not inputs or "ckpt_name" not in inputs:
             return
-            
+
         model_name = inputs.get("ckpt_name")
         _store_checkpoint_metadata(metadata, node_id, model_name)
+
+        # 提取 clip_skip 参数（如果存在）
+        if "clip_skip" in inputs:
+            clip_skip = inputs.get("clip_skip")
+            if node_id in metadata.get(MODELS, {}):
+                metadata[MODELS][node_id]["clip_skip"] = clip_skip
 
 
 class NunchakuFluxDiTLoaderExtractor(NodeMetadataExtractor):
