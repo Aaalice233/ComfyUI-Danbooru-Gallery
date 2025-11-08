@@ -20,7 +20,6 @@ from .py.simple_load_image import NODE_CLASS_MAPPINGS as sli_mappings, NODE_DISP
 from .py.simple_string_split import NODE_CLASS_MAPPINGS as sss_mappings, NODE_DISPLAY_NAME_MAPPINGS as sss_display_mappings
 from .py.save_image_plus import NODE_CLASS_MAPPINGS as sip_mappings, NODE_DISPLAY_NAME_MAPPINGS as sip_display_mappings
 from .py.pixel_ksample_upscaler_sharpening import NODE_CLASS_MAPPINGS as pkus_mappings, NODE_DISPLAY_NAME_MAPPINGS as pkus_display_mappings
-from .py.memory_cleaning_maid import NODE_CLASS_MAPPINGS as mcm_mappings, NODE_DISPLAY_NAME_MAPPINGS as mcm_display_mappings
 
 # 导入优化执行系统
 from .py.group_executor_manager import NODE_CLASS_MAPPINGS as group_manager_mappings
@@ -89,8 +88,7 @@ NODE_CLASS_MAPPINGS = {
     **text_cache_viewer_mappings,
     **open_in_krita_mappings,
     **has_next_executor_group_mappings,
-    **quick_group_navigation_mappings,
-    **mcm_mappings
+    **quick_group_navigation_mappings
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -118,8 +116,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **text_cache_viewer_display_mappings,
     **open_in_krita_display_mappings,
     **has_next_executor_group_display_mappings,
-    **quick_group_navigation_display_mappings,
-    **mcm_display_mappings
+    **quick_group_navigation_display_mappings
 }
 
 # 设置JavaScript文件目录
