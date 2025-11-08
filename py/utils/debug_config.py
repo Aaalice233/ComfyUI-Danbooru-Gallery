@@ -98,7 +98,8 @@ def debug_print(component: str, *args, **kwargs):
         **kwargs: print函数的其他参数
     """
     if should_debug(component):
-        print(*args, **kwargs)
+        # 强制刷新缓冲区，确保日志立即写入文件
+        print(*args, **kwargs, flush=True)
 
 
 def get_all_debug_config() -> Dict[str, Any]:

@@ -813,3 +813,7 @@ NODE_EXTRACTORS = {
     "UltimateSDUpscale": UltimateSDUpscaleExtractor,  # ComfyUI_UltimateSDUpscale
     # Add other nodes as needed
 }
+
+# 主采样器节点检测功能已迁移到 utils.config 模块
+# 这样可以让组执行管理器和元数据收集器共享同一个配置源
+from ..utils.config import is_sampler_node

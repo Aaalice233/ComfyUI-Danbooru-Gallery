@@ -611,6 +611,79 @@ try:
                 "message": str(e)
             }, status=500)
 
+    @routes.get('/danbooru_gallery/pcp/get_accessible_params')
+    async def get_accessible_params(request):
+        """获取所有可被组执行管理器访问的布尔参数列表"""
+        try:
+            accessible_params = []
+
+            # 遍历所有节点配置
+            for node_id, config in _node_configs.items():
+                parameters = config.get("parameters", [])
+
+                # 查找 accessible_to_group_executor=True 的 switch 类型参数
+                for param in parameters:
+                    if param.get("type") == "switch" and param.get("accessible_to_group_executor", False):
+                        accessible_params.append({
+                            "node_id": node_id,
+                            "param_name": param.get("name"),
+                            "current_value": param.get("value", False)
+                        })
+
+            return web.json_response({
+                "status": "success",
+                "accessible_params": accessible_params
+            })
+        except Exception as e:
+            print(f"[ParameterControlPanel API] 获取可访问参数错误: {e}")
+            import traceback
+            traceback.print_exc()
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    @routes.get('/danbooru_gallery/pcp/get_param_value')
+    async def get_param_value(request):
+        """获取指定参数的当前值"""
+        try:
+            node_id = request.query.get('node_id')
+            param_name = request.query.get('param_name')
+
+            if not node_id or not param_name:
+                return web.json_response({
+                    "status": "error",
+                    "message": "缺少 node_id 或 param_name"
+                }, status=400)
+
+            # 获取节点配置
+            config = get_node_config(node_id)
+            parameters = config.get("parameters", [])
+
+            # 查找指定参数
+            for param in parameters:
+                if param.get("name") == param_name:
+                    return web.json_response({
+                        "status": "success",
+                        "value": param.get("value"),
+                        "type": param.get("type")
+                    })
+
+            # 参数不存在
+            return web.json_response({
+                "status": "error",
+                "message": f"参数 '{param_name}' 不存在于节点 '{node_id}'"
+            }, status=404)
+
+        except Exception as e:
+            print(f"[ParameterControlPanel API] 获取参数值错误: {e}")
+            import traceback
+            traceback.print_exc()
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
     debug_config.debug_print("parameter_control_panel", "[ParameterControlPanel] API 路由已注册")
 
 except ImportError as e:

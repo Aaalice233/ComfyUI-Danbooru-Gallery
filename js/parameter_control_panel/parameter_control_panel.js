@@ -2205,6 +2205,12 @@ app.registerExtension({
                 e.stopPropagation();
                 return false;
             });
+            // 锁定模式下禁用编辑按钮视觉效果
+            if (this.properties.locked) {
+                editButton.style.opacity = '0.4';
+                editButton.style.cursor = 'not-allowed';
+                editButton.title = '锁定模式下无法编辑';
+            }
             control.appendChild(editButton);
 
             // 删除按钮（SVG图标）- 锁定模式下隐藏
@@ -2235,6 +2241,11 @@ app.registerExtension({
 
             // 绑定事件
             editButton.addEventListener('click', () => {
+                // 锁定模式下禁止编辑
+                if (this.properties.locked) {
+                    this.showToast('锁定模式下无法编辑参数', 'error');
+                    return;
+                }
                 this.editParameter(param.id);
             });
 
@@ -3192,6 +3203,7 @@ app.registerExtension({
                         const switchDescription = switchConfig.description || '';
                         const showTopLeftNotice = switchConfig.show_top_left_notice || false;
                         const noticeText = switchConfig.notice_text || '';
+                        const accessibleToGroupExecutor = param?.accessible_to_group_executor || false;
                         configPanel.innerHTML = `
                             <div class="pcp-dialog-field">
                                 <label class="pcp-dialog-label">${t('description')}</label>
@@ -3216,6 +3228,15 @@ app.registerExtension({
                                 <label class="pcp-dialog-label">提示文本（留空则显示"参数名：已开启"）</label>
                                 <input type="text" class="pcp-dialog-input" id="pcp-switch-notice-text"
                                        placeholder="例如：图生图模式：已开启" value="${noticeText}">
+                            </div>
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">
+                                    <input type="checkbox" id="pcp-switch-accessible-to-group-executor" ${accessibleToGroupExecutor ? 'checked' : ''} ${this.properties.locked ? 'disabled' : ''}>
+                                    允许组执行器访问此参数
+                                </label>
+                                <p style="color: #999; font-size: 12px; margin: 4px 0 0 24px;">
+                                    勾选后，组执行管理器可以在激进模式条件中使用此参数
+                                </p>
                             </div>
                         `;
                         break;
@@ -3448,6 +3469,7 @@ app.registerExtension({
                         const switchDefaultSelect = configPanel.querySelector('#pcp-switch-default');
                         const switchShowNoticeCheckbox = configPanel.querySelector('#pcp-switch-show-notice');
                         const switchNoticeTextInput = configPanel.querySelector('#pcp-switch-notice-text');
+                        const switchAccessibleCheckbox = configPanel.querySelector('#pcp-switch-accessible-to-group-executor');
 
                         config.default = switchDefaultSelect.value === 'true';
                         config.show_top_left_notice = switchShowNoticeCheckbox.checked;
@@ -3510,6 +3532,14 @@ app.registerExtension({
                 // 如果是分隔符，将颜色值提升到顶层以便访问
                 if (type === 'separator' && config.color) {
                     paramData.color = config.color;
+                }
+
+                // 如果是switch类型，保存组执行器访问权限
+                if (type === 'switch') {
+                    const accessibleCheckbox = configPanel.querySelector('#pcp-switch-accessible-to-group-executor');
+                    if (accessibleCheckbox) {
+                        paramData.accessible_to_group_executor = accessibleCheckbox.checked;
+                    }
                 }
 
                 // 保存参数
@@ -3661,6 +3691,91 @@ app.registerExtension({
                     onConfirm();
                 }
                 overlay.remove();
+            });
+
+            // ESC键关闭
+            const escHandler = (e) => {
+                if (e.key === 'Escape') {
+                    overlay.remove();
+                    document.removeEventListener('keydown', escHandler);
+                }
+            };
+            document.addEventListener('keydown', escHandler);
+        };
+
+        // 显示 switch 参数访问权限配置对话框
+        nodeType.prototype.showSwitchAccessConfig = function (param) {
+            // 创建对话框覆盖层
+            const overlay = document.createElement('div');
+            overlay.className = 'pcp-dialog-overlay';
+
+            // 创建对话框
+            const dialog = document.createElement('div');
+            dialog.className = 'pcp-dialog';
+
+            const isAccessible = param.accessible_to_group_executor || false;
+
+            dialog.innerHTML = `
+                <h3>配置访问权限</h3>
+
+                <div class="pcp-dialog-field">
+                    <p style="color: #E0E0E0; margin: 0 0 12px 0;">参数名称: <strong>${param.name}</strong></p>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="pcp-access-checkbox" ${isAccessible ? 'checked' : ''}
+                               style="width: 16px; height: 16px; cursor: pointer;">
+                        <span style="color: #E0E0E0;">允许组执行管理器访问此参数</span>
+                    </label>
+                    <p style="color: #999; font-size: 12px; margin: 8px 0 0 24px;">
+                        启用后，组执行管理器可以读取此参数的值，用于控制清理行为的激进模式条件。
+                    </p>
+                </div>
+
+                <div class="pcp-dialog-buttons">
+                    <button class="pcp-dialog-button pcp-dialog-button-secondary" id="pcp-access-config-cancel">
+                        取消
+                    </button>
+                    <button class="pcp-dialog-button pcp-dialog-button-primary" id="pcp-access-config-save">
+                        保存
+                    </button>
+                </div>
+            `;
+
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            const checkbox = dialog.querySelector('#pcp-access-checkbox');
+            const cancelButton = dialog.querySelector('#pcp-access-config-cancel');
+            const saveButton = dialog.querySelector('#pcp-access-config-save');
+
+            // 点击覆盖层关闭
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    overlay.remove();
+                }
+            });
+
+            // 取消按钮
+            cancelButton.addEventListener('click', () => {
+                overlay.remove();
+            });
+
+            // 保存按钮
+            saveButton.addEventListener('click', () => {
+                // 更新参数的访问权限配置
+                param.accessible_to_group_executor = checkbox.checked;
+
+                // 同步配置
+                this.syncConfig();
+
+                overlay.remove();
+
+                // 显示提示
+                this.showToast(
+                    checkbox.checked ? '已允许组执行管理器访问' : '已禁止组执行管理器访问',
+                    'success'
+                );
+
+                console.log('[PCP] Switch参数访问权限已更新:', param.name, checkbox.checked);
             });
 
             // ESC键关闭

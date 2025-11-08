@@ -33,7 +33,6 @@ app.registerExtension({
             this.properties = {
                 isExecuting: false,
                 groups: [],
-                selectedColorFilter: '',
                 locked: false  // 锁定模式状态
             };
 
@@ -75,12 +74,6 @@ app.registerExtension({
                     <div class="gem-groups-header">
                         <span class="gem-groups-title">组执行管理器</span>
                         <div class="gem-header-controls">
-                            <div class="gem-color-filter-container" id="gem-color-filter-container">
-                                <span class="gem-filter-label">颜色过滤</span>
-                                <select class="gem-color-filter-select" id="gem-color-filter" title="按颜色过滤组">
-                                    <option value="">所有颜色</option>
-                                </select>
-                            </div>
                             <button class="gem-lock-button" id="gem-lock-button" title="锁定模式（双击切换）">🔒</button>
                             <button class="gem-refresh-button" id="gem-refresh" title="刷新">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -113,11 +106,6 @@ app.registerExtension({
 
                 // 初始化组列表
                 this.updateGroupsList();
-
-                // 立即初始化颜色过滤器
-                setTimeout(() => {
-                    this.refreshColorFilter();
-                }, 50);
 
                 // 从widget的group_config中加载初始数据
                 setTimeout(() => {
@@ -678,21 +666,20 @@ app.registerExtension({
                 });
             }
 
-            // 颜色过滤器
-            const colorFilter = container.querySelector('#gem-color-filter');
-            if (colorFilter) {
-                colorFilter.addEventListener('change', (e) => {
-                    this.properties.selectedColorFilter = e.target.value;
-                    this.refreshGroupsList();
-                });
-            }
         };
 
         // 添加组
         nodeType.prototype.addGroup = function () {
             const newGroup = {
                 id: Date.now(),
-                group_name: ''
+                group_name: '',
+                cleanup_config: {
+                    clear_vram: false,
+                    clear_ram: false,
+                    aggressive_mode: false,
+                    aggressive_conditions: [],
+                    delay_seconds: 0
+                }
             };
 
             this.properties.groups.push(newGroup);
@@ -710,6 +697,412 @@ app.registerExtension({
             }
         };
 
+        // 显示组配置对话框
+        nodeType.prototype.showGroupConfig = function (group) {
+            // 确保 cleanup_config 存在
+            if (!group.cleanup_config) {
+                group.cleanup_config = {
+                    clear_vram: false,
+                    clear_ram: false,
+                    aggressive_mode: false,
+                    aggressive_conditions: [],
+                    delay_seconds: 0
+                };
+            }
+
+            const config = group.cleanup_config;
+
+            // 创建对话框覆盖层
+            const overlay = document.createElement('div');
+            overlay.className = 'gem-dialog-overlay';
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+            `;
+
+            // 创建对话框
+            const dialog = document.createElement('div');
+            dialog.className = 'gem-config-dialog';
+            dialog.style.cssText = `
+                background: #2a2a2a;
+                border-radius: 8px;
+                padding: 20px;
+                min-width: 500px;
+                max-width: 600px;
+                max-height: 80vh;
+                overflow-y: auto;
+                color: #E0E0E0;
+            `;
+
+            const groupName = group.group_name || '未命名组';
+
+            dialog.innerHTML = `
+                <h3 style="margin: 0 0 20px 0; color: #E0E0E0;">组清理配置 - ${groupName}</h3>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="gem-cfg-clear-vram" ${config.clear_vram ? 'checked' : ''}
+                               style="width: 16px; height: 16px; cursor: pointer;">
+                        <span>清理显存 (VRAM)</span>
+                    </label>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="gem-cfg-clear-ram" ${config.clear_ram ? 'checked' : ''}
+                               style="width: 16px; height: 16px; cursor: pointer;">
+                        <span>清理内存 (RAM)</span>
+                    </label>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="gem-cfg-aggressive" ${config.aggressive_mode ? 'checked' : ''}
+                               style="width: 16px; height: 16px; cursor: pointer;">
+                        <span>启用激进模式（卸载所有模型）</span>
+                    </label>
+                </div>
+
+                <div id="gem-aggressive-conditions-section" style="margin-bottom: 16px; padding: 12px; background: #333; border-radius: 4px; ${config.aggressive_mode ? '' : 'display: none;'}">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <strong>激进模式触发条件 (全部满足)</strong>
+                        <button id="gem-add-condition-btn" style="padding: 4px 12px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            + 添加条件
+                        </button>
+                    </div>
+                    <div id="gem-conditions-list" style="display: flex; flex-direction: column; gap: 8px;">
+                        <!-- 条件列表将在这里动态生成 -->
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px;">
+                        <span>清理后延迟 (秒)</span>
+                    </label>
+                    <input type="number" id="gem-cfg-delay" value="${config.delay_seconds}"
+                           min="0" step="0.1"
+                           style="width: 100%; padding: 8px; background: #333; color: #E0E0E0; border: 1px solid #555; border-radius: 4px;">
+                    <p style="color: #999; font-size: 12px; margin: 4px 0 0 0;">支持小数，例如 0.5 或 1.5</p>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
+                    <button id="gem-cfg-cancel" style="padding: 8px 16px; background: #555; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        取消
+                    </button>
+                    <button id="gem-cfg-save" style="padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        保存
+                    </button>
+                </div>
+            `;
+
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            // 渲染条件列表
+            const renderConditions = () => {
+                const conditionsList = dialog.querySelector('#gem-conditions-list');
+                conditionsList.innerHTML = '';
+
+                if (!config.aggressive_conditions || config.aggressive_conditions.length === 0) {
+                    conditionsList.innerHTML = '<p style="color: #999; margin: 0;">暂无条件，默认不启用激进模式</p>';
+                    return;
+                }
+
+                config.aggressive_conditions.forEach((condition, index) => {
+                    const conditionItem = document.createElement('div');
+                    conditionItem.style.cssText = 'padding: 8px; background: #2a2a2a; border-radius: 4px; display: flex; align-items: center; gap: 8px;';
+
+                    let conditionText = '';
+                    if (condition.type === 'has_next_sampler_group') {
+                        conditionText = `接下来${condition.value ? '有' : '无'}采样器组`;
+                    } else if (condition.type === 'pcp_param') {
+                        conditionText = `参数[${condition.node_id || '未设置'}.${condition.param_name || '未设置'}] = ${condition.value}`;
+                    }
+
+                    conditionItem.innerHTML = `
+                        <span style="flex: 1;">${index + 1}. ${conditionText}</span>
+                        <button class="gem-edit-condition" data-index="${index}" style="padding: 4px 8px; background: #FFA500; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            编辑
+                        </button>
+                        <button class="gem-delete-condition" data-index="${index}" style="padding: 4px 8px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            删除
+                        </button>
+                    `;
+
+                    conditionsList.appendChild(conditionItem);
+                });
+
+                // 绑定编辑和删除事件
+                conditionsList.querySelectorAll('.gem-edit-condition').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const index = parseInt(btn.dataset.index);
+                        this.showConditionEditor(config.aggressive_conditions[index], (updatedCondition) => {
+                            config.aggressive_conditions[index] = updatedCondition;
+                            renderConditions();
+                        });
+                    });
+                });
+
+                conditionsList.querySelectorAll('.gem-delete-condition').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const index = parseInt(btn.dataset.index);
+                        config.aggressive_conditions.splice(index, 1);
+                        renderConditions();
+                    });
+                });
+            };
+
+            renderConditions();
+
+            // 激进模式复选框切换
+            const aggressiveCheckbox = dialog.querySelector('#gem-cfg-aggressive');
+            const conditionsSection = dialog.querySelector('#gem-aggressive-conditions-section');
+            aggressiveCheckbox.addEventListener('change', () => {
+                conditionsSection.style.display = aggressiveCheckbox.checked ? 'block' : 'none';
+            });
+
+            // 添加条件按钮
+            dialog.querySelector('#gem-add-condition-btn').addEventListener('click', () => {
+                this.showConditionEditor(null, (newCondition) => {
+                    if (!config.aggressive_conditions) {
+                        config.aggressive_conditions = [];
+                    }
+                    config.aggressive_conditions.push(newCondition);
+                    renderConditions();
+                });
+            });
+
+            // 点击覆盖层关闭
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    overlay.remove();
+                }
+            });
+
+            // 取消按钮
+            dialog.querySelector('#gem-cfg-cancel').addEventListener('click', () => {
+                overlay.remove();
+            });
+
+            // 保存按钮
+            dialog.querySelector('#gem-cfg-save').addEventListener('click', () => {
+                // 更新配置
+                config.clear_vram = dialog.querySelector('#gem-cfg-clear-vram').checked;
+                config.clear_ram = dialog.querySelector('#gem-cfg-clear-ram').checked;
+                config.aggressive_mode = dialog.querySelector('#gem-cfg-aggressive').checked;
+                config.delay_seconds = parseFloat(dialog.querySelector('#gem-cfg-delay').value) || 0;
+
+                // 同步配置
+                this.syncConfig();
+
+                overlay.remove();
+
+                this.showToast('组配置已保存', 'success');
+                console.log('[GEM] 组配置已更新:', group.group_name, config);
+            });
+
+            // ESC键关闭
+            const escHandler = (e) => {
+                if (e.key === 'Escape') {
+                    overlay.remove();
+                    document.removeEventListener('keydown', escHandler);
+                }
+            };
+            document.addEventListener('keydown', escHandler);
+        };
+
+        // 显示条件编辑器对话框
+        nodeType.prototype.showConditionEditor = async function (condition, onSave) {
+            // 如果是新建条件，初始化默认值
+            const isNew = !condition;
+            const editingCondition = condition ? { ...condition } : {
+                type: 'has_next_sampler_group',
+                value: true
+            };
+
+            // 创建对话框覆盖层
+            const overlay = document.createElement('div');
+            overlay.className = 'gem-condition-editor-overlay';
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10001;
+            `;
+
+            // 创建对话框
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                background: #2a2a2a;
+                border-radius: 8px;
+                padding: 20px;
+                min-width: 450px;
+                color: #E0E0E0;
+            `;
+
+            dialog.innerHTML = `
+                <h3 style="margin: 0 0 20px 0;">${isNew ? '添加' : '编辑'}触发条件</h3>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px;">条件类型</label>
+                    <select id="gem-cond-type" style="width: 100%; padding: 8px; background: #333; color: #E0E0E0; border: 1px solid #555; border-radius: 4px;">
+                        <option value="has_next_sampler_group" ${editingCondition.type === 'has_next_sampler_group' ? 'selected' : ''}>是否有下一个采样器组</option>
+                        <option value="pcp_param" ${editingCondition.type === 'pcp_param' ? 'selected' : ''}>参数控制面板变量</option>
+                    </select>
+                </div>
+
+                <div id="gem-cond-config" style="margin-bottom: 16px;">
+                    <!-- 动态配置区域 -->
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 12px;">
+                    <button id="gem-cond-cancel" style="padding: 8px 16px; background: #555; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        取消
+                    </button>
+                    <button id="gem-cond-save" style="padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        ${isNew ? '添加' : '保存'}
+                    </button>
+                </div>
+            `;
+
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            const typeSelect = dialog.querySelector('#gem-cond-type');
+            const configArea = dialog.querySelector('#gem-cond-config');
+
+            // 根据条件类型渲染配置区域
+            const renderConfig = async () => {
+                const type = typeSelect.value;
+
+                if (type === 'has_next_sampler_group') {
+                    configArea.innerHTML = `
+                        <label style="display: block; margin-bottom: 8px;">期望值</label>
+                        <select id="gem-cond-value" style="width: 100%; padding: 8px; background: #333; color: #E0E0E0; border: 1px solid #555; border-radius: 4px;">
+                            <option value="true" ${editingCondition.value === true ? 'selected' : ''}>有</option>
+                            <option value="false" ${editingCondition.value === false ? 'selected' : ''}>无</option>
+                        </select>
+                        <p style="color: #999; font-size: 12px; margin: 8px 0 0 0;">
+                            判断当前组执行完成后，后续是否还有包含采样器的组需要执行
+                        </p>
+                    `;
+                } else if (type === 'pcp_param') {
+                    // 获取可访问的参数列表
+                    let accessibleParams = [];
+                    try {
+                        const response = await fetch('/danbooru_gallery/pcp/get_accessible_params');
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.status === 'success') {
+                                accessibleParams = data.accessible_params || [];
+                            }
+                        }
+                    } catch (e) {
+                        console.error('[GEM] 获取可访问参数失败:', e);
+                    }
+
+                    configArea.innerHTML = `
+                        <label style="display: block; margin-bottom: 8px;">选择参数</label>
+                        <select id="gem-cond-param" style="width: 100%; padding: 8px; background: #333; color: #E0E0E0; border: 1px solid #555; border-radius: 4px; margin-bottom: 12px;">
+                            <option value="">请选择参数</option>
+                            ${accessibleParams.map(param => {
+                                const paramKey = `${param.node_id}|||${param.param_name}`;
+                                const currentKey = `${editingCondition.node_id}|||${editingCondition.param_name}`;
+                                const selected = paramKey === currentKey ? 'selected' : '';
+                                return `<option value="${paramKey}" ${selected}>${param.node_id} - ${param.param_name}</option>`;
+                            }).join('')}
+                        </select>
+
+                        <label style="display: block; margin-bottom: 8px;">期望值</label>
+                        <select id="gem-cond-value" style="width: 100%; padding: 8px; background: #333; color: #E0E0E0; border: 1px solid #555; border-radius: 4px;">
+                            <option value="true" ${editingCondition.value === true ? 'selected' : ''}>true</option>
+                            <option value="false" ${editingCondition.value === false ? 'selected' : ''}>false</option>
+                        </select>
+                        <p style="color: #999; font-size: 12px; margin: 8px 0 0 0;">
+                            ${accessibleParams.length === 0 ? '⚠️ 暂无可访问的参数。请先在参数控制面板中配置允许访问的布尔参数。' : '判断指定参数的当前值是否等于期望值'}
+                        </p>
+                    `;
+                }
+            };
+
+            // 初始化渲染
+            await renderConfig();
+
+            // 类型切换时重新渲染
+            typeSelect.addEventListener('change', async () => {
+                await renderConfig();
+            });
+
+            // 点击覆盖层关闭
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    overlay.remove();
+                }
+            });
+
+            // 取消按钮
+            dialog.querySelector('#gem-cond-cancel').addEventListener('click', () => {
+                overlay.remove();
+            });
+
+            // 保存按钮
+            dialog.querySelector('#gem-cond-save').addEventListener('click', () => {
+                const type = typeSelect.value;
+                const newCondition = { type };
+
+                if (type === 'has_next_sampler_group') {
+                    const value = dialog.querySelector('#gem-cond-value').value;
+                    newCondition.value = value === 'true';
+                } else if (type === 'pcp_param') {
+                    const paramSelect = dialog.querySelector('#gem-cond-param');
+                    const paramValue = paramSelect.value;
+
+                    if (!paramValue) {
+                        alert('请选择一个参数');
+                        return;
+                    }
+
+                    const [node_id, param_name] = paramValue.split('|||');
+                    newCondition.node_id = node_id;
+                    newCondition.param_name = param_name;
+
+                    const value = dialog.querySelector('#gem-cond-value').value;
+                    newCondition.value = value === 'true';
+                }
+
+                overlay.remove();
+
+                if (onSave) {
+                    onSave(newCondition);
+                }
+
+                console.log('[GEM] 条件已保存:', newCondition);
+            });
+
+            // ESC键关闭
+            const escHandler = (e) => {
+                if (e.key === 'Escape') {
+                    overlay.remove();
+                    document.removeEventListener('keydown', escHandler);
+                }
+            };
+            document.addEventListener('keydown', escHandler);
+        };
+
         // 更新组列表显示
         nodeType.prototype.updateGroupsList = function () {
             const listContainer = this.customUI.querySelector('#gem-groups-list');
@@ -721,172 +1114,15 @@ app.registerExtension({
             });
         };
 
-        // 获取工作流中的所有组（支持颜色过滤 - 采用rgthree-comfy的简洁实现）
+        // 获取工作流中的所有组
         nodeType.prototype.getAvailableGroups = function () {
             if (!app.graph || !app.graph._groups) return [];
 
-            let groups = app.graph._groups.filter(g => g && g.title);
-
-            // 应用颜色过滤（采用rgthree-comfy的简洁方法）
-            if (this.properties.selectedColorFilter) {
-                // 标准化过滤器颜色
-                let filterColor = this.properties.selectedColorFilter.trim().toLowerCase();
-
-                // 如果是颜色名称，从LGraphCanvas转换为groupcolor十六进制值
-                if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
-                    if (LGraphCanvas.node_colors[filterColor]) {
-                        filterColor = LGraphCanvas.node_colors[filterColor].groupcolor;
-                    } else {
-                        // Fallback: 尝试用下划线替换空格（处理 'pale blue' -> 'pale_blue' 的情况）
-                        const underscoreColor = filterColor.replace(/\s+/g, '_');
-                        if (LGraphCanvas.node_colors[underscoreColor]) {
-                            filterColor = LGraphCanvas.node_colors[underscoreColor].groupcolor;
-                        } else {
-                            // 第二次fallback: 尝试去掉空格
-                            const spacelessColor = filterColor.replace(/\s+/g, '');
-                            if (LGraphCanvas.node_colors[spacelessColor]) {
-                                filterColor = LGraphCanvas.node_colors[spacelessColor].groupcolor;
-                            }
-                        }
-                    }
-                }
-
-                // 标准化为6位小写十六进制 (#f55 -> #ff5555)
-                filterColor = filterColor.replace("#", "").toLowerCase();
-                if (filterColor.length === 3) {
-                    filterColor = filterColor.replace(/(.)(.)(.)/, "$1$1$2$2$3$3");
-                }
-                filterColor = `#${filterColor}`;
-
-                // 过滤组
-                groups = groups.filter(g => {
-                    if (!g.color) return false;
-
-                    // 标准化组颜色
-                    let groupColor = g.color.replace("#", "").trim().toLowerCase();
-                    if (groupColor.length === 3) {
-                        groupColor = groupColor.replace(/(.)(.)(.)/, "$1$1$2$2$3$3");
-                    }
-                    groupColor = `#${groupColor}`;
-
-                    // 简单匹配
-                    return groupColor === filterColor;
-                });
-            }
+            const groups = app.graph._groups.filter(g => g && g.title);
 
             return groups
                 .map(g => g.title)
                 .sort((a, b) => a.localeCompare(b));
-        };
-
-        // 获取ComfyUI内置颜色列表
-        nodeType.prototype.getAvailableGroupColors = function () {
-            // 只返回ComfyUI内置颜色
-            const builtinColors = [
-                'red', 'brown', 'green', 'blue', 'pale blue',
-                'cyan', 'purple', 'yellow', 'black'
-            ];
-
-            return builtinColors;
-        };
-
-        // 刷新颜色过滤器选项（简化版 - 直接从LGraphCanvas获取颜色）
-        nodeType.prototype.refreshColorFilter = function () {
-            const colorFilter = this.customUI.querySelector('#gem-color-filter');
-            if (!colorFilter) return;
-
-            // 保存当前选中的值
-            const currentValue = colorFilter.value;
-
-            // 获取ComfyUI内置颜色
-            const builtinColors = this.getAvailableGroupColors();
-
-            let options = [];
-
-            // 添加ComfyUI内置颜色选项
-            builtinColors.forEach(colorName => {
-                const displayName = this.getColorDisplayName(colorName);
-                const isSelected = currentValue === colorName;
-                const selectedAttr = isSelected ? 'selected' : '';
-
-                // 直接从LGraphCanvas获取groupcolor十六进制值
-                let hexColor = null;
-                if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
-                    const normalizedName = colorName.toLowerCase();
-                    if (LGraphCanvas.node_colors[normalizedName]) {
-                        hexColor = LGraphCanvas.node_colors[normalizedName].groupcolor;
-                    } else {
-                        // Fallback: 尝试用下划线替换空格（处理 'pale blue' -> 'pale_blue' 的情况）
-                        const underscoreColor = normalizedName.replace(/\s+/g, '_');
-                        if (LGraphCanvas.node_colors[underscoreColor]) {
-                            hexColor = LGraphCanvas.node_colors[underscoreColor].groupcolor;
-                        } else {
-                            // 第二次fallback: 尝试去掉空格
-                            const spacelessColor = normalizedName.replace(/\s+/g, '');
-                            if (LGraphCanvas.node_colors[spacelessColor]) {
-                                hexColor = LGraphCanvas.node_colors[spacelessColor].groupcolor;
-                            }
-                        }
-                    }
-                }
-
-                // 如果获取到颜色值，添加背景色样式
-                if (hexColor) {
-                    options.push(`<option value="${colorName}" ${selectedAttr} style="background-color: ${hexColor}; color: ${this.getContrastColor(hexColor)};">${displayName}</option>`);
-                } else {
-                    // 如果无法获取颜色值，只显示名称
-                    options.push(`<option value="${colorName}" ${selectedAttr}>${displayName}</option>`);
-                }
-            });
-
-            // 构建最终的选项HTML
-            const allOptions = [
-                `<option value="">所有颜色</option>`,
-                ...options
-            ].join('');
-
-            colorFilter.innerHTML = allOptions;
-
-            // 如果当前值不在新的颜色列表中，清空选择
-            const validValues = ['', ...builtinColors];
-            if (currentValue && !validValues.includes(currentValue)) {
-                colorFilter.value = '';
-                this.properties.selectedColorFilter = '';
-            }
-        };
-
-        // 获取颜色显示名称
-        nodeType.prototype.getColorDisplayName = function (color) {
-            if (!color) return '所有颜色';
-
-            // 如果是颜色名称，返回首字母大写的格式
-            const builtinColors = ['red', 'brown', 'green', 'blue', 'pale blue', 'cyan', 'purple', 'yellow', 'black'];
-            if (builtinColors.includes(color.toLowerCase())) {
-                const formattedName = color.toLowerCase();
-                return formattedName.charAt(0).toUpperCase() + formattedName.slice(1);
-            }
-
-            // 默认返回原始值
-            return color;
-        };
-
-        // 获取对比色（用于文本颜色）
-        nodeType.prototype.getContrastColor = function (hexColor) {
-            if (!hexColor) return '#E0E0E0';
-
-            // 移除 # 号
-            const color = hexColor.replace('#', '');
-
-            // 转换为 RGB
-            const r = parseInt(color.substr(0, 2), 16);
-            const g = parseInt(color.substr(2, 2), 16);
-            const b = parseInt(color.substr(4, 2), 16);
-
-            // 计算亮度
-            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-
-            // 根据亮度返回对比色
-            return brightness > 128 ? '#000000' : '#FFFFFF';
         };
 
         // 截断文本辅助函数
@@ -1200,12 +1436,8 @@ app.registerExtension({
                 <div class="gem-group-header">
                     <div class="gem-group-number">${index + 1}</div>
                     <div class="gem-dropdown-container"></div>
-                    <button class="gem-delete-button">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                    </button>
+                    <button class="gem-config-button" title="配置清理选项">⚙️</button>
+                    <button class="gem-delete-button">❌</button>
                 </div>
             `;
 
@@ -1249,13 +1481,68 @@ app.registerExtension({
                 }
             }
 
+            // 配置按钮事件和样式
+            const configButton = item.querySelector('.gem-config-button');
+            // 设置配置按钮样式
+            Object.assign(configButton.style, {
+                padding: '4px 6px',
+                border: 'none',
+                background: 'rgba(100, 149, 237, 0.15)',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                marginLeft: 'auto',
+                marginRight: '4px',
+                fontSize: '14px',
+                lineHeight: '1'
+            });
+            // 配置按钮hover效果
+            configButton.addEventListener('mouseenter', () => {
+                configButton.style.background = 'rgba(100, 149, 237, 0.3)';
+                configButton.style.transform = 'scale(1.15)';
+            });
+            configButton.addEventListener('mouseleave', () => {
+                configButton.style.background = 'rgba(100, 149, 237, 0.15)';
+                configButton.style.transform = 'scale(1)';
+            });
+            configButton.addEventListener('click', () => {
+                this.showGroupConfig(group);
+            });
+
             const deleteButton = item.querySelector('.gem-delete-button');
+            // 设置删除按钮样式
+            Object.assign(deleteButton.style, {
+                padding: '4px 6px',
+                border: 'none',
+                background: 'rgba(220, 53, 69, 0.15)',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                fontSize: '14px',
+                lineHeight: '1'
+            });
+            // 删除按钮hover效果
+            deleteButton.addEventListener('mouseenter', () => {
+                deleteButton.style.background = 'rgba(220, 53, 69, 0.3)';
+                deleteButton.style.transform = 'scale(1.15)';
+            });
+            deleteButton.addEventListener('mouseleave', () => {
+                deleteButton.style.background = 'rgba(220, 53, 69, 0.15)';
+                deleteButton.style.transform = 'scale(1)';
+            });
             deleteButton.addEventListener('click', () => {
                 this.deleteGroup(group.id);
             });
 
-            // ✅ 锁定模式：隐藏删除按钮
+            // ✅ 锁定模式：隐藏配置按钮和删除按钮
             if (this.properties.locked) {
+                configButton.style.display = 'none';
                 deleteButton.style.display = 'none';
             }
 
@@ -1363,7 +1650,22 @@ app.registerExtension({
                 console.warn('[GEM-API] 正在执行中，跳过同步配置到后端');
                 return;
             }
+
+            // 🔍 DEBUG: 保存配置前输出详情
+            console.log('\n[GEM-API] 🔍 ========== 准备保存配置到后端 ==========');
+            console.log('[GEM-API] 📦 groups数量:', this.properties.groups.length);
+            this.properties.groups.forEach((g, i) => {
+                console.log(`[GEM-API]   ${i + 1}. ${g.group_name}`);
+                console.log(`[GEM-API]      cleanup_config存在: ${!!g.cleanup_config}`);
+                if (g.cleanup_config) {
+                    console.log(`[GEM-API]      cleanup_config:`, JSON.stringify(g.cleanup_config, null, 2));
+                } else {
+                    console.log(`[GEM-API]      ⚠️ cleanup_config 不存在或为空`);
+                }
+            });
+
             try {
+                console.log('[GEM-API] 🚀 正在发送保存请求...');
                 const response = await fetch('/danbooru_gallery/group_config/save', {
                     method: 'POST',
                     headers: {
@@ -1375,21 +1677,23 @@ app.registerExtension({
                 });
 
                 const result = await response.json();
+                console.log('[GEM-API] 📥 响应状态:', response.status);
+                console.log('[GEM-API] 📥 响应结果:', result);
+
                 if (result.status === 'success') {
-                    console.log('[GEM-API] 配置已同步到后端:', result.message);
+                    console.log('[GEM-API] ✅ 配置已同步到后端:', result.message);
                 } else {
-                    console.error('[GEM-API] 同步配置失败:', result.message);
+                    console.error('[GEM-API] ❌ 同步配置失败:', result.message);
                 }
+                console.log('[GEM-API] ========================================\n');
             } catch (error) {
-                console.error('[GEM-API] 同步配置到后端出错:', error);
+                console.error('[GEM-API] ❌ 同步配置到后端出错:', error);
+                console.log('[GEM-API] ========================================\n');
             }
         };
 
         // 刷新组列表下拉选项
         nodeType.prototype.refreshGroupsList = function () {
-            // 刷新颜色过滤器选项
-            this.refreshColorFilter();
-
             const availableGroups = this.getAvailableGroups();
 
             // 更新所有组项的可搜索下拉框
@@ -1481,7 +1785,6 @@ app.registerExtension({
 
             // ✅ 改进：保存自定义属性到info对象，这些会被保存到工作流JSON
             info.groups = this.properties.groups || [];
-            info.selectedColorFilter = this.properties.selectedColorFilter || '';
             info.isExecuting = this.properties.isExecuting || false;
             info.locked = this.properties.locked || false;  // ✅ 保存锁定状态
 
@@ -1536,13 +1839,6 @@ app.registerExtension({
             } else {
                 this.properties.groups = [];
                 console.log('[GEM] ⚠️  工作流JSON中没有组配置');
-            }
-
-            // 恢复颜色过滤器
-            if (info.selectedColorFilter !== undefined && typeof info.selectedColorFilter === 'string') {
-                this.properties.selectedColorFilter = info.selectedColorFilter;
-            } else {
-                this.properties.selectedColorFilter = '';
             }
 
             // ⚠️ 修复：加载工作流时强制重置执行状态为false，避免状态卡死

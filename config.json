@@ -11,5 +11,13 @@
     "parameter_control_panel": false,
     "workflow_description": false,
     "tag_sync": false
-  }
+  },
+  "sampler_node_types": [
+    "KSampler",
+    "KSamplerAdvanced",
+    "PixelKSampleUpscalerProvider",
+    "PixelKSampleUpscalerSharpening",
+    "SamplerCustom",
+    "SamplerCustomAdvanced"
+  ]
 }

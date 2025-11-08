@@ -27,8 +27,10 @@ class OptimizedExecutionEngine {
         this.cacheControlStates = new Map(); // execution_id -> cache control states
         this.cancelledExecutions = new Set(); // 记录被取消的执行ID
         this.lastExecutionInterrupted = false; // 记录最近一次执行是否被中断
+        this.samplerNodeTypes = []; // 采样器节点类型列表（从配置加载）
         this.setupEventListeners();
         this.setupCancelHandler();
+        this.loadSamplerNodeTypes(); // 加载采样器节点类型配置
         this.debugMode = true;
 
         debugLog('[OptimizedExecutionEngine] ✅ 优化执行引擎已初始化');
@@ -120,6 +122,32 @@ class OptimizedExecutionEngine {
         });
 
         console.log('[OptimizedExecutionEngine] ✅ 图像过滤器取消监听已设置（监听execution_error和execution_interrupted）');
+    }
+
+    async loadSamplerNodeTypes() {
+        /** 从后端API加载采样器节点类型配置 */
+        try {
+            const response = await fetch('/danbooru_gallery/get_sampler_node_types');
+            const data = await response.json();
+
+            if (data.status === 'success' && data.sampler_node_types) {
+                this.samplerNodeTypes = data.sampler_node_types;
+                debugLog('[OptimizedExecutionEngine] ✅ 采样器节点类型已从配置加载:', this.samplerNodeTypes);
+            } else {
+                throw new Error('Invalid response from server');
+            }
+        } catch (error) {
+            console.warn('[OptimizedExecutionEngine] ⚠️ 从API加载采样器节点类型失败，使用默认列表:', error);
+            // 使用默认列表作为后备方案
+            this.samplerNodeTypes = [
+                'KSampler',
+                'KSamplerAdvanced',
+                'PixelKSampleUpscalerProvider',
+                'PixelKSampleUpscalerSharpening',
+                'SamplerCustom',
+                'SamplerCustomAdvanced'
+            ];
+        }
     }
 
     setupEventListeners() {
@@ -278,7 +306,7 @@ class OptimizedExecutionEngine {
 
             try {
                 // 执行组
-                await this.executeGroup(context, groupInfo);
+                await this.executeGroup(context, groupInfo, groups, i);
 
                 // 标记组完成
                 context.completedGroups.push(groupInfo.group_name);
@@ -322,7 +350,7 @@ class OptimizedExecutionEngine {
         window._groupExecutorActive = false; // Reset the flag
     }
 
-    async executeGroup(context, groupInfo) {
+    async executeGroup(context, groupInfo, groups, currentIndex) {
         /** 执行单个组 */
         const groupName = groupInfo.group_name;
 
@@ -388,6 +416,9 @@ class OptimizedExecutionEngine {
         }
 
         console.log(`[OptimizedExecutionEngine] ✅ 组执行完成: ${groupName}`);
+
+        // ✅ 执行内存清理（如果配置了）
+        await this.performGroupCleanup(context, groupInfo, groups, currentIndex);
 
         // ✅ 清除全局变量
         window._currentExecutingGroup = null;
@@ -680,6 +711,195 @@ class OptimizedExecutionEngine {
                 }
             }, checkInterval);
         });
+    }
+
+    async performGroupCleanup(context, groupInfo, groups, currentIndex) {
+        /** 执行组完成后的内存清理 */
+        const cleanupConfig = groupInfo.cleanup_config;
+        const groupName = groupInfo.group_name;
+
+        // 检查是否配置了清理选项
+        if (!cleanupConfig) {
+            console.log(`[内存清理] ⏭️ 组 "${groupName}" 跳过清理：未配置 cleanup_config`);
+            return;
+        }
+
+        if (!cleanupConfig.clear_vram && !cleanupConfig.clear_ram) {
+            console.log(`[内存清理] ⏭️ 组 "${groupName}" 跳过清理：所有清理选项均已关闭`);
+            return;
+        }
+
+        // 记录即将执行的清理
+        const cleanupActions = [];
+        if (cleanupConfig.clear_vram) cleanupActions.push('VRAM');
+        if (cleanupConfig.clear_ram) cleanupActions.push('RAM');
+        console.log(`[内存清理] 🚀 组 "${groupName}" 开始清理：${cleanupActions.join(' + ')}`);
+
+        try {
+            // 准备清理请求数据
+            const cleanupRequest = {
+                group_name: groupName,
+                clear_vram: cleanupConfig.clear_vram || false,
+                clear_ram: cleanupConfig.clear_ram || false,
+                aggressive_mode: false  // 默认不启用激进模式
+            };
+
+            // 检查是否需要激进模式清理
+            if (cleanupConfig.aggressive_mode && cleanupConfig.aggressive_conditions) {
+                // 评估激进模式条件
+                const shouldUseAggressiveMode = await this.evaluateAggressiveConditions(
+                    cleanupConfig.aggressive_conditions,
+                    currentIndex,
+                    context.executionPlan.groups,
+                    context
+                );
+
+                cleanupRequest.aggressive_mode = shouldUseAggressiveMode;
+                console.log(`[内存清理] 🔍 激进模式评估结果: ${shouldUseAggressiveMode}`);
+            }
+
+            // 调用后端清理 API
+            const response = await api.fetchApi("/danbooru_gallery/group_executor/cleanup", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(cleanupRequest)
+            });
+
+            if (!response.ok) {
+                console.warn(`[内存清理] ⚠️ 清理请求失败: ${response.status}`);
+                return;
+            }
+
+            const result = await response.json();
+            console.log(`[内存清理] ✅ 清理完成:`, result);
+
+            // 执行延迟（如果配置了）
+            if (cleanupConfig.delay_seconds && cleanupConfig.delay_seconds > 0) {
+                const delayMs = cleanupConfig.delay_seconds * 1000;
+                console.log(`[内存清理] ⏱️ 清理后延迟 ${cleanupConfig.delay_seconds} 秒...`);
+                await this.delay(delayMs);
+                console.log(`[内存清理] ✅ 延迟完成`);
+            }
+
+        } catch (error) {
+            console.error(`[内存清理] ❌ 清理执行失败:`, error);
+            // 清理失败不应该中断整个执行流程
+        }
+    }
+
+    async evaluateAggressiveConditions(conditions, currentIndex, groups, context) {
+        /** 评估激进模式条件（AND 逻辑）*/
+        if (!conditions || conditions.length === 0) {
+            return false;
+        }
+
+        console.log(`[OptimizedExecutionEngine] 🔍 评估 ${conditions.length} 个条件（AND 逻辑）...`);
+
+        // 所有条件必须满足（AND 逻辑）
+        for (let i = 0; i < conditions.length; i++) {
+            const condition = conditions[i];
+            const result = await this.evaluateSingleCondition(condition, currentIndex, groups, context);
+
+            console.log(`[OptimizedExecutionEngine] 🔍 条件 ${i + 1}: ${condition.type} = ${result}`);
+
+            if (!result) {
+                console.log(`[OptimizedExecutionEngine] 🔍 条件不满足，激进模式未启用`);
+                return false;
+            }
+        }
+
+        console.log(`[OptimizedExecutionEngine] ✅ 所有条件满足，启用激进模式`);
+        return true;
+    }
+
+    async evaluateSingleCondition(condition, currentIndex, groups, context) {
+        /** 评估单个条件 */
+        const conditionType = condition.type;
+
+        if (conditionType === 'has_next_sampler_group') {
+            // 检查后续组是否包含采样器节点
+            const expectedValue = condition.value === 'true' || condition.value === true;
+            const hasNextSampler = this.hasNextSamplerGroup(currentIndex, groups);
+            return hasNextSampler === expectedValue;
+        } else if (conditionType === 'pcp_param') {
+            // 检查参数控制面板的布尔参数值
+            const nodeId = condition.node_id;
+            const paramName = condition.param_name;
+            const expectedValue = condition.value === 'true' || condition.value === true;
+
+            try {
+                const response = await api.fetchApi(
+                    `/danbooru_gallery/pcp/get_param_value?node_id=${nodeId}&param_name=${encodeURIComponent(paramName)}`
+                );
+
+                if (!response.ok) {
+                    console.warn(`[OptimizedExecutionEngine] ⚠️ 获取参数值失败: ${nodeId}/${paramName}`);
+                    return false;
+                }
+
+                const result = await response.json();
+                const actualValue = result.value || false;
+                return actualValue === expectedValue;
+            } catch (error) {
+                console.error(`[OptimizedExecutionEngine] ❌ 获取参数值异常:`, error);
+                return false;
+            }
+        }
+
+        console.warn(`[OptimizedExecutionEngine] ⚠️ 未知条件类型: ${conditionType}`);
+        return false;
+    }
+
+    hasNextSamplerGroup(currentIndex, groups) {
+        /** 检查后续组是否包含采样器节点 */
+        // 检查当前索引之后的所有组
+        for (let i = currentIndex + 1; i < groups.length; i++) {
+            const group = groups[i];
+            const groupName = group.group_name;
+
+            // 查找组内的所有节点
+            if (!app.graph || !app.graph._nodes) {
+                continue;
+            }
+
+            const graphGroup = app.graph._groups?.find(g => g.title === groupName);
+            if (!graphGroup) {
+                continue;
+            }
+
+            // 检查组内是否有采样器节点
+            for (const node of app.graph._nodes) {
+                if (!node || !node.pos) {
+                    continue;
+                }
+
+                try {
+                    node.getBounding();
+                } catch (e) {
+                    continue;
+                }
+
+                const isInGroup = this.isNodeInGroup(node, graphGroup);
+                if (!isInGroup) {
+                    continue;
+                }
+
+                // 检查节点类型是否是采样器
+                // 采样器节点通常包含 "Sampler" 或 "KSampler" 等关键词
+                const nodeType = node.type || '';
+                if (this.isSamplerNodeType(nodeType)) {
+                    console.log(`[OptimizedExecutionEngine] 🔍 找到后续采样器节点: ${nodeType} (组: ${groupName})`);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    isSamplerNodeType(nodeType) {
+        /** 检查节点类型是否是采样器节点（从配置动态加载） */
+        return this.samplerNodeTypes.includes(nodeType);
     }
 
     handleExecutionError(executionId, error) {

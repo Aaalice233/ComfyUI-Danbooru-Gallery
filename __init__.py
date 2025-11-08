@@ -129,6 +129,7 @@ try:
     from .py.image_cache_manager.image_cache_manager import cache_manager
     from .py.text_cache_manager.text_cache_manager import text_cache_manager
     from .py.utils import debug_config
+    from .py.utils import config
     import time
 
     # 导入 tag sync API 以注册API端点（可选功能）
@@ -188,6 +189,15 @@ try:
                 return web.json_response({"status": "success", "message": "配置已更新"})
             else:
                 return web.json_response({"status": "error", "message": "配置更新失败"}, status=500)
+        except Exception as e:
+            return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+    @PromptServer.instance.routes.get("/danbooru_gallery/get_sampler_node_types")
+    async def get_sampler_node_types(request):
+        """获取采样器节点类型列表的API端点"""
+        try:
+            sampler_types = config.get_sampler_node_types()
+            return web.json_response({"status": "success", "sampler_node_types": sampler_types})
         except Exception as e:
             return web.json_response({"status": "error", "error": str(e)}, status=500)
 

@@ -6,6 +6,7 @@ standalone_mode = os.environ.get("LORA_MANAGER_STANDALONE", "0") == "1" or os.en
 if not standalone_mode:
     from .metadata_hook import MetadataHook
     from .metadata_registry import MetadataRegistry
+    from ..utils.config import is_sampler_node
 
     def init():
         # Install hooks to collect metadata during execution
@@ -28,3 +29,7 @@ else:
     def get_metadata(prompt_id=None):
         """Dummy implementation for standalone mode"""
         return {}
+
+    def is_sampler_node(class_type):
+        """Dummy implementation for standalone mode"""
+        return False
