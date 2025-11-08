@@ -1813,6 +1813,18 @@ app.registerExtension({
         // 更新参数列表显示
         nodeType.prototype.updateParametersList = function () {
             const listContainer = this.customUI.querySelector('#pcp-parameters-list');
+
+            // 保存所有textarea的当前高度（修复锁定时高度重置问题）
+            const textareaHeights = new Map();
+            const existingItems = Array.from(listContainer.children);
+            existingItems.forEach((item, index) => {
+                const textarea = item.querySelector('.pcp-string-textarea');
+                if (textarea) {
+                    // 使用参数索引作为key，保存实际渲染高度
+                    textareaHeights.set(index, textarea.style.height || `${textarea.offsetHeight}px`);
+                }
+            });
+
             listContainer.innerHTML = '';
 
             // 确保所有参数都有ID（兼容旧数据）
@@ -1826,6 +1838,14 @@ app.registerExtension({
             this.properties.parameters.forEach((param, index) => {
                 const paramItem = this.createParameterItem(param, index);
                 listContainer.appendChild(paramItem);
+
+                // 恢复textarea高度
+                if (textareaHeights.has(index)) {
+                    const textarea = paramItem.querySelector('.pcp-string-textarea');
+                    if (textarea) {
+                        textarea.style.height = textareaHeights.get(index);
+                    }
+                }
             });
 
             // 更新节点输出
