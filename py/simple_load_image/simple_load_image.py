@@ -166,7 +166,7 @@ class SimpleLoadImage:
 
             # 检查文件是否存在
             if not os.path.exists(image_path):
-                logger.info(f"图像文件不存在: {image_path}")
+                logger.error(f"图像文件不存在: {image_path}，使用默认黑色占位图")
                 # 返回黑色图像和空mask作为后备
                 black_image = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE, 3), dtype=torch.float32)
                 black_mask = torch.zeros((1, DEFAULT_BLACK_IMAGE_SIZE, DEFAULT_BLACK_IMAGE_SIZE), dtype=torch.float32)

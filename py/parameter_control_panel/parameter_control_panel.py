@@ -184,7 +184,8 @@ class ParameterControlPanel:
         # 构建参数包
         params_pack = {
             "_meta": [],   # 参数元数据列表
-            "_values": {}  # 参数值字典
+            "_values": {},  # 参数值字典
+            "_image_errors": []  # 图像加载错误列表
         }
 
         # 收集所有非分隔符参数的元数据和值
@@ -217,44 +218,68 @@ class ParameterControlPanel:
                     # 处理图像参数
                     output_type = "IMAGE"
                     if value and folder_paths and node_helpers:
-                        try:
-                            # 获取图像路径
-                            image_path = folder_paths.get_annotated_filepath(value)
+                        # 检查文件是否存在
+                        if not folder_paths.exists_annotated_filepath(value):
+                            logger.error(f"图像文件不存在: {value}")
+                            # 记录错误信息
+                            params_pack["_image_errors"].append({
+                                "param_name": name,
+                                "image_path": value,
+                                "error": "文件不存在"
+                            })
+                            # 创建1024x1024黑色占位图
+                            value = torch.zeros((1, 1024, 1024, 3), dtype=torch.float32)
+                        else:
+                            try:
+                                # 获取图像路径
+                                image_path = folder_paths.get_annotated_filepath(value)
 
-                            # 加载图像
-                            img = node_helpers.pillow(Image.open, image_path)
+                                # 加载图像
+                                img = node_helpers.pillow(Image.open, image_path)
 
-                            # 处理图像序列（如GIF）
-                            output_images = []
-                            for i in ImageSequence.Iterator(img):
-                                i = node_helpers.pillow(ImageOps.exif_transpose, i)
+                                # 处理图像序列（如GIF）
+                                output_images = []
+                                for i in ImageSequence.Iterator(img):
+                                    i = node_helpers.pillow(ImageOps.exif_transpose, i)
 
-                                if i.mode == 'I':
-                                    i = i.point(lambda i: i * (1 / 255))
-                                image = i.convert("RGB")
+                                    if i.mode == 'I':
+                                        i = i.point(lambda i: i * (1 / 255))
+                                    image = i.convert("RGB")
 
-                                # 转换为张量
-                                image = np.array(image).astype(np.float32) / 255.0
-                                image = torch.from_numpy(image)[None,]
-                                output_images.append(image)
+                                    # 转换为张量
+                                    image = np.array(image).astype(np.float32) / 255.0
+                                    image = torch.from_numpy(image)[None,]
+                                    output_images.append(image)
 
-                            # 合并所有图像
-                            if len(output_images) > 1:
-                                value = torch.cat(output_images, dim=0)
-                            elif len(output_images) == 1:
-                                value = output_images[0]
-                            else:
-                                # 如果加载失败，创建1024x1024白色图像
-                                value = torch.ones((1, 1024, 1024, 3), dtype=torch.float32)
+                                # 合并所有图像
+                                if len(output_images) > 1:
+                                    value = torch.cat(output_images, dim=0)
+                                elif len(output_images) == 1:
+                                    value = output_images[0]
+                                else:
+                                    # 如果加载失败，创建1024x1024黑色占位图
+                                    logger.error(f"图像序列为空: {value}")
+                                    params_pack["_image_errors"].append({
+                                        "param_name": name,
+                                        "image_path": value,
+                                        "error": "图像序列为空"
+                                    })
+                                    value = torch.zeros((1, 1024, 1024, 3), dtype=torch.float32)
 
-                            logger.debug(f"加载图像 '{name}': {value.shape}")
-                        except Exception as e:
-                            logger.error(f"加载图像失败 '{name}': {e}")
-                            # 创建1024x1024白色图像作为默认值
-                            value = torch.ones((1, 1024, 1024, 3), dtype=torch.float32)
+                                logger.debug(f"加载图像 '{name}': {value.shape}")
+                            except Exception as e:
+                                logger.error(f"加载图像失败 '{name}': {e}")
+                                # 记录错误信息
+                                params_pack["_image_errors"].append({
+                                    "param_name": name,
+                                    "image_path": value,
+                                    "error": str(e)
+                                })
+                                # 创建1024x1024黑色占位图作为默认值
+                                value = torch.zeros((1, 1024, 1024, 3), dtype=torch.float32)
                     else:
-                        # 如果没有图像文件，创建1024x1024白色图像
-                        value = torch.ones((1, 1024, 1024, 3), dtype=torch.float32)
+                        # 如果没有图像文件，创建1024x1024黑色占位图
+                        value = torch.zeros((1, 1024, 1024, 3), dtype=torch.float32)
                 else:
                     output_type = "*"
 

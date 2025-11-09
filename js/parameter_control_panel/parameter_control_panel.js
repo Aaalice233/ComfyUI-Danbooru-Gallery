@@ -4329,6 +4329,23 @@ app.registerExtension({
                 onExecuted.apply(this, arguments);
             }
 
+            // 检查图像加载错误
+            if (message && message.parameters && Array.isArray(message.parameters)) {
+                const paramsData = message.parameters[0];
+                if (paramsData && Array.isArray(paramsData._image_errors) && paramsData._image_errors.length > 0) {
+                    // 显示所有图像加载错误
+                    paramsData._image_errors.forEach(error => {
+                        const errorMsg = t('imageNotFound', {
+                            paramName: error.param_name,
+                            imagePath: error.image_path
+                        }) || `图像不存在，使用默认黑色图像：${error.param_name} (${error.image_path})`;
+
+                        globalToastManager.showToast(errorMsg, 'warning', 5000);
+                        logger.warn('[PCP] 图像加载错误:', error);
+                    });
+                }
+            }
+
             // 可以在这里处理执行结果
             logger.info('[PCP] 节点已执行');
         };
