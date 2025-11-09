@@ -6,6 +6,11 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('preview');
+
 // 预览图尺寸配置
 const IMAGE_WIDTH = 384;
 const IMAGE_MAX_HEIGHT = 512; // 最大高度，避免图片过高
@@ -23,26 +28,26 @@ async function loadPreviewList() {
 
     // 使用缓存（60秒内有效）
     if (previewsCache && (now - lastCacheTime) < CACHE_DURATION) {
-        console.log("[CheckpointPreview] 使用缓存的预览图列表");
+        logger.info("[CheckpointPreview] 使用缓存的预览图列表");
         return previewsCache;
     }
 
     try {
-        console.log("[CheckpointPreview] 开始加载预览图列表...");
+        logger.info("[CheckpointPreview] 开始加载预览图列表...");
         const response = await api.fetchApi("/checkpoint_preview/list");
         const data = await response.json();
 
         if (data.success) {
             previewsCache = data.previews;
             lastCacheTime = now;
-            console.log("[CheckpointPreview] 成功加载预览图列表，共", Object.keys(previewsCache).length, "个模型");
+            logger.info("[CheckpointPreview] 成功加载预览图列表，共", Object.keys(previewsCache).length, "个模型");
             return previewsCache;
         } else {
-            console.error("[CheckpointPreview] 加载预览图列表失败:", data.error);
+            logger.error("[CheckpointPreview] 加载预览图列表失败:", data.error);
             return {};
         }
     } catch (error) {
-        console.error("[CheckpointPreview] 加载预览图列表异常:", error);
+        logger.error("[CheckpointPreview] 加载预览图列表异常:", error);
         return {};
     }
 }
@@ -89,7 +94,7 @@ function calculateImagePosition(targetElement, bodyRect, imageWidth, imageHeight
  * 显示预览图（支持图片和视频）
  */
 function showPreview(targetElement, mediaUrl) {
-    console.log("[CheckpointPreview] 显示预览:", mediaUrl);
+    logger.info("[CheckpointPreview] 显示预览:", mediaUrl);
     const bodyRect = document.body.getBoundingClientRect();
     if (!bodyRect) return;
 
@@ -136,7 +141,7 @@ function showPreview(targetElement, mediaUrl) {
         previewElement.style.width = `${Math.round(displayWidth)}px`;
         previewElement.style.height = `${Math.round(displayHeight)}px`;
 
-        console.log(`[CheckpointPreview] 媒体尺寸 - 原始: ${width}x${height}, 显示: ${Math.round(displayWidth)}x${Math.round(displayHeight)}`);
+        logger.info(`[CheckpointPreview] 媒体尺寸 - 原始: ${width}x${height}, 显示: ${Math.round(displayWidth)}x${Math.round(displayHeight)}`);
 
         const { left, top, isLeft } = calculateImagePosition(targetElement, bodyRect, displayWidth, displayHeight);
 
@@ -188,16 +193,16 @@ function hidePreview() {
  * 为下拉菜单项添加预览处理器
  */
 async function attachPreviewHandlers(menu) {
-    console.log("[CheckpointPreview] 开始附加预览处理器");
+    logger.info("[CheckpointPreview] 开始附加预览处理器");
     const previews = await loadPreviewList();
     const items = menu.querySelectorAll(".litemenu-entry");
-    console.log("[CheckpointPreview] 找到", items.length, "个菜单项");
+    logger.info("[CheckpointPreview] 找到", items.length, "个菜单项");
 
     let foundCount = 0;
     items.forEach(item => {
         const modelName = item.getAttribute("data-value")?.trim();
         if (!modelName) {
-            console.log("[CheckpointPreview] 菜单项缺少data-value属性");
+            logger.info("[CheckpointPreview] 菜单项缺少data-value属性");
             return;
         }
 
@@ -207,7 +212,7 @@ async function attachPreviewHandlers(menu) {
             const mediaUrl = previews[modelName];
             const isVideo = isVideoUrl(mediaUrl);
             const mediaType = isVideo ? "视频" : "图片";
-            console.log(`[CheckpointPreview] 找到预览${mediaType}:`, modelName, "->", mediaUrl);
+            logger.info(`[CheckpointPreview] 找到预览${mediaType}:`, modelName, "->", mediaUrl);
 
             // 添加视觉指示器（小星号）
             const indicator = document.createTextNode(" ★");
@@ -215,13 +220,13 @@ async function attachPreviewHandlers(menu) {
 
             // 鼠标悬停显示预览
             item.addEventListener("mouseover", () => {
-                console.log(`[CheckpointPreview] 鼠标悬停（${mediaType}）:`, modelName);
+                logger.info(`[CheckpointPreview] 鼠标悬停（${mediaType}）:`, modelName);
                 showPreview(item, mediaUrl);
             }, { passive: true });
 
             // 鼠标离开隐藏预览
             item.addEventListener("mouseout", () => {
-                console.log("[CheckpointPreview] 鼠标离开:", modelName);
+                logger.info("[CheckpointPreview] 鼠标离开:", modelName);
                 hidePreview();
             }, { passive: true });
 
@@ -231,7 +236,7 @@ async function attachPreviewHandlers(menu) {
             }, { passive: true });
         }
     });
-    console.log("[CheckpointPreview] 共为", foundCount, "个模型添加了预览功能");
+    logger.info("[CheckpointPreview] 共为", foundCount, "个模型添加了预览功能");
 }
 
 /**
@@ -277,7 +282,7 @@ app.registerExtension({
                 // 检测菜单关闭（移除预览图）
                 for (const removed of mutation.removedNodes) {
                     if (removed.classList?.contains("litecontextmenu")) {
-                        console.log("[CheckpointPreview] 菜单关闭");
+                        logger.info("[CheckpointPreview] 菜单关闭");
                         hidePreview();
                     }
                 }
@@ -285,9 +290,9 @@ app.registerExtension({
                 // 检测菜单打开
                 for (const added of mutation.addedNodes) {
                     if (added.classList?.contains("litecontextmenu")) {
-                        console.log("[CheckpointPreview] 检测到菜单打开");
+                        logger.info("[CheckpointPreview] 检测到菜单打开");
                         const widget = app.canvas.getWidgetAtCursor?.();
-                        console.log("[CheckpointPreview] 当前widget:", widget?.name);
+                        logger.info("[CheckpointPreview] 当前widget:", widget?.name);
 
                         // 检查是否为 ckpt_name widget
                         if (widget?.name === "ckpt_name") {
@@ -297,21 +302,21 @@ app.registerExtension({
                                         app.canvas.current_node ||
                                         app.canvas.node_over;
 
-                            console.log("[CheckpointPreview] 找到节点:", node?.comfyClass || node?.type);
+                            logger.info("[CheckpointPreview] 找到节点:", node?.comfyClass || node?.type);
 
                             // 只处理 SimpleCheckpointLoaderWithName 节点
                             if (node && node.comfyClass === "SimpleCheckpointLoaderWithName") {
-                                console.log("[CheckpointPreview] ✓ 确认是SimpleCheckpointLoaderWithName节点，开始处理");
+                                logger.info("[CheckpointPreview] ✓ 确认是SimpleCheckpointLoaderWithName节点，开始处理");
                                 requestAnimationFrame(() => {
                                     // 检查是否有筛选输入框（用于区分下拉菜单和右键菜单）
                                     const hasFilter = added.querySelector(".comfy-context-menu-filter");
-                                    console.log("[CheckpointPreview] 筛选输入框存在:", !!hasFilter);
+                                    logger.info("[CheckpointPreview] 筛选输入框存在:", !!hasFilter);
                                     if (!hasFilter) return;
 
                                     attachPreviewHandlers(added);
                                 });
                             } else {
-                                console.log("[CheckpointPreview] ✗ 不是SimpleCheckpointLoaderWithName节点，跳过");
+                                logger.info("[CheckpointPreview] ✗ 不是SimpleCheckpointLoaderWithName节点，跳过");
                             }
                         }
                         return;
@@ -326,7 +331,7 @@ app.registerExtension({
             subtree: false
         });
 
-        console.log("[CheckpointPreview] ✓ 预览功能已加载（支持图片和视频）");
+        logger.info("[CheckpointPreview] ✓ 预览功能已加载（支持图片和视频）");
 
         // 刷新时清除缓存
         const originalRefresh = app.refreshComboInNodes;

@@ -5,6 +5,11 @@
 
 import { app } from "/scripts/app.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('group_mute_manager');
+
 // ============================================================
 // 工具函数：处理子图节点的深度优先遍历
 // ============================================================
@@ -78,7 +83,7 @@ app.registerExtension({
     name: "GroupMuteManager",
 
     async init(app) {
-        console.log('[GMM-UI] 初始化组静音管理器');
+        logger.info('[GMM-UI] 初始化组静音管理器');
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
@@ -116,7 +121,7 @@ app.registerExtension({
             this._gmmEventHandler = (e) => {
                 // 只响应其他节点触发的事件，避免重复刷新
                 if (e.detail && e.detail.sourceId !== this._gmmInstanceId) {
-                    console.log('[GMM] 收到其他节点的状态变化事件，刷新UI');
+                    logger.info('[GMM] 收到其他节点的状态变化事件，刷新UI');
                     this.updateGroupsList();
                 }
             };
@@ -130,7 +135,7 @@ app.registerExtension({
         // 创建自定义UI
         nodeType.prototype.createCustomUI = function () {
             try {
-                console.log('[GMM-UI] 开始创建自定义UI:', this.id);
+                logger.info('[GMM-UI] 开始创建自定义UI:', this.id);
 
                 const container = document.createElement('div');
                 container.className = 'gmm-container';
@@ -182,12 +187,12 @@ app.registerExtension({
                 this.stateCheckInterval = setInterval(() => {
                     this.checkGroupStatesChange();
                 }, 3000); // 每3秒检查一次
-                console.log('[GMM-UI] 状态检测定时器已启动（3秒间隔）');
+                logger.info('[GMM-UI] 状态检测定时器已启动（3秒间隔）');
 
-                console.log('[GMM-UI] 自定义UI创建完成');
+                logger.info('[GMM-UI] 自定义UI创建完成');
 
             } catch (error) {
-                console.error('[GMM-UI] 创建自定义UI时出错:', error);
+                logger.error('[GMM-UI] 创建自定义UI时出错:', error);
             }
         };
 
@@ -740,11 +745,11 @@ app.registerExtension({
 
         // 更新组列表显示
         nodeType.prototype.updateGroupsList = function () {
-            console.log('[GMM-UI] === 开始更新组列表 ===');
+            logger.info('[GMM-UI] === 开始更新组列表 ===');
 
             const listContainer = this.customUI.querySelector('#gmm-groups-list');
             if (!listContainer) {
-                console.warn('[GMM-UI] 找不到组列表容器');
+                logger.warn('[GMM-UI] 找不到组列表容器');
                 return;
             }
 
@@ -752,16 +757,16 @@ app.registerExtension({
 
             // 获取工作流中的所有组（未过滤）
             const allWorkflowGroups = this.getWorkflowGroups();
-            console.log('[GMM-UI] 工作流中的组总数:', allWorkflowGroups.length);
-            console.log('[GMM-UI] 所有组名称:', allWorkflowGroups.map(g => g.title));
+            logger.info('[GMM-UI] 工作流中的组总数:', allWorkflowGroups.length);
+            logger.info('[GMM-UI] 所有组名称:', allWorkflowGroups.map(g => g.title));
 
             // 应用排序（默认按名称排序，或使用自定义顺序）
             const sortedGroups = this.sortGroupsByOrder(allWorkflowGroups);
-            console.log('[GMM-UI] 排序后的组顺序:', sortedGroups.map(g => g.title));
+            logger.info('[GMM-UI] 排序后的组顺序:', sortedGroups.map(g => g.title));
 
             // 应用颜色过滤用于显示 (rgthree-comfy approach)
             let displayGroups = sortedGroups;
-            console.log('[GMM-UI] 当前颜色过滤器:', this.properties.selectedColorFilter || '无');
+            logger.info('[GMM-UI] 当前颜色过滤器:', this.properties.selectedColorFilter || '无');
             if (this.properties.selectedColorFilter) {
                 let filterColor = this.properties.selectedColorFilter.trim().toLowerCase();
 
@@ -801,12 +806,12 @@ app.registerExtension({
                     groupColor = `#${groupColor}`;
                     return groupColor === filterColor;
                 });
-                console.log('[GMM-UI] 颜色过滤后的组数量:', displayGroups.length);
-                console.log('[GMM-UI] 过滤后的组名称:', displayGroups.map(g => g.title));
+                logger.info('[GMM-UI] 颜色过滤后的组数量:', displayGroups.length);
+                logger.info('[GMM-UI] 过滤后的组名称:', displayGroups.map(g => g.title));
             }
 
-            console.log('[GMM-UI] 最终显示的组数量:', displayGroups.length);
-            console.log('[GMM-UI] 最终显示顺序:', displayGroups.map(g => g.title));
+            logger.info('[GMM-UI] 最终显示的组数量:', displayGroups.length);
+            logger.info('[GMM-UI] 最终显示顺序:', displayGroups.map(g => g.title));
 
             // 为每个显示的组创建UI
             displayGroups.forEach(group => {
@@ -844,10 +849,10 @@ app.registerExtension({
             );
             const afterCleanupCount = this.properties.groups.length;
             if (beforeCleanupCount !== afterCleanupCount) {
-                console.log('[GMM-UI] 清理了不存在的组配置，数量从', beforeCleanupCount, '减少到', afterCleanupCount);
+                logger.info('[GMM-UI] 清理了不存在的组配置，数量从', beforeCleanupCount, '减少到', afterCleanupCount);
             }
 
-            console.log('[GMM-UI] === 组列表更新完成 ===');
+            logger.info('[GMM-UI] === 组列表更新完成 ===');
         };
 
         // 获取工作流中的所有组
@@ -859,22 +864,22 @@ app.registerExtension({
         // 按照自定义顺序或名称排序组列表
         nodeType.prototype.sortGroupsByOrder = function (groups) {
             if (!groups || groups.length === 0) {
-                console.log('[GMM-Sort] 输入组列表为空');
+                logger.info('[GMM-Sort] 输入组列表为空');
                 return [];
             }
 
-            console.log('[GMM-Sort] 开始排序，组数量:', groups.length);
-            console.log('[GMM-Sort] 输入组名称:', groups.map(g => g.title));
+            logger.info('[GMM-Sort] 开始排序，组数量:', groups.length);
+            logger.info('[GMM-Sort] 输入组名称:', groups.map(g => g.title));
 
             // 如果没有自定义顺序，按名称排序
             if (!this.properties.groupOrder || this.properties.groupOrder.length === 0) {
-                console.log('[GMM-Sort] 没有自定义顺序，按名称排序');
+                logger.info('[GMM-Sort] 没有自定义顺序，按名称排序');
                 const sorted = groups.slice().sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
-                console.log('[GMM-Sort] 排序结果:', sorted.map(g => g.title));
+                logger.info('[GMM-Sort] 排序结果:', sorted.map(g => g.title));
                 return sorted;
             }
 
-            console.log('[GMM-Sort] 使用自定义顺序:', this.properties.groupOrder);
+            logger.info('[GMM-Sort] 使用自定义顺序:', this.properties.groupOrder);
 
             // 按照自定义顺序排序
             const orderMap = new Map();
@@ -894,8 +899,8 @@ app.registerExtension({
                 }
             });
 
-            console.log('[GMM-Sort] 已排序的组:', orderedGroups.map(g => g.title));
-            console.log('[GMM-Sort] 未排序的组:', unorderedGroups.map(g => g.title));
+            logger.info('[GMM-Sort] 已排序的组:', orderedGroups.map(g => g.title));
+            logger.info('[GMM-Sort] 未排序的组:', unorderedGroups.map(g => g.title));
 
             // 已排序的组按照 groupOrder 的顺序排列
             orderedGroups.sort((a, b) => {
@@ -907,7 +912,7 @@ app.registerExtension({
 
             // 合并返回
             const result = [...orderedGroups, ...unorderedGroups];
-            console.log('[GMM-Sort] 最终排序结果:', result.map(g => g.title));
+            logger.info('[GMM-Sort] 最终排序结果:', result.map(g => g.title));
             return result;
         };
 
@@ -942,7 +947,7 @@ app.registerExtension({
                 // 1. 检测组重命名（通过WeakMap）
                 const cachedName = this.groupReferences.get(group);
                 if (cachedName && cachedName !== group.title) {
-                    console.log('[GMM] 检测到组重命名:', cachedName, '→', group.title);
+                    logger.info('[GMM] 检测到组重命名:', cachedName, '→', group.title);
 
                     // 更新配置中的组名
                     const config = this.properties.groups.find(g => g.group_name === cachedName);
@@ -976,7 +981,7 @@ app.registerExtension({
                 const cachedState = this.properties.groupStatesCache[group.title];
 
                 if (cachedState !== undefined && cachedState !== currentState) {
-                    console.log('[GMM] 检测到组状态变化:', group.title,
+                    logger.info('[GMM] 检测到组状态变化:', group.title,
                         cachedState ? '启用 → 禁用' : '禁用 → 启用');
                     hasStateChange = true;
                 }
@@ -987,7 +992,7 @@ app.registerExtension({
 
             // 3. 如果有变化，刷新UI
             if (hasStateChange || hasRename) {
-                console.log('[GMM] 自动刷新UI',
+                logger.info('[GMM] 自动刷新UI',
                     hasStateChange ? '(状态变化)' : '',
                     hasRename ? '(组重命名)' : '');
                 this.updateGroupsList();
@@ -1004,7 +1009,7 @@ app.registerExtension({
         nodeType.prototype.updateLinkageReferences = function (oldName, newName) {
             if (!oldName || !newName || oldName === newName) return;
 
-            console.log('[GMM-Linkage] 开始更新联动引用:', oldName, '→', newName);
+            logger.info('[GMM-Linkage] 开始更新联动引用:', oldName, '→', newName);
 
             let updatedCount = 0;
 
@@ -1016,7 +1021,7 @@ app.registerExtension({
                 if (Array.isArray(groupConfig.linkage.on_enable)) {
                     groupConfig.linkage.on_enable.forEach(rule => {
                         if (rule.target_group === oldName) {
-                            console.log(`[GMM-Linkage] 更新规则: ${groupConfig.group_name} -> on_enable -> ${oldName} => ${newName}`);
+                            logger.info(`[GMM-Linkage] 更新规则: ${groupConfig.group_name} -> on_enable -> ${oldName} => ${newName}`);
                             rule.target_group = newName;
                             updatedCount++;
                         }
@@ -1027,7 +1032,7 @@ app.registerExtension({
                 if (Array.isArray(groupConfig.linkage.on_disable)) {
                     groupConfig.linkage.on_disable.forEach(rule => {
                         if (rule.target_group === oldName) {
-                            console.log(`[GMM-Linkage] 更新规则: ${groupConfig.group_name} -> on_disable -> ${oldName} => ${newName}`);
+                            logger.info(`[GMM-Linkage] 更新规则: ${groupConfig.group_name} -> on_disable -> ${oldName} => ${newName}`);
                             rule.target_group = newName;
                             updatedCount++;
                         }
@@ -1035,7 +1040,7 @@ app.registerExtension({
                 }
             });
 
-            console.log(`[GMM-Linkage] 联动引用更新完成,共更新 ${updatedCount} 条规则`);
+            logger.info(`[GMM-Linkage] 联动引用更新完成,共更新 ${updatedCount} 条规则`);
         };
 
         // 获取组内的所有节点
@@ -1141,7 +1146,7 @@ app.registerExtension({
             e.target.style.opacity = '0.5';
             e.dataTransfer.effectAllowed = 'move';
             e.dataTransfer.setData('text/plain', groupName);
-            console.log('[GMM-Drag] 开始拖拽:', groupName);
+            logger.info('[GMM-Drag] 开始拖拽:', groupName);
         };
 
         // 拖拽经过事件
@@ -1183,22 +1188,22 @@ app.registerExtension({
 
             const draggedGroupName = this._draggedGroup;
             if (!draggedGroupName || draggedGroupName === targetGroupName) {
-                console.log('[GMM-Drag] 取消放置 - 被拖拽组:', draggedGroupName, ', 目标组:', targetGroupName);
+                logger.info('[GMM-Drag] 取消放置 - 被拖拽组:', draggedGroupName, ', 目标组:', targetGroupName);
                 return;
             }
 
-            console.log('[GMM-Drag] 放置事件触发:', draggedGroupName, '->', targetGroupName);
+            logger.info('[GMM-Drag] 放置事件触发:', draggedGroupName, '->', targetGroupName);
 
             // 更新 groupOrder
             this.updateGroupOrder(draggedGroupName, targetGroupName);
 
             // 刷新UI
-            console.log('[GMM-Drag] 开始刷新UI以显示新顺序');
+            logger.info('[GMM-Drag] 开始刷新UI以显示新顺序');
             this.updateGroupsList();
-            console.log('[GMM-Drag] UI刷新完成');
+            logger.info('[GMM-Drag] UI刷新完成');
 
             // 输出最终的 groupOrder 以确认保存成功
-            console.log('[GMM-Drag] 当前保存的 groupOrder:', this.properties.groupOrder);
+            logger.info('[GMM-Drag] 当前保存的 groupOrder:', this.properties.groupOrder);
         };
 
         // 拖拽结束事件
@@ -1211,52 +1216,52 @@ app.registerExtension({
             const items = this.customUI.querySelectorAll('.gmm-group-item');
             items.forEach(item => item.classList.remove('gmm-drag-over'));
 
-            console.log('[GMM-Drag] 拖拽结束');
+            logger.info('[GMM-Drag] 拖拽结束');
         };
 
         // 更新组顺序
         nodeType.prototype.updateGroupOrder = function (draggedGroupName, targetGroupName) {
-            console.log('[GMM-Drag] === 开始更新组顺序 ===');
-            console.log('[GMM-Drag] 被拖拽的组:', draggedGroupName);
-            console.log('[GMM-Drag] 目标位置组:', targetGroupName);
+            logger.info('[GMM-Drag] === 开始更新组顺序 ===');
+            logger.info('[GMM-Drag] 被拖拽的组:', draggedGroupName);
+            logger.info('[GMM-Drag] 目标位置组:', targetGroupName);
 
             // 获取当前排序后的组列表
             const allGroups = this.getWorkflowGroups();
-            console.log('[GMM-Drag] 工作流中所有组:', allGroups.map(g => g.title));
+            logger.info('[GMM-Drag] 工作流中所有组:', allGroups.map(g => g.title));
 
             const sortedGroups = this.sortGroupsByOrder(allGroups);
 
             // 构建新的 groupOrder
             const newOrder = sortedGroups.map(g => g.title);
-            console.log('[GMM-Drag] 拖拽前的顺序:', newOrder);
+            logger.info('[GMM-Drag] 拖拽前的顺序:', newOrder);
 
             // 找到被拖拽组和目标组的索引
             const draggedIndex = newOrder.indexOf(draggedGroupName);
             const targetIndex = newOrder.indexOf(targetGroupName);
 
-            console.log('[GMM-Drag] 被拖拽组索引:', draggedIndex);
-            console.log('[GMM-Drag] 目标组索引:', targetIndex);
+            logger.info('[GMM-Drag] 被拖拽组索引:', draggedIndex);
+            logger.info('[GMM-Drag] 目标组索引:', targetIndex);
 
             if (draggedIndex === -1 || targetIndex === -1) {
-                console.warn('[GMM-Drag] 找不到组索引 - 被拖拽组:', draggedGroupName, '(索引:', draggedIndex + '), 目标组:', targetGroupName, '(索引:', targetIndex + ')');
+                logger.warn('[GMM-Drag] 找不到组索引 - 被拖拽组:', draggedGroupName, '(索引:', draggedIndex + '), 目标组:', targetGroupName, '(索引:', targetIndex + ')');
                 return;
             }
 
             // 移除被拖拽的组
             newOrder.splice(draggedIndex, 1);
-            console.log('[GMM-Drag] 移除被拖拽组后:', newOrder);
+            logger.info('[GMM-Drag] 移除被拖拽组后:', newOrder);
 
             // 在目标位置插入
             const insertIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
-            console.log('[GMM-Drag] 计算的插入位置:', insertIndex);
+            logger.info('[GMM-Drag] 计算的插入位置:', insertIndex);
             newOrder.splice(insertIndex, 0, draggedGroupName);
 
-            console.log('[GMM-Drag] 拖拽后的新顺序:', newOrder);
+            logger.info('[GMM-Drag] 拖拽后的新顺序:', newOrder);
 
             // 更新 properties
             this.properties.groupOrder = newOrder;
-            console.log('[GMM-Drag] 已保存新顺序到 properties.groupOrder');
-            console.log('[GMM-Drag] === 组顺序更新完成 ===');
+            logger.info('[GMM-Drag] 已保存新顺序到 properties.groupOrder');
+            logger.info('[GMM-Drag] === 组顺序更新完成 ===');
         };
 
         // 切换组状态（带联动）
@@ -1267,22 +1272,22 @@ app.registerExtension({
             }
 
             if (this._processingStack.has(groupName)) {
-                console.warn('[GMM] 检测到循环联动，跳过切换:', groupName, enable ? '开启' : '关闭');
+                logger.warn('[GMM] 检测到循环联动，跳过切换:', groupName, enable ? '开启' : '关闭');
                 return;
             }
 
-            console.log('[GMM] 切换组状态:', groupName, enable ? '开启' : '关闭');
+            logger.info('[GMM] 切换组状态:', groupName, enable ? '开启' : '关闭');
 
             const group = app.graph._groups.find(g => g.title === groupName);
             if (!group) {
-                console.warn('[GMM] 未找到组:', groupName);
+                logger.warn('[GMM] 未找到组:', groupName);
                 return;
             }
 
             // 获取组内节点
             const nodes = this.getNodesInGroup(group);
             if (nodes.length === 0) {
-                console.warn('[GMM] 组内没有节点:', groupName);
+                logger.warn('[GMM] 组内没有节点:', groupName);
                 return;
             }
 
@@ -1320,7 +1325,7 @@ app.registerExtension({
                     }
                 });
                 window.dispatchEvent(event);
-                console.log('[GMM] 已广播状态变化事件');
+                logger.info('[GMM] 已广播状态变化事件');
             } finally {
                 // 从处理栈中移除
                 this._processingStack.delete(groupName);
@@ -1329,11 +1334,11 @@ app.registerExtension({
 
         // 跳转到指定组
         nodeType.prototype.navigateToGroup = function (groupName) {
-            console.log('[GMM] 跳转到组:', groupName);
+            logger.info('[GMM] 跳转到组:', groupName);
 
             const group = app.graph._groups.find(g => g.title === groupName);
             if (!group) {
-                console.warn('[GMM] 未找到组:', groupName);
+                logger.warn('[GMM] 未找到组:', groupName);
                 return;
             }
 
@@ -1356,7 +1361,7 @@ app.registerExtension({
             // 刷新画布
             canvas.setDirty(true, true);
 
-            console.log('[GMM] 跳转完成');
+            logger.info('[GMM] 跳转完成');
         };
 
         // 应用联动规则
@@ -1367,18 +1372,18 @@ app.registerExtension({
             const rules = enabled ? config.linkage.on_enable : config.linkage.on_disable;
             if (!rules || !Array.isArray(rules)) return;
 
-            console.log('[GMM] 应用联动规则:', groupName, '规则数:', rules.length);
+            logger.info('[GMM] 应用联动规则:', groupName, '规则数:', rules.length);
 
             rules.forEach(rule => {
                 const targetEnable = rule.action === "enable";
-                console.log('[GMM] 联动:', rule.target_group, rule.action);
+                logger.info('[GMM] 联动:', rule.target_group, rule.action);
                 this.toggleGroup(rule.target_group, targetEnable);
             });
         };
 
         // 显示联动配置对话框
         nodeType.prototype.showLinkageDialog = function (groupConfig) {
-            console.log('[GMM] 显示联动配置对话框:', groupConfig.group_name);
+            logger.info('[GMM] 显示联动配置对话框:', groupConfig.group_name);
 
             // 创建对话框
             const dialog = document.createElement('div');
@@ -1459,7 +1464,7 @@ app.registerExtension({
                 if (originalConfig) {
                     originalConfig.linkage = tempConfig.linkage;
                 }
-                console.log('[GMM] 保存联动配置:', tempConfig.linkage);
+                logger.info('[GMM] 保存联动配置:', tempConfig.linkage);
                 dialog.remove();
             });
 
@@ -1563,7 +1568,7 @@ app.registerExtension({
                 .sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
 
             if (availableGroups.length === 0) {
-                console.warn('[GMM] 没有可用的目标组');
+                logger.warn('[GMM] 没有可用的目标组');
                 return;
             }
 
@@ -1578,7 +1583,7 @@ app.registerExtension({
 
         // 刷新组列表
         nodeType.prototype.refreshGroupsList = function () {
-            console.log('[GMM] 刷新组列表');
+            logger.info('[GMM] 刷新组列表');
             this.refreshColorFilter();
             this.updateGroupsList();
         };
@@ -1689,8 +1694,8 @@ app.registerExtension({
             info.selectedColorFilter = this.properties.selectedColorFilter || '';
             info.groupOrder = this.properties.groupOrder || [];
 
-            console.log('[GMM-Serialize] 保存组配置:', info.groups.length, '个组');
-            console.log('[GMM-Serialize] 保存组顺序:', info.groupOrder.length, '个组');
+            logger.info('[GMM-Serialize] 保存组配置:', info.groups.length, '个组');
+            logger.info('[GMM-Serialize] 保存组顺序:', info.groupOrder.length, '个组');
 
             return data;
         };
@@ -1703,7 +1708,7 @@ app.registerExtension({
             // 从工作流 JSON 恢复组配置
             if (info.groups && Array.isArray(info.groups)) {
                 this.properties.groups = info.groups;
-                console.log('[GMM-Configure] 恢复组配置:', info.groups.length, '个组');
+                logger.info('[GMM-Configure] 恢复组配置:', info.groups.length, '个组');
             }
 
             // 恢复颜色过滤器
@@ -1716,7 +1721,7 @@ app.registerExtension({
             // 恢复组顺序
             if (info.groupOrder && Array.isArray(info.groupOrder)) {
                 this.properties.groupOrder = info.groupOrder;
-                console.log('[GMM-Configure] 恢复组顺序:', info.groupOrder.length, '个组');
+                logger.info('[GMM-Configure] 恢复组顺序:', info.groupOrder.length, '个组');
             } else {
                 this.properties.groupOrder = [];
             }
@@ -1739,20 +1744,20 @@ app.registerExtension({
         // 节点被移除时清理资源
         const onRemoved = nodeType.prototype.onRemoved;
         nodeType.prototype.onRemoved = function () {
-            console.log('[GMM] 清理节点资源:', this.id);
+            logger.info('[GMM] 清理节点资源:', this.id);
 
             // 清除状态检测定时器
             if (this.stateCheckInterval) {
                 clearInterval(this.stateCheckInterval);
                 this.stateCheckInterval = null;
-                console.log('[GMM] 状态检测定时器已清理');
+                logger.info('[GMM] 状态检测定时器已清理');
             }
 
             // 移除事件监听器（使用 window 对象）
             if (this._gmmEventHandler) {
                 window.removeEventListener('group-mute-changed', this._gmmEventHandler);
                 this._gmmEventHandler = null;
-                console.log('[GMM] 已移除事件监听器');
+                logger.info('[GMM] 已移除事件监听器');
             }
 
             // 清理自定义属性
@@ -1769,4 +1774,4 @@ app.registerExtension({
     }
 });
 
-console.log('[GMM] 组静音管理器已加载');
+logger.info('[GMM] 组静音管理器已加载');

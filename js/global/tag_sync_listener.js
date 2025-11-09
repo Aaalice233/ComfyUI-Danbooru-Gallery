@@ -8,6 +8,11 @@ import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 import { globalToastManager } from "./toast_manager.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('tag_sync_listener');
+
 // Register extension
 app.registerExtension({
     name: "danbooru_gallery.tag_sync_listener",
@@ -23,12 +28,12 @@ app.registerExtension({
                 globalToastManager.showStatusBar(STATUS_BAR_ID, message, {
                     closable: true,
                     onClose: () => {
-                        console.log('[标签同步] 用户手动关闭状态栏');
+                        logger.info('[标签同步] 用户手动关闭状态栏');
                     }
                 });
-                console.log('[标签同步] 显示状态栏:', message);
+                logger.info('[标签同步] 显示状态栏:', message);
             } else {
-                console.warn('[标签同步] globalToastManager 或 showStatusBar 未定义');
+                logger.warn('[标签同步] globalToastManager 或 showStatusBar 未定义');
             }
         });
 
@@ -38,7 +43,7 @@ app.registerExtension({
 
             if (typeof globalToastManager !== 'undefined' && globalToastManager.updateStatusBar) {
                 globalToastManager.updateStatusBar(STATUS_BAR_ID, message);
-                console.log('[标签同步] 更新状态栏:', message);
+                logger.info('[标签同步] 更新状态栏:', message);
             }
         });
 
@@ -46,7 +51,7 @@ app.registerExtension({
         api.addEventListener("tag_sync_status_hide", (event) => {
             if (typeof globalToastManager !== 'undefined' && globalToastManager.hideStatusBar) {
                 globalToastManager.hideStatusBar(STATUS_BAR_ID);
-                console.log('[标签同步] 隐藏状态栏');
+                logger.info('[标签同步] 隐藏状态栏');
             }
         });
 
@@ -56,10 +61,10 @@ app.registerExtension({
 
             if (typeof globalToastManager !== 'undefined' && globalToastManager.showToast) {
                 globalToastManager.showToast(message, type, duration || 3000);
-                console.log('[标签同步] Toast:', message);
+                logger.info('[标签同步] Toast:', message);
             }
         });
 
-        console.log("[标签同步] WebSocket 监听器已加载 (支持状态栏+Toast)");
+        logger.info("[标签同步] WebSocket 监听器已加载 (支持状态栏+Toast)");
     }
 });

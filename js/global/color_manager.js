@@ -3,6 +3,12 @@
  * Color Manager - Ensure mask color uniqueness
  */
 
+
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('color_manager');
+
 class ColorManager {
     constructor() {
         // 预定义的颜色池，包含足够多的不同颜色
@@ -97,7 +103,7 @@ class ColorManager {
 
         // 添加生成的颜色到颜色池
         this.colorPool.push(...additionalColors);
-        console.log(`[ColorManager] 生成了 ${additionalColors.length} 个额外颜色，总颜色数: ${this.colorPool.length}`);
+        logger.info(`[ColorManager] 生成了 ${additionalColors.length} 个额外颜色，总颜色数: ${this.colorPool.length}`);
     }
 
     /**

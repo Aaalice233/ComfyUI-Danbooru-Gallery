@@ -11,6 +11,12 @@
  */
 
 // 智能补全缓存类
+
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('autocomplete_cache');
+
 class AutocompleteCache {
     constructor(options = {}) {
         // 缓存配置
@@ -89,11 +95,11 @@ class AutocompleteCache {
                 this.cleanExpiredCache();
 
                 if (this.memoryCache.size > 0) {
-                    console.log(`[AutocompleteCache] 已加载 ${this.memoryCache.size} 条缓存记录`);
+                    logger.info(`[AutocompleteCache] 已加载 ${this.memoryCache.size} 条缓存记录`);
                 }
             }
         } catch (error) {
-            console.warn('[AutocompleteCache] 加载缓存失败，重置缓存:', error);
+            logger.warn('[AutocompleteCache] 加载缓存失败，重置缓存:', error);
             // 重置缓存并清理损坏的数据
             this.memoryCache.clear();
             this.timestamps.clear();
@@ -132,7 +138,7 @@ class AutocompleteCache {
             localStorage.setItem('danbooru_autocomplete_timestamps_v2', JSON.stringify(timestampEntries));
             localStorage.setItem('danbooru_autocomplete_frequency_v2', JSON.stringify(frequencyEntries));
         } catch (error) {
-            console.warn('[AutocompleteCache] 保存缓存失败:', error);
+            logger.warn('[AutocompleteCache] 保存缓存失败:', error);
             // 如果存储空间不足，清理一半缓存
             if (error.name === 'QuotaExceededError') {
                 this.reduceCacheSize();
@@ -332,7 +338,7 @@ class AutocompleteCache {
 
             // 验证响应数据
             if (!Array.isArray(suggestions)) {
-                console.warn('[AutocompleteCache] API返回的数据格式不正确');
+                logger.warn('[AutocompleteCache] API返回的数据格式不正确');
                 return [];
             }
 
@@ -350,7 +356,7 @@ class AutocompleteCache {
 
             return suggestions;
         } catch (error) {
-            console.error('[AutocompleteCache] 获取自动补全建议失败:', error.message);
+            logger.error('[AutocompleteCache] 获取自动补全建议失败:', error.message);
             return [];
         }
     }
@@ -456,7 +462,7 @@ class AutocompleteCache {
 
             // 验证响应数据
             if (!data || typeof data !== 'object') {
-                console.warn('[AutocompleteCache] 中文搜索API返回的数据格式不正确');
+                logger.warn('[AutocompleteCache] 中文搜索API返回的数据格式不正确');
                 return [];
             }
 
@@ -476,7 +482,7 @@ class AutocompleteCache {
 
             return suggestions;
         } catch (error) {
-            console.error('[AutocompleteCache] 获取中文搜索建议失败:', error.message);
+            logger.error('[AutocompleteCache] 获取中文搜索建议失败:', error.message);
             return [];
         }
     }
@@ -506,7 +512,7 @@ class AutocompleteCache {
         localStorage.removeItem('danbooru_autocomplete_timestamps_v2');
         localStorage.removeItem('danbooru_autocomplete_frequency_v2');
 
-        console.log('[AutocompleteCache] 缓存已清空');
+        logger.info('[AutocompleteCache] 缓存已清空');
     }
 
     /**
@@ -552,7 +558,7 @@ class AutocompleteCache {
         this.cleanExpiredCache();
         this.optimizeCache();
         this.saveCacheToStorage();
-        console.log('[AutocompleteCache] 手动优化完成', this.getCacheStats());
+        logger.info('[AutocompleteCache] 手动优化完成', this.getCacheStats());
     }
 }
 

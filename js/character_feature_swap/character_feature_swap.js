@@ -3,6 +3,11 @@ import { api } from "/scripts/api.js";
 import { toastManagerProxy } from "../global/toast_manager.js";
 import { globalMultiLanguageManager } from "../global/multi_language.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('character_feature_swap');
+
 // 防抖函数，用于延迟执行，避免频繁的API调用
 function debounce(func, delay) {
     let timeout;
@@ -110,7 +115,7 @@ app.registerExtension({
                     }
                 } catch (error) {
                     showMessage(ui, t('connectionFailedWarning'));
-                    console.error("CFS: Connection check failed.", error);
+                    logger.error("CFS: Connection check failed.", error);
                 }
             }
 
@@ -353,7 +358,7 @@ app.registerExtension({
                         showToast(t('modelsRefreshed'), 'success');
 
                     } catch (error) {
-                        console.error("Failed to load LLM models:", error);
+                        logger.error("Failed to load LLM models:", error);
                         // Don't change the selection text on error
                         allModels = [];
                         updateOptions();
@@ -1145,7 +1150,7 @@ Respond with only the new, modified prompt, without any explanations.
 
                             } catch (err) {
                                 alert(t('importError') + ": " + err.message);
-                                console.error("CFS: Import failed", err);
+                                logger.error("CFS: Import failed", err);
                             }
                         };
                         reader.readAsText(file);
@@ -1185,7 +1190,7 @@ Respond with only the new, modified prompt, without any explanations.
                         URL.revokeObjectURL(url);
                         alert(t('exportSuccess'));
                     } catch (error) {
-                        console.error("CFS: Export failed", error);
+                        logger.error("CFS: Export failed", error);
                         alert(t('exportFailed'));
                     }
                 };
@@ -1607,7 +1612,7 @@ Respond with only the new, modified prompt, without any explanations.
 
 
                     } catch (error) {
-                        console.error("CFS: Autosave failed.", error);
+                        logger.error("CFS: Autosave failed.", error);
                         // 可以在这里添加一个小的UI提示，告知用户自动保存失败
                     }
                 }, 500); // 500毫秒延迟
@@ -1698,7 +1703,7 @@ Respond with only the new, modified prompt, without any explanations.
                     })
                     .catch(error => {
                         // 如果加载失败，则使用小部件的默认值
-                        console.error("CFS: Failed to load settings for tags, using default.", error);
+                        logger.error("CFS: Failed to load settings for tags, using default.", error);
                         const initialTags = (originalWidget.value || "").split(",").filter(t => t.trim());
                         initialTags.forEach(addSelectedTag);
                     });

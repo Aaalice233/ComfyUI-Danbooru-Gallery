@@ -7,10 +7,9 @@ import aiohttp
 from aiohttp import web
 import traceback
 import asyncio
+from ..utils.logger import get_logger
 
-# 日志记录
-import logging
-logger = logging.getLogger("CharacterFeatureSwap")
+logger = get_logger(__name__)
 
 def _parse_prompt_input(prompt_input):
     """

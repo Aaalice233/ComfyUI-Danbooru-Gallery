@@ -5,18 +5,23 @@
 
 import { app } from "../../../scripts/app.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('simple_notify');
+
 /**
  * 系统通知设置
  * 检查浏览器通知支持和权限
  */
 const notificationSetup = () => {
     if (!("Notification" in window)) {
-        console.log("此浏览器不支持系统通知。");
+        logger.info("此浏览器不支持系统通知。");
         alert("此浏览器不支持系统通知。");
         return false;
     }
     if (Notification.permission === "denied") {
-        console.log("系统通知已被阻止。请在浏览器设置中启用通知。");
+        logger.info("系统通知已被阻止。请在浏览器设置中启用通知。");
         alert("系统通知已被阻止。请在浏览器设置中启用通知。");
         return false;
     }
@@ -95,10 +100,10 @@ app.registerExtension({
                         const audio = new Audio(audioFile);
                         audio.volume = Math.max(0, Math.min(1, volume)); // 确保音量在0-1之间
                         audio.play().catch(err => {
-                            console.warn("[SimpleNotify] 音频播放失败:", err);
+                            logger.warn("[SimpleNotify] 音频播放失败:", err);
                         });
                     } catch (err) {
-                        console.error("[SimpleNotify] 音频加载失败:", err);
+                        logger.error("[SimpleNotify] 音频加载失败:", err);
                     }
                 }
             };

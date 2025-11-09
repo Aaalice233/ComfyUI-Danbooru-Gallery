@@ -11,6 +11,11 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('global_text_cache_get');
+
 // Toast通知管理器（如果存在）
 let showToast = null;
 try {
@@ -19,11 +24,11 @@ try {
     showToast = (message, type = 'success', duration = 3000) => {
         toastModule.globalToastManager.showToast(message, type, duration);
     };
-    console.log("[GlobalTextCacheGet] Toast管理器加载成功");
+    logger.info("[GlobalTextCacheGet] Toast管理器加载成功");
 } catch (e) {
     // 如果toast_manager不存在，使用console.log作为fallback
-    console.warn("[GlobalTextCacheGet] Toast管理器加载失败，使用fallback:", e);
-    showToast = (message) => console.log(`[Toast] ${message}`);
+    logger.warn("[GlobalTextCacheGet] Toast管理器加载失败，使用fallback:", e);
+    showToast = (message) => logger.info(`[Toast] ${message}`);
 }
 
 /**
@@ -36,7 +41,7 @@ function updateNodePreview(node, output) {
         return;
     }
 
-    console.log("[GlobalTextCacheGet] 更新预览，output数据:", output);
+    logger.info("[GlobalTextCacheGet] 更新预览，output数据:", output);
 
     // 从output中直接获取ui数据（ComfyUI的onExecuted会将ui数据展开到output中）
     const text = output?.text?.[0] || '';
@@ -54,7 +59,7 @@ function updateNodePreview(node, output) {
     node._cachePreviewElement.textContent = displayText;
     node._cachePreviewElement.title = `缓存内容预览（共${length}字符）`;
 
-    console.log("[GlobalTextCacheGet] 预览已更新:", {text: text.substring(0, 50), channel, length, usingDefault});
+    logger.info("[GlobalTextCacheGet] 预览已更新:", {text: text.substring(0, 50), channel, length, usingDefault});
 }
 
 // 注意：通道列表现在使用动态combo实现，每次打开下拉列表时自动从后端获取最新列表
@@ -67,7 +72,7 @@ app.registerExtension({
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name === "GlobalTextCacheGet") {
-            console.log("[GlobalTextCacheGet] 注册节点扩展");
+            logger.info("[GlobalTextCacheGet] 注册节点扩展");
 
             // 节点创建时的处理
             const onNodeCreated = nodeType.prototype.onNodeCreated;
@@ -85,7 +90,7 @@ app.registerExtension({
                         const channelWidgetIndex = this.widgets.indexOf(channelWidget);
                         if (channelWidgetIndex !== -1 && this.widgets_values[channelWidgetIndex]) {
                             savedValue = this.widgets_values[channelWidgetIndex];
-                            console.log(`[GlobalTextCacheGet] 从工作流恢复通道名: ${savedValue}`);
+                            logger.info(`[GlobalTextCacheGet] 从工作流恢复通道名: ${savedValue}`);
                         }
                     }
 
@@ -115,7 +120,7 @@ app.registerExtension({
                     // ✅ 恢复工作流保存的值
                     if (savedValue && savedValue.trim() !== '') {
                         channelWidget.value = savedValue;
-                        console.log(`[GlobalTextCacheGet] ✅ 恢复通道值: ${savedValue}`);
+                        logger.info(`[GlobalTextCacheGet] ✅ 恢复通道值: ${savedValue}`);
 
                         // 异步预注册通道到后端（确保通道存在）
                         api.fetchApi('/danbooru/text_cache/ensure_channel', {
@@ -124,10 +129,10 @@ app.registerExtension({
                             body: JSON.stringify({channel_name: savedValue})
                         }).then(response => {
                             if (response.ok) {
-                                console.log(`[GlobalTextCacheGet] ✅ 预注册通道: ${savedValue}`);
+                                logger.info(`[GlobalTextCacheGet] ✅ 预注册通道: ${savedValue}`);
                             }
                         }).catch(error => {
-                            console.error(`[GlobalTextCacheGet] 预注册通道失败:`, error);
+                            logger.error(`[GlobalTextCacheGet] 预注册通道失败:`, error);
                         });
                     }
                 }
@@ -157,7 +162,7 @@ app.registerExtension({
                 // 设置初始节点大小（宽度400，高度280）
                 this.setSize([400, 280]);
 
-                console.log(`[GlobalTextCacheGet] 节点已创建: ID=${this.id}`);
+                logger.info(`[GlobalTextCacheGet] 节点已创建: ID=${this.id}`);
                 return result;
             };
 
@@ -176,8 +181,8 @@ app.registerExtension({
 
     async setup() {
         // 动态combo会在每次打开下拉列表时自动获取最新通道列表，不需要手动刷新
-        console.log("[GlobalTextCacheGet] 使用动态combo实现通道列表自动更新");
+        logger.info("[GlobalTextCacheGet] 使用动态combo实现通道列表自动更新");
     }
 });
 
-console.log("[GlobalTextCacheGet] JavaScript扩展加载完成");
+logger.info("[GlobalTextCacheGet] JavaScript扩展加载完成");

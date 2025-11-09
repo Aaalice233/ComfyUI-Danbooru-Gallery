@@ -6,11 +6,11 @@ Runs tag synchronization in background thread without blocking ComfyUI startup
 import asyncio
 import threading
 import time
-import logging
 from typing import Optional, Dict, Callable
 from enum import Enum
+from ...utils.logger import get_logger
 
-logger = logging.getLogger("DanbooruGallery.AsyncSync")
+logger = get_logger(__name__)
 
 
 class SyncStatus(Enum):

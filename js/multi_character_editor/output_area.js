@@ -3,6 +3,11 @@ import { api } from "/scripts/api.js";
 import { globalToastManager as toastManagerProxy } from '../global/toast_manager.js';
 import { globalMultiLanguageManager } from '../global/multi_language.js';
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('output_area');
+
 class OutputArea {
     constructor(editor) {
         this.editor = editor;
@@ -290,7 +295,7 @@ class OutputArea {
                 }
 
             } catch (error) {
-                console.error("绑定OutputArea事件时发生错误:", error);
+                logger.error("绑定OutputArea事件时发生错误:", error);
             }
         }, 100); // 延迟100ms确保DOM完全渲染
 
@@ -310,13 +315,13 @@ class OutputArea {
         try {
             // 确保编辑器和数据管理器已初始化
             if (!this.editor || !this.editor.dataManager) {
-                console.warn('[OutputArea] 编辑器或数据管理器未初始化，跳过提示词预览更新');
+                logger.warn('[OutputArea] 编辑器或数据管理器未初始化，跳过提示词预览更新');
                 return;
             }
 
             const config = this.editor.dataManager.getConfig();
             if (!config) {
-                console.warn('[OutputArea] 配置为空，跳过提示词预览更新');
+                logger.warn('[OutputArea] 配置为空，跳过提示词预览更新');
                 return;
             }
 
@@ -325,8 +330,8 @@ class OutputArea {
                 this.updatePrompt(generatedPrompt);
             }
         } catch (error) {
-            console.error('[OutputArea] 更新提示词预览失败:', error);
-            console.error('[OutputArea] 错误堆栈:', error.stack);
+            logger.error('[OutputArea] 更新提示词预览失败:', error);
+            logger.error('[OutputArea] 错误堆栈:', error.stack);
         }
     }
 
@@ -370,7 +375,7 @@ class OutputArea {
             }, 2000);
 
         } catch (error) {
-            console.error('复制失败:', error);
+            logger.error('复制失败:', error);
             const t = this.editor.languageManager ? this.editor.languageManager.t.bind(this.editor.languageManager) : globalMultiLanguageManager.t.bind(globalMultiLanguageManager);
 
             this.showToast(t('copyFailed'), 'error');
@@ -633,9 +638,9 @@ class OutputArea {
         const nodeContainer = this.editor && this.editor.container ? this.editor.container : null;
 
         if (!nodeContainer) {
-            console.warn('[OutputArea] 编辑器容器不存在，使用默认提示位置');
+            logger.warn('[OutputArea] 编辑器容器不存在，使用默认提示位置');
         } else {
-            console.log('[OutputArea] 编辑器容器存在，容器信息:', {
+            logger.info('[OutputArea] 编辑器容器存在，容器信息:', {
                 tagName: nodeContainer.tagName,
                 className: nodeContainer.className,
                 id: nodeContainer.id,
@@ -655,7 +660,7 @@ class OutputArea {
             setTimeout(() => {
                 const toastContainer = document.getElementById('mce-toast-container');
                 if (toastContainer) {
-                    console.log('[OutputArea] Toast容器位置信息:', {
+                    logger.info('[OutputArea] Toast容器位置信息:', {
                         tagName: toastContainer.tagName,
                         className: toastContainer.className,
                         id: toastContainer.id,
@@ -669,17 +674,17 @@ class OutputArea {
                         parent: toastContainer.parentElement?.tagName || 'null'
                     });
                 } else {
-                    console.error('[OutputArea] Toast容器不存在！');
+                    logger.error('[OutputArea] Toast容器不存在！');
                 }
             }, 100);
         } catch (error) {
-            console.error('[OutputArea] 显示提示失败:', error);
+            logger.error('[OutputArea] 显示提示失败:', error);
             // 回退到不传递节点容器的方式
             try {
                 const fallbackResult = toastManagerProxy.showToast(message, type, duration, {});
 
             } catch (fallbackError) {
-                console.error('[OutputArea] 回退方式也失败:', fallbackError);
+                logger.error('[OutputArea] 回退方式也失败:', fallbackError);
             }
         }
     }

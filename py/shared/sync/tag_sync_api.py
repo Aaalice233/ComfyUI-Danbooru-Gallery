@@ -3,13 +3,13 @@ Tag sync API - Simple background sync with global toast integration
 """
 
 import asyncio
-import logging
 import json
 from pathlib import Path
 from aiohttp import web
 from server import PromptServer
+from ...utils.logger import get_logger
 
-logger = logging.getLogger("DanbooruGallery.TagSync")
+logger = get_logger(__name__)
 
 # Load config
 def load_config():

@@ -11,6 +11,11 @@ import { globalAutocompleteCache } from '../global/autocomplete_cache.js';
 import { AutocompleteUI } from '../global/autocomplete_ui.js';
 import { globalToastManager as toastManagerProxy } from '../global/toast_manager.js';
 import { PresetManager } from './preset_manager.js';
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('multi_character_editor');
+
 import '../global/color_manager.js';
 
 /*
@@ -120,12 +125,12 @@ class MultiCharacterEditor {
             try {
                 this.toastManager.showToast(message, type, duration, { nodeContainer });
             } catch (error) {
-                console.error('[MultiCharacterEditor] 显示提示失败:', error);
+                logger.error('[MultiCharacterEditor] 显示提示失败:', error);
                 // 回退到不传递节点容器的方式
                 try {
                     this.toastManager.showToast(message, type, duration, {});
                 } catch (fallbackError) {
-                    console.error('[MultiCharacterEditor] 回退方式也失败:', fallbackError);
+                    logger.error('[MultiCharacterEditor] 回退方式也失败:', fallbackError);
                     // 最后的保险措施：使用浏览器原生alert
                     alert(`${type.toUpperCase()}: ${message}`);
                 }
@@ -393,8 +398,8 @@ class MultiCharacterEditor {
 
 
         } catch (error) {
-            console.error("[DEBUG] initComponents: 组件初始化过程中发生错误:", error);
-            console.error("[DEBUG] initComponents: 错误堆栈:", error.stack);
+            logger.error("[DEBUG] initComponents: 组件初始化过程中发生错误:", error);
+            logger.error("[DEBUG] initComponents: 错误堆栈:", error.stack);
         }
     }
 
@@ -469,7 +474,7 @@ class MultiCharacterEditor {
                     this.fixColorConflicts(config.characters);
 
                     config.characters.forEach((charData, index) => {
-                        console.log(`[DEBUG] loadInitialData: 恢复角色 ${index + 1}/${config.characters.length}`, {
+                        logger.info(`[DEBUG] loadInitialData: 恢复角色 ${index + 1}/${config.characters.length}`, {
                             id: charData.id,
                             name: charData.name,
                             hasMask: !!charData.mask,
@@ -480,7 +485,7 @@ class MultiCharacterEditor {
                         if (this.components.characterEditor) {
                             this.components.characterEditor.addCharacterToUI(charData, false); // false表示不触发事件
                         } else {
-                            console.error('[MultiCharacterEditor] loadInitialData: characterEditor组件不存在');
+                            logger.error('[MultiCharacterEditor] loadInitialData: characterEditor组件不存在');
                         }
                     });
 
@@ -525,7 +530,7 @@ class MultiCharacterEditor {
 
 
                         if (currentCount === 0 && config.characters.length > 0) {
-                            console.error('[MultiCharacterEditor] loadInitialData: 数据恢复失败，尝试强制恢复');
+                            logger.error('[MultiCharacterEditor] loadInitialData: 数据恢复失败，尝试强制恢复');
                             // 强制重新设置角色数据
                             this.dataManager.config.characters = [...config.characters];
                             if (this.components.characterEditor) {
@@ -548,7 +553,7 @@ class MultiCharacterEditor {
                         this.forceCanvasDisplay();
 
                     } else {
-                        console.error('[MultiCharacterEditor] loadInitialData: maskEditor组件不存在，无法初始化画布');
+                        logger.error('[MultiCharacterEditor] loadInitialData: maskEditor组件不存在，无法初始化画布');
                     }
 
                     // 🔧 修复：即使没有角色数据，也要渲染角色列表以显示全局提示词
@@ -567,7 +572,7 @@ class MultiCharacterEditor {
             }, 1000);
 
         } catch (error) {
-            console.error('[MultiCharacterEditor] loadInitialData: 加载初始数据失败:', error);
+            logger.error('[MultiCharacterEditor] loadInitialData: 加载初始数据失败:', error);
         }
     }
 
@@ -601,17 +606,17 @@ class MultiCharacterEditor {
 
             // 为冲突的角色分配新颜色
             if (conflictCharacters.length > 0) {
-                console.log(`[MultiCharacterEditor] 发现 ${conflictCharacters.length} 个角色颜色冲突，正在修复...`);
+                logger.info(`[MultiCharacterEditor] 发现 ${conflictCharacters.length} 个角色颜色冲突，正在修复...`);
 
                 conflictCharacters.forEach(char => {
                     if (window.MCE_ColorManager) {
                         const newColor = window.MCE_ColorManager.getColorForId(char.id, true);
                         char.color = newColor;
-                        console.log(`[MultiCharacterEditor] 已为角色 "${char.name}" (${char.id}) 分配新颜色: ${newColor}`);
+                        logger.info(`[MultiCharacterEditor] 已为角色 "${char.name}" (${char.id}) 分配新颜色: ${newColor}`);
                     } else {
                         // 回退方案：使用默认颜色
                         char.color = '#FF6B6B';
-                        console.warn(`[MultiCharacterEditor] ColorManager 未加载，为角色 "${char.name}" 使用默认颜色`);
+                        logger.warn(`[MultiCharacterEditor] ColorManager 未加载，为角色 "${char.name}" 使用默认颜色`);
                     }
                 });
 
@@ -624,10 +629,10 @@ class MultiCharacterEditor {
                     }, 100);
                 }
             } else {
-                console.log('[MultiCharacterEditor] 所有角色颜色正常，无需修复');
+                logger.info('[MultiCharacterEditor] 所有角色颜色正常，无需修复');
             }
         } catch (error) {
-            console.error('[MultiCharacterEditor] 修复颜色冲突失败:', error);
+            logger.error('[MultiCharacterEditor] 修复颜色冲突失败:', error);
         }
     }
 
@@ -674,7 +679,7 @@ class MultiCharacterEditor {
 
 
         } catch (error) {
-            console.error('[MultiCharacterEditor] validateDataIntegrity: 验证数据完整性失败:', error);
+            logger.error('[MultiCharacterEditor] validateDataIntegrity: 验证数据完整性失败:', error);
         }
     }
 
@@ -710,7 +715,7 @@ class MultiCharacterEditor {
             this.components.maskEditor.addMask(character);
 
         } else {
-            console.error('[MultiCharacterEditor] onCharacterAdded: maskEditor组件不存在');
+            logger.error('[MultiCharacterEditor] onCharacterAdded: maskEditor组件不存在');
         }
 
         this.updateOutput();
@@ -734,7 +739,7 @@ class MultiCharacterEditor {
 
 
             if (savedCount === 0 && config?.characters?.length > 0) {
-                console.error('[MultiCharacterEditor] onCharacterAdded: 保存验证失败，重新保存');
+                logger.error('[MultiCharacterEditor] onCharacterAdded: 保存验证失败，重新保存');
                 this.saveToNodeState(enhancedConfig);
             }
         }, 100);
@@ -782,7 +787,7 @@ class MultiCharacterEditor {
     saveToNodeState(config) {
         try {
             if (!this.node || !this.node.id) {
-                console.error('[MultiCharacterEditor] saveToNodeState: 节点或节点ID不存在');
+                logger.error('[MultiCharacterEditor] saveToNodeState: 节点或节点ID不存在');
                 return;
             }
 
@@ -793,7 +798,7 @@ class MultiCharacterEditor {
 
             // 检查config的有效性
             if (!config) {
-                console.error('[MultiCharacterEditor] saveToNodeState: config为空，不保存');
+                logger.error('[MultiCharacterEditor] saveToNodeState: config为空，不保存');
                 return;
             }
 
@@ -861,7 +866,7 @@ class MultiCharacterEditor {
                 }
 
             } catch (serializeError) {
-                console.error('[MultiCharacterEditor] saveToNodeState: 配置序列化失败:', serializeError);
+                logger.error('[MultiCharacterEditor] saveToNodeState: 配置序列化失败:', serializeError);
                 // 尝试保存简化版本
                 const safeConfig = {
                     version: '1.1.0',
@@ -881,7 +886,7 @@ class MultiCharacterEditor {
             this.node.setDirtyCanvas(true, true);
 
         } catch (error) {
-            console.error('[MultiCharacterEditor] 保存到节点状态失败:', error);
+            logger.error('[MultiCharacterEditor] 保存到节点状态失败:', error);
             // 降级到localStorage
             this.saveToLocalStorage(config);
         }
@@ -926,7 +931,7 @@ class MultiCharacterEditor {
 
                     return validatedConfig;
                 } catch (parseError) {
-                    console.error('[MultiCharacterEditor] loadFromNodeState: 配置解析失败:', parseError);
+                    logger.error('[MultiCharacterEditor] loadFromNodeState: 配置解析失败:', parseError);
 
 
                     // 🔧 关键修复：尝试从localStorage恢复
@@ -938,7 +943,7 @@ class MultiCharacterEditor {
                 }
             }
         } catch (error) {
-            console.error('[MultiCharacterEditor] 从节点状态加载配置失败:', error);
+            logger.error('[MultiCharacterEditor] 从节点状态加载配置失败:', error);
         }
         return null;
     }
@@ -960,7 +965,7 @@ class MultiCharacterEditor {
                 return this.validateAndFixConfig(config);
             }
         } catch (error) {
-            console.error('[MultiCharacterEditor] retryLoadFromNodeState: 重试失败:', error);
+            logger.error('[MultiCharacterEditor] retryLoadFromNodeState: 重试失败:', error);
         }
         return null;
     }
@@ -969,7 +974,7 @@ class MultiCharacterEditor {
     validateAndFixConfig(config) {
         try {
             if (!config) {
-                console.warn('[MultiCharacterEditor] validateAndFixConfig: 配置为空，返回默认配置');
+                logger.warn('[MultiCharacterEditor] validateAndFixConfig: 配置为空，返回默认配置');
                 return this.getDefaultConfig();
             }
 
@@ -1033,7 +1038,7 @@ class MultiCharacterEditor {
 
             return fixedConfig;
         } catch (error) {
-            console.error('[MultiCharacterEditor] validateAndFixConfig: 修复配置失败:', error);
+            logger.error('[MultiCharacterEditor] validateAndFixConfig: 修复配置失败:', error);
             return this.getDefaultConfig();
         }
     }
@@ -1057,7 +1062,7 @@ class MultiCharacterEditor {
     generateColor(id = null) {
         if (!window.MCE_ColorManager) {
             // 如果颜色管理器未加载，返回默认颜色
-            console.warn('[MCE] ColorManager not loaded, using fallback color');
+            logger.warn('[MCE] ColorManager not loaded, using fallback color');
             return '#FF6B6B';
         }
 
@@ -1136,7 +1141,7 @@ class MultiCharacterEditor {
 
 
             } else {
-                console.warn('[MultiCharacterEditor] ensureConfigCompleteness: 角色数组不存在或无效');
+                logger.warn('[MultiCharacterEditor] ensureConfigCompleteness: 角色数组不存在或无效');
             }
 
             // 添加时间戳和版本标识
@@ -1145,7 +1150,7 @@ class MultiCharacterEditor {
 
             return enhancedConfig;
         } catch (error) {
-            console.error('[MultiCharacterEditor] ensureConfigCompleteness: 配置完整性检查失败:', error);
+            logger.error('[MultiCharacterEditor] ensureConfigCompleteness: 配置完整性检查失败:', error);
             return this.getDefaultConfig();
         }
     }
@@ -1158,7 +1163,7 @@ class MultiCharacterEditor {
             localStorage.setItem(key, JSON.stringify(configToSave));
             // 配置已保存到localStorage备份
         } catch (error) {
-            console.error('[MultiCharacterEditor] 保存到localStorage失败:', error);
+            logger.error('[MultiCharacterEditor] 保存到localStorage失败:', error);
         }
     }
 
@@ -1173,7 +1178,7 @@ class MultiCharacterEditor {
                 return config;
             }
         } catch (error) {
-            console.error('从localStorage恢复配置失败:', error);
+            logger.error('从localStorage恢复配置失败:', error);
         }
         return null;
     }
@@ -1335,7 +1340,7 @@ class MultiCharacterEditor {
 
                     if (promptWidget) {
                         promptWidget.value = generatedPrompt;
-                        console.log('[MultiCharacterEditor] 已更新节点输出widget:', promptWidget.name, '值:', generatedPrompt.slice(0, 100) + '...');
+                        logger.info('[MultiCharacterEditor] 已更新节点输出widget:', promptWidget.name, '值:', generatedPrompt.slice(0, 100) + '...');
                     }
                 }
 
@@ -1382,7 +1387,7 @@ class MultiCharacterEditor {
             }
 
         } catch (error) {
-            console.warn('[MultiCharacterEditor] updateOutput 失败:', error);
+            logger.warn('[MultiCharacterEditor] updateOutput 失败:', error);
         }
         // 🔧 关键修复：避免在updateOutput中重复保存，防止数据嵌套
         // this.saveToNodeState(config);
@@ -1658,7 +1663,7 @@ class MultiCharacterEditor {
                 cleanConfig = JSON.parse(config);
 
             } catch (e) {
-                console.error('[MultiCharacterEditor] 解析字符串config失败:', e);
+                logger.error('[MultiCharacterEditor] 解析字符串config失败:', e);
                 return; // 如果无法解析，直接返回
             }
         }
@@ -1689,7 +1694,7 @@ class MultiCharacterEditor {
 
         // 🔧 最简单的验证：确保config是有效对象
         if (!cleanConfig || typeof cleanConfig !== 'object') {
-            console.error('[MultiCharacterEditor] config无效，使用默认配置');
+            logger.error('[MultiCharacterEditor] config无效，使用默认配置');
             cleanConfig = {
                 version: '1.0.0',
                 syntax_mode: 'attention_couple',
@@ -1725,7 +1730,7 @@ class MultiCharacterEditor {
             this.saveToNodeState(this.dataManager.getConfig());
             // 节点状态已更新
         } catch (error) {
-            console.error('保存配置失败:', error);
+            logger.error('保存配置失败:', error);
         }
     }
 
@@ -1741,7 +1746,7 @@ class MultiCharacterEditor {
             this.saveToNodeState(this.dataManager.getConfig());
             // 立即保存节点状态已更新
         } catch (error) {
-            console.error('立即保存配置失败:', error);
+            logger.error('立即保存配置失败:', error);
         }
     }
 
@@ -1766,7 +1771,7 @@ class MultiCharacterEditor {
         // 🔧 使用requestAnimationFrame确保DOM更新完成
         requestAnimationFrame(() => {
             if (!this.components.maskEditor) {
-                console.error('[MultiCharacterEditor] MultiCharacterEditor.handleResize: maskEditor组件不存在');
+                logger.error('[MultiCharacterEditor] MultiCharacterEditor.handleResize: maskEditor组件不存在');
                 return;
             }
 
@@ -1805,13 +1810,13 @@ class MultiCharacterEditor {
                             this.components.maskEditor.scheduleRender();
 
                         } catch (error) {
-                            console.error('[MultiCharacterEditor] MultiCharacterEditor.handleResize: maskEditor.resizeCanvas执行失败', error);
+                            logger.error('[MultiCharacterEditor] MultiCharacterEditor.handleResize: maskEditor.resizeCanvas执行失败', error);
                         }
                     }
                 });
 
             } catch (error) {
-                console.error('[MultiCharacterEditor] MultiCharacterEditor.handleResize: 处理节点大小变化时发生错误', error);
+                logger.error('[MultiCharacterEditor] MultiCharacterEditor.handleResize: 处理节点大小变化时发生错误', error);
             }
         });
 
@@ -1827,7 +1832,7 @@ class MultiCharacterEditor {
             try {
                 this.toastManager.adjustPositionToNode(this.container);
             } catch (error) {
-                console.error('调整提示位置失败:', error);
+                logger.error('调整提示位置失败:', error);
             }
         } else {
             // 无法调整提示位置
@@ -1859,7 +1864,7 @@ class MultiCharacterEditor {
                 }, 100);
             }
         } catch (error) {
-            console.error('[MultiCharacterEditor] 确保画布初始化失败:', error);
+            logger.error('[MultiCharacterEditor] 确保画布初始化失败:', error);
         }
     }
 
@@ -1869,12 +1874,12 @@ class MultiCharacterEditor {
 
 
             if (!this.components.maskEditor) {
-                console.error('[MultiCharacterEditor] forceCanvasDisplay: maskEditor组件不存在');
+                logger.error('[MultiCharacterEditor] forceCanvasDisplay: maskEditor组件不存在');
                 return;
             }
 
             if (!this.components.maskEditor.canvas) {
-                console.error('[MultiCharacterEditor] forceCanvasDisplay: canvas元素不存在');
+                logger.error('[MultiCharacterEditor] forceCanvasDisplay: canvas元素不存在');
                 return;
             }
 
@@ -1903,7 +1908,7 @@ class MultiCharacterEditor {
 
 
         } catch (error) {
-            console.error('[MultiCharacterEditor] forceCanvasDisplay失败:', error);
+            logger.error('[MultiCharacterEditor] forceCanvasDisplay失败:', error);
         }
     }
 
@@ -1911,14 +1916,14 @@ class MultiCharacterEditor {
     renderZoomInfo() {
         try {
             if (!this.components.maskEditor || !this.components.maskEditor.canvas) {
-                console.error('[MultiCharacterEditor] renderZoomInfo: maskEditor或canvas不存在');
+                logger.error('[MultiCharacterEditor] renderZoomInfo: maskEditor或canvas不存在');
                 return;
             }
 
             const canvas = this.components.maskEditor.canvas;
             const ctx = canvas.getContext('2d');
             if (!ctx) {
-                console.error('[MultiCharacterEditor] renderZoomInfo: 无法获取canvas上下文');
+                logger.error('[MultiCharacterEditor] renderZoomInfo: 无法获取canvas上下文');
                 return;
             }
 
@@ -1931,7 +1936,7 @@ class MultiCharacterEditor {
             const config = this.dataManager.getConfig();
             if (!config || !config.canvas) {
                 ctx.restore();
-                console.error('[MultiCharacterEditor] renderZoomInfo: 无法获取画布配置');
+                logger.error('[MultiCharacterEditor] renderZoomInfo: 无法获取画布配置');
                 return;
             }
 
@@ -1942,7 +1947,7 @@ class MultiCharacterEditor {
             const displayWidth = canvasContentRight;
             const displayHeight = canvasContentBottom;
 
-            console.log('[DEBUG] renderZoomInfo: 容器尺寸信息', {
+            logger.info('[DEBUG] renderZoomInfo: 容器尺寸信息', {
                 displayWidth: displayWidth,
                 displayHeight: displayHeight,
                 canvasWidth: canvas.width,
@@ -1967,7 +1972,7 @@ class MultiCharacterEditor {
             const textX = displayWidth - margin;
             const textY = displayHeight - margin;
 
-            console.log('[DEBUG] renderZoomInfo: 文本位置', {
+            logger.info('[DEBUG] renderZoomInfo: 文本位置', {
                 textX: textX,
                 textY: textY,
                 zoomText: zoomText,
@@ -1989,7 +1994,7 @@ class MultiCharacterEditor {
             ctx.restore();
 
         } catch (error) {
-            console.error('[MultiCharacterEditor] renderZoomInfo: 渲染缩放比例信息失败:', error);
+            logger.error('[MultiCharacterEditor] renderZoomInfo: 渲染缩放比例信息失败:', error);
         }
     }
 
@@ -2066,7 +2071,7 @@ class DataManager {
             // 这样可以避免多个节点之间的状态覆盖问题
             return this.config;
         } catch (error) {
-            console.error('[DataManager] 加载配置失败:', error);
+            logger.error('[DataManager] 加载配置失败:', error);
         }
         return this.config;
     }
@@ -2079,7 +2084,7 @@ class DataManager {
 
             return true;
         } catch (error) {
-            console.error('[DataManager] 保存配置失败:', error);
+            logger.error('[DataManager] 保存配置失败:', error);
             return false;
         }
     }
@@ -2132,7 +2137,7 @@ class DataManager {
 
             this.config.characters.push(character);
 
-            console.log('[DataManager] addCharacter: 角色已添加到配置', {
+            logger.info('[DataManager] addCharacter: 角色已添加到配置', {
                 id: character.id,
                 name: character.name,
                 totalCharacters: this.config.characters.length
@@ -2216,7 +2221,7 @@ class DataManager {
         if (index !== -1) {
             // 🔧 调试FILL更新
             if (updates.hasOwnProperty('use_fill')) {
-                console.log(`[DataManager] 更新角色FILL状态: ${this.config.characters[index].name} (${characterId})`, {
+                logger.info(`[DataManager] 更新角色FILL状态: ${this.config.characters[index].name} (${characterId})`, {
                     旧状态: this.config.characters[index].use_fill,
                     新状态: updates.use_fill
                 });
@@ -2225,11 +2230,11 @@ class DataManager {
             this.config.characters[index] = { ...this.config.characters[index], ...updates };
             const character = this.config.characters[index];
 
-            console.log(`[DataManager] 角色已更新: ${character.name}`, updates);
+            logger.info(`[DataManager] 角色已更新: ${character.name}`, updates);
             this.editor.eventBus.emit('character:updated', character);
             return character;
         }
-        console.warn(`[DataManager] 未找到角色: ${characterId} (可能已被删除)`);
+        logger.warn(`[DataManager] 未找到角色: ${characterId} (可能已被删除)`);
         return null;
     }
 
@@ -2241,7 +2246,7 @@ class DataManager {
             // 🔧 释放角色的颜色
             if (window.MCE_ColorManager) {
                 window.MCE_ColorManager.releaseColor(characterId);
-                console.log(`[DataManager] 已释放角色 ${characterId} 的颜色: ${character.color}`);
+                logger.info(`[DataManager] 已释放角色 ${characterId} 的颜色: ${character.color}`);
             }
 
             this.config.characters.splice(index, 1);
@@ -2276,14 +2281,14 @@ class DataManager {
     updateConfig(updates) {
         // 🔧 调试全局FILL更新
         if (updates.hasOwnProperty('global_use_fill')) {
-            console.log(`[DataManager] 更新全局FILL状态:`, {
+            logger.info(`[DataManager] 更新全局FILL状态:`, {
                 旧状态: this.config.global_use_fill,
                 新状态: updates.global_use_fill
             });
         }
 
         this.config = { ...this.config, ...updates };
-        console.log('[DataManager] 配置已更新:', updates);
+        logger.info('[DataManager] 配置已更新:', updates);
         this.editor.eventBus.emit('config:changed', this.config);
     }
 
@@ -2307,7 +2312,7 @@ class DataManager {
     generateColor(id = null) {
         try {
             if (!window.MCE_ColorManager) {
-                console.warn('[MCE] ColorManager not loaded, using fallback color');
+                logger.warn('[MCE] ColorManager not loaded, using fallback color');
                 return '#FF6B6B';
             }
 
@@ -2319,7 +2324,7 @@ class DataManager {
                 return window.MCE_ColorManager.getNextUniqueColor();
             }
         } catch (error) {
-            console.error('[MCE] Error generating color:', error);
+            logger.error('[MCE] Error generating color:', error);
             return '#FF6B6B'; // 默认颜色
         }
     }
@@ -2366,7 +2371,7 @@ class EventBus {
                 try {
                     callback(data);
                 } catch (error) {
-                    console.error(`事件处理错误 (${event}):`, error);
+                    logger.error(`事件处理错误 (${event}):`, error);
                 }
             });
         }
@@ -2887,7 +2892,7 @@ class Toolbar {
 
 
             } catch (error) {
-                console.error("绑定Toolbar事件时发生错误:", error);
+                logger.error("绑定Toolbar事件时发生错误:", error);
             }
         }, 100); // 延迟100ms确保DOM完全渲染
     }
@@ -3013,7 +3018,7 @@ class Toolbar {
             this.createDocsModal(docsContent, isZh);
 
         } catch (error) {
-            console.error('Failed to load documentation:', error);
+            logger.error('Failed to load documentation:', error);
             this.languageManager.showMessage(
                 isZh ? '加载文档失败' : 'Failed to load documentation',
                 'error'
@@ -3318,7 +3323,7 @@ class Toolbar {
 
         // 确保config对象存在
         if (!config) {
-            console.warn('配置对象不存在，跳过UI更新');
+            logger.warn('配置对象不存在，跳过UI更新');
             return;
         }
 
@@ -3338,7 +3343,7 @@ class Toolbar {
         try {
             const config = this.editor.dataManager.getConfig();
             if (!config || !config.characters || !Array.isArray(config.characters)) {
-                console.warn('[Toolbar] updateAllCharactersSyntaxType: 没有角色数据需要更新');
+                logger.warn('[Toolbar] updateAllCharactersSyntaxType: 没有角色数据需要更新');
                 return;
             }
 
@@ -3367,11 +3372,11 @@ class Toolbar {
             // 保存更新后的配置
             if (updatedCount > 0) {
                 this.editor.dataManager.updateConfig(config);
-                console.log(`[Toolbar] updateAllCharactersSyntaxType: 已更新 ${updatedCount} 个角色的语法类型`);
+                logger.info(`[Toolbar] updateAllCharactersSyntaxType: 已更新 ${updatedCount} 个角色的语法类型`);
             }
 
         } catch (error) {
-            console.error('[Toolbar] updateAllCharactersSyntaxType 出错:', error);
+            logger.error('[Toolbar] updateAllCharactersSyntaxType 出错:', error);
             this.editor.languageManager.showMessage('更新角色语法类型时出错', 'error');
         }
     }
@@ -3637,7 +3642,7 @@ app.registerExtension({
 
 
                 } catch (error) {
-                    console.error("创建节点时发生错误:", error);
+                    logger.error("创建节点时发生错误:", error);
                 }
             };
 
@@ -3659,13 +3664,13 @@ app.registerExtension({
                 if (info.widgets_values && MultiCharacterEditorInstance) {
                     const configStr = info.widgets_values[this.widgets.findIndex(w => w.name === "mce_config")];
                     if (configStr) {
-                        console.log('[DEBUG] onConfigure: 开始恢复配置');
+                        logger.info('[DEBUG] onConfigure: 开始恢复配置');
                         try {
                             const config = JSON.parse(configStr);
                             if (config) {
                                 // 🔧 关键修复：验证并修复配置，确保canvas尺寸有效
                                 const validatedConfig = MultiCharacterEditorInstance.validateAndFixConfig(config);
-                                console.log('[DEBUG] onConfigure: 配置验证成功', {
+                                logger.info('[DEBUG] onConfigure: 配置验证成功', {
                                     charactersCount: validatedConfig.characters?.length || 0,
                                     canvasWidth: validatedConfig.canvas?.width,
                                     canvasHeight: validatedConfig.canvas?.height
@@ -3682,7 +3687,7 @@ app.registerExtension({
                                 if (canvasHeightWidget && validatedConfig.canvas) {
                                     canvasHeightWidget.value = validatedConfig.canvas.height;
                                 }
-                                console.log('[DEBUG] onConfigure: Widget值已更新', {
+                                logger.info('[DEBUG] onConfigure: Widget值已更新', {
                                     canvasWidthValue: canvasWidthWidget?.value,
                                     canvasHeightValue: canvasHeightWidget?.value
                                 });
@@ -3696,25 +3701,25 @@ app.registerExtension({
 
                                 // 🔧 关键修复：先调整画布尺寸，再恢复配置
                                 setTimeout(() => {
-                                    console.log('[DEBUG] onConfigure: 开始恢复画布尺寸');
-                                    console.log('[DEBUG] onConfigure: MultiCharacterEditorInstance:', !!MultiCharacterEditorInstance);
-                                    console.log('[DEBUG] onConfigure: components:', !!MultiCharacterEditorInstance?.components);
-                                    console.log('[DEBUG] onConfigure: maskEditor:', !!MultiCharacterEditorInstance?.components?.maskEditor);
-                                    console.log('[DEBUG] onConfigure: resizeCanvasWithRetry存在:', typeof MultiCharacterEditorInstance?.components?.maskEditor?.resizeCanvasWithRetry);
+                                    logger.info('[DEBUG] onConfigure: 开始恢复画布尺寸');
+                                    logger.info('[DEBUG] onConfigure: MultiCharacterEditorInstance:', !!MultiCharacterEditorInstance);
+                                    logger.info('[DEBUG] onConfigure: components:', !!MultiCharacterEditorInstance?.components);
+                                    logger.info('[DEBUG] onConfigure: maskEditor:', !!MultiCharacterEditorInstance?.components?.maskEditor);
+                                    logger.info('[DEBUG] onConfigure: resizeCanvasWithRetry存在:', typeof MultiCharacterEditorInstance?.components?.maskEditor?.resizeCanvasWithRetry);
 
                                     if (MultiCharacterEditorInstance && MultiCharacterEditorInstance.components.maskEditor) {
-                                        console.log('[DEBUG] onConfigure: 准备调用 resizeCanvasWithRetry');
+                                        logger.info('[DEBUG] onConfigure: 准备调用 resizeCanvasWithRetry');
                                         // 强制重新计算画布尺寸，使用重试机制
                                         MultiCharacterEditorInstance.components.maskEditor.resizeCanvasWithRetry();
-                                        console.log('[DEBUG] onConfigure: resizeCanvasWithRetry 调用完成');
+                                        logger.info('[DEBUG] onConfigure: resizeCanvasWithRetry 调用完成');
                                     } else {
-                                        console.error('[MultiCharacterEditor] onConfigure: 无法调用 resizeCanvasWithRetry，组件不存在');
+                                        logger.error('[MultiCharacterEditor] onConfigure: 无法调用 resizeCanvasWithRetry，组件不存在');
                                     }
                                 }, 100);
 
                                 // 🔧 关键修复：等待画布尺寸初始化后，再恢复配置
                                 setTimeout(() => {
-                                    console.log('[DEBUG] onConfigure: 开始恢复配置数据');
+                                    logger.info('[DEBUG] onConfigure: 开始恢复配置数据');
                                     // 触发UI更新（使用验证后的配置）
                                     // onConfigRestored 会在200ms后同步蒙版数据
                                     MultiCharacterEditorInstance.eventBus.emit('config:restored', validatedConfig);
@@ -3735,7 +3740,7 @@ app.registerExtension({
                                             const containerWidth = maskEditor.canvas.clientWidth || maskEditor.container.clientWidth;
                                             const containerHeight = maskEditor.canvas.clientHeight || maskEditor.container.clientHeight;
 
-                                            console.log('[DEBUG] onConfigure: 尺寸来源', {
+                                            logger.info('[DEBUG] onConfigure: 尺寸来源', {
                                                 canvasClientWidth: maskEditor.canvas.clientWidth,
                                                 canvasClientHeight: maskEditor.canvas.clientHeight,
                                                 containerClientWidth: maskEditor.container.clientWidth,
@@ -3753,7 +3758,7 @@ app.registerExtension({
                                             maskEditor.lastContainerSize.width = containerWidth;
                                             maskEditor.lastContainerSize.height = containerHeight;
 
-                                            console.log('[DEBUG] onConfigure: 强制重新初始化坐标系统', {
+                                            logger.info('[DEBUG] onConfigure: 强制重新初始化坐标系统', {
                                                 canvasSize: `${canvasWidth}x${canvasHeight}`,
                                                 containerSize: `${containerWidth}x${containerHeight}`,
                                                 scale: maskEditor.scale,
@@ -3764,13 +3769,13 @@ app.registerExtension({
                                         // 最后再同步一次，确保数据完全正确
                                         maskEditor.syncMasksFromCharacters();
                                         maskEditor.scheduleRender();
-                                        console.log('[DEBUG] onConfigure: 画布完全恢复，最终蒙版数量:',
+                                        logger.info('[DEBUG] onConfigure: 画布完全恢复，最终蒙版数量:',
                                             maskEditor.masks?.length || 0);
                                     }
                                 }, 800);
                             }
                         } catch (e) {
-                            console.error("[DEBUG] onConfigure: Failed to parse config from widget.", e);
+                            logger.error("[DEBUG] onConfigure: Failed to parse config from widget.", e);
                         }
                     }
                 }

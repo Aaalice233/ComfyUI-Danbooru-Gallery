@@ -2,6 +2,11 @@
 
 import { app } from "/scripts/app.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('resolution_master_simplify');
+
 class ResolutionMasterSimplifyCanvas {
     constructor(node) {
         this.node = node;
@@ -144,7 +149,7 @@ class ResolutionMasterSimplifyCanvas {
                 }
             }
         } catch (error) {
-            console.error('[ResolutionMasterSimplify] 加载设置失败:', error);
+            logger.error('[ResolutionMasterSimplify] 加载设置失败:', error);
         }
     }
 
@@ -162,7 +167,7 @@ class ResolutionMasterSimplifyCanvas {
 
             return response.ok;
         } catch (error) {
-            console.error('[ResolutionMasterSimplify] 保存设置失败:', error);
+            logger.error('[ResolutionMasterSimplify] 保存设置失败:', error);
             return false;
         }
     }
@@ -816,7 +821,7 @@ class ResolutionMasterSimplifyCanvas {
                 }
             }
         } catch (error) {
-            console.error('[ResolutionMasterSimplify] 添加预设失败:', error);
+            logger.error('[ResolutionMasterSimplify] 添加预设失败:', error);
         }
     }
 
@@ -849,7 +854,7 @@ class ResolutionMasterSimplifyCanvas {
                 }
             }
         } catch (error) {
-            console.error('[ResolutionMasterSimplify] 删除预设失败:', error);
+            logger.error('[ResolutionMasterSimplify] 删除预设失败:', error);
         }
     }
 
@@ -873,7 +878,7 @@ class ResolutionMasterSimplifyCanvas {
         node.intpos.x = (finalWidth - props.canvas_min_x) / (props.canvas_max_x - props.canvas_min_x);
         node.intpos.y = (finalHeight - props.canvas_min_y) / (props.canvas_max_y - props.canvas_min_y);
 
-        console.log(`[ResolutionMasterSimplify] 工作流恢复: ${finalWidth}×${finalHeight}, intpos: (${node.intpos.x.toFixed(3)}, ${node.intpos.y.toFixed(3)})`);
+        logger.info(`[ResolutionMasterSimplify] 工作流恢复: ${finalWidth}×${finalHeight}, intpos: (${node.intpos.x.toFixed(3)}, ${node.intpos.y.toFixed(3)})`);
     }
 }
 
@@ -908,4 +913,4 @@ app.registerExtension({
     }
 });
 
-console.log("[ResolutionMasterSimplify] JS 已加载");
+logger.info("[ResolutionMasterSimplify] JS 已加载");

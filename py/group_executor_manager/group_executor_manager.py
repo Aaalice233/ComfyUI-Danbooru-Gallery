@@ -8,6 +8,7 @@ import time
 import uuid
 import hashlib
 import gc
+import os
 from typing import Dict, Any, List
 
 # 导入日志系统
@@ -23,6 +24,14 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
     logger.warning("torch不可用，显存清理功能将被禁用")
+
+# 导入内存信息获取模块
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    logger.warning("psutil不可用，系统内存信息功能将被禁用")
 
 try:
     import comfy.model_management as mm
@@ -148,13 +157,10 @@ class GroupExecutorManager:
                 logger.debug(f"📦 组 {i}: {group.get('group_name', '未命名')}")
                 cleanup_cfg = group.get('cleanup_config')
                 if cleanup_cfg:
-                    logger.info(f"✅ cleanup_config存在")
-                    logger.debug(f"clear_vram: {cleanup_cfg.get('clear_vram')}")
-                    logger.debug(f"clear_ram: {cleanup_cfg.get('clear_ram')}")
-                    logger.debug(f"aggressive_mode: {cleanup_cfg.get('aggressive_mode')}")
-                    logger.debug(f"delay_seconds: {cleanup_cfg.get('delay_seconds')}")
-                else:
-                    logger.error(f"❌ cleanup_config不存在或为None")
+                    logger.debug(f"  - clear_vram: {cleanup_cfg.get('clear_vram')}")
+                    logger.debug(f"  - clear_ram: {cleanup_cfg.get('clear_ram')}")
+                    logger.debug(f"  - aggressive_mode: {cleanup_cfg.get('aggressive_mode')}")
+                    logger.debug(f"  - delay_seconds: {cleanup_cfg.get('delay_seconds')}")
 
             # ✅ 新增：检测配置是否为空，如果为空则返回禁用状态
             if not config_data or len(config_data) == 0:
@@ -296,13 +302,10 @@ try:
                 logger.debug(f"📦 组 {i}: {group.get('group_name', '未命名')}")
                 cleanup_cfg = group.get('cleanup_config')
                 if cleanup_cfg:
-                    logger.info(f"✅ cleanup_config存在:")
-                    logger.debug(f"clear_vram: {cleanup_cfg.get('clear_vram')}")
-                    logger.debug(f"clear_ram: {cleanup_cfg.get('clear_ram')}")
-                    logger.debug(f"aggressive_mode: {cleanup_cfg.get('aggressive_mode')}")
-                    logger.debug(f"delay_seconds: {cleanup_cfg.get('delay_seconds')}")
-                else:
-                    logger.error(f"❌ cleanup_config不存在或为None")
+                    logger.debug(f"  - clear_vram: {cleanup_cfg.get('clear_vram')}")
+                    logger.debug(f"  - clear_ram: {cleanup_cfg.get('clear_ram')}")
+                    logger.debug(f"  - aggressive_mode: {cleanup_cfg.get('aggressive_mode')}")
+                    logger.debug(f"  - delay_seconds: {cleanup_cfg.get('delay_seconds')}")
 
             # 保存到全局配置
             set_group_config(groups)
@@ -357,20 +360,15 @@ try:
             group_name = data.get('group_name', 'unknown')
             clear_vram = data.get('clear_vram', False)
             clear_ram = data.get('clear_ram', False)
-            aggressive_mode = data.get('aggressive_mode', False)
+            unload_models = data.get('unload_models', False)
+            retry_times = data.get('retry_times', 1)  # ✅ 新增：重试次数配置（默认1次，不重试）
 
-            # 清理开始通知
-            logger.debug(f"\n[清理 API] 🚀 ========== 内存清理开始 ==========")
-            logger.debug(f"📍 组名: {group_name}")
-            logger.debug(f"📦 清理配置:")
-            logger.error(f"- VRAM清理: {'✅ 启用' if clear_vram else '❌ 禁用'}")
-            logger.error(f"- RAM清理: {'✅ 启用' if clear_ram else '❌ 禁用'}")
-            logger.error(f"- 激进模式: {'✅ 启用' if aggressive_mode else '❌ 禁用'}")
+            # 限制重试次数范围
+            retry_times = max(1, min(retry_times, 5))  # 最少1次，最多5次
 
             # 检查是否实际需要清理
-            if not clear_vram and not clear_ram:
-                logger.info(f"⏭️ 跳过清理：所有选项均已禁用")
-                logger.debug(f"========================================\n")
+            if not clear_vram and not clear_ram and not unload_models:
+                logger.error(f"⏭️ 跳过清理（组: {group_name}）：所有选项均已禁用")
                 return web.json_response({
                     "status": "skipped",
                     "message": "跳过清理：未启用任何选项",
@@ -378,40 +376,89 @@ try:
                         "group_name": group_name,
                         "vram_cleaned": False,
                         "ram_cleaned": False,
-                        "aggressive_used": False
+                        "models_unloaded": False
                     }
                 })
+
+            # ✅ 记录开始时间（用于计算总用时）
+            import time
+            import asyncio
+            start_time = time.time()
 
             results = {
                 "group_name": group_name,
                 "vram_cleaned": False,
                 "ram_cleaned": False,
-                "aggressive_used": False
+                "models_unloaded": False
             }
 
-            # 执行VRAM清理
-            if clear_vram:
-                logger.debug(f"🔧 正在执行 VRAM 清理...")
-                cleanup_vram()
-                results["vram_cleaned"] = True
-                logger.info(f"✅ VRAM 清理完成")
+            # ✅ 新增：重试机制
+            last_error = None
+            for attempt in range(retry_times):
+                try:
+                    if retry_times > 1:
+                        logger.debug(f"[清理 API] 🔄 第 {attempt + 1}/{retry_times} 次尝试清理...")
 
-            # 执行RAM清理
-            if clear_ram:
-                mode_text = "激进模式" if aggressive_mode else "普通模式"
-                logger.debug(f"🔧 正在执行 RAM 清理（{mode_text}）...")
-                cleanup_ram(aggressive=aggressive_mode)
-                results["ram_cleaned"] = True
-                results["aggressive_used"] = aggressive_mode
-                logger.info(f"✅ RAM 清理完成（{mode_text}）")
+                    # ====== 步骤1：执行清理 ======
+                    # 执行VRAM清理和模型卸载
+                    if clear_vram or unload_models:
+                        logger.debug(f"🔧 正在执行显存清理...")
+                        cleanup_vram(clear_cache=clear_vram, unload_models=unload_models)
+                        results["vram_cleaned"] = clear_vram
+                        results["models_unloaded"] = unload_models
 
-            # 清理总结
-            logger.debug(f"📊 清理总结:")
-            logger.info(f"- VRAM: {'✅ 已清理' if results['vram_cleaned'] else '⏭️ 跳过'}")
-            logger.info(f"- RAM: {'✅ 已清理' if results['ram_cleaned'] else '⏭️ 跳过'}")
+                    # 执行RAM清理
+                    # ⚠️ 重要：如果卸载了模型，即使没勾选"清理内存"也要执行激进垃圾回收
+                    # 这样确保模型对象从Python内存中完全释放
+                    if clear_ram or unload_models:
+                        logger.debug(f"🔧 正在执行内存清理...")
+                        # ✅ 智能启用激进清理：当同时清理内存和卸载模型时，启用系统级清理
+                        aggressive_cleanup = clear_ram and unload_models
+                        cleanup_ram(aggressive_cleanup=aggressive_cleanup, unload_models=unload_models)
+                        # 只有明确勾选了清理内存才标记为已清理
+                        if clear_ram:
+                            results["ram_cleaned"] = True
+
+                    # ====== 步骤2：等待清理完全结束 ======
+                    logger.debug(f"⏳ 等待清理完全结束...")
+                    wait_for_cleanup_complete(max_wait_seconds=5.0, required_stable_count=3)
+
+                    # ✅ 成功完成，跳出重试循环
+                    if retry_times > 1:
+                        logger.debug(f"[清理 API] ✅ 第 {attempt + 1} 次尝试成功")
+                    break
+
+                except Exception as e:
+                    last_error = e
+                    if attempt < retry_times - 1:
+                        logger.warning(f"[清理 API] ⚠️ 第 {attempt + 1} 次清理失败，1秒后重试: {e}")
+                        await asyncio.sleep(1)
+                    else:
+                        logger.error(f"[清理 API] ❌ 所有 {retry_times} 次重试均失败: {e}")
+                        raise
+
+            # ====== 步骤3：延迟等待（实现前端配置） ======
+            delay_seconds = data.get('delay_seconds', 0)
+            if delay_seconds > 0:
+                logger.error(f"⏳ 延迟 {delay_seconds} 秒，确保完全清理...")
+                await asyncio.sleep(delay_seconds)
+                logger.error(f"✅ 延迟结束，可以执行下一组")
+
+            # ====== 步骤4：总结清理结果 ======
+            elapsed_time = time.time() - start_time
+
+            # ✅ 简化的清理摘要（只显示操作列表和总用时，释放量已在底层函数显示）
+            operations = []
+            if results['vram_cleaned']:
+                operations.append("清理显存缓存")
             if results['ram_cleaned']:
-                logger.debug(f"- 模式: {'激进模式' if results['aggressive_used'] else '普通模式'}")
-            logger.debug(f"========================================\n")
+                operations.append("清理内存")
+            if results['models_unloaded']:
+                operations.append("卸载模型")
+
+            logger.error(f"🧹 内存清理完成 - 组: {group_name}")
+            logger.error(f"  📋 执行操作: {' | '.join(operations) if operations else '无'}")
+            logger.error(f"  ⏱️ 总用时: {elapsed_time:.2f}s")
 
             return web.json_response({
                 "status": "success",
@@ -420,7 +467,7 @@ try:
 
         except Exception as e:
             error_msg = f"[清理 API] ❌ 异常: {str(e)}"
-            logger.debug(error_msg)
+            logger.error(error_msg)
             logger.debug(f"========================================\n")
             import traceback
             traceback.print_exc()
@@ -435,53 +482,352 @@ except ImportError as e:
 
 # ==================== 内存显存清理功能 ====================
 
-def cleanup_vram():
-    """清理显存（GPU VRAM）"""
+def get_memory_info():
+    """
+    获取当前内存和显存使用情况
+
+    Returns:
+        dict: 包含内存和显存信息的字典
+    """
+    info = {
+        "vram": {},
+        "ram": {}
+    }
+
+    # 获取显存信息
+    if TORCH_AVAILABLE and torch.cuda.is_available():
+        try:
+            # 获取所有GPU的信息
+            for i in range(torch.cuda.device_count()):
+                device = f"cuda:{i}"
+                allocated = torch.cuda.memory_allocated(i)
+                reserved = torch.cuda.memory_reserved(i)
+                total = torch.cuda.get_device_properties(i).total_memory
+
+                info["vram"][device] = {
+                    "allocated": allocated,
+                    "allocated_mb": allocated / (1024 ** 2),
+                    "reserved": reserved,
+                    "reserved_mb": reserved / (1024 ** 2),
+                    "total": total,
+                    "total_mb": total / (1024 ** 2),
+                    "free_mb": (total - reserved) / (1024 ** 2)
+                }
+        except Exception as e:
+            logger.debug(f"获取显存信息失败: {e}")
+            info["vram"]["error"] = str(e)
+    else:
+        info["vram"]["available"] = False
+
+    # 获取系统内存信息
+    if PSUTIL_AVAILABLE:
+        try:
+            # 系统总内存
+            vm = psutil.virtual_memory()
+            info["ram"]["system"] = {
+                "total": vm.total,
+                "total_mb": vm.total / (1024 ** 2),
+                "available": vm.available,
+                "available_mb": vm.available / (1024 ** 2),
+                "used": vm.used,
+                "used_mb": vm.used / (1024 ** 2),
+                "percent": vm.percent
+            }
+
+            # 当前进程内存
+            process = psutil.Process(os.getpid())
+            mem_info = process.memory_info()
+            info["ram"]["process"] = {
+                "rss": mem_info.rss,
+                "rss_mb": mem_info.rss / (1024 ** 2),
+                "vms": mem_info.vms,
+                "vms_mb": mem_info.vms / (1024 ** 2)
+            }
+        except Exception as e:
+            logger.debug(f"获取内存信息失败: {e}")
+            info["ram"]["error"] = str(e)
+    else:
+        info["ram"]["available"] = False
+
+    return info
+
+
+def format_memory_comparison(before, after, label="内存"):
+    """
+    格式化内存对比信息
+
+    Args:
+        before: 清理前的信息
+        after: 清理后的信息
+        label: 标签（内存/显存）
+
+    Returns:
+        str: 格式化的对比字符串
+    """
+    lines = []
+
+    if not before or not after:
+        return f"{label}: 无对比数据"
+
+    # 计算差异
+    if "mb" in before and "mb" in after:
+        before_mb = before["mb"]
+        after_mb = after["mb"]
+        diff_mb = before_mb - after_mb
+        diff_percent = (diff_mb / before_mb * 100) if before_mb > 0 else 0
+
+        lines.append(f"{label}:")
+        lines.append(f"  清理前: {before_mb:.2f} MB")
+        lines.append(f"  清理后: {after_mb:.2f} MB")
+        lines.append(f"  释放量: {diff_mb:.2f} MB ({diff_percent:.1f}%)")
+
+    return "\n".join(lines)
+
+
+def cleanup_vram(clear_cache=True, unload_models=False):
+    """
+    清理显存（GPU VRAM）
+
+    Args:
+        clear_cache: 是否清理显存缓存
+        unload_models: 是否卸载所有模型
+    """
     if not TORCH_AVAILABLE:
         logger.warning("⚠️ 跳过：torch 模块不可用")
         return
 
     try:
         if torch.cuda.is_available():
-            logger.debug("[VRAM清理] 🔧 执行 torch.cuda.empty_cache()")
-            torch.cuda.empty_cache()
-            logger.debug("[VRAM清理] 🔧 执行 torch.cuda.ipc_collect()")
-            torch.cuda.ipc_collect()
-            logger.info("✅ 显存清理成功")
+            # ✅ 新增：同步 CUDA 操作（确保异步操作完成）
+            logger.debug("[VRAM清理] 🔧 执行 torch.cuda.synchronize()")
+            torch.cuda.synchronize()
+            logger.debug("[VRAM清理] ✅ CUDA 操作已同步")
+
+            # 收集清理前的显存使用情况
+            initial_memory = torch.cuda.memory_allocated()
+            initial_memory_mb = initial_memory / (1024 ** 2)
+
+            # 卸载模型（如果启用）
+            if unload_models and COMFY_MM_AVAILABLE:
+                logger.debug("[VRAM清理] 🔧 执行 mm.unload_all_models()")
+                mm.unload_all_models()
+                logger.error("[VRAM清理] ✅ 模型已卸载")
+                logger.debug("[VRAM清理] 🔧 执行 mm.soft_empty_cache()")
+                mm.soft_empty_cache()
+            elif unload_models and not COMFY_MM_AVAILABLE:
+                logger.warning("[VRAM清理] ⚠️ 模型卸载不可用（comfy.model_management 不可用）")
+
+            # 清理显存缓存（如果启用）
+            if clear_cache:
+                if COMFY_MM_AVAILABLE:
+                    logger.debug("[VRAM清理] 🔧 执行 mm.soft_empty_cache()")
+                    mm.soft_empty_cache()
+
+                logger.debug("[VRAM清理] 🔧 执行 torch.cuda.empty_cache()")
+                torch.cuda.empty_cache()
+                logger.debug("[VRAM清理] 🔧 执行 torch.cuda.ipc_collect()")
+                torch.cuda.ipc_collect()
+                logger.error("[VRAM清理] ✅ 显存缓存已清理")
+
+            # 收集清理后的显存使用情况
+            final_memory = torch.cuda.memory_allocated()
+            final_memory_mb = final_memory / (1024 ** 2)
+            memory_freed = initial_memory - final_memory
+            memory_freed_mb = memory_freed / (1024 ** 2)
+
+            # 打印简洁的统计
+            logger.error(f"[VRAM清理] 📊 清理完成: {initial_memory_mb:.2f} MB → {final_memory_mb:.2f} MB (释放 {memory_freed_mb:.2f} MB)")
         else:
             logger.warning("⚠️ 跳过：CUDA 不可用")
     except Exception as e:
-        logger.error(f"❌ 清理失败: {e}")
+        logger.error(f"❌ 显存清理失败: {e}")
 
 
-def cleanup_ram(aggressive=False):
+def cleanup_ram(aggressive_cleanup=False, unload_models=False):
     """
     清理系统内存（RAM）
 
     Args:
-        aggressive: 是否启用激进模式（卸载所有模型）
+        aggressive_cleanup: 是否启用激进清理（系统级清理）
+        unload_models: 是否卸载了模型（需要更激进的垃圾回收）
     """
-    try:
-        # 基础垃圾回收
-        logger.debug("[RAM清理] 🔧 执行垃圾回收 gc.collect()")
-        gc.collect()
+    import os
+    import time
 
-        if aggressive and COMFY_MM_AVAILABLE:
-            # 激进模式：卸载所有模型
-            logger.debug("🚀 激进模式：卸载所有模型")
-            logger.debug("[RAM清理] 🔧 执行 mm.unload_all_models()")
-            mm.unload_all_models()
-            logger.debug("[RAM清理] 🔧 执行 mm.soft_empty_cache()")
-            mm.soft_empty_cache()
-            logger.info("✅ 内存清理完成（激进模式）")
-        elif aggressive and not COMFY_MM_AVAILABLE:
-            logger.warning("⚠️ 激进模式不可用（comfy.model_management 不可用），使用普通模式")
-            logger.info("✅ 内存清理完成（普通模式）")
+    try:
+        # 收集清理前的内存使用情况
+        initial_memory = None
+        if PSUTIL_AVAILABLE:
+            initial_memory = psutil.virtual_memory().percent
+            logger.debug(f"[RAM清理] 初始内存使用: {initial_memory:.2f}%")
+
+        # 第一阶段：垃圾回收
+        # 如果卸载了模型，执行更激进的垃圾回收（多轮回收确保模型对象被释放）
+        if unload_models:
+            logger.debug("[RAM清理] ♻️  执行激进垃圾回收（卸载模型后）...")
+            total_collected = 0
+            # 执行3轮垃圾回收，确保循环引用的模型对象被完全释放
+            for i in range(3):
+                collected = gc.collect(generation=2)  # 完整的垃圾回收
+                total_collected += collected
+                logger.debug(f"[RAM清理] 第{i+1}轮回收: {collected} 个对象")
+            logger.error(f"[RAM清理] ✅ 激进垃圾回收完成（共回收 {total_collected} 个对象，确保模型从内存释放）")
         else:
-            logger.info("✅ 内存清理完成（普通模式）")
+            logger.debug("[RAM清理] ♻️  执行垃圾回收...")
+            collected = gc.collect()
+            logger.error(f"[RAM清理] ✅ 垃圾回收完成（回收了 {collected} 个对象）")
+
+        # 第二阶段：激进清理的系统级操作
+        if aggressive_cleanup:
+            logger.debug("[RAM清理] 🚀 执行系统级清理")
+
+            if os.name == 'nt':  # Windows
+                try:
+                    import ctypes
+                    from ctypes import wintypes
+
+                    # ✅ 步骤1：清理系统文件缓存（Memory_Cleanup 技术）
+                    try:
+                        logger.debug("[RAM清理] 🧹 清理系统文件缓存...")
+                        ctypes.windll.kernel32.SetSystemFileCacheSize(
+                            wintypes.ULONG(-1),  # MinimumFileCacheSize
+                            wintypes.ULONG(-1),  # MaximumFileCacheSize
+                            wintypes.ULONG(0)    # Flags
+                        )
+                        logger.debug("[RAM清理] ✅ 系统文件缓存已清理")
+                    except Exception as e:
+                        logger.warning(f"[RAM清理] ⚠️ 系统文件缓存清理失败: {e}")
+
+                    # ✅ 步骤2：清理DLL（Memory_Cleanup 技术）
+                    try:
+                        logger.debug("[RAM清理] 🧹 清理未使用的DLL...")
+                        ctypes.windll.kernel32.SetProcessWorkingSetSize(
+                            wintypes.HANDLE(-1),  # hProcess (当前进程)
+                            wintypes.ULONG(-1),   # dwMinimumWorkingSetSize
+                            wintypes.ULONG(-1)    # dwMaximumWorkingSetSize
+                        )
+                        logger.debug("[RAM清理] ✅ DLL已清理")
+                    except Exception as e:
+                        logger.warning(f"[RAM清理] ⚠️ DLL清理失败: {e}")
+
+                    # ✅ 步骤3：清理当前进程工作集（原有功能）
+                    try:
+                        logger.debug("[RAM清理] 🧹 清理进程工作集...")
+                        ctypes.windll.psapi.EmptyWorkingSet(
+                            ctypes.windll.kernel32.GetCurrentProcess()
+                        )
+                        logger.debug("[RAM清理] ✅ 工作集已清理")
+                    except Exception as e:
+                        logger.warning(f"[RAM清理] ⚠️ 工作集清理失败: {e}")
+
+                    logger.error("[RAM清理] 🎉 Windows 系统级清理完成（文件缓存 + DLL + 工作集）")
+
+                except Exception as e:
+                    logger.warning(f"[RAM清理] ⚠️ Windows 系统级清理失败: {e}")
+
+            elif os.name == 'posix':  # Linux/Unix
+                try:
+                    logger.debug("[RAM清理] Linux系统缓存清理...")
+                    # 同步文件系统缓冲区
+                    os.system('sync')
+                    # 清除页缓存、目录项和inode（需要root权限）
+                    with open('/proc/sys/vm/drop_caches', 'w') as f:
+                        f.write('3')
+                    logger.debug("[RAM清理] 系统缓存已清理")
+                except PermissionError:
+                    logger.warning("[RAM清理] ⚠️ Linux 缓存清理需要 root 权限")
+                except Exception as e:
+                    logger.warning(f"[RAM清理] ⚠️ Linux 系统缓存清理失败: {e}")
+            else:
+                logger.debug(f"[RAM清理] ⚠️ 不支持的操作系统: {os.name}")
+
+        # 收集清理后的内存使用情况
+        final_memory = None
+        if PSUTIL_AVAILABLE:
+            final_memory = psutil.virtual_memory().percent
+            logger.debug(f"[RAM清理] 最终内存使用: {final_memory:.2f}%")
+
+            if initial_memory is not None:
+                memory_freed_percent = initial_memory - final_memory
+                logger.error(f"[RAM清理] 📊 清理完成: {initial_memory:.2f}% → {final_memory:.2f}% (释放 {memory_freed_percent:.2f}%)")
+        else:
+            # 打印完成信息（无统计）
+            mode_text = "激进清理" if aggressive_cleanup else "普通清理"
+            logger.error(f"[RAM清理] ✅ 清理完成（{mode_text}）")
 
     except Exception as e:
-        logger.error(f"❌ 清理失败: {e}")
+        logger.error(f"❌ 内存清理失败: {e}")
+
+
+def wait_for_cleanup_complete(max_wait_seconds=5.0, required_stable_count=3):
+    """
+    等待并验证清理完全完成（循环检测直到稳定）
+
+    Args:
+        max_wait_seconds: 最大等待时间（秒）
+        required_stable_count: 需要连续稳定的次数
+
+    Returns:
+        bool: 检测到稳定状态返回True，超时返回False
+    """
+    import time
+
+    logger.debug(f"⏳ [等待验证] 开始等待清理完全完成...")
+
+    try:
+        stable_count = 0
+        last_vram = None
+        last_ram = None
+        threshold_vram = 1024 * 1024  # 1MB
+        threshold_ram = 10 * 1024 * 1024  # 10MB
+
+        start_time = time.time()
+        check_interval = 0.2  # 每次检测间隔
+
+        while time.time() - start_time < max_wait_seconds:
+            # 收集当前内存信息
+            current_vram = 0
+            current_ram = 0
+
+            # 检查显存
+            if TORCH_AVAILABLE and torch.cuda.is_available():
+                current_vram = torch.cuda.memory_allocated()
+
+            # 检查系统内存
+            if PSUTIL_AVAILABLE:
+                current_ram = psutil.virtual_memory().used
+
+            # 如果不是第一次检查，比较稳定性
+            if last_vram is not None and last_ram is not None:
+                vram_diff = abs(current_vram - last_vram)
+                ram_diff = abs(current_ram - last_ram)
+
+                # 判断是否稳定
+                vram_stable = vram_diff < threshold_vram
+                ram_stable = ram_diff < threshold_ram
+
+                if vram_stable and ram_stable:
+                    stable_count += 1
+                    if stable_count >= required_stable_count:
+                        logger.debug(f"✅ [等待验证] 内存已稳定（连续 {stable_count} 次检测稳定）")
+                        return True
+                else:
+                    stable_count = 0  # 重置计数器
+                    logger.debug(f"[等待验证] 内存仍在变化（VRAM: {vram_diff/(1024*1024):.2f}MB, RAM: {ram_diff/(1024*1024):.2f}MB）")
+
+            # 保存当前值作为下次比较基准
+            last_vram = current_vram
+            last_ram = current_ram
+
+            time.sleep(check_interval)
+
+        # 超时未达到稳定状态
+        logger.debug(f"⚠️ [等待验证] 超时未达到稳定状态（{max_wait_seconds}s），继续执行")
+        return False
+
+    except Exception as e:
+        logger.warning(f"⚠️ [等待验证] 异常: {e}")
+        return False  # 出错也允许继续
 
 
 def has_next_sampler_group(current_index: int, groups: List[Dict], workflow: Dict) -> bool:
@@ -641,7 +987,7 @@ async def check_aggressive_conditions(conditions: List[Dict], current_index: int
                 logger.error(f"❌ 条件 {i+1} 不满足，激进模式不启用")
                 return False
 
-        logger.info("✅ 所有条件都满足，启用激进模式")
+        logger.error("✅ 所有条件都满足，启用激进模式")
         return True
 
     except Exception as e:

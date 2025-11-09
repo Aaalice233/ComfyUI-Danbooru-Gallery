@@ -5,6 +5,11 @@
 
 import { app } from "/scripts/app.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('workflow_description');
+
 // 工具函数：加载Marked.js库
 let markedLoaded = false;
 let markedLoadPromise = null;
@@ -24,11 +29,11 @@ async function ensureMarkedLoaded() {
         script.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
         script.onload = () => {
             markedLoaded = true;
-            console.log('[WorkflowDescription] Marked.js loaded successfully');
+            logger.info('[WorkflowDescription] Marked.js loaded successfully');
             resolve(true);
         };
         script.onerror = () => {
-            console.error('[WorkflowDescription] Failed to load Marked.js');
+            logger.error('[WorkflowDescription] Failed to load Marked.js');
             reject(false);
         };
         document.head.appendChild(script);
@@ -44,7 +49,7 @@ async function getOpenedVersions() {
         const data = await response.json();
         return data.opened_versions || {};
     } catch (e) {
-        console.error('[WorkflowDescription] Failed to get opened versions:', e);
+        logger.error('[WorkflowDescription] Failed to get opened versions:', e);
         return {};
     }
 }
@@ -60,7 +65,7 @@ async function saveOpenedVersion(nodeId, version) {
         const data = await response.json();
         return data.success || false;
     } catch (e) {
-        console.error('[WorkflowDescription] Failed to save opened version:', e);
+        logger.error('[WorkflowDescription] Failed to save opened version:', e);
         return false;
     }
 }
@@ -70,7 +75,7 @@ app.registerExtension({
     name: "WorkflowDescription",
 
     async init(app) {
-        console.log('[WorkflowDescription] 初始化工作流说明节点');
+        logger.info('[WorkflowDescription] 初始化工作流说明节点');
 
         // 预加载Marked.js
         await ensureMarkedLoaded();
@@ -111,7 +116,7 @@ app.registerExtension({
         // 创建自定义UI
         nodeType.prototype.createCustomUI = function () {
             try {
-                console.log('[MarkdownNotePlus-UI] 开始创建自定义UI:', this.id);
+                logger.info('[MarkdownNotePlus-UI] 开始创建自定义UI:', this.id);
 
                 const container = document.createElement('div');
                 container.className = 'mnp-container';
@@ -155,10 +160,10 @@ app.registerExtension({
                 // 绑定事件
                 this.bindUIEvents();
 
-                console.log('[MarkdownNotePlus-UI] 自定义UI创建完成');
+                logger.info('[MarkdownNotePlus-UI] 自定义UI创建完成');
 
             } catch (error) {
-                console.error('[MarkdownNotePlus-UI] 创建自定义UI时出错:', error);
+                logger.error('[MarkdownNotePlus-UI] 创建自定义UI时出错:', error);
             }
         };
 
@@ -672,7 +677,7 @@ app.registerExtension({
             if (versionInput) {
                 versionInput.addEventListener('change', (e) => {
                     this.properties.workflow_version = e.target.value;
-                    console.log('[WorkflowDescription] 版本号已更新:', e.target.value);
+                    logger.info('[WorkflowDescription] 版本号已更新:', e.target.value);
                 });
             }
 
@@ -681,7 +686,7 @@ app.registerExtension({
             if (enablePromptCheckbox) {
                 enablePromptCheckbox.addEventListener('change', (e) => {
                     this.properties.enable_prompt = e.target.checked;
-                    console.log('[WorkflowDescription] 首次提示开关:', e.target.checked);
+                    logger.info('[WorkflowDescription] 首次提示开关:', e.target.checked);
                 });
             }
 
@@ -711,14 +716,14 @@ app.registerExtension({
                     markdownArea.textContent = text || '';
                 }
             } catch (error) {
-                console.error('[WorkflowDescription] 渲染Markdown失败:', error);
+                logger.error('[WorkflowDescription] 渲染Markdown失败:', error);
                 markdownArea.textContent = text || '';
             }
         };
 
         // 显示设置对话框（侧边栏分类）
         nodeType.prototype.showSettingsDialog = function () {
-            console.log('[WorkflowDescription] 显示设置对话框');
+            logger.info('[WorkflowDescription] 显示设置对话框');
 
             // 创建遮罩层
             const overlay = document.createElement('div');
@@ -827,7 +832,7 @@ app.registerExtension({
                 this.properties.prompt_content = dialog.querySelector('#mnp-prompt-content').value;
                 this.properties.confirm_action = dialog.querySelector('#mnp-confirm-action').value;
 
-                console.log('[WorkflowDescription] 设置已保存:', this.properties);
+                logger.info('[WorkflowDescription] 设置已保存:', this.properties);
 
                 // 重新渲染Markdown内容
                 this.renderMarkdown(this.properties.markdown_text);
@@ -839,7 +844,7 @@ app.registerExtension({
         // 检查并显示首次提示
         nodeType.prototype.checkAndShowFirstTimePrompt = async function () {
             if (!this.properties.enable_prompt) {
-                console.log('[WorkflowDescription] 首次提示已禁用');
+                logger.info('[WorkflowDescription] 首次提示已禁用');
                 return;
             }
 
@@ -848,21 +853,21 @@ app.registerExtension({
                 const currentVersion = this.properties.workflow_version || '1.0';
                 const openedVersions = await getOpenedVersions();
 
-                console.log('[WorkflowDescription] 节点ID:', nodeId);
-                console.log('[WorkflowDescription] 当前版本:', currentVersion);
-                console.log('[WorkflowDescription] 已打开的版本记录:', openedVersions);
+                logger.info('[WorkflowDescription] 节点ID:', nodeId);
+                logger.info('[WorkflowDescription] 当前版本:', currentVersion);
+                logger.info('[WorkflowDescription] 已打开的版本记录:', openedVersions);
 
                 // 检查此节点ID对应的版本是否已打开
                 const savedVersion = openedVersions[nodeId];
 
                 if (!savedVersion || savedVersion !== currentVersion) {
-                    console.log('[WorkflowDescription] 首次打开此版本，显示提示');
+                    logger.info('[WorkflowDescription] 首次打开此版本，显示提示');
                     this.showFirstTimePrompt(nodeId, currentVersion);
                 } else {
-                    console.log('[WorkflowDescription] 已经打开过此版本');
+                    logger.info('[WorkflowDescription] 已经打开过此版本');
                 }
             } catch (error) {
-                console.error('[WorkflowDescription] 检查首次提示失败:', error);
+                logger.error('[WorkflowDescription] 检查首次提示失败:', error);
             }
         };
 
@@ -908,7 +913,7 @@ app.registerExtension({
 
                 // 记录此节点的版本已打开
                 await saveOpenedVersion(nodeId, version);
-                console.log('[WorkflowDescription] 已记录节点版本:', nodeId, version);
+                logger.info('[WorkflowDescription] 已记录节点版本:', nodeId, version);
 
                 closePrompt();
             });
@@ -916,7 +921,7 @@ app.registerExtension({
 
         // 跳转到节点
         nodeType.prototype.navigateToNode = function () {
-            console.log('[WorkflowDescription] 跳转到节点:', this.id);
+            logger.info('[WorkflowDescription] 跳转到节点:', this.id);
 
             try {
                 const canvas = app.canvas;
@@ -939,9 +944,9 @@ app.registerExtension({
                 // 4. 刷新画布
                 canvas.setDirty(true, true);
 
-                console.log('[WorkflowDescription] 跳转完成 - 缩放:', targetZoom);
+                logger.info('[WorkflowDescription] 跳转完成 - 缩放:', targetZoom);
             } catch (error) {
-                console.error('[WorkflowDescription] 跳转失败:', error);
+                logger.error('[WorkflowDescription] 跳转失败:', error);
             }
         };
 
@@ -953,7 +958,7 @@ app.registerExtension({
             // 保存节点属性到工作流 JSON
             info.properties = this.properties || {};
 
-            console.log('[WorkflowDescription-Serialize] 保存节点属性:', info.properties);
+            logger.info('[WorkflowDescription-Serialize] 保存节点属性:', info.properties);
 
             return data;
         };
@@ -966,7 +971,7 @@ app.registerExtension({
             // 从工作流 JSON 恢复节点属性
             if (info.properties) {
                 this.properties = info.properties;
-                console.log('[WorkflowDescription-Configure] 恢复节点属性:', info.properties);
+                logger.info('[WorkflowDescription-Configure] 恢复节点属性:', info.properties);
             }
 
             // 等待UI准备就绪后更新界面
@@ -992,4 +997,4 @@ app.registerExtension({
     }
 });
 
-console.log('[WorkflowDescription] 工作流说明节点已加载');
+logger.info('[WorkflowDescription] 工作流说明节点已加载');

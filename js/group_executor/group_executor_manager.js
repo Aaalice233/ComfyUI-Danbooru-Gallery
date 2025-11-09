@@ -4,12 +4,16 @@
  */
 
 import { app } from "/scripts/app.js";
+import { createLogger } from "../global/logger_client.js";
+
+// 创建logger实例
+const logger = createLogger('group_executor_manager');
 
 // Debug辅助函数
 const COMPONENT_NAME = 'group_executor_manager';
 const debugLog = (...args) => {
     if (window.shouldDebug && window.shouldDebug(COMPONENT_NAME)) {
-        console.log(...args);
+        logger.info(...args);
     }
 };
 
@@ -60,7 +64,7 @@ app.registerExtension({
         // 创建自定义UI
         nodeType.prototype.createCustomUI = function () {
             try {
-                console.log('[SimplifiedGEM-UI] 开始创建自定义UI:', this.id);
+                logger.info('[SimplifiedGEM-UI] 开始创建自定义UI:', this.id);
 
                 const container = document.createElement('div');
                 container.className = 'gem-container';
@@ -120,10 +124,10 @@ app.registerExtension({
                 // 监听图表变化，自动刷新组列表
                 this.setupGraphChangeListener();
 
-                console.log('[SimplifiedGEM-UI] 自定义UI创建完成');
+                logger.info('[SimplifiedGEM-UI] 自定义UI创建完成');
 
             } catch (error) {
-                console.error('[SimplifiedGEM-UI] 创建自定义UI时出错:', error);
+                logger.error('[SimplifiedGEM-UI] 创建自定义UI时出错:', error);
 
                 // 创建一个简单的错误提示UI
                 const errorContainer = document.createElement('div');
@@ -676,8 +680,8 @@ app.registerExtension({
                 cleanup_config: {
                     clear_vram: false,
                     clear_ram: false,
-                    aggressive_mode: false,
-                    aggressive_conditions: [],
+                    unload_models: false,
+                    unload_conditions: [],
                     delay_seconds: 0
                 }
             };
@@ -704,13 +708,32 @@ app.registerExtension({
                 group.cleanup_config = {
                     clear_vram: false,
                     clear_ram: false,
-                    aggressive_mode: false,
-                    aggressive_conditions: [],
+                    unload_models: false,
+                    unload_conditions: [],
                     delay_seconds: 0
                 };
             }
 
             const config = group.cleanup_config;
+
+            // ✅ 配置迁移：将旧的 aggressive_mode 转换为 unload_models
+            if (config.aggressive_mode !== undefined) {
+                config.unload_models = config.aggressive_mode;
+                delete config.aggressive_mode;
+                logger.info('[GEM] 配置迁移: aggressive_mode -> unload_models');
+            }
+
+            // ✅ 配置迁移：将旧的 aggressive_conditions 转换为 unload_conditions
+            if (config.aggressive_conditions !== undefined) {
+                config.unload_conditions = config.aggressive_conditions;
+                delete config.aggressive_conditions;
+                logger.info('[GEM] 配置迁移: aggressive_conditions -> unload_conditions');
+            }
+
+            // 确保 unload_conditions 存在
+            if (!config.unload_conditions) {
+                config.unload_conditions = [];
+            }
 
             // 创建对话框覆盖层
             const overlay = document.createElement('div');
@@ -751,7 +774,7 @@ app.registerExtension({
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                         <input type="checkbox" id="gem-cfg-clear-vram" ${config.clear_vram ? 'checked' : ''}
                                style="width: 16px; height: 16px; cursor: pointer;">
-                        <span>清理显存 (VRAM)</span>
+                        <span>清理显存缓存 (VRAM Cache)</span>
                     </label>
                 </div>
 
@@ -765,15 +788,15 @@ app.registerExtension({
 
                 <div style="margin-bottom: 16px;">
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                        <input type="checkbox" id="gem-cfg-aggressive" ${config.aggressive_mode ? 'checked' : ''}
+                        <input type="checkbox" id="gem-cfg-unload-models" ${config.unload_models ? 'checked' : ''}
                                style="width: 16px; height: 16px; cursor: pointer;">
-                        <span>启用激进模式（卸载所有模型）</span>
+                        <span>卸载模型 (Unload Models)</span>
                     </label>
                 </div>
 
-                <div id="gem-aggressive-conditions-section" style="margin-bottom: 16px; padding: 12px; background: #333; border-radius: 4px; ${config.aggressive_mode ? '' : 'display: none;'}">
+                <div id="gem-unload-conditions-section" style="margin-bottom: 16px; padding: 12px; background: #333; border-radius: 4px; ${config.unload_models ? '' : 'display: none;'}">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                        <strong>激进模式触发条件 (全部满足)</strong>
+                        <strong>卸载模型触发条件 (全部满足)</strong>
                         <button id="gem-add-condition-btn" style="padding: 4px 12px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">
                             + 添加条件
                         </button>
@@ -811,12 +834,12 @@ app.registerExtension({
                 const conditionsList = dialog.querySelector('#gem-conditions-list');
                 conditionsList.innerHTML = '';
 
-                if (!config.aggressive_conditions || config.aggressive_conditions.length === 0) {
-                    conditionsList.innerHTML = '<p style="color: #999; margin: 0;">暂无条件，默认不启用激进模式</p>';
+                if (!config.unload_conditions || config.unload_conditions.length === 0) {
+                    conditionsList.innerHTML = '<p style="color: #999; margin: 0;">暂无条件，默认始终卸载模型</p>';
                     return;
                 }
 
-                config.aggressive_conditions.forEach((condition, index) => {
+                config.unload_conditions.forEach((condition, index) => {
                     const conditionItem = document.createElement('div');
                     conditionItem.style.cssText = 'padding: 8px; background: #2a2a2a; border-radius: 4px; display: flex; align-items: center; gap: 8px;';
 
@@ -844,8 +867,8 @@ app.registerExtension({
                 conditionsList.querySelectorAll('.gem-edit-condition').forEach(btn => {
                     btn.addEventListener('click', () => {
                         const index = parseInt(btn.dataset.index);
-                        this.showConditionEditor(config.aggressive_conditions[index], (updatedCondition) => {
-                            config.aggressive_conditions[index] = updatedCondition;
+                        this.showConditionEditor(config.unload_conditions[index], (updatedCondition) => {
+                            config.unload_conditions[index] = updatedCondition;
                             renderConditions();
                         });
                     });
@@ -854,7 +877,7 @@ app.registerExtension({
                 conditionsList.querySelectorAll('.gem-delete-condition').forEach(btn => {
                     btn.addEventListener('click', () => {
                         const index = parseInt(btn.dataset.index);
-                        config.aggressive_conditions.splice(index, 1);
+                        config.unload_conditions.splice(index, 1);
                         renderConditions();
                     });
                 });
@@ -862,20 +885,20 @@ app.registerExtension({
 
             renderConditions();
 
-            // 激进模式复选框切换
-            const aggressiveCheckbox = dialog.querySelector('#gem-cfg-aggressive');
-            const conditionsSection = dialog.querySelector('#gem-aggressive-conditions-section');
-            aggressiveCheckbox.addEventListener('change', () => {
-                conditionsSection.style.display = aggressiveCheckbox.checked ? 'block' : 'none';
+            // 卸载模型复选框切换
+            const unloadModelsCheckbox = dialog.querySelector('#gem-cfg-unload-models');
+            const conditionsSection = dialog.querySelector('#gem-unload-conditions-section');
+            unloadModelsCheckbox.addEventListener('change', () => {
+                conditionsSection.style.display = unloadModelsCheckbox.checked ? 'block' : 'none';
             });
 
             // 添加条件按钮
             dialog.querySelector('#gem-add-condition-btn').addEventListener('click', () => {
                 this.showConditionEditor(null, (newCondition) => {
-                    if (!config.aggressive_conditions) {
-                        config.aggressive_conditions = [];
+                    if (!config.unload_conditions) {
+                        config.unload_conditions = [];
                     }
-                    config.aggressive_conditions.push(newCondition);
+                    config.unload_conditions.push(newCondition);
                     renderConditions();
                 });
             });
@@ -897,7 +920,7 @@ app.registerExtension({
                 // 更新配置
                 config.clear_vram = dialog.querySelector('#gem-cfg-clear-vram').checked;
                 config.clear_ram = dialog.querySelector('#gem-cfg-clear-ram').checked;
-                config.aggressive_mode = dialog.querySelector('#gem-cfg-aggressive').checked;
+                config.unload_models = dialog.querySelector('#gem-cfg-unload-models').checked;
                 config.delay_seconds = parseFloat(dialog.querySelector('#gem-cfg-delay').value) || 0;
 
                 // 同步配置
@@ -906,7 +929,7 @@ app.registerExtension({
                 overlay.remove();
 
                 this.showToast('组配置已保存', 'success');
-                console.log('[GEM] 组配置已更新:', group.group_name, config);
+                logger.info('[GEM] 组配置已更新:', group.group_name, config);
             });
 
             // ESC键关闭
@@ -1012,7 +1035,7 @@ app.registerExtension({
                             }
                         }
                     } catch (e) {
-                        console.error('[GEM] 获取可访问参数失败:', e);
+                        logger.error('[GEM] 获取可访问参数失败:', e);
                     }
 
                     configArea.innerHTML = `
@@ -1090,7 +1113,7 @@ app.registerExtension({
                     onSave(newCondition);
                 }
 
-                console.log('[GEM] 条件已保存:', newCondition);
+                logger.info('[GEM] 条件已保存:', newCondition);
             });
 
             // ESC键关闭
@@ -1137,10 +1160,10 @@ app.registerExtension({
                 if (typeof globalToastManager !== 'undefined') {
                     globalToastManager.showToast(message, type, 3000);
                 } else {
-                    console.log('[GEM] Toast:', message);
+                    logger.info('[GEM] Toast:', message);
                 }
             } catch (error) {
-                console.error('[GEM] Toast显示失败:', error);
+                logger.error('[GEM] Toast显示失败:', error);
             }
         };
 
@@ -1154,10 +1177,10 @@ app.registerExtension({
             // 显示提示
             if (this.properties.locked) {
                 this.showToast('已开启锁定模式', 'success');
-                console.log('[GEM] 锁定模式已开启');
+                logger.info('[GEM] 锁定模式已开启');
             } else {
                 this.showToast('已关闭锁定模式', 'success');
-                console.log('[GEM] 锁定模式已关闭');
+                logger.info('[GEM] 锁定模式已关闭');
             }
         };
 
@@ -1454,7 +1477,7 @@ app.registerExtension({
                         const groupObj = app.graph._groups.find(g => g.title === selectedValue);
                         if (groupObj) {
                             this.groupReferences.set(groupObj, group);
-                            console.log('[GEM] 建立组引用映射:', selectedValue);
+                            logger.info('[GEM] 建立组引用映射:', selectedValue);
                         }
                     }
 
@@ -1611,7 +1634,7 @@ app.registerExtension({
                         this.updateGroupsList();
                     }
                 } catch (e) {
-                    console.error("[GEM] 解析组配置失败:", e);
+                    logger.error("[GEM] 解析组配置失败:", e);
                 }
             }
         };
@@ -1627,12 +1650,12 @@ app.registerExtension({
                 if (result.status === 'success' && result.groups) {
                     this.properties.groups = result.groups;
                     this.updateGroupsList();
-                    console.log('[GEM-API] 从后端加载配置成功');
+                    logger.info('[GEM-API] 从后端加载配置成功');
                 } else {
-                    console.warn('[GEM-API] 从后端加载配置失败或未获取到组数据:', result.message);
+                    logger.warn('[GEM-API] 从后端加载配置失败或未获取到组数据:', result.message);
                 }
             } catch (error) {
-                console.error('[GEM-API] 从后端加载配置出错:', error);
+                logger.error('[GEM-API] 从后端加载配置出错:', error);
             }
         };
 
@@ -1647,25 +1670,25 @@ app.registerExtension({
         // 同步配置到后端
         nodeType.prototype.syncConfigToBackend = async function () {
             if (this.properties.isExecuting) {
-                console.warn('[GEM-API] 正在执行中，跳过同步配置到后端');
+                logger.warn('[GEM-API] 正在执行中，跳过同步配置到后端');
                 return;
             }
 
             // 🔍 DEBUG: 保存配置前输出详情
-            console.log('\n[GEM-API] 🔍 ========== 准备保存配置到后端 ==========');
-            console.log('[GEM-API] 📦 groups数量:', this.properties.groups.length);
+            logger.info('\n[GEM-API] 🔍 ========== 准备保存配置到后端 ==========');
+            logger.info('[GEM-API] 📦 groups数量:', this.properties.groups.length);
             this.properties.groups.forEach((g, i) => {
-                console.log(`[GEM-API]   ${i + 1}. ${g.group_name}`);
-                console.log(`[GEM-API]      cleanup_config存在: ${!!g.cleanup_config}`);
+                logger.info(`[GEM-API]   ${i + 1}. ${g.group_name}`);
+                logger.info(`[GEM-API]      cleanup_config存在: ${!!g.cleanup_config}`);
                 if (g.cleanup_config) {
-                    console.log(`[GEM-API]      cleanup_config:`, JSON.stringify(g.cleanup_config, null, 2));
+                    logger.info(`[GEM-API]      cleanup_config:`, JSON.stringify(g.cleanup_config, null, 2));
                 } else {
-                    console.log(`[GEM-API]      ⚠️ cleanup_config 不存在或为空`);
+                    logger.info(`[GEM-API]      ⚠️ cleanup_config 不存在或为空`);
                 }
             });
 
             try {
-                console.log('[GEM-API] 🚀 正在发送保存请求...');
+                logger.info('[GEM-API] 🚀 正在发送保存请求...');
                 const response = await fetch('/danbooru_gallery/group_config/save', {
                     method: 'POST',
                     headers: {
@@ -1677,18 +1700,18 @@ app.registerExtension({
                 });
 
                 const result = await response.json();
-                console.log('[GEM-API] 📥 响应状态:', response.status);
-                console.log('[GEM-API] 📥 响应结果:', result);
+                logger.info('[GEM-API] 📥 响应状态:', response.status);
+                logger.info('[GEM-API] 📥 响应结果:', result);
 
                 if (result.status === 'success') {
-                    console.log('[GEM-API] ✅ 配置已同步到后端:', result.message);
+                    logger.info('[GEM-API] ✅ 配置已同步到后端:', result.message);
                 } else {
-                    console.error('[GEM-API] ❌ 同步配置失败:', result.message);
+                    logger.error('[GEM-API] ❌ 同步配置失败:', result.message);
                 }
-                console.log('[GEM-API] ========================================\n');
+                logger.info('[GEM-API] ========================================\n');
             } catch (error) {
-                console.error('[GEM-API] ❌ 同步配置到后端出错:', error);
-                console.log('[GEM-API] ========================================\n');
+                logger.error('[GEM-API] ❌ 同步配置到后端出错:', error);
+                logger.info('[GEM-API] ========================================\n');
             }
         };
 
@@ -1713,7 +1736,7 @@ app.registerExtension({
                     const groupObj = app.graph._groups.find(g => g.title === group.group_name);
                     if (groupObj && !this.groupReferences.has(groupObj)) {
                         this.groupReferences.set(groupObj, group);
-                        console.log('[GEM] 在刷新时建立组引用映射:', group.group_name);
+                        logger.info('[GEM] 在刷新时建立组引用映射:', group.group_name);
                     }
                 }
 
@@ -1740,7 +1763,7 @@ app.registerExtension({
                     const config = this.properties.groups.find(c => c.group_name === group.title);
                     if (config) {
                         this.groupReferences.set(group, config);
-                        console.log('[GEM] 初始化组引用映射:', group.title);
+                        logger.info('[GEM] 初始化组引用映射:', group.title);
                     }
                 });
             }
@@ -1756,7 +1779,7 @@ app.registerExtension({
                     app.graph._groups.forEach(group => {
                         const config = this.groupReferences.get(group);
                         if (config && config.group_name !== group.title) {
-                            console.log('[GEM] 检测到组重命名:', config.group_name, '→', group.title);
+                            logger.info('[GEM] 检测到组重命名:', config.group_name, '→', group.title);
                             config.group_name = group.title;
                             hasRename = true;
                         }
@@ -1770,7 +1793,7 @@ app.registerExtension({
 
                 const currentGroupsList = this.getAvailableGroups().join(',');
                 if (currentGroupsList !== this.lastGroupsList) {
-                    console.log('[GEM] 检测到组列表变化，自动刷新');
+                    logger.info('[GEM] 检测到组列表变化，自动刷新');
                     this.lastGroupsList = currentGroupsList;
                     this.refreshGroupsList();
                 }
@@ -1795,17 +1818,17 @@ app.registerExtension({
             };
 
             // ✅ 新增：详细的序列化日志
-            console.log('[GEM-Serialize] 💾 保存工作流数据:');
-            console.log(`[GEM-Serialize]   节点ID: ${this.id}`);
-            console.log(`[GEM-Serialize]   组数量: ${info.groups.length}`);
+            logger.info('[GEM-Serialize] 💾 保存工作流数据:');
+            logger.info(`[GEM-Serialize]   节点ID: ${this.id}`);
+            logger.info(`[GEM-Serialize]   组数量: ${info.groups.length}`);
             info.groups.forEach((g, i) => {
-                console.log(`[GEM-Serialize]   ${i + 1}. ${g.group_name}`);
+                logger.info(`[GEM-Serialize]   ${i + 1}. ${g.group_name}`);
             });
-            console.log(`[GEM-Serialize]   节点大小: ${info.gem_node_size.width}x${info.gem_node_size.height}`);
+            logger.info(`[GEM-Serialize]   节点大小: ${info.gem_node_size.width}x${info.gem_node_size.height}`);
 
             // ✅ 新增：保存时立即同步到后端，确保配置不会丢失
             this.syncConfigToBackend().catch(err => {
-                console.warn('[GEM-Serialize] ⚠️  保存时同步配置到后端失败:', err);
+                logger.warn('[GEM-Serialize] ⚠️  保存时同步配置到后端失败:', err);
             });
 
             return data;
@@ -1832,23 +1855,23 @@ app.registerExtension({
                 });
 
                 this.properties.groups = validGroups;
-                console.log('[GEM] ✅ 从工作流JSON恢复配置:', validGroups.length, '个组');
+                logger.info('[GEM] ✅ 从工作流JSON恢复配置:', validGroups.length, '个组');
                 validGroups.forEach((g, i) => {
-                    console.log(`   ${i + 1}. ${g.group_name}`);
+                    logger.info(`   ${i + 1}. ${g.group_name}`);
                 });
             } else {
                 this.properties.groups = [];
-                console.log('[GEM] ⚠️  工作流JSON中没有组配置');
+                logger.info('[GEM] ⚠️  工作流JSON中没有组配置');
             }
 
             // ⚠️ 修复：加载工作流时强制重置执行状态为false，避免状态卡死
             this.properties.isExecuting = false;
-            console.log('[GEM] 工作流加载完成，执行状态已重置为false');
+            logger.info('[GEM] 工作流加载完成，执行状态已重置为false');
 
             // ✅ 恢复锁定状态
             if (info.locked !== undefined && typeof info.locked === 'boolean') {
                 this.properties.locked = info.locked;
-                console.log('[GEM] ✅ 恢复锁定状态:', this.properties.locked ? '已锁定' : '未锁定');
+                logger.info('[GEM] ✅ 恢复锁定状态:', this.properties.locked ? '已锁定' : '未锁定');
             } else {
                 this.properties.locked = false;
             }
@@ -1880,7 +1903,7 @@ app.registerExtension({
             // 这是关键步骤，确保后端能够读取到工作流中保存的groups配置
             setTimeout(async () => {
                 if (this.properties.groups && this.properties.groups.length > 0) {
-                    console.log('[GEM] 📤 工作流加载后，同步配置到后端...');
+                    logger.info('[GEM] 📤 工作流加载后，同步配置到后端...');
                     await this.syncConfigToBackend();
                 }
             }, 200);
@@ -1889,13 +1912,13 @@ app.registerExtension({
         // 节点被移除时清理资源
         const onRemoved = nodeType.prototype.onRemoved;
         nodeType.prototype.onRemoved = function () {
-            console.log('[GEM] 开始清理节点资源:', this.id);
+            logger.info('[GEM] 开始清理节点资源:', this.id);
 
             // 清除定时器
             if (this.groupsCheckInterval) {
                 clearInterval(this.groupsCheckInterval);
                 this.groupsCheckInterval = null;
-                console.log('[GEM] 定时器已清理');
+                logger.info('[GEM] 定时器已清理');
             }
 
             // 清理DOM事件监听器
@@ -1912,9 +1935,9 @@ app.registerExtension({
                     // 清空自定义UI内容
                     this.customUI.innerHTML = '';
                     this.customUI = null;
-                    console.log('[GEM] DOM事件监听器已清理');
+                    logger.info('[GEM] DOM事件监听器已清理');
                 } catch (e) {
-                    console.warn('[GEM] 清理DOM事件监听器时出错:', e);
+                    logger.warn('[GEM] 清理DOM事件监听器时出错:', e);
                 }
             }
 
@@ -1925,7 +1948,7 @@ app.registerExtension({
                 selectedColorFilter: ''
             };
 
-            console.log('[GEM] 节点资源清理完成');
+            logger.info('[GEM] 节点资源清理完成');
 
             // 调用原始移除方法
             onRemoved?.apply?.(this, arguments);
@@ -1933,5 +1956,5 @@ app.registerExtension({
     }
 });
 
-console.log('[GEM] 组执行管理器已加载');
+logger.info('[GEM] 组执行管理器已加载');
 

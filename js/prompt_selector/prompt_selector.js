@@ -4,6 +4,11 @@ import { AutocompleteUI } from "../global/autocomplete_ui.js";
 import { toastManagerProxy } from "../global/toast_manager.js";
 import { globalMultiLanguageManager } from "../global/multi_language.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('prompt_selector');
+
 // 提示词选择器节点
 app.registerExtension({
     name: "Comfy.PromptSelector",
@@ -200,7 +205,7 @@ app.registerExtension({
                                     }
                                 }
                             } catch (e) {
-                                console.error(`[PromptSelector #${this.id}] Failed to parse saved selections:`, e);
+                                logger.error(`[PromptSelector #${this.id}] Failed to parse saved selections:`, e);
                                 this.selectedPrompts = {};
                             }
                         } else {
@@ -212,7 +217,7 @@ app.registerExtension({
                         updateUIText(this);
                     })
                     .catch(error => {
-                        console.error("加载提示词数据失败:", error);
+                        logger.error("加载提示词数据失败:", error);
                         contentArea.innerHTML = `<p style="color: #c53939; text-align: center;">${t('load_error')}</p>`;
                     });
 
@@ -337,7 +342,7 @@ app.registerExtension({
                             }
                         }
                     } catch (e) {
-                        console.warn('[PromptSelector] 读取格式化设置失败:', e);
+                        logger.warn('[PromptSelector] 读取格式化设置失败:', e);
                     }
 
                     // 应用格式化逻辑
@@ -800,7 +805,7 @@ app.registerExtension({
                             this.showToast(t('save_error'), 'error');
                         }
                     }).catch(error => {
-                        console.error("保存数据失败:", error);
+                        logger.error("保存数据失败:", error);
                         this.showToast(t('save_error'), 'error');
                     });
                 };
@@ -1162,7 +1167,7 @@ app.registerExtension({
                                     throw new Error("Image upload failed");
                                 }
                             } catch (error) {
-                                console.error("Image upload error:", error);
+                                logger.error("Image upload error:", error);
                                 this.showToast("图片上传失败!", 'error');
                                 this.setButtonLoading(saveButton, false);
                                 return;
@@ -1240,7 +1245,7 @@ app.registerExtension({
                             closeModal();
                             this.showToast(isNew ? t('add_prompt_success') : t('update_prompt_success'));
                         } catch (error) {
-                            console.error('保存提示词失败:', error);
+                            logger.error('保存提示词失败:', error);
                             this.showToast(t('save_fail_retry'), 'error');
                         } finally {
                             this.setButtonLoading(saveButton, false);
@@ -1637,7 +1642,7 @@ app.registerExtension({
                                     throw new Error(error.error || t('batch_delete_fail'));
                                 }
                             } catch (error) {
-                                console.error("批量删除失败:", error);
+                                logger.error("批量删除失败:", error);
                                 this.showToast(t('batch_delete_fail'), 'error');
                             }
                         });
@@ -1680,11 +1685,11 @@ app.registerExtension({
                                             this.showToast('批量移动成功！');
                                         } else {
                                             const error = await response.json();
-                                            // console.error("Batch move API error response:", error); // Add logging here
+                                            // logger.error("Batch move API error response:", error); // Add logging here
                                             throw new Error(error.error || '批量移动失败');
                                         }
                                     } catch (error) {
-                                        console.error("批量移动失败:", error);
+                                        logger.error("批量移动失败:", error);
                                         this.showToast(error.message, 'error');
                                     }
                                 }
@@ -1743,7 +1748,7 @@ app.registerExtension({
                             this.updateOutput();
                             this.showToast("收藏词条已置顶！");
                         } catch (error) {
-                            console.error("置顶收藏失败:", error);
+                            logger.error("置顶收藏失败:", error);
                             this.showToast("操作失败，请重试", 'error');
                             // 如果失败，可能需要恢复原始顺序
                         }
@@ -1903,7 +1908,7 @@ app.registerExtension({
                             }
                         }
                     } catch (error) {
-                        console.error("切换收藏状态失败:", error);
+                        logger.error("切换收藏状态失败:", error);
                     }
                 };
 
@@ -1939,7 +1944,7 @@ app.registerExtension({
                             throw new Error(error.error || '删除失败');
                         }
                     } catch (error) {
-                        console.error("删除提示词失败:", error);
+                        logger.error("删除提示词失败:", error);
                         this.showToast(error.message, 'error');
                     }
                 };
@@ -1962,7 +1967,7 @@ app.registerExtension({
                             body: JSON.stringify({ category: categoryName, ordered_ids: orderedIds })
                         });
                     } catch (error) {
-                        console.error("更新排序失败:", error);
+                        logger.error("更新排序失败:", error);
                     }
                 };
 
@@ -2134,7 +2139,7 @@ app.registerExtension({
 
                             if (!response.ok) {
                                 const error = await response.json();
-                                // console.error("[DEBUG] API deletion failed:", error);
+                                // logger.error("[DEBUG] API deletion failed:", error);
                                 throw new Error(error.error || "删除失败");
                             }
 
@@ -2186,7 +2191,7 @@ app.registerExtension({
                             this.showToast(t('delete_success'));
 
                         } catch (e) {
-                            console.error("[PromptSelector] Error during category deletion:", e);
+                            logger.error("[PromptSelector] Error during category deletion:", e);
                             this.showToast(e.message || "删除分类时发生错误", 'error');
                         }
                     });
@@ -2981,7 +2986,7 @@ app.registerExtension({
                     if (treeElement) { // Add a check here
                         treeContainer.appendChild(treeElement);
                     } else {
-                        // console.warn("[Debug] treeElement is null or undefined, not appending.");
+                        // logger.warn("[Debug] treeElement is null or undefined, not appending.");
                     }
 
                     const closeModal = () => modal.remove();

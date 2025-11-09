@@ -6,19 +6,24 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('has_next_executor_group');
+
 app.registerExtension({
     name: "Comfy.HasNextExecutorGroup",
 
     async init(app) {
         // 在扩展初始化时设置监听器和轮询
-        console.log('[HasNext] 正在设置组内节点状态检测...');
+        logger.info('[HasNext] 正在设置组内节点状态检测...');
 
         // 等待 app.graph 就绪
         const waitForGraph = setInterval(() => {
             if (app.graph) {
                 clearInterval(waitForGraph);
 
-                console.log('[HasNext] app.graph 已就绪，开始设置监听器和轮询');
+                logger.info('[HasNext] app.graph 已就绪，开始设置监听器和轮询');
 
                 // 🔥 方案1: 定期轮询检测（每3秒检测一次状态变化）
                 setInterval(() => {
@@ -61,7 +66,7 @@ app.registerExtension({
                     syncDisabledGroupsToBackend();
                 }, 500);
 
-                console.log('[HasNext] ✅ 组内节点状态检测已启用（轮询 + 执行前检测 + 事件监听）');
+                logger.info('[HasNext] ✅ 组内节点状态检测已启用（轮询 + 执行前检测 + 事件监听）');
             }
         }, 100);
     },
@@ -105,7 +110,7 @@ app.registerExtension({
         // 创建自定义UI
         nodeType.prototype.createCustomUI = function () {
             try {
-                console.log('[HasNextExecutorGroup-UI] 开始创建自定义UI');
+                logger.info('[HasNextExecutorGroup-UI] 开始创建自定义UI');
 
                 const container = document.createElement('div');
                 container.className = 'hneg-container';
@@ -150,10 +155,10 @@ app.registerExtension({
                 // 初始化组列表
                 this.updateExcludedList();
 
-                console.log('[HasNextExecutorGroup-UI] 自定义UI创建完成');
+                logger.info('[HasNextExecutorGroup-UI] 自定义UI创建完成');
 
             } catch (error) {
-                console.error('[HasNextExecutorGroup-UI] 创建自定义UI时出错:', error);
+                logger.error('[HasNextExecutorGroup-UI] 创建自定义UI时出错:', error);
             }
         };
 
@@ -627,7 +632,7 @@ app.registerExtension({
                         const groupObj = app.graph._groups.find(g => g.title === selectedValue);
                         if (groupObj) {
                             this.groupReferences.set(groupObj, { index, groupName: selectedValue });
-                            console.log('[HasNextExecutorGroup] 建立组引用映射:', selectedValue);
+                            logger.info('[HasNextExecutorGroup] 建立组引用映射:', selectedValue);
                         }
                     }
 
@@ -811,7 +816,7 @@ app.registerExtension({
 
         // 刷新排除组列表
         nodeType.prototype.refreshExcludedList = function () {
-            console.log('[HasNextExecutorGroup] 刷新排除组列表');
+            logger.info('[HasNextExecutorGroup] 刷新排除组列表');
 
             const availableGroups = this.getAvailableGroups();
 
@@ -832,7 +837,7 @@ app.registerExtension({
                     const groupObj = app.graph._groups.find(g => g.title === groupName);
                     if (groupObj && !this.groupReferences.has(groupObj)) {
                         this.groupReferences.set(groupObj, { index, groupName });
-                        console.log('[HasNextExecutorGroup] 在刷新时建立组引用映射:', groupName);
+                        logger.info('[HasNextExecutorGroup] 在刷新时建立组引用映射:', groupName);
                     }
                 }
 
@@ -859,7 +864,7 @@ app.registerExtension({
                     const index = this.properties.excludedGroups.indexOf(group.title);
                     if (index !== -1) {
                         this.groupReferences.set(group, { index, groupName: group.title });
-                        console.log('[HasNextExecutorGroup] 初始化组引用映射:', group.title);
+                        logger.info('[HasNextExecutorGroup] 初始化组引用映射:', group.title);
                     }
                 });
             }
@@ -875,7 +880,7 @@ app.registerExtension({
                     app.graph._groups.forEach(group => {
                         const config = this.groupReferences.get(group);
                         if (config && this.properties.excludedGroups[config.index] !== group.title) {
-                            console.log('[HasNextExecutorGroup] 检测到组重命名:',
+                            logger.info('[HasNextExecutorGroup] 检测到组重命名:',
                                 this.properties.excludedGroups[config.index], '→', group.title);
                             this.properties.excludedGroups[config.index] = group.title;
                             hasRename = true;
@@ -884,7 +889,7 @@ app.registerExtension({
 
                     // 配置已更新，会在保存工作流时自动通过 onSerialize 持久化
                     if (hasRename) {
-                        console.log('[HasNextExecutorGroup] 组名已更新，配置会在保存工作流时持久化');
+                        logger.info('[HasNextExecutorGroup] 组名已更新，配置会在保存工作流时持久化');
                         // 立即同步到后端
                         this.syncExcludedGroups?.();
                     }
@@ -893,7 +898,7 @@ app.registerExtension({
                 // 检测组列表变化
                 const currentGroupsList = this.getAvailableGroups().join(',');
                 if (currentGroupsList !== this.lastGroupsList) {
-                    console.log('[HasNextExecutorGroup] 检测到组列表变化，自动刷新');
+                    logger.info('[HasNextExecutorGroup] 检测到组列表变化，自动刷新');
                     this.lastGroupsList = currentGroupsList;
                     this.refreshExcludedList();
                 }
@@ -907,7 +912,7 @@ app.registerExtension({
         nodeType.prototype.toggleLock = function () {
             this.properties.locked = !this.properties.locked;
             this.updateLockUI();
-            console.log('[HasNextExecutorGroup] 锁定模式:', this.properties.locked);
+            logger.info('[HasNextExecutorGroup] 锁定模式:', this.properties.locked);
         };
 
         // 更新锁定模式UI
@@ -943,7 +948,7 @@ app.registerExtension({
             info.locked = this.properties.locked || false;
             info.excludedGroups = this.properties.excludedGroups || [];
 
-            console.log('[HasNextExecutorGroup-Serialize] 💾 保存配置:', {
+            logger.info('[HasNextExecutorGroup-Serialize] 💾 保存配置:', {
                 locked: info.locked,
                 excludedGroups: info.excludedGroups.length
             });
@@ -968,7 +973,7 @@ app.registerExtension({
             // 恢复锁定状态
             if (info.locked !== undefined && typeof info.locked === 'boolean') {
                 this.properties.locked = info.locked;
-                console.log('[HasNextExecutorGroup] ✅ 恢复锁定状态:', this.properties.locked ? '已锁定' : '未锁定');
+                logger.info('[HasNextExecutorGroup] ✅ 恢复锁定状态:', this.properties.locked ? '已锁定' : '未锁定');
             } else {
                 this.properties.locked = false;
             }
@@ -977,7 +982,7 @@ app.registerExtension({
             if (info.excludedGroups && Array.isArray(info.excludedGroups)) {
                 // 先无条件恢复配置，不立即验证
                 this.properties.excludedGroups = [...info.excludedGroups];
-                console.log('[HasNextExecutorGroup] 📥 恢复排除组配置:', this.properties.excludedGroups.length, '个');
+                logger.info('[HasNextExecutorGroup] 📥 恢复排除组配置:', this.properties.excludedGroups.length, '个');
             } else {
                 this.properties.excludedGroups = [];
             }
@@ -998,7 +1003,7 @@ app.registerExtension({
 
                             const exists = availableGroups.includes(groupName);
                             if (!exists) {
-                                console.warn(`[HasNextExecutorGroup] ⚠️ 组 "${groupName}" 不存在，已自动清理`);
+                                logger.warn(`[HasNextExecutorGroup] ⚠️ 组 "${groupName}" 不存在，已自动清理`);
                             }
                             return exists;
                         });
@@ -1006,10 +1011,10 @@ app.registerExtension({
                         this.properties.excludedGroups = validGroups;
 
                         if (originalCount !== validGroups.length) {
-                            console.log('[HasNextExecutorGroup] ✅ 验证完成: 保留', validGroups.length, '个有效组（清理',
+                            logger.info('[HasNextExecutorGroup] ✅ 验证完成: 保留', validGroups.length, '个有效组（清理',
                                 originalCount - validGroups.length, '个无效组）');
                         } else {
-                            console.log('[HasNextExecutorGroup] ✅ 验证完成: 所有', validGroups.length, '个组均有效');
+                            logger.info('[HasNextExecutorGroup] ✅ 验证完成: 所有', validGroups.length, '个组均有效');
                         }
                     }
 
@@ -1031,7 +1036,7 @@ app.registerExtension({
             }
         };
 
-        console.log('[HasNextExecutorGroup] 节点扩展注册完成');
+        logger.info('[HasNextExecutorGroup] 节点扩展注册完成');
     }
 });
 
@@ -1120,7 +1125,7 @@ function getAllDisabledNodeGroups(app) {
         }
     }
 
-    //console.log(`[HasNext] 检测到 ${disabledGroups.length} 个组内节点都被禁用的组:`, disabledGroups);
+    //logger.info(`[HasNext] 检测到 ${disabledGroups.length} 个组内节点都被禁用的组:`, disabledGroups);
 
     return disabledGroups;
 }
@@ -1142,11 +1147,11 @@ async function syncDisabledGroupsToBackend() {
 
         const result = await response.json();
         // if (result.status === 'success') {
-        //     console.log('[HasNext] 被禁用组已同步到后端:', result.message);
+        //     logger.info('[HasNext] 被禁用组已同步到后端:', result.message);
         // }
 
     } catch (error) {
-        console.error('[HasNext] 同步被禁用组到后端时出错:', error);
+        logger.error('[HasNext] 同步被禁用组到后端时出错:', error);
     }
 }
 
@@ -1171,11 +1176,11 @@ async function syncExcludedGroupsToBackend(node) {
 
         const result = await response.json();
         if (result.status === 'success') {
-            console.log(`[HasNext] 节点 ${node.id} 排除组已同步:`, result.message);
+            logger.info(`[HasNext] 节点 ${node.id} 排除组已同步:`, result.message);
         }
 
     } catch (error) {
-        console.error(`[HasNext] 节点 ${node.id} 同步排除组到后端时出错:`, error);
+        logger.error(`[HasNext] 节点 ${node.id} 同步排除组到后端时出错:`, error);
     }
 }
 

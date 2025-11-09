@@ -6,6 +6,10 @@
 
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
+import { createLogger } from "../global/logger_client.js";
+
+// 创建logger实例
+const logger = createLogger('native_execution_init');
 
 // ui-enhancement.js 已删除，不再需要
 // migration-helper.js 已删除，不再需要
@@ -18,21 +22,21 @@ if (!window.optimizedExecutionSystemLoaded) {
     }
 
     function initializeOptimizedExecutionSystem() {
-        console.log('[OptimizedExecutionSystem] Starting initialization');
-        console.log('[OptimizedExecutionSystem] Version: 2.0.0');
-        console.log('[OptimizedExecutionSystem] Based on LG_GroupExecutor pattern');
+        logger.info('[OptimizedExecutionSystem] Starting initialization');
+        logger.info('[OptimizedExecutionSystem] Version: 2.0.0');
+        logger.info('[OptimizedExecutionSystem] Based on LG_GroupExecutor pattern');
 
         // CRITICAL FIX: Install Hook immediately (no setTimeout delay)
         // This ensures the hook is ready before any queue submissions
         try {
             if (api && !api._originalQueuePrompt) {
-                console.log('[OptimizedExecutionSystem] Installing api.queuePrompt hook...');
+                logger.info('[OptimizedExecutionSystem] Installing api.queuePrompt hook...');
 
                 api._originalQueuePrompt = api.queuePrompt;
                 window._queueNodeIds = null;
 
                 api.queuePrompt = async function (index, prompt) {
-                    console.log('[OptimizedExecutionSystem] api.queuePrompt called');
+                    logger.info('[OptimizedExecutionSystem] api.queuePrompt called');
 
                     // CRITICAL FIX: When workflow contains GroupExecutorTrigger and this is a native queue (not group execution)
                     // Only submit Manager and Trigger nodes, block all other nodes
@@ -44,7 +48,7 @@ if (!window.optimizedExecutionSystemLoaded) {
 
                         if (triggerNodeEntry) {
                             const [triggerNodeId, triggerNode] = triggerNodeEntry;
-                            console.log('[OptimizedExecutionSystem] 🎯 Detected GroupExecutorTrigger in workflow');
+                            logger.info('[OptimizedExecutionSystem] 🎯 Detected GroupExecutorTrigger in workflow');
 
                             // ✅ 获取 Manager 节点ID（只声明一次）
                             const managerNodeId = triggerNode.inputs?.execution_data?.[0];
@@ -59,8 +63,8 @@ if (!window.optimizedExecutionSystemLoaded) {
                                 // mode === 4: Bypass
                                 if (triggerGraphNode.mode === 2 || triggerGraphNode.mode === 4) {
                                     const modeText = triggerGraphNode.mode === 2 ? '静音(Mute)' : 'Bypass';
-                                    console.log(`[OptimizedExecutionSystem] 🚫 GroupExecutorTrigger 节点已被${modeText}，跳过组执行`);
-                                    console.log('[OptimizedExecutionSystem] ✅ 将正常提交所有节点');
+                                    logger.info(`[OptimizedExecutionSystem] 🚫 GroupExecutorTrigger 节点已被${modeText}，跳过组执行`);
+                                    logger.info('[OptimizedExecutionSystem] ✅ 将正常提交所有节点');
                                     // 不进行过滤，让ComfyUI正常处理
                                     return api._originalQueuePrompt.apply(this, [index, prompt]);
                                 }
@@ -70,8 +74,8 @@ if (!window.optimizedExecutionSystemLoaded) {
                                     const managerGraphNode = app.graph._nodes.find(n => String(n.id) === String(managerNodeId));
                                     if (managerGraphNode && (managerGraphNode.mode === 2 || managerGraphNode.mode === 4)) {
                                         const modeText = managerGraphNode.mode === 2 ? '静音(Mute)' : 'Bypass';
-                                        console.log(`[OptimizedExecutionSystem] 🚫 GroupExecutorManager 节点已被${modeText}，跳过组执行`);
-                                        console.log('[OptimizedExecutionSystem] ✅ 将正常提交所有节点');
+                                        logger.info(`[OptimizedExecutionSystem] 🚫 GroupExecutorManager 节点已被${modeText}，跳过组执行`);
+                                        logger.info('[OptimizedExecutionSystem] ✅ 将正常提交所有节点');
                                         // 不进行过滤，让ComfyUI正常处理
                                         return api._originalQueuePrompt.apply(this, [index, prompt]);
                                     }
@@ -87,8 +91,8 @@ if (!window.optimizedExecutionSystemLoaded) {
 
                                     // 情况1: groups数组为空
                                     if (Array.isArray(groups) && groups.length === 0) {
-                                        console.log('[OptimizedExecutionSystem] 🚫 GroupExecutorManager 配置为空（0个组），跳过组执行');
-                                        console.log('[OptimizedExecutionSystem] ✅ 将正常提交所有节点');
+                                        logger.info('[OptimizedExecutionSystem] 🚫 GroupExecutorManager 配置为空（0个组），跳过组执行');
+                                        logger.info('[OptimizedExecutionSystem] ✅ 将正常提交所有节点');
                                         // 不进行过滤，让ComfyUI正常处理
                                         return api._originalQueuePrompt.apply(this, [index, prompt]);
                                     }
@@ -111,8 +115,8 @@ if (!window.optimizedExecutionSystemLoaded) {
                                     });
 
                                     if (allGroupsMutedOrInvalid) {
-                                        console.log('[OptimizedExecutionSystem] 🚫 所有配置的组都被静音或无效，跳过组执行');
-                                        console.log('[OptimizedExecutionSystem] ✅ 将正常提交所有节点');
+                                        logger.info('[OptimizedExecutionSystem] 🚫 所有配置的组都被静音或无效，跳过组执行');
+                                        logger.info('[OptimizedExecutionSystem] ✅ 将正常提交所有节点');
                                         // 不进行过滤，让ComfyUI正常处理
                                         return api._originalQueuePrompt.apply(this, [index, prompt]);
                                     }
@@ -121,7 +125,7 @@ if (!window.optimizedExecutionSystemLoaded) {
 
                             // ✅ 只提交 Manager + Trigger 节点
                             // 所有组（包括未配置组）的执行将由前端执行引擎完全控制
-                            console.log('[OptimizedExecutionSystem] 🎯 Filtering to Manager + Trigger only');
+                            logger.info('[OptimizedExecutionSystem] 🎯 Filtering to Manager + Trigger only');
 
                             const oldOutput = prompt.output;
                             let newOutput = {};
@@ -131,16 +135,16 @@ if (!window.optimizedExecutionSystemLoaded) {
                             recursiveAddNodes(String(triggerNodeId), oldOutput, newOutput, false);
 
                             prompt.output = newOutput;
-                            console.log('[OptimizedExecutionSystem] Original nodes:', Object.keys(oldOutput).length);
-                            console.log('[OptimizedExecutionSystem] Filtered to Manager + Trigger:', Object.keys(newOutput).length);
-                            console.log('[OptimizedExecutionSystem] Node IDs:', Object.keys(newOutput).join(', '));
-                            console.log('[OptimizedExecutionSystem] ✅ All groups (including unconfigured) will be controlled by frontend engine');
+                            logger.info('[OptimizedExecutionSystem] Original nodes:', Object.keys(oldOutput).length);
+                            logger.info('[OptimizedExecutionSystem] Filtered to Manager + Trigger:', Object.keys(newOutput).length);
+                            logger.info('[OptimizedExecutionSystem] Node IDs:', Object.keys(newOutput).join(', '));
+                            logger.info('[OptimizedExecutionSystem] ✅ All groups (including unconfigured) will be controlled by frontend engine');
                         }
                     }
 
                     // Filter prompt if _queueNodeIds is set (group execution in progress)
                     if (window._queueNodeIds && window._queueNodeIds.length && prompt.output) {
-                        console.log('[OptimizedExecutionSystem] Filtering to nodes:', window._queueNodeIds);
+                        logger.info('[OptimizedExecutionSystem] Filtering to nodes:', window._queueNodeIds);
 
                         const oldOutput = prompt.output;
                         let newOutput = {};
@@ -156,7 +160,7 @@ if (!window.optimizedExecutionSystemLoaded) {
                         for (const [nodeId, node] of Object.entries(oldOutput)) {
                             if (GLOBAL_INFLUENCE_NODES.includes(node.class_type)) {
                                 newOutput[nodeId] = node;
-                                console.log('[OptimizedExecutionSystem] 🌍 保留全局影响节点:', nodeId, node.class_type);
+                                logger.info('[OptimizedExecutionSystem] 🌍 保留全局影响节点:', nodeId, node.class_type);
                             }
                         }
 
@@ -167,9 +171,9 @@ if (!window.optimizedExecutionSystemLoaded) {
                         }
 
                         prompt.output = newOutput;
-                        console.log('[OptimizedExecutionSystem] Original nodes:', Object.keys(oldOutput).length);
-                        console.log('[OptimizedExecutionSystem] Filtered nodes:', Object.keys(newOutput).length);
-                        console.log('[OptimizedExecutionSystem] Final node IDs:', Object.keys(newOutput).join(', '));
+                        logger.info('[OptimizedExecutionSystem] Original nodes:', Object.keys(oldOutput).length);
+                        logger.info('[OptimizedExecutionSystem] Filtered nodes:', Object.keys(newOutput).length);
+                        logger.info('[OptimizedExecutionSystem] Final node IDs:', Object.keys(newOutput).join(', '));
                     }
 
                     // Call original method
@@ -177,24 +181,24 @@ if (!window.optimizedExecutionSystemLoaded) {
 
                     // Reset queue node IDs
                     window._queueNodeIds = null;
-                    console.log('[OptimizedExecutionSystem] api.queuePrompt completed, reset _queueNodeIds');
+                    logger.info('[OptimizedExecutionSystem] api.queuePrompt completed, reset _queueNodeIds');
 
                     return response;
                 };
-                console.log('[OptimizedExecutionSystem] api.queuePrompt hook installed successfully');
+                logger.info('[OptimizedExecutionSystem] api.queuePrompt hook installed successfully');
             }
         } catch (error) {
-            console.warn('[OptimizedExecutionSystem] Hook installation failed:', error);
-            console.error(error.stack);
+            logger.warn('[OptimizedExecutionSystem] Hook installation failed:', error);
+            logger.error(error.stack);
         }
 
         // Mark as loaded and dispatch event
         window.optimizedExecutionSystemLoaded = true;
 
-        console.log('[OptimizedExecutionSystem] Initialization complete');
-        console.log('[OptimizedExecutionSystem] Components loaded:');
-        console.log('[OptimizedExecutionSystem]   - OptimizedExecutionEngine');
-        console.log('[OptimizedExecutionSystem]   - CacheControlEvents');
+        logger.info('[OptimizedExecutionSystem] Initialization complete');
+        logger.info('[OptimizedExecutionSystem] Components loaded:');
+        logger.info('[OptimizedExecutionSystem]   - OptimizedExecutionEngine');
+        logger.info('[OptimizedExecutionSystem]   - CacheControlEvents');
 
         const initEvent = new CustomEvent('optimizedExecutionSystemReady', {
             detail: {
@@ -318,7 +322,7 @@ function isNodeInOtherManagedGroup(nodeId) {
     try {
         nodeBounds = graphNode.getBounding();
     } catch (e) {
-        console.warn(`[OptimizedExecutionSystem] ⚠️ 无法获取节点 ${nodeId} 的边界: ${e.message}`);
+        logger.warn(`[OptimizedExecutionSystem] ⚠️ 无法获取节点 ${nodeId} 的边界: ${e.message}`);
         return false;
     }
 
@@ -349,14 +353,14 @@ function isNodeInOtherManagedGroup(nodeId) {
             }
 
             if (hasOverlap) {
-                console.log(`[OptimizedExecutionSystem] 🚫 排除节点 ${nodeId}：与被管理的组 "${managedGroupName}" 有重叠（当前执行组："${currentGroup || '无'}"）`);
+                logger.info(`[OptimizedExecutionSystem] 🚫 排除节点 ${nodeId}：与被管理的组 "${managedGroupName}" 有重叠（当前执行组："${currentGroup || '无'}"）`);
                 return true; // 发现重叠，排除该节点
             }
         }
     }
 
     // 没有与任何非当前执行的被管理组重叠，允许添加
-    console.log(`[OptimizedExecutionSystem] ✅ 节点 ${nodeId} 没有与被管理组重叠，允许添加`);
+    logger.info(`[OptimizedExecutionSystem] ✅ 节点 ${nodeId} 没有与被管理组重叠，允许添加`);
     return false;
 }
 
@@ -403,7 +407,7 @@ function recursiveAddNodes(nodeId, oldOutput, newOutput, includeDownstreamOutput
         // 如果连接到当前节点，且是输出节点，且不在其他被管理的组内，则添加
         if (hasConnectionToCurrentNode && isOutputNode(downstreamNodeId) && !isNodeInOtherManagedGroup(downstreamNodeId)) {
             newOutput[downstreamNodeId] = downstreamNode;
-            console.log(`[OptimizedExecutionSystem] 📎 添加输出节点: ${downstreamNodeId} (${downstreamNode.class_type}) 连接到节点 ${nodeId}`);
+            logger.info(`[OptimizedExecutionSystem] 📎 添加输出节点: ${downstreamNodeId} (${downstreamNode.class_type}) 连接到节点 ${nodeId}`);
         }
     });
 }
@@ -430,7 +434,7 @@ function isNodeInGroup(node, group) {
             nodeBounds[3] > group._bounding[1]
         );
     } catch (e) {
-        console.warn(`[OptimizedExecutionSystem] ⚠️ 碰撞检测异常: ${e.message}`);
+        logger.warn(`[OptimizedExecutionSystem] ⚠️ 碰撞检测异常: ${e.message}`);
         return false;
     }
 }
@@ -442,5 +446,5 @@ export const OPTIMIZED_EXECUTION_CONFIG = {
     maxRetries: 3
 };
 
-console.log('[OptimizedExecutionSystem] Module loaded');
+logger.info('[OptimizedExecutionSystem] Module loaded');
 

@@ -8,6 +8,11 @@ import { app } from "/scripts/app.js";
 import { globalToastManager } from "../global/toast_manager.js";
 import { globalMultiLanguageManager } from "../global/multi_language.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('parameter_control_panel');
+
 // 工具函数：加载Marked.js库（与workflow_description一致）
 let markedLoaded = false;
 let markedLoadPromise = null;
@@ -27,11 +32,11 @@ async function ensureMarkedLoaded() {
         script.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
         script.onload = () => {
             markedLoaded = true;
-            console.log('[PCP] Marked.js loaded successfully');
+            logger.info('[PCP] Marked.js loaded successfully');
             resolve(true);
         };
         script.onerror = () => {
-            console.error('[PCP] Failed to load Marked.js');
+            logger.error('[PCP] Failed to load Marked.js');
             reject(false);
         };
         document.head.appendChild(script);
@@ -193,7 +198,7 @@ class TopLeftNoticeManager {
         this.container.className = 'pcp-top-left-notice-container';
         document.body.appendChild(this.container);
 
-        console.log('[PCP-Notice] 左上角提示容器已创建');
+        logger.info('[PCP-Notice] 左上角提示容器已创建');
     }
 
     /**
@@ -224,7 +229,7 @@ class TopLeftNoticeManager {
             element: noticeElement
         });
 
-        console.log(`[PCP-Notice] 显示提示: ${text}`);
+        logger.info(`[PCP-Notice] 显示提示: ${text}`);
     }
 
     /**
@@ -255,11 +260,11 @@ class TopLeftNoticeManager {
             if (this.notices.size === 0 && this.container && this.container.parentNode) {
                 this.container.parentNode.removeChild(this.container);
                 this.container = null;
-                console.log('[PCP-Notice] 左上角提示容器已移除（无活动提示）');
+                logger.info('[PCP-Notice] 左上角提示容器已移除（无活动提示）');
             }
         }, 300);
 
-        console.log(`[PCP-Notice] 隐藏提示: ${paramName}`);
+        logger.info(`[PCP-Notice] 隐藏提示: ${paramName}`);
     }
 
     /**
@@ -387,7 +392,7 @@ class MarkdownTooltipManager {
                 });
                 tooltip.innerHTML = html;
             } catch (error) {
-                console.warn('[PCP] Markdown 渲染失败:', error);
+                logger.warn('[PCP] Markdown 渲染失败:', error);
                 tooltip.textContent = markdownText;
             }
         } else {
@@ -496,7 +501,7 @@ app.registerExtension({
     name: "ParameterControlPanel",
 
     async init(app) {
-        console.log('[PCP] 初始化参数控制面板');
+        logger.info('[PCP] 初始化参数控制面板');
 
         // 预加载Marked.js用于Markdown tooltip
         await ensureMarkedLoaded();
@@ -537,7 +542,7 @@ app.registerExtension({
         // 创建自定义UI
         nodeType.prototype.createCustomUI = function () {
             try {
-                console.log('[PCP-UI] 开始创建自定义UI:', this.id);
+                logger.info('[PCP-UI] 开始创建自定义UI:', this.id);
 
                 const container = document.createElement('div');
                 container.className = 'pcp-container';
@@ -616,10 +621,10 @@ app.registerExtension({
                 // 应用锁定状态UI（确保初始状态正确）
                 this.updateLockUI();
 
-                console.log('[PCP-UI] 自定义UI创建完成');
+                logger.info('[PCP-UI] 自定义UI创建完成');
 
             } catch (error) {
-                console.error('[PCP-UI] 创建自定义UI时出错:', error);
+                logger.error('[PCP-UI] 创建自定义UI时出错:', error);
             }
         };
 
@@ -1803,10 +1808,10 @@ app.registerExtension({
             // 显示提示
             if (this.properties.locked) {
                 this.showToast('已开启锁定模式', 'success');
-                console.log('[PCP] 锁定模式已开启');
+                logger.info('[PCP] 锁定模式已开启');
             } else {
                 this.showToast('已关闭锁定模式', 'success');
-                console.log('[PCP] 锁定模式已关闭');
+                logger.info('[PCP] 锁定模式已关闭');
             }
         };
 
@@ -1831,7 +1836,7 @@ app.registerExtension({
             this.properties.parameters.forEach(param => {
                 if (!param.id) {
                     param.id = `param_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                    console.log(`[PCP] 为参数 '${param.name}' 补充ID:`, param.id);
+                    logger.info(`[PCP] 为参数 '${param.name}' 补充ID:`, param.id);
                 }
             });
 
@@ -1870,7 +1875,7 @@ app.registerExtension({
                 if (value && param.config?.show_top_left_notice) {
                     const noticeText = param.config.notice_text || `${param.name}：已开启`;
                     globalTopLeftNoticeManager.showNotice(param.name, noticeText);
-                    console.log(`[PCP] 恢复提示: ${param.name} -> ${noticeText}`);
+                    logger.info(`[PCP] 恢复提示: ${param.name} -> ${noticeText}`);
                 }
             });
         };
@@ -1897,7 +1902,7 @@ app.registerExtension({
 
                     // 如果目标节点是 ParameterBreak，调用其同步方法
                     if (targetNode.type === "ParameterBreak" && typeof targetNode.syncParameterStructure === 'function') {
-                        console.log('[PCP] 通知 ParameterBreak 节点更新:', targetNode.id);
+                        logger.info('[PCP] 通知 ParameterBreak 节点更新:', targetNode.id);
                         // 延迟一下，确保数据已同步
                         setTimeout(() => {
                             targetNode.syncParameterStructure();
@@ -1905,7 +1910,7 @@ app.registerExtension({
                     }
                 });
             } catch (error) {
-                console.error('[PCP] 通知连接节点时出错:', error);
+                logger.error('[PCP] 通知连接节点时出错:', error);
             }
         };
 
@@ -1923,17 +1928,17 @@ app.registerExtension({
                     return;
                 }
 
-                console.log('[PCP] 发现', brokenDropdowns.length, '个from_connection类型dropdown缺失options，准备修复...');
+                logger.info('[PCP] 发现', brokenDropdowns.length, '个from_connection类型dropdown缺失options，准备修复...');
 
                 // 查找连接的ParameterBreak节点
                 if (!this.outputs || this.outputs.length === 0) {
-                    console.warn('[PCP] 没有输出连接，无法修复dropdown选项');
+                    logger.warn('[PCP] 没有输出连接，无法修复dropdown选项');
                     return;
                 }
 
                 const output = this.outputs[0];
                 if (!output.links || output.links.length === 0) {
-                    console.warn('[PCP] 没有连接到ParameterBreak节点');
+                    logger.warn('[PCP] 没有连接到ParameterBreak节点');
                     return;
                 }
 
@@ -1949,7 +1954,7 @@ app.registerExtension({
                     brokenDropdowns.forEach(param => {
                         // 清除缓存
                         if (targetNode.properties.optionsSyncCache && param.id) {
-                            console.log(`[PCP] 清除参数 '${param.name}' 的缓存，强制重新同步`);
+                            logger.info(`[PCP] 清除参数 '${param.name}' 的缓存，强制重新同步`);
                             delete targetNode.properties.optionsSyncCache[param.id];
                         }
 
@@ -1958,7 +1963,7 @@ app.registerExtension({
                         const paramIndex = paramStructure.findIndex(p => p.param_id === param.id);
 
                         if (paramIndex === -1) {
-                            console.warn(`[PCP] 在ParameterBreak中未找到参数 '${param.name}'`);
+                            logger.warn(`[PCP] 在ParameterBreak中未找到参数 '${param.name}'`);
                             return;
                         }
 
@@ -1968,21 +1973,21 @@ app.registerExtension({
                             if (paramOutput.links && paramOutput.links.length > 0) {
                                 // 触发该输出的重新同步
                                 setTimeout(() => {
-                                    console.log(`[PCP] 触发参数 '${param.name}' 重新同步选项`);
+                                    logger.info(`[PCP] 触发参数 '${param.name}' 重新同步选项`);
                                     const linkInfo = this.graph.links[paramOutput.links[0]];
                                     if (linkInfo && typeof targetNode.handleOutputConnection === 'function') {
                                         targetNode.handleOutputConnection(paramIndex, linkInfo);
                                     }
                                 }, 100);
                             } else {
-                                console.warn(`[PCP] 参数 '${param.name}' 的输出未连接，无法同步选项`);
+                                logger.warn(`[PCP] 参数 '${param.name}' 的输出未连接，无法同步选项`);
                             }
                         }
                     });
                 });
 
             } catch (error) {
-                console.error('[PCP] 修复from_connection dropdown时出错:', error);
+                logger.error('[PCP] 修复from_connection dropdown时出错:', error);
             }
         };
 
@@ -2818,7 +2823,7 @@ app.registerExtension({
                     }
 
                 } catch (error) {
-                    console.error('[PCP] 上传图像失败:', error);
+                    logger.error('[PCP] 上传图像失败:', error);
                     filenameDisplay.textContent = param.value || t('noImageSelected');
                     if (globalToastManager) {
                         globalToastManager.showToast(t('uploadFailed') + ': ' + error.message, 'error');
@@ -2905,7 +2910,7 @@ app.registerExtension({
                 }
                 return [];
             } catch (error) {
-                console.error('[PCP] 加载数据源失败:', error);
+                logger.error('[PCP] 加载数据源失败:', error);
                 return [];
             }
         };
@@ -2916,7 +2921,7 @@ app.registerExtension({
                 // 查找参数
                 const param = this.properties.parameters.find(p => p.name === paramName);
                 if (!param || param.type !== 'dropdown') {
-                    console.warn('[PCP] 未找到下拉菜单参数:', paramName);
+                    logger.warn('[PCP] 未找到下拉菜单参数:', paramName);
                     return;
                 }
 
@@ -2929,7 +2934,7 @@ app.registerExtension({
                 // 查找对应的select元素
                 const select = this.customUI?.querySelector(`select[data-param-name="${paramName}"]`);
                 if (!select) {
-                    console.warn('[PCP] 未找到下拉菜单UI元素:', paramName);
+                    logger.warn('[PCP] 未找到下拉菜单UI元素:', paramName);
                     return;
                 }
 
@@ -2957,13 +2962,13 @@ app.registerExtension({
                     param.value = options[0];
                 }
 
-                console.log(`[PCP] 下拉菜单 '${paramName}' 选项已刷新: ${options.length} 个选项`);
+                logger.info(`[PCP] 下拉菜单 '${paramName}' 选项已刷新: ${options.length} 个选项`);
 
                 // 同步配置到后端
                 this.syncConfig();
 
             } catch (error) {
-                console.error('[PCP] 刷新下拉菜单选项失败:', error);
+                logger.error('[PCP] 刷新下拉菜单选项失败:', error);
             }
         };
 
@@ -2989,7 +2994,7 @@ app.registerExtension({
             try {
                 globalToastManager.showToast(message, type, 3000);
             } catch (error) {
-                console.error('[PCP] Toast显示失败:', error);
+                logger.error('[PCP] Toast显示失败:', error);
             }
         };
 
@@ -3775,7 +3780,7 @@ app.registerExtension({
                     'success'
                 );
 
-                console.log('[PCP] Switch参数访问权限已更新:', param.name, checkbox.checked);
+                logger.info('[PCP] Switch参数访问权限已更新:', param.name, checkbox.checked);
             });
 
             // ESC键关闭
@@ -3804,7 +3809,7 @@ app.registerExtension({
             this.updateParametersList();
             this.syncConfig();
 
-            console.log('[PCP] 参数已添加:', paramData);
+            logger.info('[PCP] 参数已添加:', paramData);
         };
 
         // 编辑参数（打开对话框）
@@ -3816,7 +3821,7 @@ app.registerExtension({
         nodeType.prototype.updateParameter = function (paramId, newData) {
             const index = this.getParameterIndexById(paramId);
             if (index === -1) {
-                console.error('[PCP] 参数未找到:', paramId);
+                logger.error('[PCP] 参数未找到:', paramId);
                 return;
             }
 
@@ -3828,14 +3833,14 @@ app.registerExtension({
             this.updateParametersList();
             this.syncConfig();
 
-            console.log('[PCP] 参数已更新:', newData);
+            logger.info('[PCP] 参数已更新:', newData);
         };
 
         // 删除参数
         nodeType.prototype.deleteParameter = function (paramId) {
             const param = this.getParameterById(paramId);
             if (!param) {
-                console.error('[PCP] 参数未找到:', paramId);
+                logger.error('[PCP] 参数未找到:', paramId);
                 return;
             }
 
@@ -3852,7 +3857,7 @@ app.registerExtension({
                         this.updateParametersList();
                         this.syncConfig();
                         this.showToast(t('parameterDeleted'), 'success');
-                        console.log('[PCP] 参数已删除:', paramId);
+                        logger.info('[PCP] 参数已删除:', paramId);
                     }
                 }
             );
@@ -3864,7 +3869,7 @@ app.registerExtension({
             const targetIndex = this.getParameterIndexById(targetId);
 
             if (draggedIndex === -1 || targetIndex === -1) {
-                console.error('[PCP] 参数未找到:', draggedId, targetId);
+                logger.error('[PCP] 参数未找到:', draggedId, targetId);
                 return;
             }
 
@@ -3881,7 +3886,7 @@ app.registerExtension({
             this.updateParametersList();
             this.syncConfig();
 
-            console.log('[PCP] 参数已重新排序:', draggedId, '->', targetId);
+            logger.info('[PCP] 参数已重新排序:', draggedId, '->', targetId);
         };
 
         // ==================== 预设管理 ====================
@@ -3895,10 +3900,10 @@ app.registerExtension({
                 if (data.status === 'success') {
                     this._allPresets = data.presets || [];
                     this.renderPresetsList(this._allPresets);
-                    console.log('[PCP] 全局预设列表已加载:', this._allPresets.length);
+                    logger.info('[PCP] 全局预设列表已加载:', this._allPresets.length);
                 }
             } catch (error) {
-                console.error('[PCP] 加载预设列表失败:', error);
+                logger.error('[PCP] 加载预设列表失败:', error);
             }
         };
 
@@ -3976,12 +3981,12 @@ app.registerExtension({
                     this.properties.currentPreset = presetName;
                     this.showToast(t('presetSaved'), 'success');
                     await this.loadPresetsList();
-                    console.log('[PCP] 全局预设已保存:', presetName);
+                    logger.info('[PCP] 全局预设已保存:', presetName);
                 } else {
                     this.showToast(`${t('error')}: ${data.message}`, 'error');
                 }
             } catch (error) {
-                console.error('[PCP] 保存预设失败:', error);
+                logger.error('[PCP] 保存预设失败:', error);
                 this.showToast(`${t('error')}: ${error.message}`, 'error');
             }
         };
@@ -4057,12 +4062,12 @@ app.registerExtension({
 
                     this.updateParametersList();
                     this.syncConfig();
-                    console.log('[PCP] 预设已加载:', presetName, '已匹配:', matchedCount, '未匹配:', unmatchedCount);
+                    logger.info('[PCP] 预设已加载:', presetName, '已匹配:', matchedCount, '未匹配:', unmatchedCount);
                 } else {
                     this.showToast(`${t('error')}: ${data.message}`, 'error');
                 }
             } catch (error) {
-                console.error('[PCP] 加载预设失败:', error);
+                logger.error('[PCP] 加载预设失败:', error);
                 this.showToast(`${t('error')}: ${error.message}`, 'error');
             }
         };
@@ -4091,12 +4096,12 @@ app.registerExtension({
                             }
                             this.showToast(t('presetDeleted'), 'success');
                             await this.loadPresetsList();
-                            console.log('[PCP] 全局预设已删除:', presetName);
+                            logger.info('[PCP] 全局预设已删除:', presetName);
                         } else {
                             this.showToast(`${t('error')}: ${data.message}`, 'error');
                         }
                     } catch (error) {
-                        console.error('[PCP] 删除预设失败:', error);
+                        logger.error('[PCP] 删除预设失败:', error);
                         this.showToast(`${t('error')}: ${error.message}`, 'error');
                     }
                 }
@@ -4107,7 +4112,7 @@ app.registerExtension({
         nodeType.prototype.refreshData = function () {
             this.updateParametersList();
             this.showToast('数据已刷新', 'success');
-            console.log('[PCP] 数据已刷新');
+            logger.info('[PCP] 数据已刷新');
         };
 
         // ==================== 输出同步与配置管理 ====================
@@ -4152,7 +4157,7 @@ app.registerExtension({
             }
 
             const linksCount = this.outputs[0].links ? this.outputs[0].links.length : 0;
-            console.log('[PCP] 输出引脚已更新: 参数包包含', paramCount, '个参数, 连接数:', linksCount);
+            logger.info('[PCP] 输出引脚已更新: 参数包包含', paramCount, '个参数, 连接数:', linksCount);
         };
 
         // 格式化输出值显示
@@ -4190,12 +4195,12 @@ app.registerExtension({
                 const data = await response.json();
 
                 if (data.status === 'success') {
-                    console.log('[PCP] 配置已同步到后端:', this.properties.parameters.length);
+                    logger.info('[PCP] 配置已同步到后端:', this.properties.parameters.length);
                 } else {
-                    console.error('[PCP] 同步配置失败:', data.message);
+                    logger.error('[PCP] 同步配置失败:', data.message);
                 }
             } catch (error) {
-                console.error('[PCP] 同步配置异常:', error);
+                logger.error('[PCP] 同步配置异常:', error);
             }
         };
 
@@ -4204,7 +4209,7 @@ app.registerExtension({
             try {
                 // 如果已从工作流加载，不要从后端加载（避免覆盖工作流数据）
                 if (this._loadedFromWorkflow) {
-                    console.log('[PCP] 已从工作流加载，跳过后端加载');
+                    logger.info('[PCP] 已从工作流加载，跳过后端加载');
                     return;
                 }
 
@@ -4214,12 +4219,12 @@ app.registerExtension({
                 if (data.status === 'success' && data.parameters && data.parameters.length > 0) {
                     this.properties.parameters = data.parameters;
                     this.updateParametersList();
-                    console.log('[PCP] 配置已从后端加载:', data.parameters.length);
+                    logger.info('[PCP] 配置已从后端加载:', data.parameters.length);
                 } else {
-                    console.log('[PCP] 后端无配置，使用默认空列表');
+                    logger.info('[PCP] 后端无配置，使用默认空列表');
                 }
             } catch (error) {
-                console.error('[PCP] 加载配置失败:', error);
+                logger.error('[PCP] 加载配置失败:', error);
             }
         };
 
@@ -4236,7 +4241,7 @@ app.registerExtension({
             info.parameters = this.properties.parameters;
             info.currentPreset = this.properties.currentPreset;
 
-            console.log('[PCP] 序列化:', info.parameters?.length || 0, '个参数');
+            logger.info('[PCP] 序列化:', info.parameters?.length || 0, '个参数');
             return info;
         };
 
@@ -4254,7 +4259,7 @@ app.registerExtension({
                     if (!param.id) {
                         // 为旧参数生成ID
                         param.id = `param_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                        console.log(`[PCP] 为参数 '${param.name}' 补充ID:`, param.id);
+                        logger.info(`[PCP] 为参数 '${param.name}' 补充ID:`, param.id);
                     }
                     return param;
                 });
@@ -4288,7 +4293,7 @@ app.registerExtension({
                 }
             }, 100);
 
-            console.log('[PCP] 反序列化:', this.properties.parameters?.length || 0, '个参数, 锁定状态:', this.properties.locked);
+            logger.info('[PCP] 反序列化:', this.properties.parameters?.length || 0, '个参数, 锁定状态:', this.properties.locked);
         };
 
         // ==================== 节点生命周期钩子 ====================
@@ -4310,11 +4315,11 @@ app.registerExtension({
                 const style = document.querySelector('#pcp-styles');
                 if (style) {
                     style.remove();
-                    console.log('[PCP] 样式已移除（无其他PCP节点）');
+                    logger.info('[PCP] 样式已移除（无其他PCP节点）');
                 }
             }
 
-            console.log('[PCP] 节点已移除:', this.id);
+            logger.info('[PCP] 节点已移除:', this.id);
         };
 
         // 节点执行时（前端辅助，主要逻辑在Python）
@@ -4325,7 +4330,7 @@ app.registerExtension({
             }
 
             // 可以在这里处理执行结果
-            console.log('[PCP] 节点已执行');
+            logger.info('[PCP] 节点已执行');
         };
 
         // ==================== 绘制覆盖（可选） ====================
@@ -4338,8 +4343,8 @@ app.registerExtension({
         //     }
         // };
 
-        console.log('[PCP] 参数控制面板节点已完整注册');
+        logger.info('[PCP] 参数控制面板节点已完整注册');
     }
 });
 
-console.log('[PCP] 参数控制面板已加载');
+logger.info('[PCP] 参数控制面板已加载');

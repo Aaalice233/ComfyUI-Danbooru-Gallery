@@ -9,6 +9,11 @@
 import { app } from "../../../scripts/app.js";
 import { FloatingNavigator } from "./floating_navigator.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('quick_group_navigation');
+
 /**
  * 加载CSS样式文件
  */
@@ -18,7 +23,7 @@ function loadStyles() {
     link.type = 'text/css';
     link.href = 'extensions/ComfyUI-Danbooru-Gallery/quick_group_navigation/styles.css';
     document.head.appendChild(link);
-    console.log('[QGN] 样式文件已加载');
+    logger.info('[QGN] 样式文件已加载');
 }
 
 // 立即加载样式
@@ -45,7 +50,7 @@ class QuickGroupNavigationManager {
         // 是否已初始化
         this.initialized = false;
 
-        console.log('[QGN] 快速组导航管理器已创建');
+        logger.info('[QGN] 快速组导航管理器已创建');
     }
 
     /**
@@ -53,7 +58,7 @@ class QuickGroupNavigationManager {
      */
     init() {
         if (this.initialized) {
-            console.warn('[QGN] 管理器已初始化，跳过');
+            logger.warn('[QGN] 管理器已初始化，跳过');
             return;
         }
 
@@ -67,7 +72,7 @@ class QuickGroupNavigationManager {
         this.setupWorkflowListener();
 
         this.initialized = true;
-        console.log('[QGN] 快速组导航管理器初始化完成');
+        logger.info('[QGN] 快速组导航管理器初始化完成');
     }
 
     /**
@@ -101,7 +106,7 @@ class QuickGroupNavigationManager {
             }
         }, true);  // 使用捕获阶段，优先级更高
 
-        console.log('[QGN] 全局快捷键监听器已设置');
+        logger.info('[QGN] 全局快捷键监听器已设置');
     }
 
     /**
@@ -137,7 +142,7 @@ class QuickGroupNavigationManager {
             return result;
         };
 
-        console.log('[QGN] 工作流监听器已设置');
+        logger.info('[QGN] 工作流监听器已设置');
     }
 
     /**
@@ -146,7 +151,7 @@ class QuickGroupNavigationManager {
     addNavigationGroup(groupName) {
         // 检查是否已存在
         if (this.navigationGroups.some(g => g.groupName === groupName)) {
-            console.warn('[QGN] 组已存在:', groupName);
+            logger.warn('[QGN] 组已存在:', groupName);
             return false;
         }
 
@@ -168,7 +173,7 @@ class QuickGroupNavigationManager {
         // 保存到工作流
         this.saveToWorkflow();
 
-        console.log('[QGN] 添加导航组:', groupName, '快捷键:', newGroup.shortcutKey);
+        logger.info('[QGN] 添加导航组:', groupName, '快捷键:', newGroup.shortcutKey);
         return true;
     }
 
@@ -178,7 +183,7 @@ class QuickGroupNavigationManager {
     removeNavigationGroup(groupId) {
         const index = this.navigationGroups.findIndex(g => g.id === groupId);
         if (index === -1) {
-            console.warn('[QGN] 组不存在:', groupId);
+            logger.warn('[QGN] 组不存在:', groupId);
             return false;
         }
 
@@ -195,7 +200,7 @@ class QuickGroupNavigationManager {
         // 保存到工作流
         this.saveToWorkflow();
 
-        console.log('[QGN] 移除导航组:', group.groupName);
+        logger.info('[QGN] 移除导航组:', group.groupName);
         return true;
     }
 
@@ -205,7 +210,7 @@ class QuickGroupNavigationManager {
     setShortcut(groupId, key) {
         const group = this.navigationGroups.find(g => g.id === groupId);
         if (!group) {
-            console.warn('[QGN] 组不存在:', groupId);
+            logger.warn('[QGN] 组不存在:', groupId);
             return false;
         }
 
@@ -221,7 +226,7 @@ class QuickGroupNavigationManager {
         // 保存到工作流
         this.saveToWorkflow();
 
-        console.log('[QGN] 设置快捷键:', group.groupName, '->', key);
+        logger.info('[QGN] 设置快捷键:', group.groupName, '->', key);
         return true;
     }
 
@@ -270,7 +275,7 @@ class QuickGroupNavigationManager {
         // 查找组
         const group = app.graph._groups.find(g => g.title === groupName);
         if (!group) {
-            console.warn('[QGN] 组不存在:', groupName);
+            logger.warn('[QGN] 组不存在:', groupName);
             this.floatingNavigator?.showNotification(`组不存在: ${groupName}`, 'warning');
             return false;
         }
@@ -299,7 +304,7 @@ class QuickGroupNavigationManager {
         // 刷新画布
         canvas.setDirty(true, true);
 
-        console.log('[QGN] 跳转到组:', groupName, '缩放比例:', targetZoom.toFixed(2));
+        logger.info('[QGN] 跳转到组:', groupName, '缩放比例:', targetZoom.toFixed(2));
         return true;
     }
 
@@ -312,7 +317,7 @@ class QuickGroupNavigationManager {
         // 保存到工作流
         this.saveToWorkflow();
 
-        console.log('[QGN] 锁定状态:', this.locked);
+        logger.info('[QGN] 锁定状态:', this.locked);
     }
 
     /**
@@ -366,12 +371,12 @@ class QuickGroupNavigationManager {
                     }
                 });
 
-                console.log('[QGN] 从工作流恢复导航组:', this.navigationGroups.length, '个');
+                logger.info('[QGN] 从工作流恢复导航组:', this.navigationGroups.length, '个');
             }
 
             if (extra.qgn_locked !== undefined) {
                 this.locked = extra.qgn_locked;
-                console.log('[QGN] 从工作流恢复锁定状态:', this.locked);
+                logger.info('[QGN] 从工作流恢复锁定状态:', this.locked);
             }
         }
 
@@ -392,7 +397,7 @@ class QuickGroupNavigationManager {
         this.navigationGroups = [];
         this.shortcuts.clear();
         this.initialized = false;
-        console.log('[QGN] 快速组导航管理器已销毁');
+        logger.info('[QGN] 快速组导航管理器已销毁');
     }
 }
 
@@ -406,7 +411,7 @@ app.registerExtension({
     name: "danbooru.QuickGroupNavigation",
 
     async setup() {
-        console.log('[QGN] 扩展开始设置...');
+        logger.info('[QGN] 扩展开始设置...');
 
         // 创建全局管理器
         globalManager = new QuickGroupNavigationManager();
@@ -460,7 +465,7 @@ app.registerExtension({
             return result;
         };
 
-        console.log('[QGN] 扩展设置完成');
+        logger.info('[QGN] 扩展设置完成');
     },
 
     async loadedGraphNode(node, app) {

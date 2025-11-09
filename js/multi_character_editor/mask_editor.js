@@ -2,8 +2,13 @@
 import { globalMultiLanguageManager } from '../global/multi_language.js';
 import { globalToastManager as toastManagerProxy } from '../global/toast_manager.js';
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('mask_editor');
+
 // 🔧 强制刷新标记 - 版本: 2025-10-12-23:50
-console.log('[mask_editor.js] 文件已加载 - 版本: 2025-10-12-23:50');
+logger.info('[mask_editor.js] 文件已加载 - 版本: 2025-10-12-23:50');
 
 class MaskEditor {
     constructor(editor) {
@@ -235,18 +240,18 @@ class MaskEditor {
         // 检查容器尺寸是否有效
         if (rect.width <= 0 || rect.height <= 0) {
             if (retryCount < maxRetries) {
-                console.warn(`[MaskEditor] resizeCanvasWithRetry: 容器尺寸无效 (${rect.width}x${rect.height})，第${retryCount + 1}次重试`);
+                logger.warn(`[MaskEditor] resizeCanvasWithRetry: 容器尺寸无效 (${rect.width}x${rect.height})，第${retryCount + 1}次重试`);
                 // 延迟后重试
                 setTimeout(() => {
                     this.resizeCanvasWithRetry(retryCount + 1, maxRetries);
                 }, 100 * (retryCount + 1)); // 递增延迟时间
             } else {
-                console.error('[MaskEditor] resizeCanvasWithRetry: 重试次数已达上限，容器尺寸仍然无效');
+                logger.error('[MaskEditor] resizeCanvasWithRetry: 重试次数已达上限，容器尺寸仍然无效');
             }
             return;
         }
 
-        console.log(`[MaskEditor] resizeCanvasWithRetry: 容器尺寸有效 (${rect.width}x${rect.height})，开始调整画布`);
+        logger.info(`[MaskEditor] resizeCanvasWithRetry: 容器尺寸有效 (${rect.width}x${rect.height})，开始调整画布`);
         // 容器尺寸有效，调用正常的resizeCanvas
         this.resizeCanvas();
     }
@@ -341,7 +346,7 @@ class MaskEditor {
                 parentElement.style.display = parentDisplay || '';
             }
         } catch (error) {
-            console.error('[MaskEditor] forceLayoutRecalculation: 布局重新计算失败', error);
+            logger.error('[MaskEditor] forceLayoutRecalculation: 布局重新计算失败', error);
         }
     }
 
@@ -393,7 +398,7 @@ class MaskEditor {
 
             // 输出诊断结果
             if (issues.length > 0) {
-                console.warn('[MaskEditor] diagnoseLayoutIssues: 发现布局问题', {
+                logger.warn('[MaskEditor] diagnoseLayoutIssues: 发现布局问题', {
                     issues: issues,
                     containerRect: containerRect,
                     canvasRect: canvasRect,
@@ -410,7 +415,7 @@ class MaskEditor {
                 this.attemptLayoutFix(issues);
             }
         } catch (error) {
-            console.error('[MaskEditor] diagnoseLayoutIssues: 诊断失败', error);
+            logger.error('[MaskEditor] diagnoseLayoutIssues: 诊断失败', error);
         }
     }
 
@@ -419,12 +424,12 @@ class MaskEditor {
         try {
             // 🔧 关键修复：检查重试次数，防止无限循环
             if (this.layoutFixRetryCount >= this.maxLayoutFixRetries) {
-                console.warn('[MaskEditor] attemptLayoutFix: 已达到最大重试次数，停止修复');
+                logger.warn('[MaskEditor] attemptLayoutFix: 已达到最大重试次数，停止修复');
                 return;
             }
 
             this.layoutFixRetryCount++;
-            console.log(`[MaskEditor] attemptLayoutFix: 尝试修复布局，第 ${this.layoutFixRetryCount} 次`);
+            logger.info(`[MaskEditor] attemptLayoutFix: 尝试修复布局，第 ${this.layoutFixRetryCount} 次`);
 
             // 强制重新设置样式
             this.canvas.style.cssText = `
@@ -472,12 +477,12 @@ class MaskEditor {
                 if (this.layoutFixRetryCount < this.maxLayoutFixRetries) {
                     this.diagnoseLayoutIssues();
                 } else {
-                    console.log('[MaskEditor] 布局修复已达到最大次数，不再继续诊断');
+                    logger.info('[MaskEditor] 布局修复已达到最大次数，不再继续诊断');
                 }
             }, 100);
 
         } catch (error) {
-            console.error('[MaskEditor] attemptLayoutFix: 修复失败', error);
+            logger.error('[MaskEditor] attemptLayoutFix: 修复失败', error);
         }
     }
     bindCanvasEvents() {
@@ -505,7 +510,7 @@ class MaskEditor {
         // 🔧 关键修复：确保在任何交互之前，坐标系统已经正确初始化
         // 防止在scale和offset未正确设置时拖动蒙版，导致计算出错误的坐标
         if (this.lastContainerSize.width === 0 || this.lastContainerSize.height === 0) {
-            console.warn('[MaskEditor] onMouseDown: 坐标系统未初始化，先调用resize');
+            logger.warn('[MaskEditor] onMouseDown: 坐标系统未初始化，先调用resize');
             this.resizeCanvasWithRetry();
             // 短暂延迟后再处理鼠标事件，确保resize完成
             setTimeout(() => {
@@ -641,7 +646,7 @@ class MaskEditor {
 
             // 验证计算结果的合理性
             if (!isFinite(finalX) || !isFinite(finalY)) {
-                console.error('[MaskEditor] 拖动计算出无效坐标，已忽略:', { finalX, finalY });
+                logger.error('[MaskEditor] 拖动计算出无效坐标，已忽略:', { finalX, finalY });
                 return;
             }
 
@@ -1041,7 +1046,7 @@ class MaskEditor {
             this.selectedMask = null;
             this.scheduleRender();
         } catch (error) {
-            console.error('[MaskEditor] clearAllMasks: 清空蒙版失败:', error);
+            logger.error('[MaskEditor] clearAllMasks: 清空蒙版失败:', error);
         }
     }
 
@@ -1142,7 +1147,7 @@ class MaskEditor {
         }
         this.renderCount++;
         if (this.renderCount > 1000) {
-            console.warn('[MaskEditor] 渲染次数过多，强制停止渲染');
+            logger.warn('[MaskEditor] 渲染次数过多，强制停止渲染');
             return;
         }
 
@@ -1288,11 +1293,11 @@ class MaskEditor {
                 this.masks = newMasks;
             }
             if (this.masks.length > 50) {
-                console.warn('[MaskEditor] 蒙版数量过多，限制为50个');
+                logger.warn('[MaskEditor] 蒙版数量过多，限制为50个');
                 this.masks = this.masks.slice(0, 50);
             }
         } catch (error) {
-            console.error('[MaskEditor] syncMasksFromCharacters 执行出错:', error);
+            logger.error('[MaskEditor] syncMasksFromCharacters 执行出错:', error);
         }
     }
 
@@ -1308,7 +1313,7 @@ class MaskEditor {
 
         // 检查坐标和尺寸是否是有效数字且在合理范围内
         if (typeof fixed.x !== 'number' || !isFinite(fixed.x) || fixed.x < -TOLERANCE || fixed.x > 1 + TOLERANCE) {
-            console.warn(`[MaskEditor] 蒙版 ${characterId} 的 x 坐标异常: ${fixed.x}，已重置`);
+            logger.warn(`[MaskEditor] 蒙版 ${characterId} 的 x 坐标异常: ${fixed.x}，已重置`);
             fixed.x = 0.1;
             needsFix = true;
         } else if (fixed.x < 0) {
@@ -1319,7 +1324,7 @@ class MaskEditor {
         }
 
         if (typeof fixed.y !== 'number' || !isFinite(fixed.y) || fixed.y < -TOLERANCE || fixed.y > 1 + TOLERANCE) {
-            console.warn(`[MaskEditor] 蒙版 ${characterId} 的 y 坐标异常: ${fixed.y}，已重置`);
+            logger.warn(`[MaskEditor] 蒙版 ${characterId} 的 y 坐标异常: ${fixed.y}，已重置`);
             fixed.y = 0.1;
             needsFix = true;
         } else if (fixed.y < 0) {
@@ -1329,7 +1334,7 @@ class MaskEditor {
         }
 
         if (typeof fixed.width !== 'number' || !isFinite(fixed.width) || fixed.width <= 0 || fixed.width > 1 + TOLERANCE) {
-            console.warn(`[MaskEditor] 蒙版 ${characterId} 的 width 异常: ${fixed.width}，已重置`);
+            logger.warn(`[MaskEditor] 蒙版 ${characterId} 的 width 异常: ${fixed.width}，已重置`);
             fixed.width = 0.3;
             needsFix = true;
         } else if (fixed.width > 1) {
@@ -1337,7 +1342,7 @@ class MaskEditor {
         }
 
         if (typeof fixed.height !== 'number' || !isFinite(fixed.height) || fixed.height <= 0 || fixed.height > 1 + TOLERANCE) {
-            console.warn(`[MaskEditor] 蒙版 ${characterId} 的 height 异常: ${fixed.height}，已重置`);
+            logger.warn(`[MaskEditor] 蒙版 ${characterId} 的 height 异常: ${fixed.height}，已重置`);
             fixed.height = 0.3;
             needsFix = true;
         } else if (fixed.height > 1) {
@@ -1346,7 +1351,7 @@ class MaskEditor {
 
         // 🔧 关键修复：检查蒙版是否超出画布边界（增加容差）
         if (fixed.x + fixed.width > 1 + TOLERANCE) {
-            console.warn(`[MaskEditor] 蒙版 ${characterId} 超出右边界，已调整`);
+            logger.warn(`[MaskEditor] 蒙版 ${characterId} 超出右边界，已调整`);
             if (fixed.width > 1) {
                 fixed.width = 0.3;
             }
@@ -1358,7 +1363,7 @@ class MaskEditor {
         }
 
         if (fixed.y + fixed.height > 1 + TOLERANCE) {
-            console.warn(`[MaskEditor] 蒙版 ${characterId} 超出下边界，已调整`);
+            logger.warn(`[MaskEditor] 蒙版 ${characterId} 超出下边界，已调整`);
             if (fixed.height > 1) {
                 fixed.height = 0.3;
             }
@@ -1582,11 +1587,11 @@ class MaskEditor {
         try {
             this.toastManager.showToast(message, type, duration, { nodeContainer });
         } catch (error) {
-            console.error('[MaskEditor] 显示提示失败:', error);
+            logger.error('[MaskEditor] 显示提示失败:', error);
             try {
                 this.toastManager.showToast(message, type, duration, {});
             } catch (fallbackError) {
-                console.error('[MaskEditor] 回退方式也失败:', fallbackError);
+                logger.error('[MaskEditor] 回退方式也失败:', fallbackError);
                 alert(`${type.toUpperCase()}: ${message}`);
             }
         }
@@ -1630,7 +1635,7 @@ class MaskEditor {
                 this.scheduleRender();
             }, 100);
         } catch (error) {
-            console.error('[MaskEditor] 确保画布可见失败:', error);
+            logger.error('[MaskEditor] 确保画布可见失败:', error);
         }
     }
 

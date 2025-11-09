@@ -6,6 +6,11 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('text_cache_viewer');
+
 // HTML转义函数 - 防止XSS攻击和显示问题
 function escapeHtml(text) {
     if (!text) return '';
@@ -43,7 +48,7 @@ app.registerExtension({
         // 创建自定义UI
         nodeType.prototype.createCustomUI = function () {
             try {
-                console.log('[TextCacheViewer] 创建自定义UI:', this.id);
+                logger.info('[TextCacheViewer] 创建自定义UI:', this.id);
 
                 const container = document.createElement('div');
                 container.className = 'tcv-container';
@@ -77,10 +82,10 @@ app.registerExtension({
                 // 绑定事件
                 this.bindUIEvents();
 
-                console.log('[TextCacheViewer] 自定义UI创建完成');
+                logger.info('[TextCacheViewer] 自定义UI创建完成');
 
             } catch (error) {
-                console.error('[TextCacheViewer] 创建自定义UI时出错:', error);
+                logger.error('[TextCacheViewer] 创建自定义UI时出错:', error);
             }
         };
 
@@ -303,22 +308,22 @@ app.registerExtension({
         // 刷新缓存数据
         nodeType.prototype.refreshCacheData = async function () {
             try {
-                console.log('[TextCacheViewer] 刷新缓存数据');
+                logger.info('[TextCacheViewer] 刷新缓存数据');
 
                 const response = await fetch('/danbooru/text_cache/get_all_details');
                 const data = await response.json();
 
                 if (data.status === 'success') {
                     const channelDetails = data.channels || [];
-                    console.log('[TextCacheViewer] 获取到通道详情:', channelDetails);
+                    logger.info('[TextCacheViewer] 获取到通道详情:', channelDetails);
                     this.displayChannelData(data.count, channelDetails);
                 } else {
-                    console.warn('[TextCacheViewer] 获取通道详情失败:', data);
+                    logger.warn('[TextCacheViewer] 获取通道详情失败:', data);
                     this.showEmpty('获取缓存失败');
                 }
 
             } catch (error) {
-                console.error('[TextCacheViewer] 刷新数据失败:', error);
+                logger.error('[TextCacheViewer] 刷新数据失败:', error);
                 this.showEmpty('刷新失败');
             }
         };
@@ -341,7 +346,7 @@ app.registerExtension({
                 const channelCount = message.channel_count[0];
                 const channels = message.channels[0];
 
-                console.log('[TextCacheViewer] 收到执行结果:', channelCount, channels);
+                logger.info('[TextCacheViewer] 收到执行结果:', channelCount, channels);
 
                 // 更新显示
                 this.displayChannelData(channelCount, channels);
@@ -390,18 +395,18 @@ app.registerExtension({
                 }, 500);
 
             } catch (error) {
-                console.error('[TextCacheViewer] 显示通道数据失败:', error);
+                logger.error('[TextCacheViewer] 显示通道数据失败:', error);
             }
         };
     },
 
     async setup() {
-        console.log('[TextCacheViewer] 设置扩展');
+        logger.info('[TextCacheViewer] 设置扩展');
 
         // 监听WebSocket事件，实时更新所有TextCacheViewer节点
         api.addEventListener("text-cache-channel-updated", (event) => {
             const data = event.detail;
-            console.log('[TextCacheViewer] 收到text-cache-channel-updated事件:', data);
+            logger.info('[TextCacheViewer] 收到text-cache-channel-updated事件:', data);
 
             // 查找所有TextCacheViewer节点并触发刷新
             const nodes = app.graph._nodes.filter(n => n.type === "TextCacheViewer");
@@ -417,7 +422,7 @@ app.registerExtension({
 
         api.addEventListener("text-cache-channel-renamed", (event) => {
             const data = event.detail;
-            console.log('[TextCacheViewer] 收到text-cache-channel-renamed事件:', data);
+            logger.info('[TextCacheViewer] 收到text-cache-channel-renamed事件:', data);
 
             // 刷新所有查看器节点
             const nodes = app.graph._nodes.filter(n => n.type === "TextCacheViewer");
@@ -432,7 +437,7 @@ app.registerExtension({
 
         api.addEventListener("text-cache-channel-cleared", (event) => {
             const data = event.detail;
-            console.log('[TextCacheViewer] 收到text-cache-channel-cleared事件:', data);
+            logger.info('[TextCacheViewer] 收到text-cache-channel-cleared事件:', data);
 
             // 刷新所有查看器节点
             const nodes = app.graph._nodes.filter(n => n.type === "TextCacheViewer");
@@ -445,8 +450,8 @@ app.registerExtension({
             });
         });
 
-        console.log('[TextCacheViewer] 扩展设置完成，监听器已注册');
+        logger.info('[TextCacheViewer] 扩展设置完成，监听器已注册');
     }
 });
 
-console.log('[TextCacheViewer] 模块加载完成');
+logger.info('[TextCacheViewer] 模块加载完成');

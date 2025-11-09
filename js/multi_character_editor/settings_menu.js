@@ -2,6 +2,11 @@
 import { globalToastManager as toastManagerProxy } from '../global/toast_manager.js';
 import { globalMultiLanguageManager } from '../global/multi_language.js';
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('settings_menu');
+
 class SettingsMenu {
     constructor(editor) {
         this.editor = editor;
@@ -786,7 +791,7 @@ class SettingsMenu {
             // 显示保存成功提示
             this.showToast(this.editor.languageManager ? this.editor.languageManager.t('settingsSaved') : '设置已保存', 'success');
         } catch (error) {
-            console.error('保存设置失败:', error);
+            logger.error('保存设置失败:', error);
             this.showToast(this.editor.languageManager ? this.editor.languageManager.t('saveSettingsFailed') : '保存设置失败', 'error');
         }
     }
@@ -814,13 +819,13 @@ class SettingsMenu {
         const nodeContainer = this.editor && this.editor.container ? this.editor.container : null;
 
         if (!nodeContainer) {
-            console.warn('[SettingsMenu] 编辑器容器不存在，使用默认提示位置');
+            logger.warn('[SettingsMenu] 编辑器容器不存在，使用默认提示位置');
         }
 
         try {
             toastManagerProxy.showToast(message, type, 3000, { nodeContainer });
         } catch (error) {
-            console.error('[SettingsMenu] 显示提示失败:', error);
+            logger.error('[SettingsMenu] 显示提示失败:', error);
             // 回退到不传递节点容器的方式
             toastManagerProxy.showToast(message, type, 3000, {});
         }

@@ -4,6 +4,11 @@ import { AutocompleteUI } from "../global/autocomplete_ui.js";
 import { globalToastManager as toastManagerProxy } from "../global/toast_manager.js";
 import { globalMultiLanguageManager } from "../global/multi_language.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('character_editor');
+
 class CharacterEditor {
     constructor(editor) {
         this.editor = editor;
@@ -825,7 +830,7 @@ class CharacterEditor {
                 }
 
             } catch (error) {
-                console.error("绑定CharacterEditor事件时发生错误:", error);
+                logger.error("绑定CharacterEditor事件时发生错误:", error);
             }
         }, 100); // 延迟100ms确保DOM完全渲染
     }
@@ -837,11 +842,11 @@ class CharacterEditor {
             if (response.ok) {
                 this.promptData = await response.json();
             } else {
-                console.error('加载词库数据失败');
+                logger.error('加载词库数据失败');
                 this.promptData = { categories: [] };
             }
         } catch (error) {
-            console.error('加载词库数据失败:', error);
+            logger.error('加载词库数据失败:', error);
             this.promptData = { categories: [] };
         }
     }
@@ -860,7 +865,7 @@ class CharacterEditor {
             } : { id: characterId };
 
             if (!this.editor || !this.editor.dataManager) {
-                console.error('编辑器或数据管理器不存在');
+                logger.error('编辑器或数据管理器不存在');
                 return;
             }
 
@@ -879,21 +884,21 @@ class CharacterEditor {
             }
 
         } catch (error) {
-            console.error("addCharacter() 发生错误:", error);
+            logger.error("addCharacter() 发生错误:", error);
         }
     }
 
     // 🔧 新增：直接添加角色到UI，不触发事件
     addCharacterToUI(characterData, triggerEvent = true) {
         try {
-            console.log('[CharacterEditor] addCharacterToUI: 添加角色到UI', {
+            logger.info('[CharacterEditor] addCharacterToUI: 添加角色到UI', {
                 id: characterData?.id,
                 name: characterData?.name,
                 triggerEvent
             });
 
             if (!characterData) {
-                console.error('[CharacterEditor] addCharacterToUI: 角色数据为空');
+                logger.error('[CharacterEditor] addCharacterToUI: 角色数据为空');
                 return;
             }
 
@@ -908,7 +913,7 @@ class CharacterEditor {
 
 
         } catch (error) {
-            console.error('[CharacterEditor] addCharacterToUI: 添加角色失败:', error);
+            logger.error('[CharacterEditor] addCharacterToUI: 添加角色失败:', error);
         }
     }
 
@@ -920,14 +925,14 @@ class CharacterEditor {
             this.doRenderCharacterList();
 
         } catch (error) {
-            console.error('[CharacterEditor] clearAllCharacters: 清空角色失败:', error);
+            logger.error('[CharacterEditor] clearAllCharacters: 清空角色失败:', error);
         }
     }
 
     getRandomColor(characterId = null) {
         try {
             if (!window.MCE_ColorManager) {
-                console.warn('[CharacterEditor] ColorManager not loaded, using fallback color');
+                logger.warn('[CharacterEditor] ColorManager not loaded, using fallback color');
                 const fallbackColors = [
                     "#FF6B6B", "#4ECDC4", "#FF9FF3", "#54A0FF",
                     "#FFA502", "#96CEB4", "#786FA6", "#FFEAA7",
@@ -944,7 +949,7 @@ class CharacterEditor {
                 return window.MCE_ColorManager.getNextUniqueColor();
             }
         } catch (error) {
-            console.error('[CharacterEditor] Error generating color:', error);
+            logger.error('[CharacterEditor] Error generating color:', error);
             return '#FF6B6B';
         }
     }
@@ -1066,13 +1071,13 @@ class CharacterEditor {
             if (confirmBtn) {
                 confirmBtn.addEventListener('click', handleConfirm);
             } else {
-                console.error('[CharacterEditor] 未找到确认删除按钮');
+                logger.error('[CharacterEditor] 未找到确认删除按钮');
             }
 
             if (cancelBtn) {
                 cancelBtn.addEventListener('click', closeModal);
             } else {
-                console.error('[CharacterEditor] 未找到取消删除按钮');
+                logger.error('[CharacterEditor] 未找到取消删除按钮');
             }
 
             // 点击背景关闭
@@ -1111,46 +1116,46 @@ class CharacterEditor {
 
     // 🔧 新增：切换FILL模式（单选）
     toggleFillMode(characterId) {
-        console.log('[CharacterEditor] toggleFillMode 被调用，characterId:', characterId);
+        logger.info('[CharacterEditor] toggleFillMode 被调用，characterId:', characterId);
 
         if (characterId === '__global__') {
             // 切换全局提示词的FILL状态
             const config = this.editor.dataManager.getConfig();
             const currentState = config.global_use_fill || false;
-            console.log('[CharacterEditor] 全局FILL当前状态:', currentState, '即将切换为:', !currentState);
+            logger.info('[CharacterEditor] 全局FILL当前状态:', currentState, '即将切换为:', !currentState);
 
             // 关闭所有角色的FILL
             const characters = this.editor.dataManager.getCharacters();
             characters.forEach(char => {
                 if (char.use_fill) {
-                    console.log('[CharacterEditor] 关闭角色FILL:', char.id, char.name);
+                    logger.info('[CharacterEditor] 关闭角色FILL:', char.id, char.name);
                     this.editor.dataManager.updateCharacter(char.id, { use_fill: false });
                 }
             });
 
             // 切换全局的FILL状态
             this.editor.dataManager.updateConfig({ global_use_fill: !currentState });
-            console.log('[CharacterEditor] 全局FILL已更新为:', !currentState);
+            logger.info('[CharacterEditor] 全局FILL已更新为:', !currentState);
         } else {
             // 切换角色的FILL状态
             const character = this.editor.dataManager.getCharacter(characterId);
             if (!character) {
-                console.error('[CharacterEditor] 角色不存在:', characterId);
+                logger.error('[CharacterEditor] 角色不存在:', characterId);
                 return;
             }
 
             const currentState = character.use_fill || false;
-            console.log('[CharacterEditor] 角色FILL当前状态:', character.name, currentState, '即将切换为:', !currentState);
+            logger.info('[CharacterEditor] 角色FILL当前状态:', character.name, currentState, '即将切换为:', !currentState);
 
             if (!currentState) {
                 // 如果要开启，先关闭全局和其他所有角色的FILL
-                console.log('[CharacterEditor] 开启角色FILL前，先关闭全局FILL');
+                logger.info('[CharacterEditor] 开启角色FILL前，先关闭全局FILL');
                 this.editor.dataManager.updateConfig({ global_use_fill: false });
 
                 const characters = this.editor.dataManager.getCharacters();
                 characters.forEach(char => {
                     if (char.id !== characterId && char.use_fill) {
-                        console.log('[CharacterEditor] 关闭其他角色FILL:', char.id, char.name);
+                        logger.info('[CharacterEditor] 关闭其他角色FILL:', char.id, char.name);
                         this.editor.dataManager.updateCharacter(char.id, { use_fill: false });
                     }
                 });
@@ -1158,7 +1163,7 @@ class CharacterEditor {
 
             // 切换当前角色的FILL状态
             this.editor.dataManager.updateCharacter(characterId, { use_fill: !currentState });
-            console.log('[CharacterEditor] 角色FILL已更新:', character.name, 'use_fill:', !currentState);
+            logger.info('[CharacterEditor] 角色FILL已更新:', character.name, 'use_fill:', !currentState);
         }
 
         // 重新渲染列表
@@ -1170,7 +1175,7 @@ class CharacterEditor {
         setTimeout(() => {
             if (this.editor.saveToNodeState) {
                 const config = this.editor.dataManager.getConfig();
-                console.log('[CharacterEditor] 保存FILL状态到节点:', {
+                logger.info('[CharacterEditor] 保存FILL状态到节点:', {
                     global_use_fill: config.global_use_fill,
                     characters_with_fill: config.characters?.filter(c => c.use_fill)?.length || 0
                 });
@@ -1380,7 +1385,7 @@ class CharacterEditor {
                     }
                 }
             } catch (e) {
-                console.warn('[CharacterEditor] 读取格式化设置失败:', e);
+                logger.warn('[CharacterEditor] 读取格式化设置失败:', e);
             }
             let processedTag = tag;
             if (formattingSettings.replaceUnderscores) {
@@ -1404,12 +1409,12 @@ class CharacterEditor {
                     customClass: 'mce-autocomplete',
                     formatTag: formatTagWithGallerySettings,
                     onSelect: (tag) => {
-                        console.log('[CharacterEditor] 内联编辑选择标签:', tag);
+                        logger.info('[CharacterEditor] 内联编辑选择标签:', tag);
                     }
                 });
-                console.log('[CharacterEditor] 内联编辑智能补全初始化成功');
+                logger.info('[CharacterEditor] 内联编辑智能补全初始化成功');
             } catch (error) {
-                console.error('[CharacterEditor] 内联编辑智能补全初始化失败:', error);
+                logger.error('[CharacterEditor] 内联编辑智能补全初始化失败:', error);
             }
         }, 100);
     }
@@ -1552,7 +1557,7 @@ class CharacterEditor {
             if (isInitialized) return;
             isInitialized = true;
 
-            console.log('[CharacterEditor] 开始初始化全局提示词智能补全...');
+            logger.info('[CharacterEditor] 开始初始化全局提示词智能补全...');
 
             try {
                 // 获取当前语言
@@ -1569,13 +1574,13 @@ class CharacterEditor {
                     customClass: 'mce-autocomplete',
                     formatTag: formatTagWithGallerySettings,
                     onSelect: (tag) => {
-                        console.log('[CharacterEditor] 全局提示词选择标签:', tag);
+                        logger.info('[CharacterEditor] 全局提示词选择标签:', tag);
                     }
                 });
 
-                console.log('[CharacterEditor] 全局提示词智能补全初始化成功');
+                logger.info('[CharacterEditor] 全局提示词智能补全初始化成功');
             } catch (error) {
-                console.error('[CharacterEditor] 全局提示词智能补全初始化失败:', error);
+                logger.error('[CharacterEditor] 全局提示词智能补全初始化失败:', error);
             }
         };
 
@@ -2400,7 +2405,7 @@ class CharacterEditor {
             if (isInitialized) return;
             isInitialized = true;
 
-            console.log('[CharacterEditor] 开始初始化智能补全...');
+            logger.info('[CharacterEditor] 开始初始化智能补全...');
 
             // 获取当前语言
             const currentLang = this.editor.languageManager ? this.editor.languageManager.getLanguage() : 'zh';
@@ -2419,13 +2424,13 @@ class CharacterEditor {
                         customClass: 'mce-autocomplete',
                         formatTag: formatTagWithGallerySettings,
                         onSelect: (tag) => {
-                            console.log('[CharacterEditor] 选择标签:', tag);
+                            logger.info('[CharacterEditor] 选择标签:', tag);
                         }
                     });
 
-                    console.log('[CharacterEditor] 智能补全初始化完成');
+                    logger.info('[CharacterEditor] 智能补全初始化完成');
                 } catch (error) {
-                    console.error('[CharacterEditor] 智能补全初始化失败:', error);
+                    logger.error('[CharacterEditor] 智能补全初始化失败:', error);
                 }
             }, 100);
         };
@@ -2441,7 +2446,7 @@ class CharacterEditor {
         promptInput.addEventListener('focus', onFirstInteraction, { once: true });
         promptInput.addEventListener('input', onFirstInteraction, { once: true });
 
-        console.log('[CharacterEditor] 智能补全已设置为延迟加载模式');
+        logger.info('[CharacterEditor] 智能补全已设置为延迟加载模式');
     }
 
     saveCharacterFromModal(characterId) {
@@ -2539,7 +2544,7 @@ class CharacterEditor {
         const listContainer = document.getElementById('mce-character-list');
         // 卫兵语句：如果容器不存在，则中止执行以防止错误
         if (!listContainer) {
-            console.warn("[CharacterEditor] doRenderCharacterList: 列表容器 'mce-character-list' 不存在，渲染中止。");
+            logger.warn("[CharacterEditor] doRenderCharacterList: 列表容器 'mce-character-list' 不存在，渲染中止。");
             return;
         }
         const characters = this.editor.dataManager.getCharacters();
@@ -2702,7 +2707,7 @@ class CharacterEditor {
     bindCharacterListEvents() {
         const container = this.listElement;
         if (!container) {
-            console.warn('[CharacterEditor] bindCharacterListEvents: listElement不存在');
+            logger.warn('[CharacterEditor] bindCharacterListEvents: listElement不存在');
             return;
         }
 
@@ -2719,7 +2724,7 @@ class CharacterEditor {
                 const action = actionButton.dataset.action;
                 const buttonCharacterId = actionButton.dataset.characterId;
 
-                console.log('[CharacterEditor] 按钮点击:', { action, buttonCharacterId });
+                logger.info('[CharacterEditor] 按钮点击:', { action, buttonCharacterId });
 
                 if (action === 'toggle-fill') {
                     e.stopPropagation(); // 阻止事件冒泡
@@ -2925,7 +2930,7 @@ class CharacterEditor {
                     // 显示刷新成功提示
                     this.showToast(t('refreshed') || '已刷新', 'success', 2000);
                 }).catch((error) => {
-                    console.error('刷新词库数据失败:', error);
+                    logger.error('刷新词库数据失败:', error);
                     if (listContainer) {
                         listContainer.innerHTML = `<div style="color: #f44336; text-align: center; padding: 20px;">${t('loadFailed') || '加载失败'}</div>`;
                     }
@@ -2960,7 +2965,7 @@ class CharacterEditor {
             this.loadPromptData().then(() => {
                 renderContent();
             }).catch((error) => {
-                console.error('加载词库数据失败:', error);
+                logger.error('加载词库数据失败:', error);
                 if (listContainer) {
                     listContainer.innerHTML = `<div style="color: #f44336; text-align: center; padding: 20px;">${t('loadFailed') || '加载失败'}</div>`;
                 }
@@ -3609,7 +3614,7 @@ class CharacterEditor {
                 this.editor.toastManager.showToast(t('promptApplied'), 'success', 3000);
             }
         } catch (error) {
-            console.error('[CharacterEditor] 应用解析提示词失败:', error);
+            logger.error('[CharacterEditor] 应用解析提示词失败:', error);
             if (this.editor.toastManager) {
                 this.editor.toastManager.showToast(t('promptApplied') + ': ' + error.message, 'error', 5000);
             }
@@ -4442,12 +4447,12 @@ class CharacterEditor {
         try {
             this.toastManager.showToast(message, type, duration, { nodeContainer });
         } catch (error) {
-            console.error('[CharacterEditor] 显示提示失败:', error);
+            logger.error('[CharacterEditor] 显示提示失败:', error);
             // 回退到不传递节点容器的方式
             try {
                 this.toastManager.showToast(message, type, duration, {});
             } catch (fallbackError) {
-                console.error('[CharacterEditor] 回退方式也失败:', fallbackError);
+                logger.error('[CharacterEditor] 回退方式也失败:', fallbackError);
                 // 最后的保险措施：使用浏览器原生alert
                 alert(`${type.toUpperCase()}: ${message}`);
             }

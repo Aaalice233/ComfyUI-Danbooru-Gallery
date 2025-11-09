@@ -9,11 +9,16 @@
  * 4. 增强调试和状态监控
  */
 
+import { createLogger } from "../global/logger_client.js";
+
+// 创建logger实例
+const logger = createLogger('cache_control_events');
+
 // Debug辅助函数
 const COMPONENT_NAME = 'cache_control_events';
 const debugLog = (...args) => {
     if (window.shouldDebug && window.shouldDebug(COMPONENT_NAME)) {
-        console.log(...args);
+        logger.info(...args);
     }
 };
 
@@ -42,13 +47,13 @@ class CacheControlEvents {
             this.updateGroupCacheState(executionId, groupName, enabled);
         });
 
-        console.log('[CacheControlEvents] 📡 事件监听器已设置');
+        logger.info('[CacheControlEvents] 📡 事件监听器已设置');
     }
 
     updateCacheSignal(executionId, controlSignal) {
         /** 更新缓存控制信号 */
         if (!executionId) {
-            console.warn('[CacheControlEvents] ⚠️ 无效的执行ID');
+            logger.warn('[CacheControlEvents] ⚠️ 无效的执行ID');
             return;
         }
 
@@ -65,18 +70,18 @@ class CacheControlEvents {
         this.recordStateHistory(executionId, 'signal_updated', controlSignal);
 
         if (this.debugMode) {
-            console.log(`[CacheControlEvents] 📥 缓存信号更新: ${executionId}`);
-            console.log(`   - 启用状态: ${controlSignal.enabled || false}`);
-            console.log(`   - 控制模式: ${controlSignal.mode || 'unknown'}`);
-            console.log(`   - 组状态数量: ${Object.keys(groupsState).length}`);
-            console.log(`   - 时间戳: ${new Date(controlSignal.timestamp || 0).toLocaleTimeString()}`);
+            logger.info(`[CacheControlEvents] 📥 缓存信号更新: ${executionId}`);
+            logger.info(`   - 启用状态: ${controlSignal.enabled || false}`);
+            logger.info(`   - 控制模式: ${controlSignal.mode || 'unknown'}`);
+            logger.info(`   - 组状态数量: ${Object.keys(groupsState).length}`);
+            logger.info(`   - 时间戳: ${new Date(controlSignal.timestamp || 0).toLocaleTimeString()}`);
         }
     }
 
     updateGroupCacheState(executionId, groupName, enabled) {
         /** 更新组的缓存状态 */
         if (!executionId || !groupName) {
-            console.warn('[CacheControlEvents] ⚠️ 无效的参数');
+            logger.warn('[CacheControlEvents] ⚠️ 无效的参数');
             return;
         }
 
@@ -116,12 +121,12 @@ class CacheControlEvents {
         });
 
         if (this.debugMode) {
-            console.log(`[CacheControlEvents] 🎛️ 组状态更新: ${groupName} = ${enabled}`);
+            logger.info(`[CacheControlEvents] 🎛️ 组状态更新: ${groupName} = ${enabled}`);
             if (currentState.changed) {
-                console.log(`   - 状态变更: ${previousState?.enabled} → ${enabled}`);
+                logger.info(`   - 状态变更: ${previousState?.enabled} → ${enabled}`);
             }
-            console.log(`   - 执行次数: ${currentState.executionCount}`);
-            console.log(`   - 时间戳: ${new Date(currentState.timestamp).toLocaleTimeString()}`);
+            logger.info(`   - 执行次数: ${currentState.executionCount}`);
+            logger.info(`   - 时间戳: ${new Date(currentState.timestamp).toLocaleTimeString()}`);
         }
 
         // 触发自定义事件通知缓存节点
@@ -144,7 +149,7 @@ class CacheControlEvents {
         document.dispatchEvent(event);
 
         if (this.debugMode) {
-            console.log(`[CacheControlEvents] 📡 缓存节点状态通知已发送: ${groupName}`);
+            logger.info(`[CacheControlEvents] 📡 缓存节点状态通知已发送: ${groupName}`);
         }
     }
 
@@ -217,7 +222,7 @@ class CacheControlEvents {
         }
 
         if (this.debugMode) {
-            console.log(`[CacheControlEvents] 📜 状态历史记录: ${executionId} - ${eventType}`);
+            logger.info(`[CacheControlEvents] 📜 状态历史记录: ${executionId} - ${eventType}`);
         }
     }
 
@@ -237,11 +242,11 @@ class CacheControlEvents {
         this.cacheSignals.delete(executionId);
         this.stateHistory.delete(executionId);
 
-        console.log(`[CacheControlEvents] 🧹 清理执行状态: ${executionId}`);
+        logger.info(`[CacheControlEvents] 🧹 清理执行状态: ${executionId}`);
 
         if (this.debugMode) {
-            console.log(`[CacheControlEvents] 🗑️ 缓存信号已清理`);
-            console.log(`[CacheControlEvents] 🗑️ 状态历史已清理`);
+            logger.info(`[CacheControlEvents] 🗑️ 缓存信号已清理`);
+            logger.info(`[CacheControlEvents] 🗑️ 状态历史已清理`);
         }
     }
 
@@ -259,7 +264,7 @@ class CacheControlEvents {
     setDebugMode(enabled) {
         /** 设置调试模式 */
         this.debugMode = enabled;
-        console.log(`[CacheControlEvents] 🔧 调试模式: ${enabled ? '启用' : '禁用'}`);
+        logger.info(`[CacheControlEvents] 🔧 调试模式: ${enabled ? '启用' : '禁用'}`);
     }
 
     // 向后兼容性方法
@@ -279,6 +284,6 @@ class CacheControlEvents {
 // 创建全局实例
 window.cacheControlEvents = new CacheControlEvents();
 
-console.log('[CacheControlEvents] 🚀 缓存控制事件系统已启动');
-console.log('[CacheControlEvents] 📋 全局实例: window.cacheControlEvents');
-console.log('[CacheControlEvents] ✅ 基于ComfyUI原生机制的缓存控制系统就绪');
+logger.info('[CacheControlEvents] 🚀 缓存控制事件系统已启动');
+logger.info('[CacheControlEvents] 📋 全局实例: window.cacheControlEvents');
+logger.info('[CacheControlEvents] ✅ 基于ComfyUI原生机制的缓存控制系统就绪');

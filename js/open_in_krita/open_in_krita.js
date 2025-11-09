@@ -6,6 +6,11 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { globalToastManager } from "../global/toast_manager.js";
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('open_in_krita');
+
 import { kritaSetupDialog } from "./setup_dialog.js";  // Krita设置引导对话框
 
 app.registerExtension({
@@ -22,7 +27,7 @@ app.registerExtension({
         // 监听等待状态变化事件
         api.addEventListener("open-in-krita-waiting-changed", (event) => {
             const { node_id, is_waiting } = event.detail;
-            console.log(`[OpenInKrita] Waiting status changed: node_id=${node_id}, is_waiting=${is_waiting}`);
+            logger.info(`[OpenInKrita] Waiting status changed: node_id=${node_id}, is_waiting=${is_waiting}`);
 
             // 更新所有终止按钮的状态
             allCancelButtons.forEach(button => {
@@ -31,12 +36,12 @@ app.registerExtension({
                         button.classList.remove('oik-button-inactive');
                         button.classList.add('oik-button-active');
                         button.disabled = false;
-                        console.log("[OpenInKrita] Cancel button ENABLED (waiting)");
+                        logger.info("[OpenInKrita] Cancel button ENABLED (waiting)");
                     } else {
                         button.classList.remove('oik-button-active');
                         button.classList.add('oik-button-inactive');
                         button.disabled = true;
-                        console.log("[OpenInKrita] Cancel button DISABLED (not waiting)");
+                        logger.info("[OpenInKrita] Cancel button DISABLED (not waiting)");
                     }
                 }
             });
@@ -138,7 +143,7 @@ app.registerExtension({
                 const cancelButton = container.querySelector('[data-action="cancelWait"]');
                 if (cancelButton) {
                     allCancelButtons.push(cancelButton);
-                    console.log(`[OpenInKrita] Added cancel button to global list, total: ${allCancelButtons.length}`);
+                    logger.info(`[OpenInKrita] Added cancel button to global list, total: ${allCancelButtons.length}`);
                 }
 
                 // 处理节点大小调整，确保最小尺寸
@@ -164,7 +169,7 @@ app.registerExtension({
                         const index = allCancelButtons.indexOf(cancelButton);
                         if (index > -1) {
                             allCancelButtons.splice(index, 1);
-                            console.log(`[OpenInKrita] Removed cancel button from global list, remaining: ${allCancelButtons.length}`);
+                            logger.info(`[OpenInKrita] Removed cancel button from global list, remaining: ${allCancelButtons.length}`);
                         }
                     }
 
@@ -357,7 +362,7 @@ async function reinstallPlugin(node) {
         }
 
     } catch (error) {
-        console.error("[OpenInKrita] Error reinstalling plugin:", error);
+        logger.error("[OpenInKrita] Error reinstalling plugin:", error);
         globalToastManager.showToast(`网络错误: ${error.message}`, "error", 5000);
     }
 }
@@ -430,7 +435,7 @@ async function setKritaPath(node) {
         }
 
     } catch (error) {
-        console.error("[OpenInKrita] Error setting Krita path:", error);
+        logger.error("[OpenInKrita] Error setting Krita path:", error);
         globalToastManager.showToast(`网络错误: ${error.message}`, "error", 5000);
     }
 }
@@ -470,7 +475,7 @@ async function checkPluginStatus(node) {
         globalToastManager.showToast(message, result.installed ? "success" : "warning", 8000);
 
     } catch (error) {
-        console.error("[OpenInKrita] Error checking plugin status:", error);
+        logger.error("[OpenInKrita] Error checking plugin status:", error);
         globalToastManager.showToast(`网络错误: ${error.message}`, "error", 5000);
     }
 }
@@ -507,7 +512,7 @@ async function cancelWait(node) {
         }
 
     } catch (error) {
-        console.error("[OpenInKrita] Error cancelling wait:", error);
+        logger.error("[OpenInKrita] Error cancelling wait:", error);
         globalToastManager.showToast(`网络错误: ${error.message}`, "error", 5000);
     }
 }
@@ -538,7 +543,7 @@ async function checkKritaStatus() {
         };
 
     } catch (error) {
-        console.error("[OpenInKrita] Error checking Krita status:", error);
+        logger.error("[OpenInKrita] Error checking Krita status:", error);
         return {is_running: false, has_documents: false};
     }
 }
@@ -565,7 +570,7 @@ function startKritaStatusMonitor(node, fetchButton) {
     // 存储定时器ID
     nodeStatusTimers.set(nodeId, timerId);
 
-    console.log(`[OpenInKrita] Started status monitor for node ${nodeId}`);
+    logger.info(`[OpenInKrita] Started status monitor for node ${nodeId}`);
 }
 
 /**
@@ -580,7 +585,7 @@ function stopKritaStatusMonitor(node) {
     if (timerId) {
         clearInterval(timerId);
         nodeStatusTimers.delete(nodeId);
-        console.log(`[OpenInKrita] Stopped status monitor for node ${nodeId}`);
+        logger.info(`[OpenInKrita] Stopped status monitor for node ${nodeId}`);
     }
 }
 
@@ -644,7 +649,7 @@ async function fetchFromKrita(node) {
         const checkResult = await checkResponse.json();
         const isWaiting = checkResult.is_waiting;
 
-        console.log(`[OpenInKrita] Node ${node.id} waiting status:`, isWaiting);
+        logger.info(`[OpenInKrita] Node ${node.id} waiting status:`, isWaiting);
 
         if (isWaiting) {
             // 节点正在等待 → 直接从Krita获取数据（不触发新执行）
@@ -671,7 +676,7 @@ async function fetchFromKrita(node) {
             if (fetchResult.status === "success") {
                 // 数据已获取，提示用户
                 globalToastManager.showToast("✓ 已从Krita获取数据\n数据已就绪，可以继续编辑或执行", "success", 4000);
-                console.log("[OpenInKrita] Data fetched successfully from Krita");
+                logger.info("[OpenInKrita] Data fetched successfully from Krita");
             } else if (fetchResult.status === "timeout") {
                 globalToastManager.showToast("⏳ Krita响应超时\n请确保Krita正在运行并已打开图像", "warning", 5000);
             } else {
@@ -701,13 +706,13 @@ async function fetchFromKrita(node) {
             // 触发执行（使用ComfyUI的queuePrompt方法）
             app.queuePrompt(0, 1);  // batch_count=0(使用默认), batch_size=1
 
-            console.log("[OpenInKrita] Triggered execution for node", node.id);
+            logger.info("[OpenInKrita] Triggered execution for node", node.id);
         }
 
     } catch (error) {
-        console.error("[OpenInKrita] Error fetching from Krita:", error);
+        logger.error("[OpenInKrita] Error fetching from Krita:", error);
         globalToastManager.showToast(`错误: ${error.message}`, "error", 5000);
     }
 }
 
-console.log("[OpenInKrita] Frontend extension loaded");
+logger.info("[OpenInKrita] Frontend extension loaded");

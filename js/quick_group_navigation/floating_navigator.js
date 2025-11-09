@@ -9,6 +9,11 @@
 import { app } from "../../../scripts/app.js";
 import { globalToastManager } from "../global/toast_manager.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('floating_navigator');
+
 /**
  * 悬浮球导航器类
  * 负责悬浮球的创建、拖拽、面板展开等UI交互
@@ -48,7 +53,7 @@ export class FloatingNavigator {
         // 每次进入工作流时，确保面板是折叠状态
         this.collapsePanel();
 
-        console.log('[QGN] 悬浮球导航器初始化完成');
+        logger.info('[QGN] 悬浮球导航器初始化完成');
     }
 
     /**
@@ -670,7 +675,7 @@ export class FloatingNavigator {
         try {
             localStorage.setItem('qgn_floating_ball_position', JSON.stringify(this.position));
         } catch (e) {
-            console.warn('[QGN] 保存位置失败:', e);
+            logger.warn('[QGN] 保存位置失败:', e);
         }
     }
 
@@ -690,7 +695,7 @@ export class FloatingNavigator {
                 position = JSON.parse(saved);
             }
         } catch (e) {
-            console.warn('[QGN] 加载位置失败:', e);
+            logger.warn('[QGN] 加载位置失败:', e);
         }
 
         // 如果没有保存的位置,使用默认位置
@@ -717,6 +722,6 @@ export class FloatingNavigator {
     destroy() {
         this.ballElement?.remove();
         this.panelElement?.remove();
-        console.log('[QGN] 悬浮球导航器已销毁');
+        logger.info('[QGN] 悬浮球导航器已销毁');
     }
 }

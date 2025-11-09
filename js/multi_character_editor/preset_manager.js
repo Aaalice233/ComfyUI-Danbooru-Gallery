@@ -6,6 +6,11 @@
 import { globalMultiLanguageManager } from '../global/multi_language.js';
 import { globalToastManager as toastManagerProxy } from '../global/toast_manager.js';
 import { AutocompleteUI } from '../global/autocomplete_ui.js';
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('preset_manager');
+
 import '../global/color_manager.js';
 
 /**
@@ -29,7 +34,7 @@ const formatTagWithGallerySettings = (tag) => {
             }
         }
     } catch (e) {
-        console.warn('[PresetManager] 读取格式化设置失败:', e);
+        logger.warn('[PresetManager] 读取格式化设置失败:', e);
     }
 
     // 应用格式化规则
@@ -113,10 +118,10 @@ class PresetManager {
                 this.presets = data.presets;
                 this.filteredPresets = [...this.presets];
             } else {
-                console.error('加载预设失败:', data.error);
+                logger.error('加载预设失败:', data.error);
             }
         } catch (error) {
-            console.error('加载预设失败:', error);
+            logger.error('加载预设失败:', error);
         }
     }
 
@@ -323,7 +328,7 @@ class PresetManager {
                 const fillClass = char.use_fill ? 'active' : '';
 
                 // 添加日志
-                console.log(`[FILL渲染] 角色 ${index} "${name}": use_fill=${char.use_fill}, fillClass="${fillClass}", isActive="${isActive}"`);
+                logger.info(`[FILL渲染] 角色 ${index} "${name}": use_fill=${char.use_fill}, fillClass="${fillClass}", isActive="${isActive}"`);
 
                 return `
                     <div class="mce-edit-preset-char-item ${isActive}" data-character-id="${index}">
@@ -360,17 +365,17 @@ class PresetManager {
      * 渲染预设角色编辑表单
      */
     renderPresetCharacterEditForm(preset, characterIndex) {
-        console.log(`[预设管理器] 开始渲染编辑表单 - presetId: ${preset.id}, characterIndex: ${characterIndex}`);
+        logger.info(`[预设管理器] 开始渲染编辑表单 - presetId: ${preset.id}, characterIndex: ${characterIndex}`);
 
         if (!preset.characters || !preset.characters[characterIndex]) {
-            console.warn(`[预设管理器] 角色数据不存在 - presetId: ${preset.id}, characterIndex: ${characterIndex}`);
+            logger.warn(`[预设管理器] 角色数据不存在 - presetId: ${preset.id}, characterIndex: ${characterIndex}`);
             return '';
         }
 
         const character = preset.characters[characterIndex];
         const t = this.languageManager.t;
 
-        console.log(`[预设管理器] 角色数据:`, {
+        logger.info(`[预设管理器] 角色数据:`, {
             name: character.name,
             weight: character.weight,
             feather: character.feather,
@@ -461,7 +466,7 @@ class PresetManager {
             </div>
         `;
 
-        console.log(`[预设管理器] HTML模板生成完成，包含滑条元素:`, {
+        logger.info(`[预设管理器] HTML模板生成完成，包含滑条元素:`, {
             weightSlider: 'edit-character-weight',
             weightInput: 'edit-character-weight-input',
             featherSlider: 'edit-character-feather',
@@ -1082,7 +1087,7 @@ class PresetManager {
                 this.toastManager.showToast(data.error || t('error'), 'error', 3000);
             }
         } catch (error) {
-            console.error('保存预设失败:', error);
+            logger.error('保存预设失败:', error);
             this.toastManager.showToast(t('error'), 'error', 3000);
         }
     }
@@ -1241,7 +1246,7 @@ class PresetManager {
                 // 🔧 修复：保存成功后立即刷新预设管理界面的列表显示
                 const presetList = document.getElementById('preset-list-container');
                 if (presetList) {
-                    console.log(`[预设管理器] 保存成功后刷新预设列表`);
+                    logger.info(`[预设管理器] 保存成功后刷新预设列表`);
                     presetList.innerHTML = this.renderPresetList();
                     this.bindPresetManagementEvents();
                 }
@@ -1286,7 +1291,7 @@ class PresetManager {
             const activeCharItem = document.querySelector('.mce-edit-preset-char-item.active');
             if (activeCharItem) {
                 const activeIndex = parseInt(activeCharItem.dataset.characterId);
-                console.log(`[预设管理器] 初始化时绑定第一个角色事件 - characterIndex: ${activeIndex}`);
+                logger.info(`[预设管理器] 初始化时绑定第一个角色事件 - characterIndex: ${activeIndex}`);
 
                 // 🔧 修复：绑定滑条事件
                 this.bindPresetCharacterEditEvents(presetId, activeIndex);
@@ -1300,7 +1305,7 @@ class PresetManager {
                 }, 100);
             } else {
                 // 如果没有激活的角色项，默认绑定第一个角色（索引0）
-                console.log(`[预设管理器] 没有激活角色，默认绑定第一个角色`);
+                logger.info(`[预设管理器] 没有激活角色，默认绑定第一个角色`);
                 this.bindPresetCharacterEditEvents(presetId, 0);
                 this.updateEditForm(preset, 0);
 
@@ -1461,7 +1466,7 @@ class PresetManager {
                     }
                 });
             } catch (error) {
-                console.error('[PresetManager] 全局提示词模态框智能补全初始化失败:', error);
+                logger.error('[PresetManager] 全局提示词模态框智能补全初始化失败:', error);
             }
         }, 100);
     }
@@ -1487,7 +1492,7 @@ class PresetManager {
      * 处理角色列表点击事件
      */
     handleCharacterListClick(e, presetId) {
-        console.log(`[预设管理器] handleCharacterListClick 被调用 - presetId: ${presetId}`, {
+        logger.info(`[预设管理器] handleCharacterListClick 被调用 - presetId: ${presetId}`, {
             target: e.target,
             targetClass: e.target.className,
             targetId: e.target.id
@@ -1526,7 +1531,7 @@ class PresetManager {
 
         // 处理角色卡片点击（切换角色）
         const charItem = e.target.closest('.mce-edit-preset-char-item');
-        console.log(`[预设管理器] 角色卡片点击检查:`, {
+        logger.info(`[预设管理器] 角色卡片点击检查:`, {
             charItem: !!charItem,
             charItemId: charItem?.dataset?.characterId,
             containsFillToggle: charItem?.contains(e.target.closest('.mce-char-fill-toggle'))
@@ -1534,12 +1539,12 @@ class PresetManager {
 
         if (charItem && !charItem.contains(e.target.closest('.mce-char-fill-toggle'))) {
             const characterIndex = parseInt(charItem.dataset.characterId);
-            console.log(`[预设管理器] 准备调用 editPresetCharacter - characterIndex: ${characterIndex}`);
+            logger.info(`[预设管理器] 准备调用 editPresetCharacter - characterIndex: ${characterIndex}`);
 
             this.editPresetCharacter(presetId, characterIndex);
 
         } else {
-            console.log(`[预设管理器] 角色卡片点击被跳过`);
+            logger.info(`[预设管理器] 角色卡片点击被跳过`);
         }
     }
 
@@ -1612,11 +1617,11 @@ class PresetManager {
      * 编辑预设中的角色
      */
     editPresetCharacter(presetId, characterIndex) {
-        console.log(`[预设管理器] editPresetCharacter 被调用 - presetId: ${presetId}, characterIndex: ${characterIndex}`);
+        logger.info(`[预设管理器] editPresetCharacter 被调用 - presetId: ${presetId}, characterIndex: ${characterIndex}`);
 
         const preset = this.presets.find(p => p.id === presetId);
         if (!preset || !preset.characters || !preset.characters[characterIndex]) {
-            console.warn(`[预设管理器] editPresetCharacter 数据验证失败:`, {
+            logger.warn(`[预设管理器] editPresetCharacter 数据验证失败:`, {
                 presetExists: !!preset,
                 charactersExists: !!preset?.characters,
                 characterExists: !!preset?.characters?.[characterIndex]
@@ -1624,7 +1629,7 @@ class PresetManager {
             return;
         }
 
-        console.log(`[预设管理器] editPresetCharacter 数据验证通过，开始处理`);
+        logger.info(`[预设管理器] editPresetCharacter 数据验证通过，开始处理`);
 
         // 🔧 修复：在切换角色前，先临时保存当前编辑的内容
         this.saveCurrentEditTemporarily(presetId);
@@ -1773,7 +1778,7 @@ class PresetManager {
      * 绑定预设角色编辑面板事件
      */
     bindPresetCharacterEditEvents(presetId, characterIndex) {
-        console.log(`[预设管理器] 开始绑定滑条事件 - presetId: ${presetId}, characterIndex: ${characterIndex}`);
+        logger.info(`[预设管理器] 开始绑定滑条事件 - presetId: ${presetId}, characterIndex: ${characterIndex}`);
 
         // 清理之前的事件监听器，避免重复绑定
         this.cleanupPresetCharacterEditEvents();
@@ -1782,7 +1787,7 @@ class PresetManager {
         const weightSlider = document.getElementById('edit-character-weight');
         const weightInput = document.getElementById('edit-character-weight-input');
 
-        console.log(`[预设管理器] 权重滑条元素查找结果:`, {
+        logger.info(`[预设管理器] 权重滑条元素查找结果:`, {
             weightSlider: !!weightSlider,
             weightInput: !!weightInput,
             weightSliderId: weightSlider?.id,
@@ -1792,7 +1797,7 @@ class PresetManager {
         if (weightSlider && weightInput) {
             // 存储事件处理器引用，用于后续清理
             this.weightSliderHandler = () => {
-                console.log(`[预设管理器] 权重滑条拖动事件触发，值: ${weightSlider.value}`);
+                logger.info(`[预设管理器] 权重滑条拖动事件触发，值: ${weightSlider.value}`);
                 weightInput.value = weightSlider.value;
 
                 // 🔧 新增：实时保存权重变化到内存中的预设数据
@@ -1801,28 +1806,28 @@ class PresetManager {
 
             this.weightInputHandler = () => {
                 const value = parseFloat(weightInput.value);
-                console.log(`[预设管理器] 权重输入框变化事件触发，值: ${value}`);
+                logger.info(`[预设管理器] 权重输入框变化事件触发，值: ${value}`);
                 if (!isNaN(value) && value >= 0 && value <= 1) {
                     weightSlider.value = value;
-                    console.log(`[预设管理器] 权重滑条值已更新为: ${weightSlider.value}`);
+                    logger.info(`[预设管理器] 权重滑条值已更新为: ${weightSlider.value}`);
                 } else {
-                    console.warn(`[预设管理器] 权重输入值无效: ${value}`);
+                    logger.warn(`[预设管理器] 权重输入值无效: ${value}`);
                 }
             };
 
             weightSlider.addEventListener('input', this.weightSliderHandler);
             weightInput.addEventListener('input', this.weightInputHandler);
 
-            console.log(`[预设管理器] 权重滑条事件绑定完成`);
+            logger.info(`[预设管理器] 权重滑条事件绑定完成`);
         } else {
-            console.warn(`[预设管理器] 权重滑条或输入框元素未找到`);
+            logger.warn(`[预设管理器] 权重滑条或输入框元素未找到`);
         }
 
         // 羽化滑块和输入框同步
         const featherSlider = document.getElementById('edit-character-feather');
         const featherInput = document.getElementById('edit-character-feather-input');
 
-        console.log(`[预设管理器] 羽化滑条元素查找结果:`, {
+        logger.info(`[预设管理器] 羽化滑条元素查找结果:`, {
             featherSlider: !!featherSlider,
             featherInput: !!featherInput,
             featherSliderId: featherSlider?.id,
@@ -1832,40 +1837,40 @@ class PresetManager {
         if (featherSlider && featherInput) {
             // 存储事件处理器引用，用于后续清理
             this.featherSliderHandler = () => {
-                console.log(`[预设管理器] 羽化滑条拖动事件触发，值: ${featherSlider.value}`);
+                logger.info(`[预设管理器] 羽化滑条拖动事件触发，值: ${featherSlider.value}`);
                 featherInput.value = featherSlider.value;
             };
 
             this.featherInputHandler = () => {
                 const value = parseFloat(featherInput.value);
-                console.log(`[预设管理器] 羽化输入框变化事件触发，值: ${value}`);
+                logger.info(`[预设管理器] 羽化输入框变化事件触发，值: ${value}`);
                 if (!isNaN(value) && value >= 0 && value <= 50) {
                     featherSlider.value = value;
-                    console.log(`[预设管理器] 羽化滑条值已更新为: ${featherSlider.value}`);
+                    logger.info(`[预设管理器] 羽化滑条值已更新为: ${featherSlider.value}`);
                 } else {
-                    console.warn(`[预设管理器] 羽化输入值无效: ${value}`);
+                    logger.warn(`[预设管理器] 羽化输入值无效: ${value}`);
                 }
             };
 
             featherSlider.addEventListener('input', this.featherSliderHandler);
             featherInput.addEventListener('input', this.featherInputHandler);
 
-            console.log(`[预设管理器] 羽化滑条事件绑定完成`);
+            logger.info(`[预设管理器] 羽化滑条事件绑定完成`);
         } else {
-            console.warn(`[预设管理器] 羽化滑条或输入框元素未找到`);
+            logger.warn(`[预设管理器] 羽化滑条或输入框元素未找到`);
         }
 
         // 🔧 新增：绑定语法类型事件
         this.bindSyntaxTypeEvents(presetId, characterIndex);
 
-        console.log(`[预设管理器] 滑条事件绑定完成`);
+        logger.info(`[预设管理器] 滑条事件绑定完成`);
     }
 
     /**
      * 清理预设角色编辑面板事件监听器
      */
     cleanupPresetCharacterEditEvents() {
-        console.log(`[预设管理器] 开始清理滑条事件监听器`);
+        logger.info(`[预设管理器] 开始清理滑条事件监听器`);
 
         // 清理权重滑条事件
         const weightSlider = document.getElementById('edit-character-weight');
@@ -1873,12 +1878,12 @@ class PresetManager {
 
         if (weightSlider && this.weightSliderHandler) {
             weightSlider.removeEventListener('input', this.weightSliderHandler);
-            console.log(`[预设管理器] 权重滑条事件监听器已清理`);
+            logger.info(`[预设管理器] 权重滑条事件监听器已清理`);
         }
 
         if (weightInput && this.weightInputHandler) {
             weightInput.removeEventListener('input', this.weightInputHandler);
-            console.log(`[预设管理器] 权重输入框事件监听器已清理`);
+            logger.info(`[预设管理器] 权重输入框事件监听器已清理`);
         }
 
         // 清理羽化滑条事件
@@ -1887,12 +1892,12 @@ class PresetManager {
 
         if (featherSlider && this.featherSliderHandler) {
             featherSlider.removeEventListener('input', this.featherSliderHandler);
-            console.log(`[预设管理器] 羽化滑条事件监听器已清理`);
+            logger.info(`[预设管理器] 羽化滑条事件监听器已清理`);
         }
 
         if (featherInput && this.featherInputHandler) {
             featherInput.removeEventListener('input', this.featherInputHandler);
-            console.log(`[预设管理器] 羽化输入框事件监听器已清理`);
+            logger.info(`[预设管理器] 羽化输入框事件监听器已清理`);
         }
 
         // 清理事件处理器引用
@@ -1904,7 +1909,7 @@ class PresetManager {
         // 清理语法类型事件
         this.cleanupSyntaxTypeEvents();
 
-        console.log(`[预设管理器] 滑条事件监听器清理完成`);
+        logger.info(`[预设管理器] 滑条事件监听器清理完成`);
     }
 
     /**
@@ -1928,7 +1933,7 @@ class PresetManager {
 
         if (!isNaN(weight)) {
             character.weight = Math.max(0, Math.min(1, weight));
-            console.log(`[预设管理器] 实时保存权重变化: ${character.weight}`);
+            logger.info(`[预设管理器] 实时保存权重变化: ${character.weight}`);
 
             // 立即保存到本地存储
             this.savePresetToLocalStorage(preset);
@@ -1967,14 +1972,14 @@ class PresetManager {
      * 调试滑条元素状态
      */
     debugSliderElements() {
-        console.log(`[预设管理器] 开始调试滑条元素状态`);
+        logger.info(`[预设管理器] 开始调试滑条元素状态`);
 
         const weightSlider = document.getElementById('edit-character-weight');
         const weightInput = document.getElementById('edit-character-weight-input');
         const featherSlider = document.getElementById('edit-character-feather');
         const featherInput = document.getElementById('edit-character-feather-input');
 
-        console.log(`[预设管理器] 滑条元素状态检查:`, {
+        logger.info(`[预设管理器] 滑条元素状态检查:`, {
             weightSlider: {
                 exists: !!weightSlider,
                 id: weightSlider?.id,
@@ -2005,14 +2010,14 @@ class PresetManager {
 
         // 检查事件监听器是否正确绑定
         if (weightSlider) {
-            console.log(`[预设管理器] 权重滑条事件监听器状态:`, {
+            logger.info(`[预设管理器] 权重滑条事件监听器状态:`, {
                 hasInputListener: this.weightSliderHandler !== null,
                 handlerFunction: typeof this.weightSliderHandler
             });
         }
 
         if (featherSlider) {
-            console.log(`[预设管理器] 羽化滑条事件监听器状态:`, {
+            logger.info(`[预设管理器] 羽化滑条事件监听器状态:`, {
                 hasInputListener: this.featherSliderHandler !== null,
                 handlerFunction: typeof this.featherSliderHandler
             });
@@ -2211,7 +2216,7 @@ class PresetManager {
                     }
                 });
             } catch (error) {
-                console.error('[PresetManager] 预设角色编辑智能补全初始化失败:', error);
+                logger.error('[PresetManager] 预设角色编辑智能补全初始化失败:', error);
             }
         }, 100);
     }
@@ -2247,7 +2252,7 @@ class PresetManager {
                     }
                 });
             } catch (error) {
-                console.error('[PresetManager] 全局提示词智能补全初始化失败:', error);
+                logger.error('[PresetManager] 全局提示词智能补全初始化失败:', error);
             }
         }, 100);
     }
@@ -2329,7 +2334,7 @@ class PresetManager {
                 // 🔧 保存成功后，如果预设管理界面是打开的，刷新列表显示
                 const presetListContainer = document.getElementById('preset-list-container');
                 if (presetListContainer) {
-                    console.log(`[预设管理器] 服务器保存成功后刷新预设列表`);
+                    logger.info(`[预设管理器] 服务器保存成功后刷新预设列表`);
                     presetListContainer.innerHTML = this.renderPresetList();
                     this.bindPresetManagementEvents();
                 }
@@ -2337,7 +2342,7 @@ class PresetManager {
                 this.toastManager.showToast(data.error || t('error'), 'error', 3000);
             }
         } catch (error) {
-            console.error('更新预设失败:', error);
+            logger.error('更新预设失败:', error);
             this.toastManager.showToast(t('error'), 'error', 3000);
         }
     }
@@ -2384,7 +2389,7 @@ class PresetManager {
                 this.toastManager.showToast(data.error || t('error'), 'error', 3000);
             }
         } catch (error) {
-            console.error('删除预设失败:', error);
+            logger.error('删除预设失败:', error);
             this.toastManager.showToast(t('error'), 'error', 3000);
         }
     }
@@ -2398,7 +2403,7 @@ class PresetManager {
 
         if (!preset || !preset.characters) return;
 
-        console.log(`[预设管理器] 开始应用预设 - presetId: ${presetId}`, {
+        logger.info(`[预设管理器] 开始应用预设 - presetId: ${presetId}`, {
             global_use_fill: preset.global_use_fill,
             characters: preset.characters.map(char => ({
                 name: char.name,
@@ -2427,7 +2432,7 @@ class PresetManager {
             global_use_fill: preset.global_use_fill || false  // 🔧 修复：应用预设的全局FILL状态
         };
 
-        console.log(`[预设管理器] 更新配置:`, configUpdate);
+        logger.info(`[预设管理器] 更新配置:`, configUpdate);
         this.editor.dataManager.updateConfig(configUpdate);
 
         // 🔧 修复：强制刷新角色列表显示
@@ -3838,7 +3843,7 @@ class PresetManager {
      * 绑定语法类型事件
      */
     bindSyntaxTypeEvents(presetId, characterIndex) {
-        console.log(`[预设管理器] 开始绑定语法类型事件 - presetId: ${presetId}, characterIndex: ${characterIndex}`);
+        logger.info(`[预设管理器] 开始绑定语法类型事件 - presetId: ${presetId}, characterIndex: ${characterIndex}`);
 
         // 清理之前的语法类型事件监听器
         this.cleanupSyntaxTypeEvents();
@@ -3848,14 +3853,14 @@ class PresetManager {
             // 存储事件处理器引用，用于后续清理
             this.syntaxTypeHandler = (e) => {
                 const newSyntaxType = e.target.value;
-                console.log(`[预设管理器] 语法类型切换事件触发 - 新类型: ${newSyntaxType}, 角色索引: ${characterIndex}`);
+                logger.info(`[预设管理器] 语法类型切换事件触发 - 新类型: ${newSyntaxType}, 角色索引: ${characterIndex}`);
 
                 const preset = this.presets.find(p => p.id === presetId);
 
                 if (preset && preset.characters && preset.characters[characterIndex]) {
                     // 立即保存语法类型到角色数据
                     preset.characters[characterIndex].syntax_type = newSyntaxType;
-                    console.log(`[预设管理器] 语法类型已保存到角色数据: ${newSyntaxType}`);
+                    logger.info(`[预设管理器] 语法类型已保存到角色数据: ${newSyntaxType}`);
 
                     // 保存到本地存储
                     this.savePresetToLocalStorage(preset);
@@ -3878,9 +3883,9 @@ class PresetManager {
             };
 
             syntaxTypeSelect.addEventListener('change', this.syntaxTypeHandler);
-            console.log(`[预设管理器] 语法类型事件绑定完成`);
+            logger.info(`[预设管理器] 语法类型事件绑定完成`);
         } else {
-            console.warn(`[预设管理器] 语法类型选择器元素未找到`);
+            logger.warn(`[预设管理器] 语法类型选择器元素未找到`);
         }
     }
 
@@ -3888,18 +3893,18 @@ class PresetManager {
      * 清理语法类型事件监听器
      */
     cleanupSyntaxTypeEvents() {
-        console.log(`[预设管理器] 开始清理语法类型事件监听器`);
+        logger.info(`[预设管理器] 开始清理语法类型事件监听器`);
 
         const syntaxTypeSelect = document.getElementById('edit-character-syntax-type');
         if (syntaxTypeSelect && this.syntaxTypeHandler) {
             syntaxTypeSelect.removeEventListener('change', this.syntaxTypeHandler);
-            console.log(`[预设管理器] 语法类型事件监听器已清理`);
+            logger.info(`[预设管理器] 语法类型事件监听器已清理`);
         }
 
         // 清理事件处理器引用
         this.syntaxTypeHandler = null;
 
-        console.log(`[预设管理器] 语法类型事件监听器清理完成`);
+        logger.info(`[预设管理器] 语法类型事件监听器清理完成`);
     }
 
     /**
@@ -4041,7 +4046,7 @@ class PresetManager {
             // 保存回本地存储
             localStorage.setItem('mce_presets', JSON.stringify(presets));
         } catch (error) {
-            console.error('保存预设到本地存储失败:', error);
+            logger.error('保存预设到本地存储失败:', error);
         }
     }
 }

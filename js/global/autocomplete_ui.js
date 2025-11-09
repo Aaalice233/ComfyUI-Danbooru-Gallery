@@ -6,6 +6,11 @@
 
 import { globalAutocompleteCache } from './autocomplete_cache.js';
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('autocomplete_ui');
+
 class AutocompleteUI {
     constructor(options = {}) {
         // 配置
@@ -33,7 +38,7 @@ class AutocompleteUI {
 
     init() {
         if (!this.inputElement) {
-            console.error('[AutocompleteUI] 输入框元素未提供');
+            logger.error('[AutocompleteUI] 输入框元素未提供');
             return;
         }
 
@@ -178,7 +183,7 @@ class AutocompleteUI {
             try {
                 await this.fetchSuggestions(lastWord);
             } catch (error) {
-                console.error('[AutocompleteUI] 处理输入时出错:', error);
+                logger.error('[AutocompleteUI] 处理输入时出错:', error);
                 // 出错时也不自动隐藏，让用户通过失焦关闭
             }
         }, this.debounceDelay);
@@ -200,7 +205,7 @@ class AutocompleteUI {
     async fetchSuggestions(query) {
         // 验证查询有效性
         if (!query || query.trim().length === 0) {
-            console.warn('[AutocompleteUI] 查询为空，忽略');
+            logger.warn('[AutocompleteUI] 查询为空，忽略');
             return;
         }
 
@@ -215,7 +220,7 @@ class AutocompleteUI {
         try {
             // 检查缓存系统是否可用
             if (!globalAutocompleteCache) {
-                console.warn('[AutocompleteUI] 缓存系统不可用');
+                logger.warn('[AutocompleteUI] 缓存系统不可用');
                 return;
             }
 
@@ -252,7 +257,7 @@ class AutocompleteUI {
             this.currentSuggestions = suggestions;
             this.renderSuggestions(suggestions, containsChinese);
         } catch (error) {
-            console.error('[AutocompleteUI] 获取建议失败:', error);
+            logger.error('[AutocompleteUI] 获取建议失败:', error);
             // 出错时不自动关闭菜单，让用户通过失焦或ESC键关闭
         }
     }

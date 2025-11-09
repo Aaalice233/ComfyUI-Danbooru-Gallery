@@ -6,6 +6,11 @@
 import { api } from "/scripts/api.js";
 import { globalToastManager } from "../global/toast_manager.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('setup_dialog');
+
 /**
  * Krita设置引导对话框管理器
  */
@@ -226,7 +231,7 @@ class KritaSetupDialog {
      */
     async handleSetPath(nodeId) {
         try {
-            console.log("[KritaSetupDialog] Opening file browser...");
+            logger.info("[KritaSetupDialog] Opening file browser...");
 
             // 步骤1：调用文件浏览API获取路径
             const browseResponse = await api.fetchApi("/open_in_krita/browse_path", {
@@ -241,7 +246,7 @@ class KritaSetupDialog {
                     "info",
                     2000
                 );
-                console.log("[KritaSetupDialog] User cancelled path selection");
+                logger.info("[KritaSetupDialog] User cancelled path selection");
                 return;
             }
 
@@ -251,12 +256,12 @@ class KritaSetupDialog {
                     "error",
                     4000
                 );
-                console.error("[KritaSetupDialog] Browse path failed:", browseResult);
+                logger.error("[KritaSetupDialog] Browse path failed:", browseResult);
                 return;
             }
 
             const selectedPath = browseResult.path;
-            console.log("[KritaSetupDialog] Path selected:", selectedPath);
+            logger.info("[KritaSetupDialog] Path selected:", selectedPath);
 
             // 步骤2：调用保存路径API
             const setResponse = await api.fetchApi("/open_in_krita/set_path", {
@@ -277,14 +282,14 @@ class KritaSetupDialog {
                     "success",
                     4000
                 );
-                console.log("[KritaSetupDialog] Path saved successfully:", selectedPath);
+                logger.info("[KritaSetupDialog] Path saved successfully:", selectedPath);
             } else {
                 globalToastManager.showToast(
                     `保存路径失败: ${setResult.message || '未知错误'}`,
                     "error",
                     4000
                 );
-                console.error("[KritaSetupDialog] Save path failed:", setResult);
+                logger.error("[KritaSetupDialog] Save path failed:", setResult);
             }
         } catch (error) {
             globalToastManager.showToast(
@@ -292,7 +297,7 @@ class KritaSetupDialog {
                 "error",
                 4000
             );
-            console.error("[KritaSetupDialog] Error setting path:", error);
+            logger.error("[KritaSetupDialog] Error setting path:", error);
         }
     }
 
@@ -300,7 +305,7 @@ class KritaSetupDialog {
      * 处理跳转官网
      */
     handleGoToWebsite() {
-        console.log("[KritaSetupDialog] Opening Krita website...");
+        logger.info("[KritaSetupDialog] Opening Krita website...");
 
         // 打开Krita官网下载页
         window.open('https://krita.org/zh-cn/download/', '_blank');
@@ -312,7 +317,7 @@ class KritaSetupDialog {
             6000
         );
 
-        console.log("[KritaSetupDialog] Website opened");
+        logger.info("[KritaSetupDialog] Website opened");
     }
 
     /**
@@ -338,7 +343,7 @@ class KritaSetupDialog {
             }
         }, 300);
 
-        console.log("[KritaSetupDialog] Dialog closed");
+        logger.info("[KritaSetupDialog] Dialog closed");
     }
 }
 
@@ -348,8 +353,8 @@ export const kritaSetupDialog = new KritaSetupDialog();
 // 注册事件监听
 api.addEventListener("open-in-krita-setup-dialog", (event) => {
     const { node_id, message } = event.detail;
-    console.log("[KritaSetupDialog] Setup dialog event received:", { node_id, message });
+    logger.info("[KritaSetupDialog] Setup dialog event received:", { node_id, message });
     kritaSetupDialog.show(node_id, message);
 });
 
-console.log("[KritaSetupDialog] Module loaded and event listener registered");
+logger.info("[KritaSetupDialog] Module loaded and event listener registered");

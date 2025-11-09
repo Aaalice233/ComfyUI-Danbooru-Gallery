@@ -11,17 +11,15 @@ import urllib.parse
 import numpy as np
 from PIL import Image
 import os
-import logging
 import csv
 import re
 from requests.auth import HTTPBasicAuth
 import urllib3
 from pathlib import Path
 import sys
+from ..utils.logger import get_logger
 
-# 设置日志记录（必须在使用logger之前）
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("DanbooruGallery")
+logger = get_logger(__name__)
 
 # 导入数据库管理器
 try:

@@ -5,9 +5,9 @@
 
 import time
 import hashlib
-import logging
 from typing import List, Dict, Any, Optional
 from ..text_cache_manager.text_cache_manager import text_cache_manager
+from ..utils.logger import get_logger
 
 # 导入debug配置
 from ..utils.debug_config import should_debug
@@ -15,8 +15,7 @@ from ..utils.debug_config import should_debug
 CATEGORY_TYPE = "danbooru"
 COMPONENT_NAME = "global_text_cache_get"
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("GlobalTextCacheGet")
+logger = get_logger(__name__)
 
 
 class GlobalTextCacheGet:

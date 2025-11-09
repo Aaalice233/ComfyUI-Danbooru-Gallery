@@ -3,6 +3,13 @@
  * 统一管理所有前端组件的debug模式开关
  */
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('debug_config');
+
+
+
 class DebugConfig {
     constructor() {
         this.config = {
@@ -27,14 +34,14 @@ class DebugConfig {
                 if (data.status === 'success') {
                     this.config = data.debug || this.config;
                     this.loaded = true;
-                    console.log('[DebugConfig] 配置加载成功:', this.config);
+                    logger.info('[DebugConfig] 配置加载成功:', this.config);
                     return true;
                 }
             }
-            console.warn('[DebugConfig] 配置加载失败，使用默认配置');
+            logger.warn('[DebugConfig] 配置加载失败，使用默认配置');
             return false;
         } catch (error) {
-            console.error('[DebugConfig] 加载配置时出错:', error);
+            logger.error('[DebugConfig] 加载配置时出错:', error);
             return false;
         }
     }
@@ -55,7 +62,7 @@ class DebugConfig {
      */
     debugLog(component, ...args) {
         if (this.shouldDebug(component)) {
-            console.log(...args);
+            logger.info(...args);
         }
     }
 
@@ -66,7 +73,7 @@ class DebugConfig {
      */
     debugWarn(component, ...args) {
         if (this.shouldDebug(component)) {
-            console.warn(...args);
+            logger.warn(...args);
         }
     }
 
@@ -77,7 +84,7 @@ class DebugConfig {
      */
     debugError(component, ...args) {
         if (this.shouldDebug(component)) {
-            console.error(...args);
+            logger.error(...args);
         }
     }
 
@@ -118,14 +125,14 @@ class DebugConfig {
                 const data = await response.json();
                 if (data.status === 'success') {
                     this.config = newConfig;
-                    console.log('[DebugConfig] 配置更新成功');
+                    logger.info('[DebugConfig] 配置更新成功');
                     return true;
                 }
             }
-            console.error('[DebugConfig] 配置更新失败');
+            logger.error('[DebugConfig] 配置更新失败');
             return false;
         } catch (error) {
-            console.error('[DebugConfig] 更新配置时出错:', error);
+            logger.error('[DebugConfig] 更新配置时出错:', error);
             return false;
         }
     }
@@ -136,7 +143,7 @@ window.debugConfig = new DebugConfig();
 
 // 自动加载配置
 window.debugConfig.loadConfig().then(() => {
-    console.log('[DebugConfig] Debug配置系统已初始化');
+    logger.info('[DebugConfig] Debug配置系统已初始化');
 });
 
 // 导出便捷函数

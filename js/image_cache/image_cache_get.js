@@ -10,6 +10,10 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
+import { createLogger } from "../global/logger_client.js";
+
+// 创建logger实例
+const logger = createLogger('image_cache_get');
 
 // Toast通知管理器（如果存在）
 let showToast = null;
@@ -18,10 +22,10 @@ try {
     showToast = (message, type = 'success', duration = 3000) => {
         toastModule.globalToastManager.showToast(message, type, duration);
     };
-    console.log("[ImageCacheGet] Toast管理器加载成功");
+    logger.info("[ImageCacheGet] Toast管理器加载成功");
 } catch (e) {
-    console.warn("[ImageCacheGet] Toast管理器加载失败，使用fallback:", e);
-    showToast = (message) => console.log(`[Toast] ${message}`);
+    logger.warn("[ImageCacheGet] Toast管理器加载失败，使用fallback:", e);
+    showToast = (message) => logger.info(`[Toast] ${message}`);
 }
 
 // 注册节点扩展
@@ -30,7 +34,7 @@ app.registerExtension({
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name === "ImageCacheGet") {
-            console.log("[ImageCacheGet] 注册节点扩展");
+            logger.info("[ImageCacheGet] 注册节点扩展");
 
             // 节点创建时的处理
             const onNodeCreated = nodeType.prototype.onNodeCreated;
@@ -48,7 +52,7 @@ app.registerExtension({
                         const channelWidgetIndex = this.widgets.indexOf(channelWidget);
                         if (channelWidgetIndex !== -1 && this.widgets_values[channelWidgetIndex]) {
                             savedValue = this.widgets_values[channelWidgetIndex];
-                            console.log(`[ImageCacheGet] 从工作流恢复通道名: ${savedValue}`);
+                            logger.info(`[ImageCacheGet] 从工作流恢复通道名: ${savedValue}`);
                         }
                     }
 
@@ -78,7 +82,7 @@ app.registerExtension({
                     // ✅ 恢复工作流保存的值
                     if (savedValue && savedValue.trim() !== '') {
                         channelWidget.value = savedValue;
-                        console.log(`[ImageCacheGet] ✅ 恢复通道值: ${savedValue}`);
+                        logger.info(`[ImageCacheGet] ✅ 恢复通道值: ${savedValue}`);
 
                         // 异步预注册通道到后端（确保通道存在）
                         api.fetchApi('/danbooru/image_cache/ensure_channel', {
@@ -87,15 +91,15 @@ app.registerExtension({
                             body: JSON.stringify({channel_name: savedValue})
                         }).then(response => {
                             if (response.ok) {
-                                console.log(`[ImageCacheGet] ✅ 预注册通道: ${savedValue}`);
+                                logger.info(`[ImageCacheGet] ✅ 预注册通道: ${savedValue}`);
                             }
                         }).catch(error => {
-                            console.error(`[ImageCacheGet] 预注册通道失败:`, error);
+                            logger.error(`[ImageCacheGet] 预注册通道失败:`, error);
                         });
                     }
                 }
 
-                console.log(`[ImageCacheGet] 节点已创建: ID=${this.id}`);
+                logger.info(`[ImageCacheGet] 节点已创建: ID=${this.id}`);
                 return result;
             };
         }
@@ -103,8 +107,8 @@ app.registerExtension({
 
     async setup() {
         // 动态combo会在每次打开下拉列表时自动获取最新通道列表，不需要手动刷新
-        console.log("[ImageCacheGet] 使用动态combo实现通道列表自动更新");
+        logger.info("[ImageCacheGet] 使用动态combo实现通道列表自动更新");
     }
 });
 
-console.log("[ImageCacheGet] JavaScript扩展加载完成");
+logger.info("[ImageCacheGet] JavaScript扩展加载完成");

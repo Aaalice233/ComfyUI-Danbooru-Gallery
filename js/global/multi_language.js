@@ -5,6 +5,10 @@
  */
 
 import { globalToastManager as toastManagerProxy } from './toast_manager.js';
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例 - 必须在类定义之前初始化！
+const logger = createLogger('multi_language');
 
 /**
  * 全局多语言管理器类
@@ -21,7 +25,7 @@ class GlobalMultiLanguageManager {
         // 从localStorage加载语言设置
         this.loadLanguageFromStorage();
 
-        console.log('[GlobalMultiLanguage] 全局多语言系统已初始化');
+        logger.info('[GlobalMultiLanguage] 全局多语言系统已初始化');
     }
 
     /**
@@ -42,7 +46,7 @@ class GlobalMultiLanguageManager {
             Object.assign(this.translations[namespace][lang], translations[lang]);
         });
 
-        console.log(`[GlobalMultiLanguage] 已注册命名空间: ${namespace}`,
+        logger.info(`[GlobalMultiLanguage] 已注册命名空间: ${namespace}`,
             Object.keys(translations));
     }
 
@@ -56,7 +60,7 @@ class GlobalMultiLanguageManager {
                 this.currentLanguage = savedLanguage;
             }
         } catch (error) {
-            console.warn('[GlobalMultiLanguage] 加载语言设置失败:', error);
+            logger.warn('[GlobalMultiLanguage] 加载语言设置失败:', error);
         }
     }
 
@@ -67,7 +71,7 @@ class GlobalMultiLanguageManager {
         try {
             localStorage.setItem(this.storageKey, this.currentLanguage);
         } catch (error) {
-            console.warn('[GlobalMultiLanguage] 保存语言设置失败:', error);
+            logger.warn('[GlobalMultiLanguage] 保存语言设置失败:', error);
         }
     }
 
@@ -122,14 +126,14 @@ class GlobalMultiLanguageManager {
 
         // 如果没有命名空间，返回原始键
         if (!namespace) {
-            console.warn(`[GlobalMultiLanguage] 缺少命名空间: ${key}`);
+            logger.warn(`[GlobalMultiLanguage] 缺少命名空间: ${key}`);
             return key;
         }
 
         // 查找翻译
         const nsTranslations = this.translations[namespace];
         if (!nsTranslations) {
-            console.warn(`[GlobalMultiLanguage] 命名空间不存在: ${namespace}`);
+            logger.warn(`[GlobalMultiLanguage] 命名空间不存在: ${namespace}`);
             return key;
         }
 
@@ -199,7 +203,7 @@ class GlobalMultiLanguageManager {
         try {
             toastManagerProxy.showToast(message, type, 3000, { nodeContainer });
         } catch (error) {
-            console.error('[GlobalMultiLanguage] 显示提示失败:', error);
+            logger.error('[GlobalMultiLanguage] 显示提示失败:', error);
         }
     }
 

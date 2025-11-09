@@ -4,6 +4,28 @@
 from .py.utils.logger import get_logger
 logger = get_logger(__name__)
 
+# 初始化统计
+import time
+import sys
+_init_start_time = time.time()
+_node_load_stats = {
+    "total_modules": 0,
+    "loaded_modules": 0,
+    "failed_modules": 0,
+    "total_nodes": 0,
+    "errors": []
+}
+
+# 控制台输出（确保始终显示在ComfyUI控制台）
+print("=" * 70, file=sys.stderr)
+print("🚀 ComfyUI-Danbooru-Gallery 插件初始化开始...", file=sys.stderr)
+print("=" * 70, file=sys.stderr)
+
+# 同时记录到日志文件
+logger.info("=" * 70)
+logger.info("🚀 ComfyUI-Danbooru-Gallery 插件初始化开始...")
+logger.info("=" * 70)
+
 # 导入各个模块的节点映射
 from .py.danbooru_gallery import NODE_CLASS_MAPPINGS as danbooru_mappings, NODE_DISPLAY_NAME_MAPPINGS as danbooru_display_mappings
 from .py.character_feature_swap import NODE_CLASS_MAPPINGS as swap_mappings, NODE_DISPLAY_NAME_MAPPINGS as swap_display_mappings
@@ -123,6 +145,32 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **quick_group_navigation_display_mappings
 }
 
+# 统计节点加载情况
+_node_load_stats["total_nodes"] = len(NODE_CLASS_MAPPINGS)
+_node_load_stats["loaded_modules"] = 24  # 成功导入的模块数（根据上面的import语句统计）
+
+# 控制台输出
+print("=" * 70, file=sys.stderr)
+print("✅ 节点加载完成:", file=sys.stderr)
+print(f"   📦 成功加载模块: {_node_load_stats['loaded_modules']} 个", file=sys.stderr)
+print(f"   🎯 成功注册节点: {_node_load_stats['total_nodes']} 个", file=sys.stderr)
+if _node_load_stats["failed_modules"] > 0:
+    print(f"   ❌ 失败模块: {_node_load_stats['failed_modules']} 个", file=sys.stderr)
+    for error_info in _node_load_stats["errors"]:
+        print(f"      - {error_info['module']}: {error_info['error']}", file=sys.stderr)
+print("=" * 70, file=sys.stderr)
+
+# 同时记录到日志文件
+logger.info("=" * 70)
+logger.info("✅ 节点加载完成:")
+logger.info(f"   📦 成功加载模块: {_node_load_stats['loaded_modules']} 个")
+logger.info(f"   🎯 成功注册节点: {_node_load_stats['total_nodes']} 个")
+if _node_load_stats["failed_modules"] > 0:
+    logger.error(f"   ❌ 失败模块: {_node_load_stats['failed_modules']} 个")
+    for error_info in _node_load_stats["errors"]:
+        logger.error(f"      - {error_info['module']}: {error_info['error']}")
+logger.info("=" * 70)
+
 # 设置JavaScript文件目录
 WEB_DIRECTORY = "./js"
 
@@ -152,6 +200,59 @@ try:
         logger.info("✓ Checkpoint预览图API已注册")
     except Exception as e:
         logger.warning(f" Checkpoint预览图API注册失败: {e}")
+
+    @PromptServer.instance.routes.post("/danbooru/logs/batch")
+    async def receive_js_logs(request):
+        """
+        接收前端JavaScript日志的API端点
+
+        批量接收前端日志，写入到统一的logger系统中。
+        """
+        try:
+            data = await request.json()
+            logs = data.get("logs", [])
+
+            # 逐条处理日志
+            for log_entry in logs:
+                level_str = log_entry.get("level", "INFO").upper()
+                component = log_entry.get("component", "JS")
+                message = log_entry.get("message", "")
+                timestamp = log_entry.get("timestamp", "")
+                browser = log_entry.get("browser", "Unknown")
+
+                # 使用 JS/浏览器 作为 logger 名称，避免重复的方括号
+                js_logger = get_logger(f"JS/{browser}")
+
+                # 构建消息：[组件名] 实际消息内容（如果有）
+                if message:
+                    full_message = f"[{component}] {message}"
+                else:
+                    full_message = f"[{component}]"
+
+                # 根据级别写入日志
+                if level_str == "DEBUG":
+                    js_logger.debug(full_message)
+                elif level_str == "INFO":
+                    js_logger.info(full_message)
+                elif level_str == "WARNING":
+                    js_logger.warning(full_message)
+                elif level_str == "ERROR":
+                    js_logger.error(full_message)
+                elif level_str == "CRITICAL":
+                    js_logger.critical(full_message)
+                else:
+                    js_logger.info(full_message)
+
+            return web.json_response({
+                "success": True,
+                "received": len(logs)
+            })
+        except Exception as e:
+            logger.error(f"接收JS日志失败: {e}")
+            return web.json_response({
+                "success": False,
+                "error": str(e)
+            }, status=500)
 
     @PromptServer.instance.routes.post("/danbooru_gallery/clear_cache")
     async def clear_image_cache(request):
@@ -1126,15 +1227,57 @@ try:
                 "message": str(e)
             }, status=500)
 
+    # API注册成功统计
+    _api_count = 27  # 根据上面注册的API端点数量统计（包括新增的日志接收端点）
+
+    # 控制台输出
+    print("=" * 70, file=sys.stderr)
+    print("✅ API端点注册完成:", file=sys.stderr)
+    print(f"   🌐 成功注册API: {_api_count} 个 (含日志接收)", file=sys.stderr)
+    print("=" * 70, file=sys.stderr)
+
+    # 同时记录到日志文件
+    logger.info("=" * 70)
+    logger.info("✅ API端点注册完成:")
+    logger.info(f"   🌐 成功注册API: {_api_count} 个 (含日志接收)")
+    logger.info("=" * 70)
+
 except ImportError as e:
     # ComfyUI 环境不可用时的静默处理
-    logger.warning(f"Could not initialize API routes: {e}")
+    print(f"⚠️ 无法初始化API路由 (ComfyUI环境不可用): {e}", file=sys.stderr)
+    logger.warning(f"⚠️ 无法初始化API路由 (ComfyUI环境不可用): {e}")
     import traceback
     logger.debug(traceback.format_exc())
 except Exception as e:
-    # 捕获其他异常并输出
-    logger.error(f"Error during API initialization: {e}")
+    # 捕获其他异常并输出到控制台和日志
+    print(f"❌ API初始化失败: {e}", file=sys.stderr)
+    logger.error(f"❌ API初始化失败: {e}")
     import traceback
-    logger.debug(traceback.format_exc())
+    error_trace = traceback.format_exc()
+    print(error_trace, file=sys.stderr)
+    logger.error(error_trace)
+
+# 输出最终初始化报告
+_init_duration = time.time() - _init_start_time
+
+# 控制台输出（确保在ComfyUI控制台可见）
+print("=" * 70, file=sys.stderr)
+print("🎉 ComfyUI-Danbooru-Gallery 插件初始化完成!", file=sys.stderr)
+print(f"   ⏱️  初始化耗时: {_init_duration:.3f} 秒", file=sys.stderr)
+print(f"   📦 已加载模块: {_node_load_stats['loaded_modules']} 个", file=sys.stderr)
+print(f"   🎯 已注册节点: {_node_load_stats['total_nodes']} 个", file=sys.stderr)
+if _node_load_stats["failed_modules"] > 0:
+    print(f"   ❌ 失败模块: {_node_load_stats['failed_modules']} 个", file=sys.stderr)
+print("=" * 70, file=sys.stderr)
+
+# 同时记录到日志文件
+logger.info("=" * 70)
+logger.info("🎉 ComfyUI-Danbooru-Gallery 插件初始化完成!")
+logger.info(f"   ⏱️  初始化耗时: {_init_duration:.3f} 秒")
+logger.info(f"   📦 已加载模块: {_node_load_stats['loaded_modules']} 个")
+logger.info(f"   🎯 已注册节点: {_node_load_stats['total_nodes']} 个")
+if _node_load_stats["failed_modules"] > 0:
+    logger.error(f"   ❌ 失败模块: {_node_load_stats['failed_modules']} 个")
+logger.info("=" * 70)
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']

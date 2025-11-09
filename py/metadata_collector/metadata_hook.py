@@ -190,9 +190,13 @@ class MetadataHook:
                     logger.error(f"Async metadata collection error (pre): {e}")
 
             # 调用原始函数（可能包含其他插件的 hook）
+            # 使用关键字参数传递以确保链式钩子的兼容性
             results = await original_map_node_over_list(
                 prompt_id, unique_id, obj, input_data_all, func,
-                allow_interrupt, execution_block_cb, pre_execute_cb, *args, **kwargs
+                allow_interrupt=allow_interrupt,
+                execution_block_cb=execution_block_cb,
+                pre_execute_cb=pre_execute_cb,
+                *args, **kwargs
             )
 
             # 收集元数据（后置）- 异常隔离

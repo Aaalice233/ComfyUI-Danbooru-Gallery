@@ -5,6 +5,11 @@ import { AutocompleteUI } from "../global/autocomplete_ui.js";
 import { toastManagerProxy } from "../global/toast_manager.js";
 import { globalMultiLanguageManager } from "../global/multi_language.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('danbooru_gallery');
+
 app.registerExtension({
     name: "Comfy.DanbooruGallery",
     async beforeRegisterNodeDef(nodeType, nodeData) {
@@ -17,7 +22,7 @@ app.registerExtension({
                 try {
                     localStorage.setItem(`danbooru_gallery_${key}`, JSON.stringify(value));
                 } catch (e) {
-                    console.warn(`[Danbooru Gallery] Failed to save to localStorage: ${key}`, e);
+                    logger.warn(`[Danbooru Gallery] Failed to save to localStorage: ${key}`, e);
                 }
             };
 
@@ -26,7 +31,7 @@ app.registerExtension({
                     const item = localStorage.getItem(`danbooru_gallery_${key}`);
                     return item ? JSON.parse(item) : defaultValue;
                 } catch (e) {
-                    console.warn(`[Danbooru Gallery] Failed to load from localStorage: ${key}`, e);
+                    logger.warn(`[Danbooru Gallery] Failed to load from localStorage: ${key}`, e);
                     return defaultValue;
                 }
             };
@@ -160,7 +165,7 @@ app.registerExtension({
 
                         return isConnected;
                     } catch (e) {
-                        console.warn('网络检测失败:', e);
+                        logger.warn('网络检测失败:', e);
                         networkStatus.connected = false;
                         networkStatus.lastChecked = Date.now();
                         return false;
@@ -195,7 +200,7 @@ app.registerExtension({
                         userAuth = data;
                         return data;
                     } catch (e) {
-                        console.warn("加载用户认证信息失败:", e);
+                        logger.warn("加载用户认证信息失败:", e);
                         userAuth = { username: "", api_key: "", has_auth: false };
                         return userAuth;
                     }
@@ -216,7 +221,7 @@ app.registerExtension({
                         }
                         return data;
                     } catch (e) {
-                        console.warn("保存用户认证信息失败:", e);
+                        logger.warn("保存用户认证信息失败:", e);
                         return { success: false, error: "网络错误" };
                     }
                 };
@@ -304,7 +309,7 @@ app.registerExtension({
 
                         return data;
                     } catch (e) {
-                        console.warn("添加收藏失败:", e);
+                        logger.warn("添加收藏失败:", e);
                         showError("网络错误 - 无法连接到Danbooru服务器");
                         if (button) {
                             button.disabled = false;
@@ -384,7 +389,7 @@ app.registerExtension({
 
                         return data;
                     } catch (e) {
-                        console.warn("移除收藏失败:", e);
+                        logger.warn("移除收藏失败:", e);
                         showError("网络错误 - 无法连接到Danbooru服务器");
                         if (button) {
                             button.disabled = false;
@@ -402,7 +407,7 @@ app.registerExtension({
                         userFavorites = data.favorites || [];
                         return userFavorites;
                     } catch (e) {
-                        console.warn("加载收藏列表失败:", e);
+                        logger.warn("加载收藏列表失败:", e);
                         userFavorites = [];
                         return userFavorites;
                     }
@@ -415,7 +420,7 @@ app.registerExtension({
                         const data = await response.json();
                         globalMultiLanguageManager.setLanguage(data.language || 'zh', true);
                     } catch (e) {
-                        console.warn("加载语言设置失败:", e);
+                        logger.warn("加载语言设置失败:", e);
                         globalMultiLanguageManager.setLanguage('zh', true);
                     }
                 };
@@ -432,7 +437,7 @@ app.registerExtension({
                         const data = await response.json();
                         return data.success;
                     } catch (e) {
-                        console.warn("保存语言设置失败:", e);
+                        logger.warn("保存语言设置失败:", e);
                         return false;
                     }
                 };
@@ -755,7 +760,7 @@ app.registerExtension({
                                 showSettingsDialog();
 
                             } catch (error) {
-                                console.error("Failed to import settings:", error);
+                                logger.error("Failed to import settings:", error);
                                 showToast(t('importError'), 'error');
                             }
                         };
@@ -1649,7 +1654,7 @@ app.registerExtension({
                             try {
                                 input.showPicker();
                             } catch (e) {
-                                console.warn("input.showPicker() is not supported on this browser.", e);
+                                logger.warn("input.showPicker() is not supported on this browser.", e);
                             }
                         });
                         return row;
@@ -1830,7 +1835,7 @@ app.registerExtension({
                             };
                         }
                     } catch (e) {
-                        console.warn("加载UI设置失败:", e);
+                        logger.warn("加载UI设置失败:", e);
                     }
                 };
 
@@ -1844,7 +1849,7 @@ app.registerExtension({
                         const data = await response.json();
                         return data.success;
                     } catch (e) {
-                        console.warn("保存UI设置失败:", e);
+                        logger.warn("保存UI设置失败:", e);
                         return false;
                     }
                 };
@@ -1855,7 +1860,7 @@ app.registerExtension({
                         const data = await response.json();
                         currentBlacklist = data.blacklist || [];
                     } catch (e) {
-                        console.warn("加载黑名单失败:", e);
+                        logger.warn("加载黑名单失败:", e);
                         currentBlacklist = [];
                     }
                 };
@@ -1872,7 +1877,7 @@ app.registerExtension({
                         const data = await response.json();
                         return data.success;
                     } catch (e) {
-                        console.warn("保存黑名单失败:", e);
+                        logger.warn("保存黑名单失败:", e);
                         return false;
                     }
                 };
@@ -1884,7 +1889,7 @@ app.registerExtension({
                         currentFilterTags = data.filter_tags || [];
                         filterEnabled = data.filter_enabled !== undefined ? data.filter_enabled : true;
                     } catch (e) {
-                        console.warn("加载提示词过滤设置失败:", e);
+                        logger.warn("加载提示词过滤设置失败:", e);
                         currentFilterTags = [];
                         filterEnabled = true; // 默认开启
                     }
@@ -1902,7 +1907,7 @@ app.registerExtension({
                         const data = await response.json();
                         return data.success;
                     } catch (e) {
-                        console.warn("保存提示词过滤设置失败:", e);
+                        logger.warn("保存提示词过滤设置失败:", e);
                         return false;
                     }
                 };
@@ -1979,7 +1984,7 @@ app.registerExtension({
                         }
                         return null;
                     } catch (error) {
-                        console.error("Failed to fetch original post data:", error);
+                        logger.error("Failed to fetch original post data:", error);
                         return null;
                     }
                 };
@@ -2439,7 +2444,7 @@ app.registerExtension({
                                     showToast(t('copyTagsSuccess'), 'success', copyTagsButton);
                                 } catch (err) {
                                     showToast(t('copyTagsFail'), 'error', copyTagsButton);
-                                    console.error('Failed to copy: ', err);
+                                    logger.error('Failed to copy: ', err);
                                 }
                             } else {
                                 showToast(t('noTagsToCopy'), 'info', copyTagsButton);
@@ -2666,7 +2671,7 @@ app.registerExtension({
                             });
                             const data = await response.json();
                             if (data.success) translations = data.translations;
-                        } catch (error) { console.warn("Tag translation failed for edit panel:", error); }
+                        } catch (error) { logger.warn("Tag translation failed for edit panel:", error); }
                     }
 
                     categoryOrder.forEach(categoryName => {
@@ -3466,7 +3471,7 @@ app.registerExtension({
                                 filterState = JSON.parse(filterWidget.value);
                             }
                         } catch (e) {
-                            console.warn("Danbooru Gallery: Could not parse filter state, using default.", e);
+                            logger.warn("Danbooru Gallery: Could not parse filter state, using default.", e);
                             filterState = { startTime: null, endTime: null, startPage: null };
                         }
 
@@ -3482,7 +3487,7 @@ app.registerExtension({
                                 showError('网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接', true);
                             }
                         } catch (e) {
-                            console.error('网络检测失败:', e);
+                            logger.error('网络检测失败:', e);
                             networkConnected = false;
                             showError('网络检测失败 - 请检查网络连接', true);
                         }
@@ -3573,7 +3578,7 @@ app.registerExtension({
                         fetchAndRender(true);
 
                     } catch (error) {
-                        console.error("Danbooru Gallery initialization failed:", error);
+                        logger.error("Danbooru Gallery initialization failed:", error);
                         showError("图库初始化失败，请检查控制台日志。", true);
                     }
                 };

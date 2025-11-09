@@ -10,6 +10,10 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
+import { createLogger } from "../global/logger_client.js";
+
+// 创建logger实例
+const logger = createLogger('image_cache_save');
 
 // Toast通知管理器（如果存在）
 let showToast = null;
@@ -18,10 +22,10 @@ try {
     showToast = (message, type = 'success', duration = 3000) => {
         toastModule.globalToastManager.showToast(message, type, duration);
     };
-    console.log("[ImageCacheSave] Toast管理器加载成功");
+    logger.info("[ImageCacheSave] Toast管理器加载成功");
 } catch (e) {
-    console.warn("[ImageCacheSave] Toast管理器加载失败，使用fallback:", e);
-    showToast = (message) => console.log(`[Toast] ${message}`);
+    logger.warn("[ImageCacheSave] Toast管理器加载失败，使用fallback:", e);
+    showToast = (message) => logger.info(`[Toast] ${message}`);
 }
 
 /**
@@ -42,14 +46,14 @@ async function ensureChannelExists(channelName) {
         });
 
         if (response.ok) {
-            console.log(`[ImageCacheSave] ✅ 通道已预注册: ${channelName}`);
+            logger.info(`[ImageCacheSave] ✅ 通道已预注册: ${channelName}`);
             return true;
         } else {
-            console.error(`[ImageCacheSave] ❌ 通道预注册失败: ${channelName}`, response.statusText);
+            logger.error(`[ImageCacheSave] ❌ 通道预注册失败: ${channelName}`, response.statusText);
             return false;
         }
     } catch (error) {
-        console.error(`[ImageCacheSave] ❌ 通道预注册异常: ${channelName}`, error);
+        logger.error(`[ImageCacheSave] ❌ 通道预注册异常: ${channelName}`, error);
         return false;
     }
 }
@@ -60,7 +64,7 @@ app.registerExtension({
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name === "ImageCacheSave") {
-            console.log("[ImageCacheSave] 注册节点扩展");
+            logger.info("[ImageCacheSave] 注册节点扩展");
 
             // 节点创建时的处理
             const onNodeCreated = nodeType.prototype.onNodeCreated;
@@ -84,7 +88,7 @@ app.registerExtension({
 
                         // 如果名称确实改变了（改名操作）
                         if (previousName && newName && previousName !== newName) {
-                            console.log(`[ImageCacheSave] 🔄 通道改名: "${previousName}" -> "${newName}"`);
+                            logger.info(`[ImageCacheSave] 🔄 通道改名: "${previousName}" -> "${newName}"`);
 
                             try {
                                 // 先检查旧通道是否存在
@@ -99,7 +103,7 @@ app.registerExtension({
 
                                 // 如果旧通道不存在，说明是首次设置，直接注册新通道
                                 if (!oldChannelExists) {
-                                    console.log(`[ImageCacheSave] 📝 旧通道"${previousName}"不存在，直接注册新通道: ${newName}`);
+                                    logger.info(`[ImageCacheSave] 📝 旧通道"${previousName}"不存在，直接注册新通道: ${newName}`);
                                     await ensureChannelExists(newName);
                                     this._previousChannelName = newName;
                                     return;
@@ -120,7 +124,7 @@ app.registerExtension({
 
                                 if (response.ok) {
                                     const data = await response.json();
-                                    console.log(`[ImageCacheSave] ✅ 后端通道重命名成功:`, data);
+                                    logger.info(`[ImageCacheSave] ✅ 后端通道重命名成功:`, data);
 
                                     // 2. 获取最新的通道列表
                                     const channelsResponse = await api.fetchApi('/danbooru/image_cache/channels');
@@ -146,7 +150,7 @@ app.registerExtension({
                                             if (getChannelWidget.value === previousName) {
                                                 getChannelWidget.value = newName;
                                                 updatedCount++;
-                                                console.log(`[ImageCacheSave] ✅ 已更新Get节点${getNode.id}的通道: ${previousName} -> ${newName}`);
+                                                logger.info(`[ImageCacheSave] ✅ 已更新Get节点${getNode.id}的通道: ${previousName} -> ${newName}`);
                                             }
                                         }
                                     });
@@ -158,11 +162,11 @@ app.registerExtension({
                                     }
                                 } else {
                                     const error = await response.json();
-                                    console.error(`[ImageCacheSave] ❌ 后端通道重命名失败:`, error);
+                                    logger.error(`[ImageCacheSave] ❌ 后端通道重命名失败:`, error);
                                     showToast(`❌ 通道重命名失败: ${error.error}`, 'error', 4000);
                                 }
                             } catch (error) {
-                                console.error(`[ImageCacheSave] ❌ 通道重命名异常:`, error);
+                                logger.error(`[ImageCacheSave] ❌ 通道重命名异常:`, error);
                                 showToast(`❌ 通道重命名异常: ${error.message}`, 'error', 4000);
                             }
                         } else if (newName && newName !== 'default' && newName.trim() !== '') {
@@ -175,7 +179,7 @@ app.registerExtension({
                     };
                 }
 
-                console.log(`[ImageCacheSave] 节点已创建: ID=${this.id}`);
+                logger.info(`[ImageCacheSave] 节点已创建: ID=${this.id}`);
                 return result;
             };
         }
@@ -192,11 +196,11 @@ app.registerExtension({
             if (currentChannelName && currentChannelName.trim() !== '' && currentChannelName !== 'default') {
                 setTimeout(async () => {
                     await ensureChannelExists(currentChannelName);
-                    console.log(`[ImageCacheSave] ✅ 节点加载后预注册通道: ${currentChannelName}`);
+                    logger.info(`[ImageCacheSave] ✅ 节点加载后预注册通道: ${currentChannelName}`);
                 }, 500);
             }
         }
     }
 });
 
-console.log("[ImageCacheSave] JavaScript扩展加载完成");
+logger.info("[ImageCacheSave] JavaScript扩展加载完成");

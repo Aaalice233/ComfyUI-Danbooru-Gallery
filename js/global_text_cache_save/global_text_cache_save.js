@@ -11,6 +11,11 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
+import { createLogger } from '../global/logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('global_text_cache_save');
+
 // Toast互斥显示 - 保存上一次的缓存更新toast引用
 let lastCacheUpdateToast = null;
 let toastModule = null;
@@ -34,11 +39,11 @@ try {
     showToast = (message, type = 'success', duration = 3000) => {
         return toastModule.globalToastManager.showToast(message, type, duration);
     };
-    console.log("[GlobalTextCacheSave] Toast管理器加载成功");
+    logger.info("[GlobalTextCacheSave] Toast管理器加载成功");
 } catch (e) {
     // 如果toast_manager不存在，使用console.log作为fallback
-    console.warn("[GlobalTextCacheSave] Toast管理器加载失败，使用fallback:", e);
-    showToast = (message) => console.log(`[Toast] ${message}`);
+    logger.warn("[GlobalTextCacheSave] Toast管理器加载失败，使用fallback:", e);
+    showToast = (message) => logger.info(`[Toast] ${message}`);
 }
 
 // 存储监听器引用，用于清理
@@ -54,7 +59,7 @@ function setupMonitoring(node) {
     const widgetNameWidget = node.widgets?.find(w => w.name === "monitor_widget_name");
 
     if (!nodeIdWidget || !widgetNameWidget) {
-        console.warn("[GlobalTextCacheSave] 监听配置widget不存在");
+        logger.warn("[GlobalTextCacheSave] 监听配置widget不存在");
         return;
     }
 
@@ -69,7 +74,7 @@ function setupMonitoring(node) {
 
     // 验证节点ID必须为整数
     if (!/^\d+$/.test(monitorNodeId)) {
-        console.warn(`[GlobalTextCacheSave] 节点ID必须为整数: ${monitorNodeId}`);
+        logger.warn(`[GlobalTextCacheSave] 节点ID必须为整数: ${monitorNodeId}`);
         showToast(`❌ 节点ID必须为整数，当前值: ${monitorNodeId}`, 'error', 3000);
         return;
     }
@@ -77,7 +82,7 @@ function setupMonitoring(node) {
     // 查找目标节点
     const targetNode = app.graph.getNodeById(parseInt(monitorNodeId));
     if (!targetNode) {
-        console.warn(`[GlobalTextCacheSave] 未找到节点ID: ${monitorNodeId}`);
+        logger.warn(`[GlobalTextCacheSave] 未找到节点ID: ${monitorNodeId}`);
         showToast(`❌ 未找到节点ID: ${monitorNodeId}`, 'error', 3000);
         return;
     }
@@ -85,14 +90,14 @@ function setupMonitoring(node) {
     // 查找目标widget
     const targetWidget = targetNode.widgets?.find(w => w.name === monitorWidgetName);
     if (!targetWidget) {
-        console.warn(`[GlobalTextCacheSave] 节点 ${monitorNodeId} 不存在widget: ${monitorWidgetName}`);
+        logger.warn(`[GlobalTextCacheSave] 节点 ${monitorNodeId} 不存在widget: ${monitorWidgetName}`);
         return;
     }
 
     // 清除警告标记（用户可能刚连接了text输入）
     warnedNodes.delete(node.id);
 
-    console.log(`[GlobalTextCacheSave] 开始监听: 节点ID=${monitorNodeId}, Widget=${monitorWidgetName}`);
+    logger.info(`[GlobalTextCacheSave] 开始监听: 节点ID=${monitorNodeId}, Widget=${monitorWidgetName}`);
 
     // 清理旧的监听器
     cleanupMonitoring(node);
@@ -146,10 +151,10 @@ function setupMonitoring(node) {
         if (textInput && textInput.link != null) {
             // 获取当前被监听widget的值并触发保存
             const currentValue = targetWidget.value;
-            console.log(`[GlobalTextCacheSave] 🔄 工作流初始化完成，执行初始缓存保存，当前值: ${currentValue}`);
+            logger.info(`[GlobalTextCacheSave] 🔄 工作流初始化完成，执行初始缓存保存，当前值: ${currentValue}`);
             updateCacheViaAPI(node, currentValue);
         } else {
-            console.log(`[GlobalTextCacheSave] ⏸️ Text输入未连接，跳过初始缓存保存`);
+            logger.info(`[GlobalTextCacheSave] ⏸️ Text输入未连接，跳过初始缓存保存`);
         }
     }, 1000); // 1秒延迟，确保工作流完全加载
 
@@ -158,11 +163,11 @@ function setupMonitoring(node) {
     const currentChannelName = channelWidget?.value || "default";
     if (currentChannelName && currentChannelName.trim() !== '') {
         ensureChannelExists(currentChannelName).then(() => {
-            console.log(`[GlobalTextCacheSave] ✅ 监听初始化后预注册通道: ${currentChannelName}`);
+            logger.info(`[GlobalTextCacheSave] ✅ 监听初始化后预注册通道: ${currentChannelName}`);
         });
     }
 
-    console.log(`[GlobalTextCacheSave] ✅ 监听初始化完成`);
+    logger.info(`[GlobalTextCacheSave] ✅ 监听初始化完成`);
 }
 
 /**
@@ -195,7 +200,7 @@ function cleanupMonitoring(node) {
     }
 
     monitoringMap.delete(node.id);
-    console.log(`[GlobalTextCacheSave] 已清除节点 ${node.id} 的监听`);
+    logger.info(`[GlobalTextCacheSave] 已清除节点 ${node.id} 的监听`);
 
     // 更新预览状态
     updateStatusPreview(node);
@@ -219,14 +224,14 @@ async function ensureChannelExists(channelName) {
         });
 
         if (response.ok) {
-            console.log(`[GlobalTextCacheSave] ✅ 通道已预注册: ${channelName}`);
+            logger.info(`[GlobalTextCacheSave] ✅ 通道已预注册: ${channelName}`);
             return true;
         } else {
-            console.error(`[GlobalTextCacheSave] ❌ 通道预注册失败: ${channelName}`, response.statusText);
+            logger.error(`[GlobalTextCacheSave] ❌ 通道预注册失败: ${channelName}`, response.statusText);
             return false;
         }
     } catch (error) {
-        console.error(`[GlobalTextCacheSave] ❌ 通道预注册异常: ${channelName}`, error);
+        logger.error(`[GlobalTextCacheSave] ❌ 通道预注册异常: ${channelName}`, error);
         return false;
     }
 }
@@ -271,7 +276,7 @@ async function processRequestQueue() {
     try {
         await executeUpdateRequest(request.node, request.monitoredValue);
     } catch (error) {
-        console.error("[GlobalTextCacheSave] 队列请求处理失败:", error);
+        logger.error("[GlobalTextCacheSave] 队列请求处理失败:", error);
     } finally {
         isRequestInProgress = false;
         // 继续处理下一个请求（如果有）
@@ -291,7 +296,7 @@ async function updateCacheViaAPI(node, monitoredValue) {
     const now = Date.now();
     const lastTime = lastRequestTime.get(node.id) || 0;
     if (now - lastTime < MIN_REQUEST_INTERVAL) {
-        console.log(`[GlobalTextCacheSave] 请求过于频繁，跳过本次更新（间隔${now - lastTime}ms < ${MIN_REQUEST_INTERVAL}ms）`);
+        logger.info(`[GlobalTextCacheSave] 请求过于频繁，跳过本次更新（间隔${now - lastTime}ms < ${MIN_REQUEST_INTERVAL}ms）`);
         return;
     }
     lastRequestTime.set(node.id, now);
@@ -300,12 +305,12 @@ async function updateCacheViaAPI(node, monitoredValue) {
     const existingIndex = requestQueue.findIndex(req => req.node.id === node.id);
     if (existingIndex !== -1) {
         requestQueue.splice(existingIndex, 1);
-        console.log(`[GlobalTextCacheSave] 队列中已有节点${node.id}的请求，替换为最新请求`);
+        logger.info(`[GlobalTextCacheSave] 队列中已有节点${node.id}的请求，替换为最新请求`);
     }
 
     // 添加到队列
     requestQueue.push({ node, monitoredValue });
-    console.log(`[GlobalTextCacheSave] 请求已加入队列，当前队列长度: ${requestQueue.length}`);
+    logger.info(`[GlobalTextCacheSave] 请求已加入队列，当前队列长度: ${requestQueue.length}`);
 
     // 启动队列处理
     processRequestQueue();
@@ -318,13 +323,13 @@ async function updateCacheViaAPI(node, monitoredValue) {
  */
 async function executeUpdateRequest(node, monitoredValue) {
     try {
-        console.log(`[GlobalTextCacheSave] ⚙️ 开始处理节点${node.id}的缓存更新请求`);
+        logger.info(`[GlobalTextCacheSave] ⚙️ 开始处理节点${node.id}的缓存更新请求`);
 
         // 获取节点参数
         const channelWidget = node.widgets?.find(w => w.name === "channel_name");
 
         if (!channelWidget) {
-            console.error("[GlobalTextCacheSave] 缺少channel_name widget");
+            logger.error("[GlobalTextCacheSave] 缺少channel_name widget");
             return;
         }
 
@@ -333,7 +338,7 @@ async function executeUpdateRequest(node, monitoredValue) {
         if (!textInput || textInput.link == null) {
             // 只在第一次时警告，避免频繁日志
             if (!warnedNodes.has(node.id)) {
-                console.warn(`[GlobalTextCacheSave] ⚠️ 节点${node.id}的text输入未连接，无法更新缓存`);
+                logger.warn(`[GlobalTextCacheSave] ⚠️ 节点${node.id}的text输入未连接，无法更新缓存`);
                 showToast(`⚠️ 请连接text输入以启用自动缓存更新`, 'warning', 3000);
                 warnedNodes.add(node.id);
             }
@@ -343,13 +348,13 @@ async function executeUpdateRequest(node, monitoredValue) {
         // 从连接的源节点获取text值
         const link = app.graph.links[textInput.link];
         if (!link) {
-            console.error("[GlobalTextCacheSave] 无法获取text连接");
+            logger.error("[GlobalTextCacheSave] 无法获取text连接");
             return;
         }
 
         const sourceNode = app.graph.getNodeById(link.origin_id);
         if (!sourceNode) {
-            console.error("[GlobalTextCacheSave] 无法找到源节点");
+            logger.error("[GlobalTextCacheSave] 无法找到源节点");
             return;
         }
 
@@ -369,7 +374,7 @@ async function executeUpdateRequest(node, monitoredValue) {
                 // 源节点就是被监听的节点，直接从被监听的widget获取
                 sourceWidget = sourceNode.widgets?.find(w => w.name === monitorWidgetName);
                 if (sourceWidget) {
-                    console.log(`[GlobalTextCacheSave] ✅ 直接从被监听widget获取值: ${monitorWidgetName}`);
+                    logger.info(`[GlobalTextCacheSave] ✅ 直接从被监听widget获取值: ${monitorWidgetName}`);
                 }
             }
 
@@ -396,7 +401,7 @@ async function executeUpdateRequest(node, monitoredValue) {
                     for (const widgetName of possibleWidgetNames) {
                         sourceWidget = sourceNode.widgets?.find(w => w.name === widgetName);
                         if (sourceWidget) {
-                            console.log(`[GlobalTextCacheSave] ✅ 通过输出名称匹配到widget: ${widgetName} (输出: ${outputName})`);
+                            logger.info(`[GlobalTextCacheSave] ✅ 通过输出名称匹配到widget: ${widgetName} (输出: ${outputName})`);
                             break;
                         }
                     }
@@ -416,7 +421,7 @@ async function executeUpdateRequest(node, monitoredValue) {
                 for (const widgetName of commonNames) {
                     sourceWidget = sourceNode.widgets?.find(w => w.name === widgetName);
                     if (sourceWidget) {
-                        console.log(`[GlobalTextCacheSave] ✅ 通过常见名称匹配到widget: ${widgetName}`);
+                        logger.info(`[GlobalTextCacheSave] ✅ 通过常见名称匹配到widget: ${widgetName}`);
                         break;
                     }
                 }
@@ -438,33 +443,33 @@ async function executeUpdateRequest(node, monitoredValue) {
 
                         text = activeTexts.join(', ');
                         isConverted = true; // 标记已转换
-                        console.log(`[GlobalTextCacheSave] ✅ toggle_trigger_words 格式转换完成: ${text}`);
+                        logger.info(`[GlobalTextCacheSave] ✅ toggle_trigger_words 格式转换完成: ${text}`);
                     } else {
                         text = String(rawValue);
                     }
                 }
                 // 检查是否为对象类型
                 else if (typeof rawValue === 'object' && rawValue !== null) {
-                    console.warn(`[GlobalTextCacheSave] Widget值为对象类型，尝试JSON序列化`);
+                    logger.warn(`[GlobalTextCacheSave] Widget值为对象类型，尝试JSON序列化`);
                     try {
                         text = JSON.stringify(rawValue);
                     } catch (jsonError) {
-                        console.error(`[GlobalTextCacheSave] JSON序列化失败，使用toString`, jsonError);
+                        logger.error(`[GlobalTextCacheSave] JSON序列化失败，使用toString`, jsonError);
                         text = String(rawValue);
                     }
                 } else {
                     text = String(rawValue);
                 }
 
-                console.log(`[GlobalTextCacheSave] ✅ 成功获取widget值，长度: ${text.length}`);
+                logger.info(`[GlobalTextCacheSave] ✅ 成功获取widget值，长度: ${text.length}`);
             } else {
-                console.warn(`[GlobalTextCacheSave] ⚠️ 源节点${link.origin_id}未找到合适的widget`);
-                console.warn(`[GlobalTextCacheSave]    - origin_slot: ${link.origin_slot}`);
-                console.warn(`[GlobalTextCacheSave]    - 可用widgets: ${sourceNode.widgets?.map(w => w.name).join(', ') || '无'}`);
+                logger.warn(`[GlobalTextCacheSave] ⚠️ 源节点${link.origin_id}未找到合适的widget`);
+                logger.warn(`[GlobalTextCacheSave]    - origin_slot: ${link.origin_slot}`);
+                logger.warn(`[GlobalTextCacheSave]    - 可用widgets: ${sourceNode.widgets?.map(w => w.name).join(', ') || '无'}`);
                 text = "";
             }
         } catch (error) {
-            console.error(`[GlobalTextCacheSave] ❌ 获取源节点widget值失败:`, error);
+            logger.error(`[GlobalTextCacheSave] ❌ 获取源节点widget值失败:`, error);
             text = "";
             return; // 获取失败直接返回，不继续请求
         }
@@ -474,11 +479,11 @@ async function executeUpdateRequest(node, monitoredValue) {
         // 确保text长度合理（防止超大文本导致问题）
         const MAX_TEXT_LENGTH = 100000;
         if (text.length > MAX_TEXT_LENGTH) {
-            console.warn(`[GlobalTextCacheSave] 文本过长(${text.length}字符)，截断到${MAX_TEXT_LENGTH}字符`);
+            logger.warn(`[GlobalTextCacheSave] 文本过长(${text.length}字符)，截断到${MAX_TEXT_LENGTH}字符`);
             text = text.substring(0, MAX_TEXT_LENGTH);
         }
 
-        console.log(`[GlobalTextCacheSave] 准备保存缓存: 通道=${channel}, 文本长度=${text.length}`);
+        logger.info(`[GlobalTextCacheSave] 准备保存缓存: 通道=${channel}, 文本长度=${text.length}`);
 
         // ✅ 内容变化检测：计算当前文本的hash
         const currentHash = simpleHash(text + "_" + channel); // 包含通道名，确保不同通道的相同文本也会更新
@@ -486,11 +491,11 @@ async function executeUpdateRequest(node, monitoredValue) {
 
         // 如果内容没有变化，跳过API请求
         if (lastHash === currentHash) {
-            console.log(`[GlobalTextCacheSave] ⏭️ 内容未变化，跳过更新（hash: ${currentHash}）`);
+            logger.info(`[GlobalTextCacheSave] ⏭️ 内容未变化，跳过更新（hash: ${currentHash}）`);
             return; // 直接返回，不发送API请求，不显示toast
         }
 
-        console.log(`[GlobalTextCacheSave] ✨ 内容已变化，继续更新（旧hash: ${lastHash}, 新hash: ${currentHash}）`);
+        logger.info(`[GlobalTextCacheSave] ✨ 内容已变化，继续更新（旧hash: ${lastHash}, 新hash: ${currentHash}）`);
 
         // 安全处理triggered_by值
         let triggeredByStr = "";
@@ -503,7 +508,7 @@ async function executeUpdateRequest(node, monitoredValue) {
                 }
             }
         } catch (e) {
-            console.warn(`[GlobalTextCacheSave] triggered_by转换失败:`, e);
+            logger.warn(`[GlobalTextCacheSave] triggered_by转换失败:`, e);
             triggeredByStr = "unknown";
         }
 
@@ -522,7 +527,7 @@ async function executeUpdateRequest(node, monitoredValue) {
                 })
             });
         } catch (fetchError) {
-            console.error(`[GlobalTextCacheSave] API请求失败:`, fetchError);
+            logger.error(`[GlobalTextCacheSave] API请求失败:`, fetchError);
 
             // 记录失败次数，避免重复toast
             const currentFailures = (failureCount.get(node.id) || 0) + 1;
@@ -540,7 +545,7 @@ async function executeUpdateRequest(node, monitoredValue) {
 
             // ✅ 更新hash缓存：记录本次成功发送的内容hash
             lastSentContentHash.set(node.id, currentHash);
-            console.log(`[GlobalTextCacheSave] 📝 已更新内容hash缓存: ${currentHash}`);
+            logger.info(`[GlobalTextCacheSave] 📝 已更新内容hash缓存: ${currentHash}`);
 
             // Toast互斥显示：先移除上一条缓存更新toast
             if (lastCacheUpdateToast && toastModule) {
@@ -562,14 +567,14 @@ async function executeUpdateRequest(node, monitoredValue) {
             // Get节点现在使用动态combo，会自动获取最新通道列表，不需要手动刷新
         } else {
             const errorText = await response.text().catch(() => "未知错误");
-            console.error(`[GlobalTextCacheSave] 缓存更新失败:`, response.status, errorText);
+            logger.error(`[GlobalTextCacheSave] 缓存更新失败:`, response.status, errorText);
             showToast(`❌ 缓存更新失败: ${response.status}`, 'error', 4000);
         }
 
     } catch (error) {
-        console.error("[GlobalTextCacheSave] API调用异常:", error);
+        logger.error("[GlobalTextCacheSave] API调用异常:", error);
         const stack = error.stack || "";
-        console.error("[GlobalTextCacheSave] 异常堆栈:", stack);
+        logger.error("[GlobalTextCacheSave] 异常堆栈:", stack);
         showToast(`❌ 缓存更新异常: ${error.message}`, 'error', 4000);
     }
 }
@@ -671,7 +676,7 @@ app.registerExtension({
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name === "GlobalTextCacheSave") {
-            console.log("[GlobalTextCacheSave] 注册节点扩展");
+            logger.info("[GlobalTextCacheSave] 注册节点扩展");
 
             // 节点创建时的处理
             const onNodeCreated = nodeType.prototype.onNodeCreated;
@@ -736,7 +741,7 @@ app.registerExtension({
 
                         // 如果名称确实改变了（改名操作）
                         if (previousName && newName && previousName !== newName) {
-                            console.log(`[GlobalTextCacheSave] 🔄 通道改名: "${previousName}" -> "${newName}"`);
+                            logger.info(`[GlobalTextCacheSave] 🔄 通道改名: "${previousName}" -> "${newName}"`);
 
                             try {
                                 // 先检查旧通道是否存在
@@ -751,7 +756,7 @@ app.registerExtension({
 
                                 // 如果旧通道不存在，说明是首次设置，直接注册新通道
                                 if (!oldChannelExists) {
-                                    console.log(`[GlobalTextCacheSave] 📝 旧通道"${previousName}"不存在，直接注册新通道: ${newName}`);
+                                    logger.info(`[GlobalTextCacheSave] 📝 旧通道"${previousName}"不存在，直接注册新通道: ${newName}`);
                                     await ensureChannelExists(newName);
                                     this._previousChannelName = newName;
                                     return;
@@ -772,7 +777,7 @@ app.registerExtension({
 
                                 if (response.ok) {
                                     const data = await response.json();
-                                    console.log(`[GlobalTextCacheSave] ✅ 后端通道重命名成功:`, data);
+                                    logger.info(`[GlobalTextCacheSave] ✅ 后端通道重命名成功:`, data);
 
                                     // 2. 获取最新的通道列表
                                     const channelsResponse = await api.fetchApi('/danbooru/text_cache/channels');
@@ -798,7 +803,7 @@ app.registerExtension({
                                             if (getChannelWidget.value === previousName) {
                                                 getChannelWidget.value = newName;
                                                 updatedCount++;
-                                                console.log(`[GlobalTextCacheSave] ✅ 已更新Get节点${getNode.id}的通道: ${previousName} -> ${newName}`);
+                                                logger.info(`[GlobalTextCacheSave] ✅ 已更新Get节点${getNode.id}的通道: ${previousName} -> ${newName}`);
                                             }
                                         }
                                     });
@@ -810,11 +815,11 @@ app.registerExtension({
                                     }
                                 } else {
                                     const error = await response.json();
-                                    console.error(`[GlobalTextCacheSave] ❌ 后端通道重命名失败:`, error);
+                                    logger.error(`[GlobalTextCacheSave] ❌ 后端通道重命名失败:`, error);
                                     showToast(`❌ 通道重命名失败: ${error.error}`, 'error', 4000);
                                 }
                             } catch (error) {
-                                console.error(`[GlobalTextCacheSave] ❌ 通道重命名异常:`, error);
+                                logger.error(`[GlobalTextCacheSave] ❌ 通道重命名异常:`, error);
                                 showToast(`❌ 通道重命名异常: ${error.message}`, 'error', 4000);
                             }
                         } else if (newName && newName !== 'default' && newName.trim() !== '') {
@@ -832,7 +837,7 @@ app.registerExtension({
                 // 设置初始节点大小（宽度400，高度350）
                 this.setSize([400, 350]);
 
-                console.log(`[GlobalTextCacheSave] 节点已创建: ID=${this.id}`);
+                logger.info(`[GlobalTextCacheSave] 节点已创建: ID=${this.id}`);
                 return result;
             };
 
@@ -863,7 +868,7 @@ app.registerExtension({
                 const textInput = node.inputs?.find(i => i.name === "text");
                 const isTextConnected = textInput && textInput.link != null;
 
-                console.log(`[GlobalTextCacheSave] 🔍 自动监听检查:`, {
+                logger.info(`[GlobalTextCacheSave] 🔍 自动监听检查:`, {
                     nodeId: node.id,
                     monitorNodeId: nodeIdWidget?.value,
                     monitorWidgetName: widgetNameWidget?.value,
@@ -882,4 +887,4 @@ app.registerExtension({
     }
 });
 
-console.log("[GlobalTextCacheSave] JavaScript扩展加载完成");
+logger.info("[GlobalTextCacheSave] JavaScript扩展加载完成");

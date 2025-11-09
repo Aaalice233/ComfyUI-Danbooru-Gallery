@@ -6,13 +6,12 @@ Multi Character Editor - Main Node File
 import json
 import os
 import time
-import logging
 from server import PromptServer
 from aiohttp import web
 import traceback
+from ..utils.logger import get_logger
 
-# 日志记录
-logger = logging.getLogger("MultiCharacterEditor")
+logger = get_logger(__name__)
 
 # 插件目录和设置文件路径
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
