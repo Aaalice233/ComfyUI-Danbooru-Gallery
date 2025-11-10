@@ -147,6 +147,10 @@ class SaveImagePlus:
                     "forceInput": True,
                     "tooltip": "LoRA 语法字符串（可选直接输入）"
                 }),
+                "checkpoint_name": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": "手动传入checkpoint模型名称（优先级最高）"
+                }),
             },
             "hidden": {
                 "prompt": "PROMPT",
@@ -475,15 +479,17 @@ class SaveImagePlus:
         positive_prompt: str = None,
         negative_prompt: str = None,
         lora_syntax: str = None,
+        checkpoint_name: str = None,
         prompt_obj=None
     ) -> dict:
         """
-        收集元数据（四级降级策略）
+        收集元数据（五级降级策略）
 
         Args:
             positive_prompt: 直接传入的正面提示词
             negative_prompt: 直接传入的负面提示词
             lora_syntax: 直接传入的 LoRA 语法
+            checkpoint_name: 直接传入的 checkpoint 模型名称（最高优先级）
             prompt_obj: 来自 ComfyUI 的 prompt 对象（用于 元数据收集器 收集）
 
         Returns:
@@ -504,6 +510,11 @@ class SaveImagePlus:
             "size": None,
             "checkpoint": None,
         }
+
+        # 级别 0: 手动传入的checkpoint名称（最高优先级）
+        if checkpoint_name:
+            result["checkpoint"] = checkpoint_name
+            logger.debug(f"级别0 - 手动传入checkpoint: {checkpoint_name}")
 
         # 级别 1: 优先使用直接传入的值
         logger.debug(f"级别1 - 直接传入: positive={bool(positive_prompt)}, negative={bool(negative_prompt)}, loras={bool(lora_syntax)}")
@@ -734,6 +745,7 @@ class SaveImagePlus:
         positive_prompt=None,
         negative_prompt=None,
         lora_syntax=None,
+        checkpoint_name=None,
         prompt=None,
         extra_pnginfo=None
     ):
@@ -748,6 +760,7 @@ class SaveImagePlus:
             positive_prompt: 正面提示词（可选）
             negative_prompt: 负面提示词（可选）
             lora_syntax: LoRA 语法（可选）
+            checkpoint_name: checkpoint 模型名称（可选，最高优先级）
             prompt: ComfyUI prompt 对象（隐藏参数）
             extra_pnginfo: ComfyUI 工作流信息（隐藏参数）
 
@@ -763,6 +776,7 @@ class SaveImagePlus:
             positive_prompt=positive_prompt,
             negative_prompt=negative_prompt,
             lora_syntax=lora_syntax,
+            checkpoint_name=checkpoint_name,
             prompt_obj=prompt
         )
 
