@@ -2036,8 +2036,9 @@ app.registerExtension({
                     const isNetworkConnected = await checkNetworkStatus();
 
                     if (!isNetworkConnected) {
-                        // 网络连接失败，显示持久错误提示
-                        showError('网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接', true);
+                        // 网络连接失败，隐藏持久错误提示 - 本小姐才不想看到这些烦人的提示呢！
+                        // showError('网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接', true);
+                        console.log("网络错误已隐藏: 网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接");  // 仅在控制台记录
                         imageGrid.innerHTML = `<p class="danbooru-status error">网络连接失败，请检查网络连接后重试</p>`;
                         isLoading = false;
                         refreshButton.classList.remove("loading");
@@ -3484,12 +3485,16 @@ app.registerExtension({
                             const networkData = await networkResponse.json();
                             if (!networkData.success || !networkData.connected) {
                                 networkConnected = false;
-                                showError('网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接', true);
+                                // 注释掉网络错误toast提示 - 本小姐才不想看到这些烦人的提示呢！
+                                // showError('网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接', true);
+                                console.log("网络错误已隐藏: 网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接");  // 仅在控制台记录
                             }
                         } catch (e) {
                             logger.error('网络检测失败:', e);
                             networkConnected = false;
-                            showError('网络检测失败 - 请检查网络连接', true);
+                            // 注释掉网络错误toast提示 - 本小姐才不想看到这些烦人的提示呢！
+                            // showError('网络检测失败 - 请检查网络连接', true);
+                            console.log("网络错误已隐藏: 网络检测失败 - 请检查网络连接");  // 仅在控制台记录
                         }
 
                         // 加载语言设置
