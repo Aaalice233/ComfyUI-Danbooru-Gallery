@@ -387,8 +387,9 @@ class ToastManager {
         } = options;
 
         // 简单限制：如果已达到最大显示数量（5个），立即移除最旧的提示
+        // 因为新toast用unshift添加到数组开头，所以最旧的是数组最后一个元素
         while (this.toasts.length >= this.maxVisibleToasts) {
-            this.removeToast(this.toasts[0]);
+            this.removeToast(this.toasts[this.toasts.length - 1]);
         }
 
         // 创建提示元素
