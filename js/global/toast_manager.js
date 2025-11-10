@@ -7,7 +7,7 @@
 class ToastManager {
     constructor() {
         this.toasts = [];
-        this.maxVisibleToasts = 8; // 增加最大同时显示的提示数量
+        this.maxVisibleToasts = 5; // 限制最大同时显示的toast数量为5个
         this.toastContainer = null;
         this.executionStatusBar = null; // 执行状态栏元素（保留兼容性）
         this.statusBars = new Map(); // 多状态栏支持：id -> element
@@ -386,9 +386,8 @@ class ToastManager {
             nodeContainer = null
         } = options;
 
-
-        // 如果已达到最大显示数量，移除最旧的提示
-        if (this.toasts.length >= this.maxVisibleToasts) {
+        // 简单限制：如果已达到最大显示数量（5个），立即移除最旧的提示
+        while (this.toasts.length >= this.maxVisibleToasts) {
             this.removeToast(this.toasts[0]);
         }
 
@@ -509,6 +508,7 @@ class ToastManager {
 
     }
 
+    
     /**
      * 移除弹出提示
      * @param {HTMLElement} toast - 提示元素

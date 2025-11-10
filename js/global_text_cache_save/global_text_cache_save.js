@@ -16,8 +16,6 @@ import { createLogger } from '../global/logger_client.js';
 // 创建logger实例
 const logger = createLogger('global_text_cache_save');
 
-// Toast互斥显示 - 保存上一次的缓存更新toast引用
-let lastCacheUpdateToast = null;
 let toastModule = null;
 
 // 防抖机制 - 保存延迟定时器引用
@@ -48,6 +46,31 @@ try {
 
 // 存储监听器引用，用于清理
 const monitoringMap = new Map();
+
+// ====== 已废弃的防堆叠Toast函数 - 现已移至全局toast_manager.js ======
+// 以下代码已迁移到 js/global/toast_manager.js 的ToastManager类中
+// 现在直接使用 showToast() 方法的防堆叠参数即可
+
+/*
+function showUniqueToast(type, message, toastType = 'info', duration = 3000) {
+    // 防堆叠功能已移除，现在使用普通toast
+    showToast(message, toastType, duration);
+}
+
+function clearUniqueToast(type) {
+    // 已迁移到全局toast模块
+    if (toastModule && toastModule.globalToastManager) {
+        toastModule.globalToastManager.clearUniqueToast(type);
+    }
+}
+
+function clearAllUniqueToasts() {
+    // 已迁移到全局toast模块
+    if (toastModule && toastModule.globalToastManager) {
+        toastModule.globalToastManager.clearAllUniqueToasts();
+    }
+}
+*/
 
 /**
  * 设置widget变化监听
@@ -138,6 +161,7 @@ function setupMonitoring(node) {
         newCallback: newCallback
     });
 
+    // 显示监听开始消息
     showToast(`✅ 已开始监听: 节点${monitorNodeId} / ${monitorWidgetName}`, 'info', 2000);
 
     // 更新预览状态
@@ -547,19 +571,8 @@ async function executeUpdateRequest(node, monitoredValue) {
             lastSentContentHash.set(node.id, currentHash);
             logger.info(`[GlobalTextCacheSave] 📝 已更新内容hash缓存: ${currentHash}`);
 
-            // Toast互斥显示：先移除上一条缓存更新toast
-            if (lastCacheUpdateToast && toastModule) {
-                try {
-                    toastModule.globalToastManager.removeToast(lastCacheUpdateToast);
-                } catch (e) {
-                    // 忽略移除toast的错误
-                }
-            }
-
-            // 显示新toast并保存引用
-            if (showToast) {
-                lastCacheUpdateToast = showToast(`💾 文本缓存已自动更新: ${channel}`, 'success', 2000);
-            }
+            // 显示缓存更新消息
+            showToast(`💾 文本缓存已自动更新: ${channel}`, 'success', 2000);
 
             // 更新预览显示
             updateNodePreview(node, text, isConverted);
