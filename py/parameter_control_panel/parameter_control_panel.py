@@ -5,6 +5,7 @@
 """
 
 import os
+import sys
 import json
 import time
 import numpy as np
@@ -17,6 +18,18 @@ from ..utils.logger import get_logger
 
 # 初始化logger
 logger = get_logger(__name__)
+
+# 🚀 强制输出到控制台以确保模块被重新加载
+print("=" * 70, file=sys.stderr)
+print("🔥 PARAMETER CONTROL PANEL MODULE RELOADING!", file=sys.stderr)
+print(f"📅 Reload time: {time.strftime('%Y-%m-%d %H:%M:%S')}", file=sys.stderr)
+print("=" * 70, file=sys.stderr)
+
+# 📝 立即记录到日志文件
+logger.info("=" * 70)
+logger.info("🔥 PARAMETER CONTROL PANEL MODULE RELOADING!")
+logger.info(f"📅 Reload time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+logger.info("=" * 70)
 
 # 导入ComfyUI的辅助模块
 try:
@@ -131,6 +144,66 @@ def get_output_type(param_type: str, config: Dict = None) -> str:
     elif param_type == "image":
         return "IMAGE"
     return "*"  # 未知类型返回通配符
+
+
+def validate_model_files(model_type: str, files: List[str]) -> tuple:
+    """
+    验证模型文件列表，返回有效文件和无效文件信息
+
+    Args:
+        model_type: 模型类型 (如 "checkpoints", "controlnet", "upscale_models")
+        files: 从 folder_paths.get_filename_list() 获取的文件列表
+
+    Returns:
+        tuple: (valid_files, invalid_files_info)
+            valid_files: 验证通过的文件列表
+            invalid_files_info: 无效文件的详细信息列表
+    """
+    validated_files = []
+    invalid_files_info = []
+
+    logger.info(f"[ParameterControlPanel] 开始验证 {model_type} 模型文件，共 {len(files)} 个")
+
+    if not folder_paths:
+        logger.error(f"[ParameterControlPanel] folder_paths 模块不可用，无法验证 {model_type} 文件")
+        return files, []
+
+    for file_name in files:
+        try:
+            # 获取完整文件路径
+            full_path = folder_paths.get_full_path(model_type, file_name)
+
+            # 验证文件是否存在
+            if os.path.exists(full_path):
+                validated_files.append(file_name)
+            else:
+                invalid_info = {
+                    "filename": file_name,
+                    "reason": "文件不存在",
+                    "path": full_path
+                }
+                invalid_files_info.append(invalid_info)
+                logger.warning(f"[ParameterControlPanel] {model_type} 文件不存在: {file_name} (路径: {full_path})")
+
+        except Exception as e:
+            invalid_info = {
+                "filename": file_name,
+                "reason": f"验证失败: {str(e)}",
+                "path": None
+            }
+            invalid_files_info.append(invalid_info)
+            logger.error(f"[ParameterControlPanel] 验证 {model_type} 文件失败 {file_name}: {e}")
+
+    # 记录验证结果
+    if invalid_files_info:
+        logger.warning(f"[ParameterControlPanel] {model_type} 验证完成: {len(validated_files)} 个有效, {len(invalid_files_info)} 个无效")
+        logger.debug(f"[ParameterControlPanel] 无效的 {model_type} 文件详情: {invalid_files_info}")
+    else:
+        logger.info(f"[ParameterControlPanel] {model_type} 验证完成: 所有 {len(validated_files)} 个文件均有效")
+
+    logger.info(f"[ParameterControlPanel] 最终有效的 {model_type} 文件列表 ({len(validated_files)} 个): {validated_files}")
+
+    return validated_files, invalid_files_info
 
 
 # ==================== 节点类 ====================
@@ -284,12 +357,19 @@ class ParameterControlPanel:
                     output_type = "*"
 
                 # 添加元数据
-                params_pack["_meta"].append({
+                meta_data = {
                     "name": name,
                     "type": output_type,
                     "order": order,
                     "param_type": param_type
-                })
+                }
+
+                # 为下拉菜单参数添加配置和锁定值信息
+                if param_type == "dropdown":
+                    meta_data["config"] = param_config
+                    meta_data["locked_value"] = value  # 存储工作流保存的选中值
+
+                params_pack["_meta"].append(meta_data)
 
                 # 添加值
                 params_pack["_values"][name] = value
@@ -486,7 +566,15 @@ try:
         try:
             source_type = request.query.get('type')
 
+            # 🚀 强制控制台输出 - 确保能看到API调用
+            print(f"🔥🔥🔥 PARAMETER CONTROL PANEL API CALLED! type={source_type}", file=sys.stderr)
+            print(f"📅 API call time: {time.strftime('%Y-%m-%d %H:%M:%S')}", file=sys.stderr)
+
+            logger.info(f"[ParameterControlPanel] 🔄 API调用: get_data_source, type={source_type}")
+            logger.info(f"[ParameterControlPanel] 🔥🔥🔥 NEW CODE IS EXECUTING! 🔥🔥🔥")
+
             if not source_type:
+                logger.warning("[ParameterControlPanel] API调用缺少 type参数")
                 return web.json_response({
                     "status": "error",
                     "message": "缺少 type 参数"
@@ -495,10 +583,20 @@ try:
             options = []
 
             if source_type == "checkpoint":
-                # 扫描 models/checkpoints 目录
+                # 扫描 models/checkpoints 目录并进行文件验证
                 import folder_paths
-                checkpoints = folder_paths.get_filename_list("checkpoints")
-                options = checkpoints
+                try:
+                    checkpoints = folder_paths.get_filename_list("checkpoints")
+                    validated_checkpoints, invalid_checkpoints = validate_model_files("checkpoints", checkpoints)
+                    options = validated_checkpoints
+
+                    # 记录无效的checkpoint文件信息
+                    if invalid_checkpoints:
+                        logger.info(f"[ParameterControlPanel] 检测到 {len(invalid_checkpoints)} 个无效的checkpoint文件，已自动过滤")
+
+                except Exception as e:
+                    logger.error(f"[ParameterControlPanel] 获取checkpoint模型列表失败: {e}")
+                    options = []
 
             elif source_type == "lora":
                 # 扫描 models/loras 目录
@@ -506,16 +604,67 @@ try:
                 loras = folder_paths.get_filename_list("loras")
                 options = loras
 
+            elif source_type == "sampler":
+                # 获取可用的采样器列表
+                try:
+                    import comfy.samplers
+                    options = list(comfy.samplers.KSampler.samplers.keys())
+                except ImportError:
+                    # 如果无法导入，提供常见采样器列表
+                    options = ["euler", "euler_ancestral", "heun", "dpm_2", "dpm_2_ancestral", "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_2m", "dpmpp_sde", "dpmpp_sde_gpu", "dpmpp_3m_sde", "ddim", "uni_pc", "uni_pc_bh2"]
+
+            elif source_type == "scheduler":
+                # 获取可用的调度器列表
+                try:
+                    import comfy.samplers
+                    options = list(comfy.samplers.KSampler.schedulers.keys())
+                except ImportError:
+                    # 如果无法导入，提供常见调度器列表
+                    options = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform"]
+
+            elif source_type == "controlnet":
+                # 扫描 models/controlnet 目录并进行文件验证
+                import folder_paths
+                try:
+                    controlnet_models = folder_paths.get_filename_list("controlnet")
+                    validated_controlnet, invalid_controlnet = validate_model_files("controlnet", controlnet_models)
+                    options = validated_controlnet
+
+                    # 记录无效的controlnet文件信息
+                    if invalid_controlnet:
+                        logger.info(f"[ParameterControlPanel] 检测到 {len(invalid_controlnet)} 个无效的controlnet文件，已自动过滤")
+
+                except Exception as e:
+                    logger.error(f"[ParameterControlPanel] 获取controlnet模型列表失败: {e}")
+                    options = []
+
+            elif source_type == "upscale_model":
+                # 扫描 models/upscale_models 目录并进行文件验证
+                import folder_paths
+                try:
+                    upscale_models = folder_paths.get_filename_list("upscale_models")
+                    validated_upscale, invalid_upscale = validate_model_files("upscale_models", upscale_models)
+                    options = validated_upscale
+
+                    # 记录无效的upscale模型文件信息
+                    if invalid_upscale:
+                        logger.info(f"[ParameterControlPanel] 检测到 {len(invalid_upscale)} 个无效的upscale模型文件，已自动过滤")
+
+                except Exception as e:
+                    logger.error(f"[ParameterControlPanel] 获取upscale模型列表失败: {e}")
+                    options = []
+
             elif source_type == "custom":
                 # 自定义选项，由前端提供
                 options = []
 
+            logger.info(f"[ParameterControlPanel] ✅ API返回: {source_type}, 返回 {len(options)} 个选项")
             return web.json_response({
                 "status": "success",
                 "options": options
             })
         except Exception as e:
-            logger.error(f"获取数据源错误: {e}")
+            logger.error(f"[ParameterControlPanel] ❌ 获取数据源错误: {e}")
             import traceback
             logger.debug(traceback.format_exc())
             return web.json_response({

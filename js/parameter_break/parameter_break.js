@@ -382,8 +382,11 @@ app.registerExtension({
                                 type: outputType,
                                 order: order,
                                 param_type: param.type,
-                                param_id: param.id  // 添加参数ID用于追踪连接
+                                param_id: param.id,  // 添加参数ID用于追踪连接
+                                output_index: order  // 添加输出索引，用于 ParameterControlPanel 查找
                             });
+
+                            logger.info(`[PB] 创建参数元数据: ${param.name}, type: ${param.type}, output_index: ${order}, param_id: ${param.id}`);
 
                             order++;
                         }

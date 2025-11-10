@@ -873,6 +873,20 @@ app.registerExtension({
                     transform: translateY(-1px);
                 }
 
+                /* 参数项警告样式 - 当锁定值不存在时 */
+                .pcp-parameter-item-warning {
+                    border: 2px solid #ff4444 !important;
+                    box-shadow: 0 0 12px rgba(255, 68, 68, 0.4) !important;
+                    background: linear-gradient(135deg, rgba(255, 68, 68, 0.08) 0%, rgba(255, 68, 68, 0.05) 100%) !important;
+                    transition: all 0.3s ease !important;
+                }
+
+                .pcp-parameter-item-warning:hover {
+                    border-color: #ff6666 !important;
+                    box-shadow: 0 0 16px rgba(255, 68, 68, 0.5) !important;
+                    transform: translateY(-1px) !important;
+                }
+
                 .pcp-parameter-item.dragging {
                     opacity: 0.5;
                 }
@@ -1878,6 +1892,244 @@ app.registerExtension({
                     logger.info(`[PCP] 恢复提示: ${param.name} -> ${noticeText}`);
                 }
             });
+        };
+
+        // 工作流初始化时刷新所有下拉菜单选项列表
+        nodeType.prototype.refreshAllDropdownsOnWorkflowLoad = function () {
+            try {
+                // 获取所有下拉菜单参数
+                const dropdownParams = this.properties.parameters.filter(param => param.type === 'dropdown');
+
+                if (dropdownParams.length === 0) {
+                    logger.info('[PCP] 工作流初始化: 没有找到下拉菜单参数，跳过刷新');
+                    return;
+                }
+
+                logger.info(`[PCP] 🚀 工作流初始化: 开始刷新 ${dropdownParams.length} 个下拉菜单选项列表`);
+                logger.debug('[PCP] 下拉菜单参数详情:', dropdownParams.map(p => ({ name: p.name, dataSource: p.config?.data_source || 'from_connection' })));
+
+                // 📋 记录所有下拉菜单参数的详细信息
+                const dropdownSummary = dropdownParams.map(param => ({
+                    name: param.name,
+                    dataSource: param.config?.data_source || 'from_connection',
+                    currentValue: param.value,
+                    hasValidConfig: !!param.config
+                }));
+                logger.info('[PCP] 📋 所有下拉菜单参数列表:', JSON.stringify(dropdownSummary, null, 2));
+
+                // 🔍 调试：记录工作流保存的原始值
+                logger.info(`[PCP] 🔍 调试：工作流加载时的参数值检查`);
+                dropdownParams.forEach(param => {
+                    logger.info(`[PCP] 🔍 参数 '${param.name}': 当前param.value='${param.value}', 数据源=${param.config?.data_source || 'from_connection'}`);
+                });
+
+                // 并行刷新所有下拉菜单
+                const refreshPromises = dropdownParams.map(param => this.refreshSingleDropdown(param));
+
+                // 等待所有刷新完成
+                Promise.allSettled(refreshPromises).then(results => {
+                    const successCount = results.filter(r => r.status === 'fulfilled').length;
+                    const failCount = results.filter(r => r.status === 'rejected').length;
+
+                    logger.info(`[PCP] 下拉菜单刷新完成: ${successCount} 成功, ${failCount} 失败`);
+                });
+            } catch (error) {
+                logger.error('[PCP] 刷新下拉菜单选项时出错:', error);
+            }
+        };
+
+        // 刷新单个下拉菜单参数
+        nodeType.prototype.refreshSingleDropdown = function (param) {
+            return new Promise((resolve, reject) => {
+                if (!param.config) {
+                    logger.info(`[PCP] 跳过参数刷新: ${param.name} (无配置)`);
+                    resolve();
+                    return;
+                }
+
+                const dataSource = param.config.data_source || 'from_connection';
+                logger.info(`[PCP] 🔄 开始刷新参数: ${param.name}, 数据源: ${dataSource}`);
+
+                // 🧪 强制刷新所有数据源类型（用于测试）
+                const forceRefreshTypes = ['checkpoint', 'lora', 'controlnet', 'upscale_model'];
+                if (forceRefreshTypes.includes(dataSource)) {
+                    logger.info(`[PCP] 🧪 检测到需要强制刷新的数据源: ${dataSource}`);
+                }
+
+                // 根据数据源类型获取最新选项
+                if (dataSource === 'checkpoint' || dataSource === 'lora' || dataSource === 'controlnet' || dataSource === 'upscale_model' || dataSource === 'sampler' || dataSource === 'scheduler') {
+                    // 获取模型文件列表或系统选项
+                    logger.info(`[PCP] 📡 发起 API 请求: /danbooru_gallery/pcp/get_data_source?type=${dataSource}`);
+                    fetch(`/danbooru_gallery/pcp/get_data_source?type=${dataSource}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            logger.info(`[PCP] 📥 API 响应: ${dataSource}, 状态: ${data.status}, 选项数: ${data.options?.length || 0}`);
+                            if (data.status === 'success' && data.options) {
+                                logger.info(`[PCP] ✅ 成功获取 ${dataSource} 数据源: ${data.options.length} 个选项`);
+                                logger.debug(`[PCP] ${dataSource} 选项列表:`, data.options);
+                                this.refreshDropdownOptions(param.name, data.options, param.value);
+                            } else {
+                                logger.warn(`[PCP] ❌ ${dataSource} 数据源返回状态异常:`, data);
+                            }
+                            resolve();
+                        })
+                        .catch(error => {
+                            logger.error(`[PCP] ❌ 获取 ${dataSource} 数据源失败:`, error);
+                            resolve(); // 即使失败也resolve，不阻塞其他下拉菜单
+                        });
+                } else if (dataSource === 'custom' && param.config.options) {
+                    // 自定义选项直接刷新
+                    this.refreshDropdownOptions(param.name, param.config.options, param.value);
+                    resolve();
+                } else if (dataSource === 'from_connection') {
+                    // 从 ParameterBreak 节点获取选项
+                    this.getOptionsFromParameterBreak(param).then(options => {
+                        if (options && options.length > 0) {
+                            // 🔍 调试：记录传递给 refreshDropdownOptions 的值
+                            logger.info(`[PCP] 🔍 from_connection 调试: 参数='${param.name}', 传递的 lockedValue='${param.value}', 选项数量=${options.length}`);
+                            logger.info(`[PCP] 🔍 from_connection 调试: 选项列表前3个:`, options.slice(0, 3));
+                            this.refreshDropdownOptions(param.name, options, param.value);
+                        } else {
+                            logger.warn(`[PCP] 无法从 ParameterBreak 获取参数 '${param.name}' 的选项`);
+                        }
+                        resolve();
+                    }).catch(error => {
+                        logger.error(`[PCP] 从 ParameterBreak 获取参数 '${param.name}' 选项失败:`, error);
+                        // 向用户显示友好的错误提示
+                        this.showToast(`无法刷新下拉菜单 '${param.name}'：${error.message}`, 'warning');
+                        resolve(); // 即使失败也resolve，不阻塞其他下拉菜单
+                    });
+                } else {
+                    // 未知数据源类型，跳过
+                    logger.warn(`[PCP] 未知的数据源类型: ${dataSource}`);
+                    resolve();
+                }
+            });
+        };
+
+        // 从 ParameterBreak 节点获取选项列表
+        nodeType.prototype.getOptionsFromParameterBreak = function (param) {
+            return new Promise((resolve, reject) => {
+                try {
+                    // 添加超时处理
+                    const timeout = setTimeout(() => {
+                        reject(new Error('获取 ParameterBreak 选项超时'));
+                    }, 5000); // 5秒超时
+
+                    // 检查是否有输出连接
+                    if (!this.outputs || this.outputs.length === 0) {
+                        clearTimeout(timeout);
+                        reject(new Error('没有输出连接'));
+                        return;
+                    }
+
+                    const output = this.outputs[0];
+                    if (!output.links || output.links.length === 0) {
+                        reject(new Error('输出未连接到 ParameterBreak 节点'));
+                        return;
+                    }
+
+                    // 遍历所有连接，找到 ParameterBreak 节点
+                    let parameterBreakNode = null;
+                    let outputIndex = -1;
+
+                    for (const linkId of output.links) {
+                        const link = this.graph.links[linkId];
+                        if (link && link.target_id) {
+                            const targetNode = this.graph.getNodeById(link.target_id);
+                            if (targetNode && targetNode.type === 'ParameterBreak') {
+                                parameterBreakNode = targetNode;
+                                outputIndex = link.target_slot;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!parameterBreakNode) {
+                        clearTimeout(timeout);
+                        reject(new Error('未找到连接的 ParameterBreak 节点'));
+                        return;
+                    }
+
+                    // 通过参数ID找到对应的输出索引
+                    const paramStructure = parameterBreakNode.properties.paramStructure || [];
+                    const paramInfo = paramStructure.find(p => p.param_id === param.id);
+
+                    if (!paramInfo) {
+                        clearTimeout(timeout);
+                        reject(new Error(`在 ParameterBreak 节点中未找到参数 '${param.name}'`));
+                        return;
+                    }
+
+                    // 获取该输出索引对应的选项列表
+                    const outputIndexForParam = paramInfo.output_index;
+                    const options = this.getOptionsFromParameterBreakOutput(parameterBreakNode, outputIndexForParam);
+
+                    clearTimeout(timeout);
+                    resolve(options);
+                } catch (error) {
+                    clearTimeout(timeout);
+                    reject(error);
+                }
+            });
+        };
+
+        // 从 ParameterBreak 节点的特定输出获取选项列表
+        nodeType.prototype.getOptionsFromParameterBreakOutput = function (parameterBreakNode, outputIndex) {
+            try {
+                // 首先通过参数结构获取参数信息
+                const paramStructure = parameterBreakNode.properties.paramStructure || [];
+                const paramInfo = paramStructure.find(p => p.output_index === outputIndex);
+
+                if (!paramInfo) {
+                    logger.warn(`[PCP] 在 ParameterBreak 节点中未找到输出索引 ${outputIndex} 对应的参数`);
+                    return [];
+                }
+
+                // 方法1：检查选项同步缓存（ParameterBreak 节点使用这种方式存储选项）
+                if (parameterBreakNode.properties && parameterBreakNode.properties.optionsSyncCache) {
+                    const cacheKey = paramInfo.param_id;
+                    const cachedOptionsStr = parameterBreakNode.properties.optionsSyncCache[cacheKey];
+                    if (cachedOptionsStr) {
+                        try {
+                            const cachedOptions = JSON.parse(cachedOptionsStr);
+                            if (Array.isArray(cachedOptions)) {
+                                logger.info(`[PCP] 从缓存获取到 ${cachedOptions.length} 个选项`);
+                                return cachedOptions;
+                            }
+                        } catch (parseError) {
+                            logger.warn(`[PCP] 解析缓存选项失败:`, parseError);
+                        }
+                    }
+                }
+
+                // 方法2：尝试通过参数配置获取默认选项
+                if (paramInfo.options && Array.isArray(paramInfo.options)) {
+                    logger.info(`[PCP] 使用参数配置中的默认选项: ${paramInfo.options.length} 个`);
+                    return paramInfo.options;
+                }
+
+                // 方法3：通过参数元数据获取选项（如果有的话）
+                if (paramInfo.config && paramInfo.config.options && Array.isArray(paramInfo.config.options)) {
+                    logger.info(`[PCP] 使用参数配置中的选项: ${paramInfo.config.options.length} 个`);
+                    return paramInfo.config.options;
+                }
+
+                // 方法4：尝试重新触发连接获取选项
+                if (parameterBreakNode.scanOutputConnections && typeof parameterBreakNode.scanOutputConnections === 'function') {
+                    logger.info(`[PCP] 尝试重新扫描 ParameterBreak 节点的输出连接`);
+                    // 异步触发扫描，但不等待结果，避免死锁
+                    setTimeout(() => {
+                        parameterBreakNode.scanOutputConnections();
+                    }, 100);
+                }
+
+                logger.warn(`[PCP] 无法获取 ParameterBreak 节点输出 ${outputIndex} 的选项列表，返回空数组`);
+                return [];
+            } catch (error) {
+                logger.error(`[PCP] 获取 ParameterBreak 选项时出错:`, error);
+                return [];
+            }
         };
 
         // 通知所有连接的 ParameterBreak 节点更新参数结构
@@ -2915,8 +3167,8 @@ app.registerExtension({
             }
         };
 
-        // 刷新下拉菜单选项（用于from_connection类型）
-        nodeType.prototype.refreshDropdownOptions = function (paramName, options) {
+        // 刷新下拉菜单选项（支持值锁定机制）
+        nodeType.prototype.refreshDropdownOptions = function (paramName, options, lockedValue = null) {
             try {
                 // 查找参数
                 const param = this.properties.parameters.find(p => p.name === paramName);
@@ -2939,7 +3191,11 @@ app.registerExtension({
                 }
 
                 // 保存当前选中值
-                const currentValue = select.value;
+                const currentValue = lockedValue !== null ? lockedValue : select.value;
+
+                // 🔍 调试：记录值处理过程
+                logger.info(`[PCP] 🔍 refreshDropdownOptions 调试: paramName='${paramName}', lockedValue='${lockedValue}', select.value='${select.value}', 最终currentValue='${currentValue}'`);
+                logger.info(`[PCP] 🔍 refreshDropdownOptions 调试: 选项列表包含currentValue: ${options.includes(currentValue)}`);
 
                 // 清空现有选项
                 select.innerHTML = '';
@@ -2952,14 +3208,48 @@ app.registerExtension({
                     select.appendChild(option);
                 });
 
-                // 恢复选中值（如果仍然有效）
+                // 值锁定机制：优先使用锁定值
                 if (options.includes(currentValue)) {
+                    // 锁定值存在于新选项列表中，使用锁定值
                     select.value = currentValue;
                     param.value = currentValue;
-                } else if (options.length > 0) {
-                    // 如果之前的值无效，选择第一个
-                    select.value = options[0];
-                    param.value = options[0];
+                    logger.info(`[PCP] 下拉菜单 '${paramName}' 保持锁定值: '${currentValue}'`);
+
+                    // 🔧 移除警告样式（值恢复正常）
+                    this.setParameterWarningStyle(paramName, false);
+                } else {
+                    // 锁定值不存在于新选项列表中
+                    logger.info(`[PCP] 🔍 分支调试: currentValue不在选项中, lockedValue='${lockedValue}', 进入锁定值处理逻辑`);
+
+                    // 🔧 关键修复：对于 from_connection 类型，总是保持锁定值
+                    const isFromConnection = param.config?.data_source === 'from_connection';
+
+                    if (lockedValue !== null || isFromConnection) {
+                        // 工作流初始化时的锁定值，或 from_connection 类型，保持锁定值
+                        const lockReason = lockedValue !== null ? '工作流锁定值' : 'from_connection 类型锁定';
+                        logger.warn(`[PCP] 锁定值 '${currentValue}' 不存在于选项列表中，下拉菜单 '${paramName}' 将保持${lockReason}`);
+                        this.showToast(`警告：下拉菜单 '${paramName}' 的当前选择 '${currentValue}' 不在可用选项中，但已锁定为工作流保存的值`, 'warning');
+
+                        // 添加锁定值为选项（不在列表中但可选择）
+                        const lockedOption = document.createElement('option');
+                        lockedOption.value = currentValue;
+                        lockedOption.textContent = `${currentValue} (已锁定 - 不在列表中)`;
+                        lockedOption.style.color = '#ff6b6b';
+                        lockedOption.style.fontWeight = 'bold';
+                        select.appendChild(lockedOption);
+                        select.value = currentValue;
+                        param.value = currentValue;
+
+                        // 🔧 添加红框警告样式
+                        this.setParameterWarningStyle(paramName, true);
+
+                        logger.info(`[PCP] ✅ 修复成功：保持锁定值 '${currentValue}'，原因：${lockReason}`);
+                    } else if (options.length > 0) {
+                        // 非锁定情况，选择第一个选项
+                        logger.info(`[PCP] 🔍 分支调试: lockedValue为null且非from_connection，选择第一个选项 '${options[0]}'`);
+                        select.value = options[0];
+                        param.value = options[0];
+                    }
                 }
 
                 logger.info(`[PCP] 下拉菜单 '${paramName}' 选项已刷新: ${options.length} 个选项`);
@@ -2969,6 +3259,68 @@ app.registerExtension({
 
             } catch (error) {
                 logger.error('[PCP] 刷新下拉菜单选项失败:', error);
+            }
+        };
+
+        // 设置参数警告样式（红框警告）
+        nodeType.prototype.setParameterWarningStyle = function (paramName, showWarning) {
+            try {
+                logger.info(`[PCP] 🔍 开始设置参数 '${paramName}' 的警告样式, showWarning=${showWarning}`);
+
+                // 查找参数项元素
+                const parameterItem = this.customUI?.querySelector(`.pcp-parameter-item[data-param-id]`);
+
+                if (!parameterItem) {
+                    logger.warn(`[PCP] ⚠️ 无法找到参数 '${paramName}' 的UI元素`);
+                    return;
+                }
+
+                // 通过参数名称查找正确的参数项
+                const allParameterItems = this.customUI?.querySelectorAll('.pcp-parameter-item');
+                let targetItem = null;
+
+                logger.info(`[PCP] 🔍 找到 ${allParameterItems?.length || 0} 个参数项`);
+
+                if (allParameterItems) {
+                    for (let i = 0; i < allParameterItems.length; i++) {
+                        const item = allParameterItems[i];
+                        const paramNameElement = item.querySelector('.pcp-parameter-name');
+
+                        if (paramNameElement) {
+                            const foundName = paramNameElement.textContent.trim();
+                            // 🔧 修复：移除提示图标进行比较
+                            const cleanFoundName = foundName.replace(/[🔍🔑📝⚠️✅❌💡ℹ️]/g, '').trim();
+                            const cleanParamName = paramName.replace(/[🔍🔑📝⚠️✅❌💡ℹ️]/g, '').trim();
+
+                            logger.info(`[PCP] 🔍 参数项 ${i}: 名称='${foundName}', 清理后='${cleanFoundName}', 查找目标='${paramName}', 清理后目标='${cleanParamName}'`);
+
+                            if (cleanFoundName === cleanParamName) {
+                                targetItem = item;
+                                logger.info(`[PCP] ✅ 找到匹配的参数项: ${paramName}`);
+                                break;
+                            }
+                        } else {
+                            logger.warn(`[PCP] ⚠️ 参数项 ${i} 没有找到 .pcp-parameter-name 元素`);
+                        }
+                    }
+                }
+
+                if (!targetItem) {
+                    logger.warn(`[PCP] ⚠️ 无法找到参数 '${paramName}' 的参数项元素`);
+                    return;
+                }
+
+                // 应用或移除警告样式
+                if (showWarning) {
+                    targetItem.classList.add('pcp-parameter-item-warning');
+                    logger.info(`[PCP] 🎨 样式警告: 参数 '${paramName}' 已添加红框样式`);
+                } else {
+                    targetItem.classList.remove('pcp-parameter-item-warning');
+                    logger.info(`[PCP] 🎨 样式警告: 参数 '${paramName}' 已移除红框样式`);
+                }
+
+            } catch (error) {
+                logger.error(`[PCP] 设置参数 '${paramName}' 警告样式失败:`, error);
             }
         };
 
@@ -3268,6 +3620,10 @@ app.registerExtension({
                                     <option value="custom" ${dataSource === 'custom' ? 'selected' : ''}>${t('custom')}</option>
                                     <option value="checkpoint" ${dataSource === 'checkpoint' ? 'selected' : ''}>${t('checkpoint')}</option>
                                     <option value="lora" ${dataSource === 'lora' ? 'selected' : ''}>${t('lora')}</option>
+                                    <option value="controlnet" ${dataSource === 'controlnet' ? 'selected' : ''}>${t('controlnet')}</option>
+                                    <option value="upscale_model" ${dataSource === 'upscale_model' ? 'selected' : ''}>${t('upscaleModel')}</option>
+                                    <option value="sampler" ${dataSource === 'sampler' ? 'selected' : ''}>${t('sampler')}</option>
+                                    <option value="scheduler" ${dataSource === 'scheduler' ? 'selected' : ''}>${t('scheduler')}</option>
                                 </select>
                             </div>
                             <div class="pcp-dialog-field" id="pcp-dropdown-options-field">
@@ -4278,6 +4634,7 @@ app.registerExtension({
 
             // 延迟更新UI，确保DOM已加载
             setTimeout(() => {
+                logger.info('[PCP] 🔄 onConfigure: 开始处理工作流配置');
                 if (this.customUI) {
                     this.updateParametersList();
                     this.loadPresetsList();
@@ -4285,6 +4642,12 @@ app.registerExtension({
                     this.updateLockUI();
                     // 恢复所有左上角提示
                     this.restoreTopLeftNotices();
+
+                    // 刷新下拉菜单选项列表（工作流初始化时）
+                    logger.info('[PCP] 🔄 onConfigure: 触发下拉菜单选项刷新');
+                    this.refreshAllDropdownsOnWorkflowLoad();
+                } else {
+                    logger.warn('[PCP] ⚠️ onConfigure: customUI 不存在，跳过UI更新');
                 }
 
                 // 将工作流数据同步到后端内存
