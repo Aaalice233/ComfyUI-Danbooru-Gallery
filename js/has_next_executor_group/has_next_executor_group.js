@@ -7,6 +7,7 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
 import { createLogger } from '../global/logger_client.js';
+import { logErrorWithRateLimit, generateErrorKey } from '../utils/error_rate_limiter.js';
 
 // 创建logger实例
 const logger = createLogger('has_next_executor_group');
@@ -1151,7 +1152,15 @@ async function syncDisabledGroupsToBackend() {
         // }
 
     } catch (error) {
-        logger.error('[HasNext] 同步被禁用组到后端时出错:', error);
+        // 使用频率限制的错误日志，避免刷屏
+        const errorKey = generateErrorKey('syncDisabledGroups', 'backend_sync', error.message || 'unknown');
+        logErrorWithRateLimit(
+            'has_next_executor_group',
+            errorKey,
+            '[HasNext] 同步被禁用组到后端时出错:',
+            error,
+            30000 // 30秒内只显示一次
+        );
     }
 }
 

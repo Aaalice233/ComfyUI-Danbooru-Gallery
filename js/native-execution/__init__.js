@@ -176,11 +176,33 @@ if (!window.optimizedExecutionSystemLoaded) {
 
                         // ✅ 统一使用顶部的全局影响节点名单
                         // 这些节点虽然不在组内，但会影响组内节点的执行（通过 ComfyUI 的 on_prompt_handler）
+                        // ✅ 修复：只添加组外的全局影响节点，组内的节点由组执行管理器完全控制
 
                         for (const [nodeId, node] of Object.entries(oldOutput)) {
                             if (GLOBAL_INFLUENCE_NODES.has(node.class_type)) {
-                                newOutput[nodeId] = node;
-                                logger.info('[OptimizedExecutionSystem] 🌍 保留全局影响节点:', nodeId, node.class_type);
+                                // ✅ 修复：只对未在组执行管理器中配置的组内的节点生效
+                                const nodeGroupName = getNodeGroupName(nodeId);
+                                let shouldInclude = false;
+
+                                if (!nodeGroupName) {
+                                    // 节点不在任何组内，应用名单制
+                                    shouldInclude = true;
+                                    logger.info('[OptimizedExecutionSystem] 🌍 保留组外全局影响节点:', nodeId, node.class_type);
+                                } else {
+                                    const managedGroups = getManagedGroupNames();
+                                    if (!managedGroups.includes(nodeGroupName)) {
+                                        // 节点在未管理的组内，应用名单制
+                                        shouldInclude = true;
+                                        logger.info('[OptimizedExecutionSystem] 🌍 保留未管理组内的全局影响节点:', nodeId, node.class_type, `组: ${nodeGroupName}`);
+                                    } else {
+                                        // 节点在已管理的组内，跳过名单制（由组执行管理器控制）
+                                        logger.info('[OptimizedExecutionSystem] 🚫 跳过已管理组内的全局节点:', nodeId, node.class_type, `组: ${nodeGroupName}`);
+                                    }
+                                }
+
+                                if (shouldInclude) {
+                                    newOutput[nodeId] = node;
+                                }
                             }
                         }
 
@@ -384,6 +406,63 @@ function isNodeInOtherManagedGroup(nodeId) {
     return false;
 }
 
+// Helper function: check if node is in any managed groups
+function isNodeInManagedGroups(nodeId) {
+    /** 检查节点是否位于被管理的组内 - 用于全局节点过滤 */
+
+    // 获取被管理的组名列表
+    const managedGroups = getManagedGroupNames();
+    if (managedGroups.length === 0) {
+        logger.debug(`[OptimizedExecutionSystem] 🔍 无被管理的组，节点 ${nodeId} 不在组内`);
+        return false; // 没有被管理的组，节点不在组内
+    }
+
+    // 获取节点对象
+    const graphNode = app.graph._nodes.find(n => String(n.id) === String(nodeId));
+    if (!graphNode) {
+        logger.warn(`[OptimizedExecutionSystem] ⚠️ 找不到节点 ${nodeId}，假设不在组内`);
+        return false;
+    }
+
+    // 获取节点边界
+    let nodeBounds;
+    try {
+        nodeBounds = graphNode.getBounding();
+    } catch (e) {
+        logger.warn(`[OptimizedExecutionSystem] ⚠️ 无法获取节点 ${nodeId} 的边界: ${e.message}`);
+        return false;
+    }
+
+    // 遍历所有被管理的组，检查节点是否与它们重叠
+    for (const managedGroupName of managedGroups) {
+        const managedGroup = getGroupByName(managedGroupName);
+        if (managedGroup && managedGroup._bounding) {
+            // 检查节点边界是否与被管理的组边界重叠
+            let hasOverlap = false;
+            if (window.LiteGraph && window.LiteGraph.overlapBounding) {
+                hasOverlap = window.LiteGraph.overlapBounding(managedGroup._bounding, nodeBounds);
+            } else {
+                // 降级方案：简单的边界框碰撞检测
+                hasOverlap = (
+                    nodeBounds[0] < managedGroup._bounding[2] &&
+                    nodeBounds[2] > managedGroup._bounding[0] &&
+                    nodeBounds[1] < managedGroup._bounding[3] &&
+                    nodeBounds[3] > managedGroup._bounding[1]
+                );
+            }
+
+            if (hasOverlap) {
+                logger.info(`[OptimizedExecutionSystem] 🚫 节点 ${nodeId} 位于被管理的组 "${managedGroupName}" 内`);
+                return true; // 发现重叠，节点在组内
+            }
+        }
+    }
+
+    // 没有与任何被管理组重叠，节点在组外
+    logger.debug(`[OptimizedExecutionSystem] ✅ 节点 ${nodeId} 不在任何被管理的组内`);
+    return false;
+}
+
 // Helper function: recursively add nodes and dependencies
 function recursiveAddNodes(nodeId, oldOutput, newOutput, includeDownstreamOutputNodes = false) {
     if (newOutput[nodeId] != null) {
@@ -392,6 +471,8 @@ function recursiveAddNodes(nodeId, oldOutput, newOutput, includeDownstreamOutput
 
     const currentNode = oldOutput[nodeId];
     if (!currentNode) {
+        // ✅ 依赖完整性验证：记录缺失的节点ID
+        logger.warn(`[OptimizedExecutionSystem] ⚠️ 依赖节点缺失: ${nodeId} 不在 oldOutput 中`);
         return;
     }
 
@@ -400,7 +481,13 @@ function recursiveAddNodes(nodeId, oldOutput, newOutput, includeDownstreamOutput
     // Recursively add dependent nodes (upstream dependencies)
     Object.values(currentNode.inputs || {}).forEach(inputValue => {
         if (Array.isArray(inputValue)) {
-            recursiveAddNodes(String(inputValue[0]), oldOutput, newOutput, includeDownstreamOutputNodes);
+            const sourceNodeId = String(inputValue[0]);
+            // ✅ 依赖完整性验证：确保上游节点存在
+            if (oldOutput[sourceNodeId]) {
+                recursiveAddNodes(sourceNodeId, oldOutput, newOutput, includeDownstreamOutputNodes);
+            } else {
+                logger.warn(`[OptimizedExecutionSystem] ⚠️ 上游依赖缺失: 节点 ${nodeId} 的输入依赖 ${sourceNodeId} 不存在`);
+            }
         }
     });
 
@@ -423,15 +510,10 @@ function recursiveAddNodes(nodeId, oldOutput, newOutput, includeDownstreamOutput
             return Array.isArray(inputValue) && String(inputValue[0]) === String(nodeId);
         });
 
-        // 如果连接到当前节点，使用统一名单制判断是否应该添加
+        // 如果连接到当前节点，使用纯名单制判断是否应该添加
         if (hasConnectionToCurrentNode) {
-            // 检查是否是传统的OUTPUT_NODE（向后兼容）
-            if (isOutputNode(downstreamNodeId)) {
-                newOutput[downstreamNodeId] = downstreamNode;
-                logger.info(`[OptimizedExecutionSystem] 📎 添加传统输出节点: ${downstreamNodeId} (${downstreamNode.class_type}) 连接到节点 ${nodeId}`);
-            }
-            // 检查是否在预览/显示名单中，且符合连接关系条件
-            else if (shouldIncludePreviewDisplayNode(downstreamNodeId, downstreamNode.class_type, oldOutput)) {
+            // ✅ 纯名单制：只检查是否在预览/显示名单中，且符合连接关系条件
+            if (shouldIncludePreviewDisplayNode(downstreamNodeId, downstreamNode.class_type, oldOutput)) {
                 newOutput[downstreamNodeId] = downstreamNode;
                 logger.info(`[OptimizedExecutionSystem] 📎 添加名单制节点: ${downstreamNodeId} (${downstreamNode.class_type}) 连接到节点 ${nodeId}`);
             }
@@ -468,7 +550,7 @@ function isNodeInGroup(node, group) {
 
 // Helper function: check if preview/display node should be included based on名单制
 function shouldIncludePreviewDisplayNode(nodeId, nodeClassType, oldOutput) {
-    /** 检查预览/显示节点是否应该被包含 - 基于统一名单制 */
+    /** 检查预览/显示节点是否应该被包含 - 基于统一名单制，只对未在组执行管理器中配置的组内的节点生效 */
 
     try {
         // 参数验证
@@ -477,12 +559,22 @@ function shouldIncludePreviewDisplayNode(nodeId, nodeClassType, oldOutput) {
             return false;
         }
 
-        // 如果节点不在预览/显示名单中，不包含
+        // 1. 名单制检查：如果节点不在预览/显示名单中，不包含
         if (!PREVIEW_DISPLAY_NODES.has(nodeClassType)) {
             return false;
         }
 
-        // 检查该节点是否连接到当前执行组的节点
+        // 2. ✅ 新增：检查节点是否在已管理的组内 - 如果是，跳过名单制
+        const nodeGroupName = getNodeGroupName(nodeId);
+        if (nodeGroupName) {
+            const managedGroups = getManagedGroupNames();
+            if (managedGroups.includes(nodeGroupName)) {
+                logger.info(`[OptimizedExecutionSystem] 🚫 预览节点 ${nodeId}(${nodeClassType}) 在已管理的组 "${nodeGroupName}" 内，跳过名单制`);
+                return false;
+            }
+        }
+
+        // 3. 检查该节点是否连接到当前执行组的节点
         const currentGroup = getCurrentExecutingGroup();
         if (!currentGroup) {
             // 如果没有当前执行组，使用原有的逻辑（避免意外影响）

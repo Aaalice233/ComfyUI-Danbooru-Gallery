@@ -7,6 +7,7 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { globalToastManager } from "../global/toast_manager.js";
 import { createLogger } from '../global/logger_client.js';
+import { logErrorWithRateLimit, generateErrorKey } from '../utils/error_rate_limiter.js';
 
 // 创建logger实例
 const logger = createLogger('open_in_krita');
@@ -543,7 +544,15 @@ async function checkKritaStatus() {
         };
 
     } catch (error) {
-        logger.error("[OpenInKrita] Error checking Krita status:", error);
+        // 使用频率限制的错误日志，避免刷屏
+        const errorKey = generateErrorKey('checkKritaStatus', 'krita_connection', error.message || 'connection_failed');
+        logErrorWithRateLimit(
+            'open_in_krita',
+            errorKey,
+            "[OpenInKrita] Error checking Krita status:",
+            error,
+            60000 // 60秒内只显示一次（Krita状态检查频率较低）
+        );
         return {is_running: false, has_documents: false};
     }
 }
