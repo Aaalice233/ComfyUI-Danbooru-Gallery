@@ -547,8 +547,30 @@ def _archive_current_log():
             counter += 1
 
         # 重命名文件
-        LOG_FILE.rename(archive_path)
-        print(f"[Logger] 📦 归档旧日志: {LOG_FILE.name} → {archive_path.name}", file=sys.stderr)
+        try:
+            LOG_FILE.rename(archive_path)
+            print(f"[Logger] 📦 归档旧日志: {LOG_FILE.name} → {archive_path.name}", file=sys.stderr)
+        except PermissionError as e:
+            # Windows特定：文件被锁定时，尝试复制后删除
+            if "另一个程序正在使用此文件" in str(e) or "being used by another process" in str(e).lower():
+                print(f"[Logger] ⚠️ 日志文件被占用，尝试复制后删除: {e}", file=sys.stderr)
+                try:
+                    import shutil
+                    # 复制到归档路径
+                    shutil.copy2(LOG_FILE, archive_path)
+                    print(f"[Logger] 📋 日志已复制到归档文件: {archive_path.name}", file=sys.stderr)
+
+                    # 尝试删除原文件（可能仍然失败，这是可接受的）
+                    try:
+                        LOG_FILE.unlink()
+                        print(f"[Logger] 🗑️ 原日志文件已删除", file=sys.stderr)
+                    except PermissionError:
+                        print(f"[Logger] ⚠️ 原日志文件仍在使用中，将保留", file=sys.stderr)
+                except Exception as copy_error:
+                    print(f"[Logger] ❌ 复制归档失败: {copy_error}", file=sys.stderr)
+                    raise  # 重新抛出原始异常
+            else:
+                raise  # 重新抛出非文件占用异常
 
     except Exception as e:
         print(f"[Logger] ⚠️ 归档日志文件失败: {e}", file=sys.stderr)
