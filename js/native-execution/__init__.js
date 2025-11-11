@@ -11,6 +11,31 @@ import { createLogger } from "../global/logger_client.js";
 // 创建logger实例
 const logger = createLogger('native_execution_init');
 
+// ✅ 统一的节点名单制 - 替代原有的自动检测机制
+// 无连接引脚名单：直接执行的全局影响节点（类似全局种子节点）
+const GLOBAL_INFLUENCE_NODES = new Set([
+    'easy globalSeed',      // Easy Use 全局种子节点
+    'easy seed',            // Easy Use 普通种子节点
+    // 可扩展其他全局影响节点
+]);
+
+// 有连接引脚名单：需要判断连接关系的预览/显示节点
+const PREVIEW_DISPLAY_NODES = new Set([
+    'PreviewImage',         // ComfyUI 内核预览图节点
+    'SaveImage',           // ComfyUI 内核保存图节点
+    'ShowText',            // ComfyUI-Custom-Scripts 显示文本节点
+    'PreviewAny',          // ComfyUI 内核显示任意节点
+    'SimpleImageCompare',  // 本项目图像对比节点
+    'ImageCompare',        // rgthree 图像对比节点
+    'Show Any',            // Easy Use 的 show any 节点
+    // 可扩展其他预览显示节点
+]);
+
+// 调试输出：显示加载的节点名单
+logger.info('[OptimizedExecutionSystem] ✅ 统一节点名单制已加载');
+logger.info('[OptimizedExecutionSystem] 🌍 全局影响节点名单:', Array.from(GLOBAL_INFLUENCE_NODES).join(', '));
+logger.info('[OptimizedExecutionSystem] 📺 预览显示节点名单:', Array.from(PREVIEW_DISPLAY_NODES).join(', '));
+
 // ui-enhancement.js 已删除，不再需要
 // migration-helper.js 已删除，不再需要
 
@@ -149,16 +174,11 @@ if (!window.optimizedExecutionSystemLoaded) {
                         const oldOutput = prompt.output;
                         let newOutput = {};
 
-                        // ✅ 兼容性修复：保留全局影响节点（如 easy globalSeed）
+                        // ✅ 统一使用顶部的全局影响节点名单
                         // 这些节点虽然不在组内，但会影响组内节点的执行（通过 ComfyUI 的 on_prompt_handler）
-                        const GLOBAL_INFLUENCE_NODES = [
-                            'easy globalSeed',      // Easy Use 全局种子节点
-                            'easy seed',            // Easy Use 普通种子节点
-                            // 未来可扩展其他全局影响节点
-                        ];
 
                         for (const [nodeId, node] of Object.entries(oldOutput)) {
-                            if (GLOBAL_INFLUENCE_NODES.includes(node.class_type)) {
+                            if (GLOBAL_INFLUENCE_NODES.has(node.class_type)) {
                                 newOutput[nodeId] = node;
                                 logger.info('[OptimizedExecutionSystem] 🌍 保留全局影响节点:', nodeId, node.class_type);
                             }
@@ -390,9 +410,8 @@ function recursiveAddNodes(nodeId, oldOutput, newOutput, includeDownstreamOutput
         return;
     }
 
-    // ✅ 收集直接连接到当前节点的输出/预览节点（下游节点）
-    // 这确保了像 PreviewImage、ShowText、SaveImage 等输出节点也会被包含
-    // 但排除在"其他被管理的组"内的输出节点
+    // ✅ 统一名单制：收集连接到当前节点的预览/显示节点（下游节点）
+    // 基于硬编码名单进行精确控制，提高可靠性
     Object.entries(oldOutput).forEach(([downstreamNodeId, downstreamNode]) => {
         // 跳过已经添加的节点
         if (newOutput[downstreamNodeId] != null) {
@@ -404,10 +423,18 @@ function recursiveAddNodes(nodeId, oldOutput, newOutput, includeDownstreamOutput
             return Array.isArray(inputValue) && String(inputValue[0]) === String(nodeId);
         });
 
-        // 如果连接到当前节点，且是输出节点，且不在其他被管理的组内，则添加
-        if (hasConnectionToCurrentNode && isOutputNode(downstreamNodeId) && !isNodeInOtherManagedGroup(downstreamNodeId)) {
-            newOutput[downstreamNodeId] = downstreamNode;
-            logger.info(`[OptimizedExecutionSystem] 📎 添加输出节点: ${downstreamNodeId} (${downstreamNode.class_type}) 连接到节点 ${nodeId}`);
+        // 如果连接到当前节点，使用统一名单制判断是否应该添加
+        if (hasConnectionToCurrentNode) {
+            // 检查是否是传统的OUTPUT_NODE（向后兼容）
+            if (isOutputNode(downstreamNodeId)) {
+                newOutput[downstreamNodeId] = downstreamNode;
+                logger.info(`[OptimizedExecutionSystem] 📎 添加传统输出节点: ${downstreamNodeId} (${downstreamNode.class_type}) 连接到节点 ${nodeId}`);
+            }
+            // 检查是否在预览/显示名单中，且符合连接关系条件
+            else if (shouldIncludePreviewDisplayNode(downstreamNodeId, downstreamNode.class_type, oldOutput)) {
+                newOutput[downstreamNodeId] = downstreamNode;
+                logger.info(`[OptimizedExecutionSystem] 📎 添加名单制节点: ${downstreamNodeId} (${downstreamNode.class_type}) 连接到节点 ${nodeId}`);
+            }
         }
     });
 }
@@ -435,6 +462,61 @@ function isNodeInGroup(node, group) {
         );
     } catch (e) {
         logger.warn(`[OptimizedExecutionSystem] ⚠️ 碰撞检测异常: ${e.message}`);
+        return false;
+    }
+}
+
+// Helper function: check if preview/display node should be included based on名单制
+function shouldIncludePreviewDisplayNode(nodeId, nodeClassType, oldOutput) {
+    /** 检查预览/显示节点是否应该被包含 - 基于统一名单制 */
+
+    try {
+        // 参数验证
+        if (!nodeId || !nodeClassType || !oldOutput) {
+            logger.warn(`[OptimizedExecutionSystem] ⚠️ shouldIncludePreviewDisplayNode 参数无效: nodeId=${nodeId}, classType=${nodeClassType}`);
+            return false;
+        }
+
+        // 如果节点不在预览/显示名单中，不包含
+        if (!PREVIEW_DISPLAY_NODES.has(nodeClassType)) {
+            return false;
+        }
+
+        // 检查该节点是否连接到当前执行组的节点
+        const currentGroup = getCurrentExecutingGroup();
+        if (!currentGroup) {
+            // 如果没有当前执行组，使用原有的逻辑（避免意外影响）
+            logger.debug(`[OptimizedExecutionSystem] 🔍 无当前执行组，包含预览节点 ${nodeId}(${nodeClassType})`);
+            return true;
+        }
+
+        // 检查该节点的输入是否连接到当前执行组的节点
+        const currentNode = oldOutput[nodeId];
+        if (!currentNode || !currentNode.inputs) {
+            logger.debug(`[OptimizedExecutionSystem] 🔍 预览节点 ${nodeId}(${nodeClassType}) 无输入或输入无效`);
+            return false;
+        }
+
+        // 遍历该节点的所有输入，检查是否有来自当前执行组的连接
+        for (const [inputName, inputValue] of Object.entries(currentNode.inputs)) {
+            if (Array.isArray(inputValue) && inputValue.length >= 2) {
+                const sourceNodeId = String(inputValue[0]);
+                const sourceNodeGroupName = getNodeGroupName(sourceNodeId);
+
+                // 如果输入源节点在当前执行组中，则包含此预览节点
+                if (sourceNodeGroupName === currentGroup) {
+                    logger.info(`[OptimizedExecutionSystem] 🎯 预览节点 ${nodeId}(${nodeClassType}) 连接到当前组 "${currentGroup}" 的节点 ${sourceNodeId}`);
+                    return true;
+                }
+            }
+        }
+
+        // 如果没有连接到当前执行组，不包含此预览节点
+        logger.info(`[OptimizedExecutionSystem] 🚫 预览节点 ${nodeId}(${nodeClassType}) 未连接到当前组 "${currentGroup}"，跳过`);
+        return false;
+    } catch (error) {
+        logger.error(`[OptimizedExecutionSystem] ❌ shouldIncludePreviewDisplayNode 异常:`, error);
+        // 出错时默认不包含，避免意外的节点执行
         return false;
     }
 }
