@@ -285,6 +285,8 @@ class SizeCheckFileHandler(logging.FileHandler):
     - 写入前检查文件大小
     - 超过限制时：关闭文件 → 删除 → 重新创建
     - 避免单个日志文件过大（默认20MB限制）
+    - 重建冷却机制防止无限循环
+    - 智能文件锁定处理
     """
 
     def __init__(self, filename, max_bytes=20*1024*1024, mode='a', encoding='utf-8'):
@@ -299,11 +301,13 @@ class SizeCheckFileHandler(logging.FileHandler):
         """
         self.max_bytes = max_bytes
         self._check_counter = 0  # 性能优化：不是每次都检查大小
+        self.last_rebuild_time = 0  # 重建冷却机制：记录上次重建时间
+        self.rebuild_cooldown_seconds = 5  # 重建冷却时间：5秒内只允许重建一次
         super().__init__(filename, mode=mode, encoding=encoding)
 
     def emit(self, record):
         """
-        写入日志记录（带大小检查）
+        写入日志记录（带大小检查、冷却机制和智能文件锁定处理）
 
         Args:
             record: 日志记录对象
@@ -323,29 +327,64 @@ class SizeCheckFileHandler(logging.FileHandler):
                         file_size = self.stream.tell()
                         self.stream.seek(current_pos)  # 恢复原位置
 
-                        # 超过限制，重建文件
+                        # 超过限制，检查冷却时间后重建文件
                         if file_size >= self.max_bytes:
+                            import time
+                            current_time = time.time()
+
+                            # 检查重建冷却机制
+                            if current_time - self.last_rebuild_time < self.rebuild_cooldown_seconds:
+                                # 在冷却期内，跳过此次重建
+                                return
+
+                            # 更新重建时间戳
+                            self.last_rebuild_time = current_time
+
+                            # 直接输出重建信息到stderr，避免触发新的日志检查
                             print(f"[Logger] ⚠️ 日志文件超过 {self.max_bytes/1024/1024:.1f}MB，正在重建...", file=sys.stderr)
 
                             # 关闭当前文件流
                             self.close()
 
-                            # 删除文件
-                            try:
-                                Path(self.baseFilename).unlink(missing_ok=True)
-                            except Exception as e:
-                                print(f"[Logger] ⚠️ 删除旧日志文件失败: {e}", file=sys.stderr)
+                            # 智能文件删除处理（带重试机制）
+                            deleted = False
+                            max_retries = 3
+                            for attempt in range(max_retries):
+                                try:
+                                    Path(self.baseFilename).unlink(missing_ok=True)
+                                    deleted = True
+                                    break
+                                except PermissionError as e:
+                                    if attempt < max_retries - 1:
+                                        # 等待一小段时间后重试
+                                        import time
+                                        time.sleep(0.1)
+                                        continue
+                                    else:
+                                        # 最后一次尝试失败，输出详细错误但不中断
+                                        print(f"[Logger] ⚠️ 删除旧日志文件失败（重试{max_retries}次后仍失败）: {e}", file=sys.stderr)
+                                        print(f"[Logger] 💡 提示：可能有其他程序正在使用日志文件，将创建新的日志文件", file=sys.stderr)
+                                except Exception as e:
+                                    print(f"[Logger] ⚠️ 删除旧日志文件时发生意外错误: {e}", file=sys.stderr)
+                                    break
 
                             # 重新打开文件（会创建新文件）
-                            self.stream = self._open()
+                            try:
+                                self.stream = self._open()
+                                print(f"[Logger] ✅ 日志文件已重建", file=sys.stderr)
+                            except Exception as reopen_error:
+                                print(f"[Logger] ❌ 重新创建日志文件失败: {reopen_error}", file=sys.stderr)
+                                # 如果重新打开失败，尝试关闭handler避免后续错误
+                                self.stream = None
+                                return
 
-                            print(f"[Logger] ✅ 日志文件已重建", file=sys.stderr)
                     except Exception as e:
                         # 大小检查失败，忽略（继续写入）
                         pass
 
-            # 写入日志
-            super().emit(record)
+            # 只有在文件流正常时才写入日志
+            if self.stream is not None:
+                super().emit(record)
 
         except Exception:
             self.handleError(record)
