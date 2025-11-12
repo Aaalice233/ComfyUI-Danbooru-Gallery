@@ -90,32 +90,53 @@ class TextCacheManager:
 
         return self.cache_channels[channel_name]
 
-    def ensure_channel_exists(self, channel_name: str) -> bool:
+    def ensure_channel_exists(self, channel_name: str, max_retries: int = 5) -> bool:
         """
         确保通道存在，如果不存在则创建空通道
         用于前端预注册通道，确保下拉列表中显示该通道
+        增强版：支持重试机制，提高初始化成功率
 
         Args:
             channel_name: 通道名称
+            max_retries: 最大重试次数（默认5次）
 
         Returns:
             True表示通道已存在或创建成功，False表示失败
         """
-        try:
-            if channel_name not in self.cache_channels:
-                self.cache_channels[channel_name] = {
-                    "text": "",
-                    "timestamp": time.time(),
-                    "metadata": {}
-                }
-                logger.debug(f"预注册空通道: {channel_name}")
-                return True
-            else:
-                logger.info(f"通道已存在: {channel_name}")
-                return True
-        except Exception as e:
-            logger.error(f"创建通道失败: {channel_name}, 错误: {e}")
-            return False
+        import random
+
+        for attempt in range(max_retries):
+            try:
+                with self._lock:  # 确保线程安全
+                    if channel_name not in self.cache_channels:
+                        self.cache_channels[channel_name] = {
+                            "text": "",
+                            "timestamp": time.time(),
+                            "metadata": {"created_by": "ensure_channel_exists", "attempt": attempt + 1}
+                        }
+                        if attempt == 0:
+                            logger.info(f"✅ 预注册空通道: {channel_name}")
+                        else:
+                            logger.info(f"✅ 重试{attempt + 1}次成功预注册通道: {channel_name}")
+                        return True
+                    else:
+                        logger.debug(f"通道已存在: {channel_name}")
+                        return True
+
+            except Exception as e:
+                logger.warning(f"⚠️ 创建通道失败 (尝试 {attempt + 1}/{max_retries}): {channel_name}, 错误: {e}")
+
+                # 如果不是最后一次尝试，等待后重试
+                if attempt < max_retries - 1:
+                    # 指数退避 + 随机抖动：500ms, 1s, 2s, 3s, 5s
+                    base_delay = [0.5, 1.0, 2.0, 3.0, 5.0][min(attempt, 4)]
+                    jitter = random.uniform(0.1, 0.3)  # 添加随机抖动避免同时重试
+                    delay = base_delay + jitter
+                    time.sleep(delay)
+
+        # 所有重试都失败了
+        logger.error(f"❌ 通道创建最终失败，已重试{max_retries}次: {channel_name}")
+        return False
 
     def cache_text(self, text: str, channel_name: str = "default", metadata: Optional[Dict] = None, skip_websocket: bool = False) -> bool:
         """

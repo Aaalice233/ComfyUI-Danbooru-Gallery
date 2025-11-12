@@ -186,8 +186,20 @@ function setupMonitoring(node) {
     const channelWidget = node.widgets?.find(w => w.name === "channel_name");
     const currentChannelName = channelWidget?.value || "default";
     if (currentChannelName && currentChannelName.trim() !== '') {
-        ensureChannelExists(currentChannelName).then(() => {
-            logger.info(`[GlobalTextCacheSave] ✅ 监听初始化后预注册通道: ${currentChannelName}`);
+        // 开始监控节点通道注册状态
+        channelRegistrationMonitor.startNodeRegistration(node, currentChannelName);
+
+        // 执行通道注册（带重试）
+        ensureChannelExists(currentChannelName).then((success) => {
+            if (success) {
+                logger.info(`[GlobalTextCacheSave] ✅ 监听初始化后预注册通道: ${currentChannelName}`);
+                // 更新监控状态为成功（假设1次尝试成功）
+                channelRegistrationMonitor.updateNodeStatus(node.id, 'success', 1);
+            } else {
+                logger.error(`[GlobalTextCacheSave] ❌ 通道注册失败: ${currentChannelName}`);
+                // 更新监控状态为失败
+                channelRegistrationMonitor.updateNodeStatus(node.id, 'failed', 5);
+            }
         });
     }
 
@@ -231,33 +243,56 @@ function cleanupMonitoring(node) {
 }
 
 /**
- * 通过API确保通道存在（预注册通道）
+ * 通过API确保通道存在（预注册通道）- 增强版支持重试
  * @param {string} channelName - 通道名称
+ * @param {number} maxRetries - 最大重试次数（默认5次）
  * @returns {Promise<boolean>} 是否成功
  */
-async function ensureChannelExists(channelName) {
-    try {
-        const response = await api.fetchApi('/danbooru/text_cache/ensure_channel', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                channel_name: channelName
-            })
-        });
+async function ensureChannelExists(channelName, maxRetries = 5) {
+    const baseDelays = [500, 1000, 2000, 3000, 5000]; // 指数退避：0.5s, 1s, 2s, 3s, 5s
 
-        if (response.ok) {
-            logger.info(`[GlobalTextCacheSave] ✅ 通道已预注册: ${channelName}`);
-            return true;
-        } else {
-            logger.error(`[GlobalTextCacheSave] ❌ 通道预注册失败: ${channelName}`, response.statusText);
-            return false;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            const response = await api.fetchApi('/danbooru/text_cache/ensure_channel', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    channel_name: channelName,
+                    attempt: attempt + 1  // 告知后端当前尝试次数
+                })
+            });
+
+            if (response.ok) {
+                if (attempt === 0) {
+                    logger.info(`[GlobalTextCacheSave] ✅ 通道已预注册: ${channelName}`);
+                } else {
+                    logger.info(`[GlobalTextCacheSave] ✅ 重试${attempt + 1}次成功预注册通道: ${channelName}`);
+                }
+                return true;
+            } else {
+                logger.warn(`[GlobalTextCacheSave] ⚠️ 通道预注册失败 (尝试 ${attempt + 1}/${maxRetries}): ${channelName}`, response.status, response.statusText);
+            }
+
+        } catch (error) {
+            logger.warn(`[GlobalTextCacheSave] ⚠️ 通道预注册异常 (尝试 ${attempt + 1}/${maxRetries}): ${channelName}`, error.message);
         }
-    } catch (error) {
-        logger.error(`[GlobalTextCacheSave] ❌ 通道预注册异常: ${channelName}`, error);
-        return false;
+
+        // 如果不是最后一次尝试，等待后重试
+        if (attempt < maxRetries - 1) {
+            const baseDelay = baseDelays[Math.min(attempt, baseDelays.length - 1)];
+            const jitter = Math.random() * 200; // 0-200ms随机抖动
+            const delay = baseDelay + jitter;
+
+            logger.info(`[GlobalTextCacheSave] ⏳ 等待${Math.round(delay)}ms后重试通道注册: ${channelName}`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
     }
+
+    // 所有重试都失败了
+    logger.error(`[GlobalTextCacheSave] ❌ 通道预注册最终失败，已重试${maxRetries}次: ${channelName}`);
+    return false;
 }
 
 // 请求限流：记录每个节点的最后请求时间
@@ -899,5 +934,531 @@ app.registerExtension({
         }
     }
 });
+
+// ====== 通道注册状态监控和反馈 ======
+
+/**
+ * 通道注册状态监控器
+ * 跟踪所有节点的通道注册状态，提供实时反馈
+ */
+class ChannelRegistrationMonitor {
+    constructor() {
+        this.nodeStatuses = new Map(); // key: nodeId, value: {channel, status, attempts, lastAttempt}
+        this.pendingRegistrations = new Set(); // 正在注册的通道
+        this.successfulRegistrations = new Set(); // 成功注册的通道
+        this.failedRegistrations = new Set(); // 失败注册的通道
+        this.checkInterval = null;
+        this.isMonitoring = false;
+    }
+
+    /**
+     * 开始监控节点的通道注册
+     * @param {object} node - 节点对象
+     * @param {string} channelName - 通道名称
+     */
+    startNodeRegistration(node, channelName) {
+        const nodeId = node.id;
+        this.nodeStatuses.set(nodeId, {
+            channel: channelName,
+            status: 'pending',
+            attempts: 0,
+            lastAttempt: Date.now(),
+            node: node
+        });
+
+        logger.info(`[ChannelMonitor] 📝 开始监控节点${nodeId}的通道注册: ${channelName}`);
+
+        if (!this.isMonitoring) {
+            this.startMonitoring();
+        }
+    }
+
+    /**
+     * 更新节点注册状态
+     * @param {number} nodeId - 节点ID
+     * @param {string} status - 状态: 'pending', 'success', 'failed'
+     * @param {number} attempts - 尝试次数
+     */
+    updateNodeStatus(nodeId, status, attempts = null) {
+        const nodeStatus = this.nodeStatuses.get(nodeId);
+        if (nodeStatus) {
+            nodeStatus.status = status;
+            nodeStatus.lastAttempt = Date.now();
+            if (attempts !== null) {
+                nodeStatus.attempts = attempts;
+            }
+
+            const channel = nodeStatus.channel;
+
+            // 更新状态集合
+            this.pendingRegistrations.delete(channel);
+            if (status === 'success') {
+                this.successfulRegistrations.add(channel);
+                this.failedRegistrations.delete(channel);
+                logger.info(`[ChannelMonitor] ✅ 节点${nodeId}通道注册成功: ${channel}`);
+            } else if (status === 'failed') {
+                this.failedRegistrations.add(channel);
+                this.successfulRegistrations.delete(channel);
+                logger.error(`[ChannelMonitor] ❌ 节点${nodeId}通道注册失败: ${channel}`);
+            }
+
+            // 更新节点预览状态
+            this.updateNodePreview(nodeStatus.node);
+        }
+    }
+
+    /**
+     * 开始监控循环
+     */
+    startMonitoring() {
+        if (this.isMonitoring) return;
+
+        this.isMonitoring = true;
+        logger.info("[ChannelMonitor] 🔍 开始通道注册状态监控");
+
+        this.checkInterval = setInterval(() => {
+            this.checkRegistrationStatus();
+        }, 2000); // 每2秒检查一次
+    }
+
+    /**
+     * 停止监控
+     */
+    stopMonitoring() {
+        if (this.checkInterval) {
+            clearInterval(this.checkInterval);
+            this.checkInterval = null;
+        }
+        this.isMonitoring = false;
+        logger.info("[ChannelMonitor] ⏹️ 停止通道注册状态监控");
+    }
+
+    /**
+     * 检查注册状态
+     */
+    async checkRegistrationStatus() {
+        try {
+            // 获取后端通道列表
+            const response = await api.fetchApi('/danbooru/text_cache/channels');
+            if (!response.ok) return;
+
+            const data = await response.json();
+            const backendChannels = new Set(data.channels || []);
+
+            // 检查每个节点的通道注册状态
+            for (const [nodeId, nodeStatus] of this.nodeStatuses.entries()) {
+                const channel = nodeStatus.channel;
+                const isRegistered = backendChannels.has(channel);
+
+                if (isRegistered && nodeStatus.status !== 'success') {
+                    this.updateNodeStatus(nodeId, 'success', nodeStatus.attempts);
+                } else if (!isRegistered && nodeStatus.status === 'success') {
+                    // 通道在后端丢失了，重新标记为待注册
+                    this.updateNodeStatus(nodeId, 'pending', 0);
+                    this.pendingRegistrations.add(channel);
+                }
+            }
+
+            // 检查是否所有节点都已成功注册
+            const totalNodes = this.nodeStatuses.size;
+            const successNodes = this.successfulRegistrations.size;
+            const pendingNodes = this.pendingRegistrations.size;
+            const failedNodes = this.failedRegistrations.size;
+
+            if (totalNodes > 0) {
+                if (successNodes === totalNodes) {
+                    logger.info(`[ChannelMonitor] 🎉 所有节点通道注册完成! (${successNodes}/${totalNodes})`);
+                    this.stopMonitoring();
+
+                    // 显示成功Toast
+                    if (showToast) {
+                        showToast(`🎉 所有${totalNodes}个文本缓存节点通道注册成功!`, 'success', 3000);
+                    }
+                } else if (failedNodes > 0 && pendingNodes === 0) {
+                    logger.warn(`[ChannelMonitor] ⚠️ 部分节点注册失败: 成功${successNodes}/${totalNodes}, 失败${failedNodes}`);
+
+                    // 显示警告Toast
+                    if (showToast) {
+                        showToast(`⚠️ ${failedNodes}个节点通道注册失败，请检查网络连接`, 'warning', 5000);
+                    }
+                }
+            }
+
+        } catch (error) {
+            logger.error("[ChannelMonitor] 检查注册状态时出错:", error);
+        }
+    }
+
+    /**
+     * 更新节点预览显示
+     * @param {object} node - 节点对象
+     */
+    updateNodePreview(node) {
+        if (!node || !node._cachePreviewElement) return;
+
+        const nodeStatus = this.nodeStatuses.get(node.id);
+        if (!nodeStatus) return;
+
+        const statusIcon = {
+            'pending': '⏳',
+            'success': '✅',
+            'failed': '❌'
+        }[nodeStatus.status] || '❓';
+
+        // 在现有状态信息前添加注册状态
+        const currentText = node._cachePreviewElement.textContent;
+        const lines = currentText.split('\n');
+
+        // 在第一行（状态行）添加注册状态
+        if (lines.length > 0) {
+            const registrationStatus = `${statusIcon} 通道注册: ${nodeStatus.status}`;
+            // 查找是否有现有的通道注册状态标记
+            const existingRegistrationIndex = lines.findIndex(line =>
+                line.includes('通道注册:') || line.includes('⏳') || line.includes('✅') || line.includes('❌')
+            );
+
+            if (existingRegistrationIndex >= 0) {
+                lines[existingRegistrationIndex] = registrationStatus;
+            } else {
+                // 在状态行后插入注册状态
+                lines.splice(1, 0, registrationStatus);
+            }
+        }
+
+        node._cachePreviewElement.textContent = lines.join('\n');
+    }
+
+    /**
+     * 获取注册统计信息
+     */
+    getStats() {
+        return {
+            total: this.nodeStatuses.size,
+            success: this.successfulRegistrations.size,
+            pending: this.pendingRegistrations.size,
+            failed: this.failedRegistrations.size
+        };
+    }
+}
+
+// 创建全局监控器实例
+const channelRegistrationMonitor = new ChannelRegistrationMonitor();
+
+// 导出监控器供其他函数使用
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { channelRegistrationMonitor };
+}
+
+// ====== 双向状态验证机制 ======
+
+/**
+ * 工作流通道同步器
+ * 负责扫描工作流中的Save节点并与后端进行双向验证
+ */
+class WorkflowChannelSynchronizer {
+    constructor() {
+        this.isSyncing = false;
+        this.lastSyncTime = 0;
+        this.syncInterval = 60000; // 改为60秒同步间隔，减少频率
+        this.syncTimer = null;
+        this.pendingChannels = new Set();
+        this.lastWorkflowHash = ""; // 工作流变化检测
+        this.lastSuccessToast = 0; // 成功通知频率控制
+        this.ERROR_THROTTLE_INTERVAL = 10000; // 错误日志节流间隔10秒
+        this.lastErrorLog = 0;
+    }
+
+    /**
+     * 扫描当前工作流中的所有文本缓存保存节点
+     * @returns {Array} 发现的通道列表
+     */
+    scanWorkflowChannels() {
+        try {
+            const workflowNodes = app.graph._nodes || [];
+            const saveNodes = workflowNodes.filter(node => node.comfyClass === "GlobalTextCacheSave");
+            const channels = [];
+
+            saveNodes.forEach(node => {
+                const channelWidget = node.widgets?.find(w => w.name === "channel_name");
+                if (channelWidget && channelWidget.value) {
+                    const channelName = channelWidget.value.toString().trim();
+                    if (channelName && channelName !== "default") {
+                        channels.push({
+                            node: node,
+                            channelName: channelName,
+                            nodeId: node.id,
+                            nodeTitle: node.title || "GlobalTextCacheSave"
+                        });
+                    }
+                }
+            });
+
+            logger.info(`[WorkflowSynchronizer] 🔍 工作流扫描结果: 发现${saveNodes.length}个Save节点, ${channels.length}个有名称通道`);
+            return channels;
+        } catch (error) {
+            logger.error("[WorkflowSynchronizer] 工作流扫描失败:", error);
+            return [];
+        }
+    }
+
+    /**
+     * 获取当前工作流数据（用于发送到后端）
+     * @returns {Object} 工作流数据
+     */
+    getWorkflowData() {
+        try {
+            // 尝试获取当前工作流的JSON数据
+            // ComfyUI的工作流数据存储在app.graph中
+            const workflow = {
+                nodes: []
+            };
+
+            // 构建节点数据
+            const nodes = app.graph._nodes || [];
+            nodes.forEach(node => {
+                const nodeData = {
+                    id: node.id,
+                    class_type: node.comfyClass || node.type || node.constructor?.name,
+                    title: node.title || node.comfyClass || "Unknown",
+                    widgets_values: []
+                };
+
+                // 获取widget值
+                if (node.widgets) {
+                    node.widgets.forEach(widget => {
+                        if (widget.name === "channel_name" && widget.value) {
+                            nodeData.widgets_values.push(widget.value.toString().trim());
+                        } else if (widget.name === "monitor_node_id" && widget.value) {
+                            nodeData.widgets_values.push(widget.value.toString().trim());
+                        } else if (widget.name === "monitor_widget_name" && widget.value) {
+                            nodeData.widgets_values.push(widget.value.toString().trim());
+                        } else {
+                            // 为保持一致的数组长度，添加空字符串
+                            nodeData.widgets_values.push("");
+                        }
+                    });
+                }
+
+                workflow.nodes.push(nodeData);
+            });
+
+            return workflow;
+        } catch (error) {
+            logger.error("[WorkflowSynchronizer] 获取工作流数据失败:", error);
+            return { nodes: [] };
+        }
+    }
+
+    /**
+     * 计算工作流哈希（用于变化检测）
+     * @returns {string} 工作流哈希
+     */
+    calculateWorkflowHash() {
+        try {
+            const nodes = app.graph._nodes || [];
+            const saveNodes = nodes.filter(node => node.comfyClass === "GlobalTextCacheSave");
+            const nodeInfo = saveNodes.map(node => ({
+                id: node.id,
+                channel: node.widgets?.find(w => w.name === "channel_name")?.value || ""
+            }));
+            return JSON.stringify(nodeInfo);
+        } catch (error) {
+            return "";
+        }
+    }
+
+    /**
+     * 节流错误日志输出
+     * @param {string} message - 错误消息
+     * @param {Error} error - 错误对象
+     */
+    throttledErrorLog(message, error) {
+        const now = Date.now();
+        if (now - this.lastErrorLog > this.ERROR_THROTTLE_INTERVAL) {
+            logger.error(message, error);
+            this.lastErrorLog = now;
+        }
+    }
+
+    /**
+     * 执行工作流通道同步
+     * @param {boolean} force - 是否强制同步
+     */
+    async syncWorkflowChannels(force = false) {
+        const now = Date.now();
+        if (!force && this.isSyncing) {
+            return; // 静默跳过，避免日志刷屏
+        }
+
+        // 智能同步：检查工作流是否发生变化
+        const currentWorkflowHash = this.calculateWorkflowHash();
+        if (!force && !this.isSyncing) {
+            if (currentWorkflowHash === this.lastWorkflowHash && (now - this.lastSyncTime) < this.syncInterval) {
+                return; // 工作流未变化且间隔未到，跳过同步
+            }
+        }
+
+        this.isSyncing = true;
+        this.lastSyncTime = now;
+        this.lastWorkflowHash = currentWorkflowHash;
+
+        try {
+            logger.info("[WorkflowSynchronizer] 🚀 开始工作流通道同步...");
+
+            // 获取工作流数据
+            const workflowData = this.getWorkflowData();
+            const localChannels = this.scanWorkflowChannels();
+            const localChannelNames = localChannels.map(item => item.channelName);
+
+            // 调用后端同步API
+            const response = await api.fetchApi('/danbooru/text_cache/sync_workflow_channels', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    workflow: workflowData
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                logger.info("[WorkflowSynchronizer] ✅ 后端同步成功:", result);
+
+                // 验证同步结果
+                this.validateSyncResult(result, localChannelNames);
+
+                // 通知用户同步结果
+                if (showToast && result.status === "success") {
+                    const { successful_registrations, failed_registrations } = result.sync_result;
+                    if (failed_registrations === 0) {
+                        showToast(`🎉 工作流同步成功！${successful_registrations}个通道已注册`, 'success', 3000);
+                    } else {
+                        showToast(`⚠️ 同步部分完成：${successful_registrations}个成功, ${failed_registrations}个失败`, 'warning', 4000);
+                    }
+                }
+
+            } else {
+                this.throttledErrorLog("[WorkflowSynchronizer] ❌ 后端同步失败:", response.status);
+                if (showToast) {
+                    showToast(`❌ 工作流同步失败: ${response.status}`, 'error', 4000);
+                }
+            }
+
+        } catch (error) {
+            this.throttledErrorLog("[WorkflowSynchronizer] ❌ 工作流通道同步异常:", error);
+            if (showToast) {
+                showToast(`❌ 工作流同步异常: ${error.message}`, 'error', 4000);
+            }
+        } finally {
+            this.isSyncing = false;
+        }
+    }
+
+    /**
+     * 验证同步结果
+     * @param {Object} syncResult - 同步结果
+     * @param {Array} localChannels - 本地发现的通道
+     */
+    validateSyncResult(syncResult, localChannels) {
+        try {
+            logger.info("[WorkflowSynchronizer] 🔍 开始验证同步结果...");
+
+            const { sync_result } = syncResult;
+            const { unique_channels_found, successful_registrations, failed_channels, found_nodes } = sync_result;
+
+            // 验证发现的通道数量
+            if (unique_channels_found !== localChannels.length) {
+                logger.warn(`[WorkflowSynchronizer] ⚠️ 通道数量不匹配: 本地发现${localChannels.length}个, 后端识别${unique_channels_found}个`);
+            }
+
+            // 验证失败的通道
+            if (failed_channels.length > 0) {
+                logger.error(`[WorkflowSynchronizer] ❌ 以下通道注册失败: ${failed_channels.join(", ")}`);
+
+                // 为失败的通道重新启动监控
+                localChannels.forEach(channelInfo => {
+                    if (failed_channels.includes(channelInfo.channelName)) {
+                        channelRegistrationMonitor.startNodeRegistration(channelInfo.node, channelInfo.channelName);
+                        channelRegistrationMonitor.updateNodeStatus(channelInfo.nodeId, 'failed', 5);
+                    }
+                });
+            }
+
+            // 验证成功的通道
+            const successfulChannels = localChannels.filter(channelInfo =>
+                !failed_channels.includes(channelInfo.channelName)
+            );
+
+            successfulChannels.forEach(channelInfo => {
+                channelRegistrationMonitor.updateNodeStatus(channelInfo.nodeId, 'success', 1);
+            });
+
+            logger.info(`[WorkflowSynchronizer] ✅ 同步验证完成: ${successful_registrations}个成功, ${failed_channels.length}个失败`);
+
+        } catch (error) {
+            logger.error("[WorkflowSynchronizer] 验证同步结果时出错:", error);
+        }
+    }
+
+    /**
+     * 启动自动同步
+     */
+    startAutoSync() {
+        if (this.syncTimer) {
+            clearInterval(this.syncTimer);
+        }
+
+        logger.info("[WorkflowSynchronizer] 🔄 启动自动同步模式");
+
+        // 立即执行一次同步
+        this.syncWorkflowChannels(true);
+
+        // 设置定时同步
+        this.syncTimer = setInterval(() => {
+            this.syncWorkflowChannels();
+        }, 60000); // 改为每60秒同步一次，减少性能影响
+    }
+
+    /**
+     * 停止自动同步
+     */
+    stopAutoSync() {
+        if (this.syncTimer) {
+            clearInterval(this.syncTimer);
+            this.syncTimer = null;
+            logger.info("[WorkflowSynchronizer] ⏹️ 停止自动同步模式");
+        }
+    }
+
+    /**
+     * 手动触发同步
+     */
+    manualSync() {
+        logger.info("[WorkflowSynchronizer] 🔄 手动触发工作流通道同步");
+        this.syncWorkflowChannels(true);
+    }
+
+    /**
+     * 获取同步统计信息
+     */
+    getSyncStats() {
+        return {
+            isSyncing: this.isSyncing,
+            lastSyncTime: this.lastSyncTime,
+            syncInterval: this.syncInterval,
+            pendingChannels: Array.from(this.pendingChannels)
+        };
+    }
+}
+
+// 创建全局工作流同步器实例
+const workflowChannelSynchronizer = new WorkflowChannelSynchronizer();
+
+// 在ComfyUI启动时自动同步
+setTimeout(() => {
+    logger.info("[WorkflowSynchronizer] 🚀 ComfyUI启动完成，开始自动工作流通道同步");
+    workflowChannelSynchronizer.startAutoSync();
+}, 3000); // 3秒延迟，确保页面完全加载
 
 logger.info("[GlobalTextCacheSave] JavaScript扩展加载完成");

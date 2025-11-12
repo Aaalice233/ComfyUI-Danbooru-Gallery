@@ -193,6 +193,14 @@ try:
         # 这不影响其他核心功能（如 SaveImagePlus）
         tag_sync_api = None
 
+    # 导入并设置文本缓存管理器API（增强版，支持工作流扫描）
+    try:
+        from .py.text_cache_manager.api import setup_text_cache_api
+        setup_text_cache_api()
+        logger.info("✓ 文本缓存管理器API已注册（支持工作流扫描）")
+    except Exception as e:
+        logger.warning(f" 文本缓存管理器API注册失败: {e}")
+
     # 导入并注册 checkpoint 预览图 API
     try:
         from .py.simple_checkpoint_loader_with_name import register_preview_api
