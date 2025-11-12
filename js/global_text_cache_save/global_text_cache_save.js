@@ -949,6 +949,7 @@ class ChannelRegistrationMonitor {
         this.failedRegistrations = new Set(); // 失败注册的通道
         this.checkInterval = null;
         this.isMonitoring = false;
+        this.hasShownSuccessToast = false; // 是否已显示成功Toast
     }
 
     /**
@@ -1070,9 +1071,10 @@ class ChannelRegistrationMonitor {
                     logger.info(`[ChannelMonitor] 🎉 所有节点通道注册完成! (${successNodes}/${totalNodes})`);
                     this.stopMonitoring();
 
-                    // 显示成功Toast
-                    if (showToast) {
+                    // 显示成功Toast（只显示一次）
+                    if (showToast && !this.hasShownSuccessToast) {
                         showToast(`🎉 所有${totalNodes}个文本缓存节点通道注册成功!`, 'success', 3000);
+                        this.hasShownSuccessToast = true;
                     }
                 } else if (failedNodes > 0 && pendingNodes === 0) {
                     logger.warn(`[ChannelMonitor] ⚠️ 部分节点注册失败: 成功${successNodes}/${totalNodes}, 失败${failedNodes}`);
@@ -1166,6 +1168,7 @@ class WorkflowChannelSynchronizer {
         this.lastSuccessToast = 0; // 成功通知频率控制
         this.ERROR_THROTTLE_INTERVAL = 10000; // 错误日志节流间隔10秒
         this.lastErrorLog = 0;
+        this.hasShownSyncSuccessToast = false; // 是否已显示同步成功Toast
     }
 
     /**
@@ -1328,12 +1331,13 @@ class WorkflowChannelSynchronizer {
                 // 验证同步结果
                 this.validateSyncResult(result, localChannelNames);
 
-                // 通知用户同步结果
+                // 通知用户同步结果（成功Toast只显示一次）
                 if (showToast && result.status === "success") {
                     const { successful_registrations, failed_registrations } = result.sync_result;
-                    if (failed_registrations === 0) {
+                    if (failed_registrations === 0 && !this.hasShownSyncSuccessToast) {
                         showToast(`🎉 工作流同步成功！${successful_registrations}个通道已注册`, 'success', 3000);
-                    } else {
+                        this.hasShownSyncSuccessToast = true;
+                    } else if (failed_registrations > 0) {
                         showToast(`⚠️ 同步部分完成：${successful_registrations}个成功, ${failed_registrations}个失败`, 'warning', 4000);
                     }
                 }
@@ -1458,6 +1462,11 @@ const workflowChannelSynchronizer = new WorkflowChannelSynchronizer();
 // 在ComfyUI启动时自动同步
 setTimeout(() => {
     logger.info("[WorkflowSynchronizer] 🚀 ComfyUI启动完成，开始自动工作流通道同步");
+
+    // 重置Toast标志，确保页面刷新后能再次显示
+    channelRegistrationMonitor.hasShownSuccessToast = false;
+    workflowChannelSynchronizer.hasShownSyncSuccessToast = false;
+
     workflowChannelSynchronizer.startAutoSync();
 }, 3000); // 3秒延迟，确保页面完全加载
 
