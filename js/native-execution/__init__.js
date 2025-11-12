@@ -24,6 +24,7 @@ const PREVIEW_DISPLAY_NODES = new Set([
     'PreviewImage',         // ComfyUI 内核预览图节点
     'SaveImage',           // ComfyUI 内核保存图节点
     'ShowText',            // ComfyUI-Custom-Scripts 显示文本节点
+    'ShowText|pysssss',  // pyssss 的显示文本节点
     'PreviewAny',          // ComfyUI 内核显示任意节点
     'SimpleImageCompare',  // 本项目图像对比节点
     'ImageCompare',        // rgthree 图像对比节点
@@ -548,64 +549,38 @@ function isNodeInGroup(node, group) {
     }
 }
 
-// Helper function: check if preview/display node should be included based on名单制
+// Helper function: check if preview/display node should be included
 function shouldIncludePreviewDisplayNode(nodeId, nodeClassType, oldOutput) {
-    /** 检查预览/显示节点是否应该被包含 - 基于统一名单制，只对未在组执行管理器中配置的组内的节点生效 */
+    /** 检查预览/显示节点是否应该被包含 - 只判断 mute/bypass 状态 */
 
     try {
-        // 参数验证
+        // 快速失败：参数验证
         if (!nodeId || !nodeClassType || !oldOutput) {
             logger.warn(`[OptimizedExecutionSystem] ⚠️ shouldIncludePreviewDisplayNode 参数无效: nodeId=${nodeId}, classType=${nodeClassType}`);
             return false;
         }
 
-        // 1. 名单制检查：如果节点不在预览/显示名单中，不包含
+        // 快速失败：不在预览/显示名单中
         if (!PREVIEW_DISPLAY_NODES.has(nodeClassType)) {
             return false;
         }
 
-        // 2. ✅ 新增：检查节点是否在已管理的组内 - 如果是，跳过名单制
-        const nodeGroupName = getNodeGroupName(nodeId);
-        if (nodeGroupName) {
-            const managedGroups = getManagedGroupNames();
-            if (managedGroups.includes(nodeGroupName)) {
-                logger.info(`[OptimizedExecutionSystem] 🚫 预览节点 ${nodeId}(${nodeClassType}) 在已管理的组 "${nodeGroupName}" 内，跳过名单制`);
-                return false;
-            }
-        }
-
-        // 3. 检查该节点是否连接到当前执行组的节点
-        const currentGroup = getCurrentExecutingGroup();
-        if (!currentGroup) {
-            // 如果没有当前执行组，使用原有的逻辑（避免意外影响）
-            logger.debug(`[OptimizedExecutionSystem] 🔍 无当前执行组，包含预览节点 ${nodeId}(${nodeClassType})`);
-            return true;
-        }
-
-        // 检查该节点的输入是否连接到当前执行组的节点
-        const currentNode = oldOutput[nodeId];
-        if (!currentNode || !currentNode.inputs) {
-            logger.debug(`[OptimizedExecutionSystem] 🔍 预览节点 ${nodeId}(${nodeClassType}) 无输入或输入无效`);
+        // 获取节点对象
+        const graphNode = app.graph._nodes.find(n => String(n.id) === String(nodeId));
+        if (!graphNode) {
             return false;
         }
 
-        // 遍历该节点的所有输入，检查是否有来自当前执行组的连接
-        for (const [inputName, inputValue] of Object.entries(currentNode.inputs)) {
-            if (Array.isArray(inputValue) && inputValue.length >= 2) {
-                const sourceNodeId = String(inputValue[0]);
-                const sourceNodeGroupName = getNodeGroupName(sourceNodeId);
-
-                // 如果输入源节点在当前执行组中，则包含此预览节点
-                if (sourceNodeGroupName === currentGroup) {
-                    logger.info(`[OptimizedExecutionSystem] 🎯 预览节点 ${nodeId}(${nodeClassType}) 连接到当前组 "${currentGroup}" 的节点 ${sourceNodeId}`);
-                    return true;
-                }
-            }
+        // 快速失败：检查节点的 mode 状态
+        // mode === 2: NEVER (静音/mute)
+        // mode === 4: Bypass
+        if (graphNode.mode === 2 || graphNode.mode === 4) {
+            return false;
         }
 
-        // 如果没有连接到当前执行组，不包含此预览节点
-        logger.info(`[OptimizedExecutionSystem] 🚫 预览节点 ${nodeId}(${nodeClassType}) 未连接到当前组 "${currentGroup}"，跳过`);
-        return false;
+        // 通过所有检查，包含该节点
+        return true;
+
     } catch (error) {
         logger.error(`[OptimizedExecutionSystem] ❌ shouldIncludePreviewDisplayNode 异常:`, error);
         // 出错时默认不包含，避免意外的节点执行
