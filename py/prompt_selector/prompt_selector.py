@@ -17,10 +17,9 @@ from ..utils.logger import get_logger
 logger = get_logger(__name__)
 
 # 插件目录
-# 插件目录
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
-# The root directory of the custom node
-CUSTOM_NODE_DIR = os.path.abspath(os.path.join(PLUGIN_DIR, '..'))
+# The root directory of the custom node (需要向上两级: py/prompt_selector -> py -> ComfyUI-Danbooru-Gallery)
+CUSTOM_NODE_DIR = os.path.abspath(os.path.join(PLUGIN_DIR, '..', '..'))
 DATA_FILE = os.path.join(PLUGIN_DIR, "data.json")
 PREVIEW_DIR = os.path.join(PLUGIN_DIR, "preview")
 
@@ -539,59 +538,107 @@ def initialize_data_file():
     OLD_PREVIEW_DIR = os.path.join(OLD_BASE_DIR, "preview")
     MIGRATION_MARKER = os.path.join(OLD_BASE_DIR, "MIGRATED.txt")
 
-    # 迁移条件：旧数据存在 + 新数据不存在 + 未标记已迁移
-    if (os.path.exists(OLD_DATA_FILE) and
-        not os.path.exists(DATA_FILE) and
-        not os.path.exists(MIGRATION_MARKER)):
-
+    # 迁移条件：旧数据存在 + 未标记已迁移
+    if os.path.exists(OLD_DATA_FILE) and not os.path.exists(MIGRATION_MARKER):
         try:
-            logger.info("🔍 检测到旧版本词库数据")
+            logger.error("🔍 检测到旧版本词库数据，开始自动迁移...")
 
             # 1. 备份旧数据
             backup_file = OLD_DATA_FILE + ".backup"
             shutil.copy2(OLD_DATA_FILE, backup_file)
-            logger.info(f"📦 备份已创建: {backup_file}")
+            logger.error(f"📦 备份已创建: {backup_file}")
 
             # 2. 创建新目录结构
             os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
             os.makedirs(PREVIEW_DIR, exist_ok=True)
 
-            # 3. 迁移 data.json
-            logger.info("🚀 开始自动迁移词库...")
-            shutil.copy2(OLD_DATA_FILE, DATA_FILE)
-            logger.info("✓ 词库数据迁移完成")
+            # 3. 加载旧数据
+            with open(OLD_DATA_FILE, 'r', encoding='utf-8') as f:
+                old_data = json.load(f)
+            old_data = _ensure_data_compatibility(old_data)
 
-            # 4. 迁移 preview 目录
+            # 4. 合并策略：相同的覆盖，没有的新增
+            if os.path.exists(DATA_FILE):
+                # 新数据存在，进行合并
+                logger.error("📝 检测到新数据，执行合并策略（相同覆盖，没有新增）")
+                with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                    new_data = json.load(f)
+                new_data = _ensure_data_compatibility(new_data)
+
+                # 合并分类和提示词
+                new_categories_map = {cat["name"]: cat for cat in new_data.get("categories", [])}
+
+                for old_category in old_data.get("categories", []):
+                    cat_name = old_category.get("name")
+
+                    if cat_name not in new_categories_map:
+                        # 分类不存在，直接添加
+                        new_data["categories"].append(old_category)
+                        logger.error(f"  ✓ 新增分类: {cat_name}")
+                    else:
+                        # 分类存在，合并提示词
+                        new_category = new_categories_map[cat_name]
+                        new_prompts_map = {
+                            p.get("alias") or p.get("prompt"): p
+                            for p in new_category.get("prompts", [])
+                        }
+
+                        for old_prompt in old_category.get("prompts", []):
+                            prompt_key = old_prompt.get("alias") or old_prompt.get("prompt")
+
+                            if prompt_key not in new_prompts_map:
+                                # 提示词不存在，添加
+                                new_category["prompts"].append(old_prompt)
+                            else:
+                                # 提示词存在，覆盖（保留id）
+                                existing_prompt = new_prompts_map[prompt_key]
+                                old_id = existing_prompt.get("id")
+                                for key, value in old_prompt.items():
+                                    existing_prompt[key] = value
+                                if old_id:
+                                    existing_prompt["id"] = old_id
+
+                # 合并设置（旧数据优先）
+                new_data["settings"].update(old_data.get("settings", {}))
+                merged_data = new_data
+                logger.error("✓ 数据合并完成")
+            else:
+                # 新数据不存在，直接使用旧数据
+                merged_data = old_data
+                logger.error("✓ 新数据不存在，直接迁移旧数据")
+
+            # 5. 保存合并后的数据
+            with open(DATA_FILE, 'w', encoding='utf-8') as f:
+                json.dump(merged_data, f, ensure_ascii=False, indent=4)
+            logger.error("✓ 词库数据已保存")
+
+            # 6. 迁移 preview 目录
             preview_count = 0
             if os.path.exists(OLD_PREVIEW_DIR):
                 for filename in os.listdir(OLD_PREVIEW_DIR):
                     src = os.path.join(OLD_PREVIEW_DIR, filename)
                     dst = os.path.join(PREVIEW_DIR, filename)
                     if os.path.isfile(src):
-                        shutil.copy2(src, dst)
-                        preview_count += 1
-                logger.info(f"✓ 预览图迁移完成 ({preview_count} 个文件)")
+                        # 只有当目标文件不存在时才复制（避免覆盖新图片）
+                        if not os.path.exists(dst):
+                            shutil.copy2(src, dst)
+                            preview_count += 1
+                logger.error(f"✓ 预览图迁移完成 ({preview_count} 个新文件)")
 
-            # 5. 验证数据兼容性
-            with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            data = _ensure_data_compatibility(data)
-            with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
-
-            # 6. 创建迁移标记文件
+            # 7. 创建迁移标记文件
             with open(MIGRATION_MARKER, 'w', encoding='utf-8') as f:
                 f.write(f"迁移完成时间: {datetime.now().isoformat()}\n")
                 f.write(f"新数据位置: {DATA_FILE}\n")
                 f.write("注意: 此目录下的文件已迁移到新位置，可以手动删除\n")
 
-            logger.info(f"📍 旧位置: {OLD_DATA_FILE}")
-            logger.info(f"📍 新位置: {DATA_FILE}")
-            logger.info("✓ 迁移标记已创建")
+            logger.error(f"📍 旧位置: {OLD_DATA_FILE}")
+            logger.error(f"📍 新位置: {DATA_FILE}")
+            logger.error("✅ 词库迁移完成！旧数据保留在原位置，可手动删除")
 
         except Exception as e:
-            logger.error(f"✗ 词库迁移失败: {str(e)}")
-            logger.info("→ 将使用默认词库，您的旧数据仍保留在原位置")
+            logger.error(f"❌ 词库迁移失败: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             # 继续执行下面的默认初始化逻辑
 
     # === 原有逻辑：创建默认数据 ===
