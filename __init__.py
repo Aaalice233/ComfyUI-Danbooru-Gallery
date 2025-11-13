@@ -68,10 +68,6 @@ from .py.text_cache_viewer import NODE_DISPLAY_NAME_MAPPINGS as text_cache_viewe
 from .py.open_in_krita import NODE_CLASS_MAPPINGS as open_in_krita_mappings
 from .py.open_in_krita import NODE_DISPLAY_NAME_MAPPINGS as open_in_krita_display_mappings
 
-# 导入下一执行组是否有效节点
-from .py.has_next_executor_group import NODE_CLASS_MAPPINGS as has_next_executor_group_mappings
-from .py.has_next_executor_group import NODE_DISPLAY_NAME_MAPPINGS as has_next_executor_group_display_mappings
-
 # 导入快速组导航器（纯JavaScript扩展）
 from .py.quick_group_navigation import NODE_CLASS_MAPPINGS as quick_group_navigation_mappings
 from .py.quick_group_navigation import NODE_DISPLAY_NAME_MAPPINGS as quick_group_navigation_display_mappings
@@ -113,7 +109,6 @@ NODE_CLASS_MAPPINGS = {
     **workflow_description_mappings,
     **text_cache_viewer_mappings,
     **open_in_krita_mappings,
-    **has_next_executor_group_mappings,
     **quick_group_navigation_mappings
 }
 
@@ -141,13 +136,12 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **workflow_description_display_mappings,
     **text_cache_viewer_display_mappings,
     **open_in_krita_display_mappings,
-    **has_next_executor_group_display_mappings,
     **quick_group_navigation_display_mappings
 }
 
 # 统计节点加载情况
 _node_load_stats["total_nodes"] = len(NODE_CLASS_MAPPINGS)
-_node_load_stats["loaded_modules"] = 24  # 成功导入的模块数（根据上面的import语句统计）
+_node_load_stats["loaded_modules"] = 23  # 成功导入的模块数（根据上面的import语句统计）
 
 # 控制台输出
 print("=" * 70, file=sys.stderr)
