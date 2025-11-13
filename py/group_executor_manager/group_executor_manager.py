@@ -14,6 +14,9 @@ from typing import Dict, Any, List
 # 导入日志系统
 from ..utils.logger import get_logger
 
+# 导入全局执行协调器
+from .execution_coordinator import get_coordinator
+
 # 初始化logger
 logger = get_logger(__name__)
 
@@ -202,9 +205,77 @@ class GroupExecutorManager:
             enable_cache = True
             debug_mode = False
 
-            # ✅ 每次执行都生成新的execution_id
-            execution_id = f"exec_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-            logger.info(f"✅ 生成新的execution_id: {execution_id}")
+            # ✅ 使用GlobalExecutionCoordinator生成稳定的execution_id
+            coordinator = get_coordinator()
+            execution_id, config_hash = coordinator.generate_stable_execution_id(config_data)
+            logger.info(f"✅ 生成稳定execution_id: {execution_id}")
+            logger.info(f"✅ 配置哈希: {config_hash[:16]}...")
+            
+            # ✅ 检测重复请求
+            is_duplicate, reason = coordinator.is_duplicate_request(config_hash, execution_id)
+            if is_duplicate:
+                logger.warning(f"🚫 检测到重复请求，拒绝执行")
+                logger.warning(f"   原因: {reason}")
+                
+                # 返回拒绝执行的响应
+                rejected_data = {
+                    "execution_plan": {
+                        "disabled": True,
+                        "disabled_reason": "duplicate_request",
+                        "message": f"重复请求已被拒绝: {reason}",
+                        "groups": [],
+                        "execution_id": execution_id,
+                        "execution_mode": "sequential",
+                        "cache_control_mode": "conditional",
+                        "client_id": None,
+                        "cache_enabled": False,
+                        "debug_mode": False
+                    },
+                    "cache_control_signal": {
+                        "execution_id": execution_id,
+                        "enabled": False,
+                        "timestamp": time.time(),
+                        "enable_cache": False,
+                        "cache_key": "rejected",
+                        "clear_cache": False,
+                        "cache_control_mode": "conditional",
+                        "disabled": True,
+                        "disabled_reason": "duplicate_request"
+                    }
+                }
+                return (json.dumps(rejected_data, ensure_ascii=False),)
+            
+            # ✅ 尝试获取执行权限
+            if not coordinator.acquire_execution_permission(execution_id, config_hash):
+                logger.warning(f"🚫 无法获取执行权限")
+                
+                # 返回无权限的响应
+                no_permission_data = {
+                    "execution_plan": {
+                        "disabled": True,
+                        "disabled_reason": "no_permission",
+                        "message": "无法获取执行权限，可能有其他执行正在进行",
+                        "groups": [],
+                        "execution_id": execution_id,
+                        "execution_mode": "sequential",
+                        "cache_control_mode": "conditional",
+                        "client_id": None,
+                        "cache_enabled": False,
+                        "debug_mode": False
+                    },
+                    "cache_control_signal": {
+                        "execution_id": execution_id,
+                        "enabled": False,
+                        "timestamp": time.time(),
+                        "enable_cache": False,
+                        "cache_key": "no_permission",
+                        "clear_cache": False,
+                        "cache_control_mode": "conditional",
+                        "disabled": True,
+                        "disabled_reason": "no_permission"
+                    }
+                }
+                return (json.dumps(no_permission_data, ensure_ascii=False),)
 
             # 创建执行计划 - 包含验证器需要的所有字段
             execution_plan = {
@@ -286,6 +357,106 @@ try:
     from aiohttp import web
     
     routes = PromptServer.instance.routes
+    
+    # ✅ 新增：释放执行权限的API端点
+    @routes.post('/danbooru_gallery/group_executor/release_permission')
+    async def release_execution_permission(request):
+        """释放执行权限"""
+        try:
+            data = await request.json()
+            execution_id = data.get('execution_id')
+            status = data.get('status', 'completed')
+            
+            if not execution_id:
+                return web.json_response({
+                    "status": "error",
+                    "message": "execution_id is required"
+                }, status=400)
+            
+            # 释放执行权限
+            coordinator = get_coordinator()
+            coordinator.release_execution_permission(execution_id, status)
+            
+            logger.info(f"[API] ✅ 释放执行权限: {execution_id} (状态: {status})")
+            
+            return web.json_response({
+                "status": "success",
+                "execution_id": execution_id
+            })
+        except Exception as e:
+            logger.error(f"[API] ❌ 释放执行权限失败: {e}")
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+    
+    # ✅ 新增：统计信息的API端点
+    @routes.get('/danbooru_gallery/group_executor/stats')
+    async def get_execution_stats(request):
+        """获取执行统计信息"""
+        try:
+            coordinator = get_coordinator()
+            stats = coordinator.get_stats()
+            
+            # 添加额外的运行时信息
+            import time
+            current_execution = None
+            if stats.get('current_execution'):
+                exec_id = stats['current_execution']
+                exec_status = coordinator.get_execution_status(exec_id)
+                if exec_status:
+                    # 获取执行历史信息
+                    with coordinator.history_lock:
+                        entry = coordinator.execution_history.get(exec_id)
+                        if entry:
+                            current_execution = {
+                                "execution_id": exec_id,
+                                "status": entry.status,
+                                "started_at": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(entry.timestamp)),
+                                "elapsed_seconds": int(time.time() - entry.timestamp)
+                            }
+            
+            result = {
+                "status": "success",
+                "stats": {
+                    "total_executions": stats.get('total_executions', 0),
+                    "current_execution_id": stats.get('current_execution'),
+                    "status_counts": stats.get('status_counts', {}),
+                    "uptime_seconds": int(time.time() - _group_executor_config.get('last_update', time.time()))
+                },
+                "current_execution": current_execution
+            }
+            
+            logger.debug(f"[API] 📊 统计信息: {result['stats']}")
+            
+            return web.json_response(result)
+        except Exception as e:
+            logger.error(f"[API] ❌ 获取统计信息失败: {e}")
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+    
+    # ✅ 新增：强制释放所有锁的API端点
+    @routes.post('/danbooru_gallery/group_executor/force_release_all')
+    async def force_release_all_locks(request):
+        """强制释放所有锁（紧急恢复）"""
+        try:
+            coordinator = get_coordinator()
+            coordinator.force_release_all()
+            
+            logger.warning(f"[API] ⚠️ 强制释放所有锁")
+            
+            return web.json_response({
+                "status": "success",
+                "message": "已强制释放所有锁"
+            })
+        except Exception as e:
+            logger.error(f"[API] ❌ 强制释放失败: {e}")
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
     
     @routes.post('/danbooru_gallery/group_config/save')
     async def save_group_config(request):

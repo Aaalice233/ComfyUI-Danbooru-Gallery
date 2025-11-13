@@ -17,6 +17,7 @@ cache/
 
 # 工具相关目录
 .kilocode/
+.qoder/
 
 # Python 相关
 __pycache__/

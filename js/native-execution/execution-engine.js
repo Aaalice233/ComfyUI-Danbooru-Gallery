@@ -13,6 +13,8 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { globalToastManager } from "../global/toast_manager.js";
 import { createLogger } from "../global/logger_client.js";
+import { executionLock } from "./execution-lock.js";
+import { stateManager, ExecutionStatus } from "./state-manager.js";
 
 // 创建logger实例
 const logger = createLogger('execution_engine');
@@ -53,10 +55,29 @@ class OptimizedExecutionEngine {
                 if (this.executionContexts.size > 0) {
                     logger.info(`[OptimizedExecutionEngine] 🛑 取消所有正在执行的组 (共${this.executionContexts.size}个)`);
 
-                    // 标记所有执行为已取消
+                    // ✅ 对所有执行进行完整清理
                     for (const executionId of this.executionContexts.keys()) {
+                        // 标记为已取消
                         this.cancelledExecutions.add(executionId);
                         logger.info(`[OptimizedExecutionEngine] 🛑 标记执行为已取消: ${executionId}`);
+
+                        // ✅ 更新状态为已取消
+                        stateManager.updateState(executionId, {
+                            status: ExecutionStatus.CANCELLED
+                        });
+
+                        // ✅ 释放后端权限
+                        this.releaseBackendPermission(executionId).catch(err => {
+                            logger.warn(`[OptimizedExecutionEngine] ⚠️ 释放后端权限失败:`, err);
+                        });
+                    }
+
+                    // ✅ 强制释放执行锁
+                    executionLock.forceRelease();
+
+                    // ✅ 显示取消提示
+                    if (globalToastManager) {
+                        globalToastManager.showToast('执行已取消', 'info', 3000);
                     }
                 }
 
@@ -98,6 +119,20 @@ class OptimizedExecutionEngine {
 
                 logger.info('[OptimizedExecutionEngine] 🛑 检测到InterruptProcessingException（图像过滤器取消），触发全局取消');
 
+                // ✅ 对所有执行进行完整清理
+                for (const executionId of this.executionContexts.keys()) {
+                    stateManager.updateState(executionId, {
+                        status: ExecutionStatus.CANCELLED,
+                        errorMessage: 'InterruptProcessingException'
+                    });
+
+                    this.releaseBackendPermission(executionId).catch(err => {
+                        logger.warn(`[OptimizedExecutionEngine] ⚠️ 释放后端权限失败:`, err);
+                    });
+                }
+
+                executionLock.forceRelease();
+
                 // 触发全局取消，这会中断组执行管理器
                 if (api.interrupt) {
                     api.interrupt();
@@ -118,6 +153,19 @@ class OptimizedExecutionEngine {
             }
 
             logger.info('[OptimizedExecutionEngine] 🛑 触发全局取消');
+
+            // ✅ 对所有执行进行完整清理
+            for (const executionId of this.executionContexts.keys()) {
+                stateManager.updateState(executionId, {
+                    status: ExecutionStatus.CANCELLED
+                });
+
+                this.releaseBackendPermission(executionId).catch(err => {
+                    logger.warn(`[OptimizedExecutionEngine] ⚠️ 释放后端权限失败:`, err);
+                });
+            }
+
+            executionLock.forceRelease();
 
             // 确保调用interrupt以标记所有执行为已取消
             if (api.interrupt) {
@@ -172,12 +220,28 @@ class OptimizedExecutionEngine {
                 return;
             }
 
+            // ✅ 尝试获取执行锁
+            if (!executionLock.tryAcquire(execution_id)) {
+                logger.warn(`[OptimizedExecutionEngine] 🔒 执行被拒绝：另一执行正在进行`);
+                if (globalToastManager) {
+                    globalToastManager.showToast('执行中，请稍候', 'warning', 3000);
+                }
+                return;
+            }
+
             // 创建执行上下文
             const context = this.createExecutionContext(execution_id, execution_plan, cache_control_signal, node_id);
             this.executionContexts.set(execution_id, context);
 
             // 更新缓存控制状态
             this.updateCacheControlStates(execution_id, cache_control_signal);
+
+            // ✅ 创建执行状态
+            const config = {
+                groups: execution_plan?.groups || [],
+                configHash: this.calculateConfigHash(execution_plan)
+            };
+            stateManager.createState(execution_id, config);
 
             try {
                 // 开始顺序执行
@@ -268,6 +332,11 @@ class OptimizedExecutionEngine {
         logger.info(`[OptimizedExecutionEngine] 📋 执行模式: ${context.executionMode}`);
         logger.info(`[OptimizedExecutionEngine] 🎛️ 缓存控制: ${context.cacheControlMode}`);
 
+        // ✅ 更新状态为运行中
+        stateManager.updateState(context.executionId, { 
+            status: ExecutionStatus.RUNNING 
+        });
+
         // 重置执行状态栏显示标志
         this.executionStatusShown = false;
 
@@ -315,6 +384,11 @@ class OptimizedExecutionEngine {
                 // 标记组完成
                 context.completedGroups.push(groupInfo.group_name);
 
+                // ✅ 更新状态管理器中的进度
+                stateManager.updateState(context.executionId, {
+                    completedGroups: [...context.completedGroups]
+                });
+
                 const elapsedTime = Date.now() - context.startTime;
                 const avgTimePerGroup = Math.round(elapsedTime / (i + 1));
                 const remainingGroups = groups.length - (i + 1);
@@ -330,6 +404,11 @@ class OptimizedExecutionEngine {
                 logger.error(`[OptimizedExecutionEngine] ❌ 组执行失败: ${groupInfo.group_name}`, error);
                 context.failedGroups.push({ group: groupInfo.group_name, error: error.message });
 
+                // ✅ 更新失败组列表
+                stateManager.updateState(context.executionId, {
+                    failedGroups: [...context.failedGroups]
+                });
+
                 // 根据错误处理策略决定是否继续
                 const pauseOnError = context.executionPlan?.pause_on_error !== false;
                 if (pauseOnError) {
@@ -341,6 +420,11 @@ class OptimizedExecutionEngine {
 
         logger.info(`[OptimizedExecutionEngine] 🎉 所有组执行完成: ${context.executionId}`);
 
+        // ✅ 更新状态为已完成
+        stateManager.updateState(context.executionId, { 
+            status: ExecutionStatus.COMPLETED 
+        });
+
         // ✅ 清除当前缓存组，防止后续操作使用旧的组名
         await this.setCurrentCacheGroup(null);
 
@@ -351,27 +435,41 @@ class OptimizedExecutionEngine {
 
         const totalExecutionTime = Date.now() - context.startTime;
         logger.info(`[OptimizedExecutionEngine] ⏱️ 总执行时间: ${totalExecutionTime}ms (${Math.round(totalExecutionTime / 1000)}秒)`);
+        
+        // ✅ 显示完成提示
+        if (globalToastManager) {
+            globalToastManager.showToast(
+                `执行完成 (耗时 ${Math.round(totalExecutionTime / 1000)}秒)`, 
+                'success', 
+                3000
+            );
+        }
+        
         window._groupExecutorActive = false; // Reset the flag
     }
 
     async executeGroup(context, groupInfo, groups, currentIndex) {
         /** 执行单个组 */
         const groupName = groupInfo.group_name;
+        const i = currentIndex; // 当前索引
 
         // ✅ 设置全局变量，记录当前执行的组名（供 hook 使用）
         window._currentExecutingGroup = groupName;
 
         logger.info(`[OptimizedExecutionEngine] 🎯 开始执行组: ${groupName}`);
 
-        // ✅ 显示/更新执行状态栏
+        // ✅ 显示/更新执行状态栏（增强版）
         if (globalToastManager) {
+            const progress = `${i + 1}/${groups.length}`;
+            const statusMessage = `当前执行组：${groupName} (${progress})`;
+            
             if (!this.executionStatusShown) {
                 // 第一次执行时显示状态栏
-                globalToastManager.showExecutionStatus(groupName);
+                globalToastManager.showExecutionStatus(statusMessage);
                 this.executionStatusShown = true;
             } else {
                 // 后续执行更新状态栏
-                globalToastManager.updateExecutionProgress(groupName);
+                globalToastManager.updateExecutionProgress(statusMessage);
             }
         }
 
@@ -915,6 +1013,20 @@ class OptimizedExecutionEngine {
         /** 处理执行错误 */
         logger.error(`[OptimizedExecutionEngine] 🚨 执行错误处理: ${executionId}`, error);
 
+        // ✅ 更新状态为失败
+        stateManager.updateState(executionId, {
+            status: ExecutionStatus.FAILED,
+            errorMessage: error.message
+        });
+
+        // ✅ 强制释放锁
+        executionLock.forceRelease();
+
+        // ✅ 释放后端权限
+        this.releaseBackendPermission(executionId).catch(err => {
+            logger.warn(`[OptimizedExecutionEngine] ⚠️ 释放后端权限失败:`, err);
+        });
+
         // 发送错误状态到前端
         const errorStatus = {
             status: 'error',
@@ -923,6 +1035,11 @@ class OptimizedExecutionEngine {
             timestamp: Date.now(),
             stack: error.stack
         };
+
+        // ✅ 显示错误提示
+        if (globalToastManager) {
+            globalToastManager.showToast(`执行失败: ${error.message}`, 'error', 5000);
+        }
 
         // 可以选择发送到特定的事件或UI
         logger.info('[OptimizedExecutionEngine] 📡 错误状态:', errorStatus);
@@ -934,12 +1051,74 @@ class OptimizedExecutionEngine {
         this.cacheControlStates.delete(executionId);
         this.cancelledExecutions.delete(executionId);  // 清理取消标记
 
+        // ✅ 释放执行锁
+        executionLock.release(executionId);
+
+        // ✅ 释放后端权限
+        this.releaseBackendPermission(executionId).catch(err => {
+            logger.warn(`[OptimizedExecutionEngine] ⚠️ 释放后端权限失败:`, err);
+        });
+
+        // ✅ 清除状态（延迟清除，保留一段时间供查询）
+        setTimeout(() => {
+            stateManager.clearState(executionId);
+        }, 60000); // 1分钟后清除
+
         // ✅ 隐藏执行状态栏
         if (globalToastManager) {
             globalToastManager.hideExecutionStatus();
         }
 
         logger.info(`[OptimizedExecutionEngine] 🧹 清理执行上下文: ${executionId}`);
+    }
+
+    /**
+     * 释放后端执行权限
+     * @param {string} executionId - 执行ID
+     * @returns {Promise<boolean>} 是否成功释放
+     */
+    async releaseBackendPermission(executionId) {
+        try {
+            const response = await api.fetchApi('/danbooru_gallery/group_executor/release_permission', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ execution_id: executionId })
+            });
+
+            if (!response.ok) {
+                logger.warn(`[OptimizedExecutionEngine] ⚠️ 释放后端权限失败: ${response.status}`);
+                return false;
+            }
+
+            const result = await response.json();
+            logger.info(`[OptimizedExecutionEngine] ✅ 后端权限已释放: ${executionId}`);
+            return result.success || false;
+        } catch (error) {
+            logger.error(`[OptimizedExecutionEngine] ❌ 释放后端权限异常:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * 计算配置哈希
+     * @param {Object} executionPlan - 执行计划
+     * @returns {string} 配置哈希值
+     */
+    calculateConfigHash(executionPlan) {
+        try {
+            const configStr = JSON.stringify(executionPlan?.groups || [], null, 0);
+            // 简单哈希算法（实际应使用crypto.subtle.digest）
+            let hash = 0;
+            for (let i = 0; i < configStr.length; i++) {
+                const char = configStr.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32bit integer
+            }
+            return Math.abs(hash).toString(16);
+        } catch (error) {
+            logger.warn(`[OptimizedExecutionEngine] ⚠️ 计算配置哈希失败:`, error);
+            return '';
+        }
     }
 
     // 公共API方法，供外部调用
