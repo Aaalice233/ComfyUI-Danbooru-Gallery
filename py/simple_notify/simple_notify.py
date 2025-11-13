@@ -60,7 +60,8 @@ class SimpleNotify:
 
     CATEGORY = "danbooru"
 
-    def IS_CHANGED(self, **kwargs):
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
         return float("NaN")
 
     def notify(self, any, message, volume, enable_notification, enable_sound):
