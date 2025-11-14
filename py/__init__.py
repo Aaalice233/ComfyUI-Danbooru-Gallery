@@ -26,3 +26,15 @@ except Exception as e:
     print(f"[Danbooru Gallery] Warning: Metadata collector initialization failed: {e}")
     import traceback
     traceback.print_exc()
+
+# 注册配置管理API
+try:
+    from .utils.config_api import setup_config_api
+    
+    print("[Danbooru Gallery] Registering config management API...")
+    setup_config_api()
+    
+except Exception as e:
+    print(f"[Danbooru Gallery] Warning: Config API registration failed: {e}")
+    import traceback
+    traceback.print_exc()

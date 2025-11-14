@@ -557,3 +557,47 @@
 
 /* ========== 通知 ========== */
 /* 已迁移到全局 Toast 管理器 (js/global/toast_manager.js) */
+
+/* ========== 右键菜单 ========== */
+.qgn-context-menu {
+    position: fixed;
+    min-width: 180px;
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+    z-index: 9999999999;
+    opacity: 0;
+    transform: scale(0.95);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.qgn-context-menu-visible {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.qgn-context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    font-size: 14px;
+    color: #333;
+    user-select: none;
+}
+
+.qgn-context-menu-item:hover {
+    background: #f5f5f5;
+}
+
+.qgn-context-menu-icon {
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+}

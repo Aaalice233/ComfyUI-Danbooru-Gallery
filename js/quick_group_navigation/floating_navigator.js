@@ -25,6 +25,7 @@ export class FloatingNavigator {
         // DOM元素
         this.ballElement = null;
         this.panelElement = null;
+        this.contextMenuElement = null;  // 右键菜单元素
 
         // 状态
         this.isExpanded = false;
@@ -128,6 +129,12 @@ export class FloatingNavigator {
             if (!this.hasDragged && !this.isExpanded) {
                 this.expandPanel();
             }
+        });
+
+        // 悬浮球右键菜单
+        this.ballElement.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            this.showContextMenu(e.clientX, e.clientY);
         });
 
         // 悬浮球拖拽
@@ -717,9 +724,146 @@ export class FloatingNavigator {
     }
 
     /**
+     * 显示右键菜单
+     */
+    showContextMenu(x, y) {
+        // 删除旧的菜单（如果存在）
+        this.removeContextMenu();
+
+        // 创建菜单元素
+        const menu = document.createElement('div');
+        menu.className = 'qgn-context-menu';
+        menu.innerHTML = `
+            <div class="qgn-context-menu-item" data-action="hide">
+                <span class="qgn-context-menu-icon">🙈</span>
+                <span>隐藏悬浮球</span>
+            </div>
+        `;
+
+        // 计算菜单位置（智能边界检测）
+        const menuWidth = 180;
+        const menuHeight = 40;
+        const padding = 10;
+
+        let menuX = x;
+        let menuY = y;
+
+        // 右侧边界检测
+        if (menuX + menuWidth > window.innerWidth - padding) {
+            menuX = window.innerWidth - menuWidth - padding;
+        }
+
+        // 底部边界检测
+        if (menuY + menuHeight > window.innerHeight - padding) {
+            menuY = window.innerHeight - menuHeight - padding;
+        }
+
+        menu.style.left = `${menuX}px`;
+        menu.style.top = `${menuY}px`;
+
+        // 添加到页面
+        document.body.appendChild(menu);
+        this.contextMenuElement = menu;
+
+        // 显示动画
+        requestAnimationFrame(() => {
+            menu.classList.add('qgn-context-menu-visible');
+        });
+
+        // 点击菜单项
+        const hideItem = menu.querySelector('[data-action="hide"]');
+        hideItem.addEventListener('click', () => {
+            this.hideFloatingBall();
+        });
+
+        // 点击外部关闭菜单
+        const closeMenu = (e) => {
+            if (!menu.contains(e.target)) {
+                this.removeContextMenu();
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        setTimeout(() => {
+            document.addEventListener('click', closeMenu);
+        }, 100);
+
+        logger.info('[QGN] 右键菜单已显示');
+    }
+
+    /**
+     * 移除右键菜单
+     */
+    removeContextMenu() {
+        if (this.contextMenuElement) {
+            this.contextMenuElement.remove();
+            this.contextMenuElement = null;
+        }
+    }
+
+    /**
+     * 隐藏悬浮球
+     */
+    async hideFloatingBall() {
+        this.removeContextMenu();
+
+        // 显示确认对话框
+        const confirmMessage = `确定要隐藏快速组导航器悬浮球吗？
+
+隐藏后，您可以通过以下方式重新开启：
+1. 打开插件目录下的 config.json 文件
+2. 添加或修改配置项：
+   "quick_group_navigation": {
+     "show_floating_ball": true
+   }
+3. 重新加载ComfyUI页面`;
+
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+
+        logger.info('[QGN] 用户确认隐藏悬浮球');
+
+        try {
+            // 调用API保存配置
+            const response = await fetch('/danbooru/config/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    path: 'quick_group_navigation.show_floating_ball',
+                    value: false
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    logger.info('[QGN] ✅ 配置已保存，隐藏悬浮球');
+
+                    // 显示Toast提示
+                    this.showNotification('悬浮球已隐藏，可通过 config.json 重新开启', 'info', 5000);
+
+                    // 隐藏悬浮球和面板
+                    this.ballElement.remove();
+                    this.panelElement.remove();
+                } else {
+                    throw new Error(data.error || '配置保存失败');
+                }
+            } else {
+                throw new Error(`HTTP错误: ${response.status}`);
+            }
+        } catch (error) {
+            logger.error('[QGN] ❤ 保存配置失败:', error);
+            this.showNotification('保存配置失败，请稍后重试', 'error');
+        }
+    }
+
+    /**
      * 销毁（清理）
      */
     destroy() {
+        this.removeContextMenu();
         this.ballElement?.remove();
         this.panelElement?.remove();
         logger.info('[QGN] 悬浮球导航器已销毁');

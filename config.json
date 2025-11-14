@@ -14,5 +14,11 @@
       "workflow_description": "INFO",
       "tag_sync": "INFO"
     }
+  },
+  "quick_group_navigation": {
+    "show_floating_ball": true
+  },
+  "ui": {
+    "show_toast_notifications": true
   }
 }

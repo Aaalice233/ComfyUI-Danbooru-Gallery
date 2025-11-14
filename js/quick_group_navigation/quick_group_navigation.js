@@ -56,9 +56,18 @@ class QuickGroupNavigationManager {
     /**
      * 初始化管理器
      */
-    init() {
+    async init() {
         if (this.initialized) {
             logger.warn('[QGN] 管理器已初始化，跳过');
+            return;
+        }
+
+        // 读取配置，检查是否显示悬浮球
+        const showFloatingBall = await this.loadConfig();
+        
+        if (!showFloatingBall) {
+            logger.info('[QGN] 配置为不显示悬浮球，跳过UI创建');
+            this.initialized = true;
             return;
         }
 
@@ -73,6 +82,27 @@ class QuickGroupNavigationManager {
 
         this.initialized = true;
         logger.info('[QGN] 快速组导航管理器初始化完成');
+    }
+
+    /**
+     * 加载配置
+     * @returns {Promise<boolean>} 是否显示悬浮球
+     */
+    async loadConfig() {
+        try {
+            const response = await fetch('/danbooru/config/get?path=quick_group_navigation.show_floating_ball');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    const showBall = data.value !== false; // 默认为true
+                    logger.info(`[QGN] 配置加载成功: show_floating_ball = ${showBall}`);
+                    return showBall;
+                }
+            }
+        } catch (error) {
+            logger.warn('[QGN] 配置加载失败,使用默认值(true):', error);
+        }
+        return true; // 默认显示
     }
 
     /**

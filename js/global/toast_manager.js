@@ -4,6 +4,11 @@
  * 修复了ComfyUI布局冲突问题 - 使用更兼容的方式
  */
 
+import { createLogger } from './logger_client.js';
+
+// 创建logger实例
+const logger = createLogger('ToastManager');
+
 class ToastManager {
     constructor() {
         this.toasts = [];
@@ -12,13 +17,72 @@ class ToastManager {
         this.executionStatusBar = null; // 执行状态栏元素（保留兼容性）
         this.statusBars = new Map(); // 多状态栏支持：id -> element
         this.statusBarOrder = []; // 状态栏显示顺序
+
+        // Toast全局开关
+        this.toastEnabled = true;
+
         this.init();
+
+        // 异步加载配置
+        this.loadConfig();
     }
 
     init() {
         this.createToastContainer();
         this.createExecutionStatusBar();
         this.addStyles();
+    }
+
+    /**
+     * 加载配置
+     */
+    async loadConfig() {
+        try {
+            const response = await fetch('/danbooru/config/get?path=ui.show_toast_notifications');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    this.toastEnabled = data.value !== false; // 默认为true
+                    logger.info(`[ToastManager] 配置加载成功: Toast开关 = ${this.toastEnabled}`);
+                }
+            }
+        } catch (error) {
+            logger.warn('[ToastManager] 配置加载失败,使用默认值(true):', error);
+            this.toastEnabled = true;
+        }
+    }
+
+    /**
+     * 设置Toast开关
+     */
+    setToastEnabled(enabled) {
+        this.toastEnabled = enabled;
+        logger.info(`[ToastManager] Toast开关已设置: ${enabled}`);
+    }
+
+    /**
+     * 获取Toast开关状态
+     */
+    isToastEnabled() {
+        return this.toastEnabled;
+    }
+
+    /**
+     * Toast禁用时输出日志到控制台
+     * 所有类型都使用 error 级别,确保在控制台可见
+     * @param {string} message - 消息内容
+     * @param {string} type - Toast类型
+     */
+    _logToConsoleWhenDisabled(message, type) {
+        const typeLabel = {
+            'error': '❌',
+            'warning': '⚠️',
+            'success': '✅',
+            'info': 'ℹ️'
+        }[type] || 'ℹ️';
+
+        // 统一使用 error 级别输出,确保在控制台显示
+        logger.error(`${typeLabel} ${message}`);
     }
 
     createToastContainer() {
@@ -378,6 +442,13 @@ class ToastManager {
      * @param {HTMLElement} options.nodeContainer - 节点容器，用于定位
      */
     showToast(message, type = 'info', duration = 3000, options = {}) {
+        // 检查Toast全局开关
+        if (!this.toastEnabled) {
+            // Toast已禁用，执行降级策略：输出日志
+            this._logToConsoleWhenDisabled(message, type);
+            return null;
+        }
+
         this.ensureCorrectPosition(); // 每次显示前确保位置正确
 
         const {
@@ -509,7 +580,7 @@ class ToastManager {
 
     }
 
-    
+
     /**
      * 移除弹出提示
      * @param {HTMLElement} toast - 提示元素
