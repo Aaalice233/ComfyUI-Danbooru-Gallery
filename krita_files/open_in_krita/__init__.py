@@ -3,7 +3,7 @@ Open In Krita - ComfyUI Bridge Plugin
 与ComfyUI进行图像和选区交互的Krita插件
 """
 
-__version__ = "1.0.13"  # 新增：Krita路径未配置时显示友好的设置引导对话框，提供安装引导和路径设置选项
+__version__ = "1.0.15"  # 新增：安装Krita插件时显示Toast提示，让用户知道插件正在安装/安装成功
 
 import sys
 import tempfile

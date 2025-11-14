@@ -477,7 +477,32 @@ class OpenInKrita:
             installer = KritaPluginInstaller()
             if not installer.check_plugin_installed():
                 logger.info("Installing Krita plugin...")
-                installer.install_plugin()
+                
+                # Toast提示：开始安装插件
+                PromptServer.instance.send_sync("open-in-krita-notification", {
+                    "node_id": unique_id,
+                    "message": f"📦 正在安装Krita插件 v{installer.source_version}...",
+                    "type": "info"
+                })
+                
+                success = installer.install_plugin()
+                
+                if success:
+                    logger.info(f"✓ Plugin installed successfully: v{installer.source_version}")
+                    # Toast提示：安装成功
+                    PromptServer.instance.send_sync("open-in-krita-notification", {
+                        "node_id": unique_id,
+                        "message": f"✓ Krita插件已安装 v{installer.source_version}",
+                        "type": "success"
+                    })
+                else:
+                    logger.warning(f"✗ Plugin installation failed")
+                    # Toast提示：安装失败
+                    PromptServer.instance.send_sync("open-in-krita-notification", {
+                        "node_id": unique_id,
+                        "message": "⚠️ Krita插件安装失败\n请检查日志",
+                        "type": "warning"
+                    })
         except Exception as e:
             logger.debug(f"Plugin installation error: {e}")
             # 发送警告Toast

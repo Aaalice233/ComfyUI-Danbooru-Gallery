@@ -67,6 +67,15 @@ class OpenInKritaExtension(Extension):
         self._setup_directory_watcher()
         self.logger.info("目录监控器已启动")
 
+        # 🔥 创建插件加载完成标志文件，让ComfyUI知道可以发送请求了
+        try:
+            plugin_loaded_flag = self.monitor_dir / "_plugin_loaded.txt"
+            with open(plugin_loaded_flag, 'w', encoding='utf-8') as f:
+                f.write(f"Plugin loaded at: {time.time()}\n")
+            self.logger.info(f"✓ 插件加载标志文件已创建: {plugin_loaded_flag.name}")
+        except Exception as e:
+            self.logger.error(f"✗ 创建插件加载标志文件失败: {e}")
+
     def _cleanup_old_request_files(self):
         """清理所有旧的请求文件（启动时调用）"""
         try:
