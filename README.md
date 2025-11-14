@@ -807,7 +807,7 @@ Save Image Plus 是一个功能强大的图像保存节点，自动收集工作�
 2. 连接要保存的图像输入
 3. 配置保存选项：
    - `enable`: 是否启用保存（关闭时跳过执行）
-   - `filename_prefix`: 文件名前缀
+   - `filename_prefix`: 文件名前缀（支持占位符）
    - `file_format`: 图像格式（PNG/JPEG/WEBP）
    - `quality`: JPEG/WebP 质量（1-100）
    - `embed_workflow`: 是否嵌入 ComfyUI 工作流数据（仅 PNG）
@@ -817,6 +817,42 @@ Save Image Plus 是一个功能强大的图像保存节点，自动收集工作�
    - `positive_prompt`: 正面提示词
    - `negative_prompt`: 负面提示词
    - `lora_syntax`: LoRA 语法字符串
+   - `checkpoint_name`: 手动传入 checkpoint 模型名称（最高优先级）
+
+#### 文件名占位符
+
+文件名前缀支持以下占位符，可灵活组合使用：
+
+| 占位符 | 描述 | 示例 |
+|--------|------|------|
+| `%date%` | 当前日期时间（默认格式：yyyyMMddhhmmss） | `20251114143025` |
+| `%date:format%` | 自定义日期时间格式 | `%date:yyyyMMdd%` → `20251114` |
+| `%seed%` | 生成图像的种子值 | `12345678` |
+| `%model%` | 使用的 checkpoint 模型名称 | `realisticVisionV51_v51VAE` |
+
+**日期格式占位符**：
+- `yyyy`：四位年份（2025）
+- `yy`：两位年份（25）
+- `MM`：月份（01-12）
+- `dd`：日期（01-31）
+- `hh`：小时（00-23）
+- `mm`：分钟（00-59）
+- `ss`：秒数（00-59）
+
+**使用示例**：
+```
+示例 1：简单模型名称
+输入: %model%
+输出: realisticVisionV51_v51VAE_00001_.png
+
+示例 2：日期和模型组合
+输入: outputs/%date:yyyyMMdd%/%model%
+输出: outputs/20251114/realisticVisionV51_v51VAE_00001_.png
+
+示例 3：完整组合
+输入: %model%_%date:yyyyMMdd_hhmm%_s%seed%
+输出: realisticVisionV51_v51VAE_20251114_1430_s12345678_00001_.png
+```
 
 #### 元数据包含内容
 - **模型信息**: Checkpoint 名称和哈希值
@@ -2453,7 +2489,7 @@ Save Image Plus is a powerful image saving node that automatically collects all 
 2. Connect image input to save
 3. Configure save options:
    - `enable`: Enable/disable saving (skips execution when off)
-   - `filename_prefix`: Filename prefix
+   - `filename_prefix`: Filename prefix (supports placeholders)
    - `file_format`: Image format (PNG/JPEG/WEBP)
    - `quality`: JPEG/WebP quality (1-100)
    - `embed_workflow`: Embed ComfyUI workflow data (PNG only)
@@ -2463,6 +2499,42 @@ Save Image Plus is a powerful image saving node that automatically collects all 
    - `positive_prompt`: Positive prompt
    - `negative_prompt`: Negative prompt
    - `lora_syntax`: LoRA syntax string
+   - `checkpoint_name`: Manually pass checkpoint model name (highest priority)
+
+#### Filename Placeholders
+
+The filename prefix supports the following placeholders, which can be flexibly combined:
+
+| Placeholder | Description | Example |
+|-------------|-------------|----------|
+| `%date%` | Current date and time (default format: yyyyMMddhhmmss) | `20251114143025` |
+| `%date:format%` | Custom date and time format | `%date:yyyyMMdd%` → `20251114` |
+| `%seed%` | Seed value used for image generation | `12345678` |
+| `%model%` | Checkpoint model name used | `realisticVisionV51_v51VAE` |
+
+**Date Format Placeholders**:
+- `yyyy`: Four-digit year (2025)
+- `yy`: Two-digit year (25)
+- `MM`: Month (01-12)
+- `dd`: Day (01-31)
+- `hh`: Hour (00-23)
+- `mm`: Minute (00-59)
+- `ss`: Second (00-59)
+
+**Usage Examples**:
+```
+Example 1: Simple model name
+Input: %model%
+Output: realisticVisionV51_v51VAE_00001_.png
+
+Example 2: Date and model combination
+Input: outputs/%date:yyyyMMdd%/%model%
+Output: outputs/20251114/realisticVisionV51_v51VAE_00001_.png
+
+Example 3: Complete combination
+Input: %model%_%date:yyyyMMdd_hhmm%_s%seed%
+Output: realisticVisionV51_v51VAE_20251114_1430_s12345678_00001_.png
+```
 
 #### Metadata Contents
 - **Model Info**: Checkpoint name and hash value

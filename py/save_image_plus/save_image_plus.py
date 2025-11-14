@@ -164,13 +164,45 @@ class SaveImagePlus:
     CATEGORY = "danbooru"
     DESCRIPTION = "保存图像并嵌入 A1111 格式元数据，支持直接传入提示词和 LoRA 语法"
 
-    def format_filename(self, filename: str, prompt_obj: dict = None) -> str:
+    def _sanitize_filename(self, name: str) -> str:
         """
-        解析文件名中的占位符（仅支持 date 和 seed）
+        清理文件名中的非法字符，确保跨平台兼容性
+
+        Args:
+            name: 原始文件名
+
+        Returns:
+            清理后的文件名
+        """
+        if not name:
+            return ""
+
+        # 移除路径分隔符
+        name = name.replace("/", "_").replace("\\", "_")
+
+        # 移除文件扩展名
+        name = os.path.splitext(name)[0]
+
+        # 只保留字母、数字、下划线、连字符和中文字符
+        import re
+        name = re.sub(r'[^\w\-\u4e00-\u9fff]+', '_', name)
+
+        # 合并连续下划线
+        name = re.sub(r'_+', '_', name)
+
+        # 去除首尾下划线
+        name = name.strip('_')
+
+        return name
+
+    def format_filename(self, filename: str, prompt_obj: dict = None, metadata: dict = None) -> str:
+        """
+        解析文件名中的占位符（支持 date、seed 和 model）
 
         Args:
             filename: 包含占位符的文件名
             prompt_obj: ComfyUI prompt 对象（用于提取 seed）
+            metadata: 元数据字典（用于提取 checkpoint 等信息）
 
         Returns:
             解析后的文件名
@@ -214,6 +246,26 @@ class SaveImagePlus:
                 seed = self._extract_seed_from_prompt(prompt_obj)
                 if seed is not None:
                     filename = filename.replace(segment, str(seed))
+
+            # 处理 model 占位符
+            elif key == "model" and metadata:
+                checkpoint = metadata.get("checkpoint")
+                if checkpoint:
+                    # 提取模型文件名（去除路径和扩展名）
+                    model_name = os.path.basename(checkpoint)
+                    # 清理文件名中的非法字符
+                    model_name = self._sanitize_filename(model_name)
+                    if model_name:
+                        filename = filename.replace(segment, model_name)
+                        logger.debug(f"替换 %model% 占位符: {checkpoint} -> {model_name}")
+                    else:
+                        # 如果清理后为空，使用默认值
+                        filename = filename.replace(segment, "unknown_model")
+                        logger.debug("模型名称清理后为空，使用默认值: unknown_model")
+                else:
+                    # 如果没有 checkpoint 信息，使用默认值
+                    filename = filename.replace(segment, "unknown_model")
+                    logger.debug("未找到 checkpoint 信息，使用默认值: unknown_model")
 
         return filename
 
@@ -786,8 +838,8 @@ class SaveImagePlus:
         # 准备保存目录
         filename_prefix += self.prefix_append
 
-        # 解析占位符（仅 date 和 seed）
-        filename_prefix = self.format_filename(filename_prefix, prompt_obj=prompt)
+        # 解析占位符（date、seed 和 model）
+        filename_prefix = self.format_filename(filename_prefix, prompt_obj=prompt, metadata=metadata)
 
         full_output_folder, filename, counter, subfolder, filename_prefix = \
             folder_paths.get_save_image_path(filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0])
