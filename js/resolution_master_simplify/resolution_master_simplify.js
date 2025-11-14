@@ -24,6 +24,10 @@ class ResolutionMasterSimplifyCanvas {
         this.hoverElement = null;
         this.dropdownOpen = null;
 
+        // 输出数值输入框状态（使用真实HTML input元素）
+        this.widthInputElement = null; // 宽度输入框DOM元素
+        this.heightInputElement = null; // 高度输入框DOM元素
+
         // 控制位置
         this.controls = {};
 
@@ -47,6 +51,7 @@ class ResolutionMasterSimplifyCanvas {
         this.dialogOpen = false;
 
         this.setupNode();
+        this.createInputElements();
         this.loadSettings();
     }
 
@@ -136,6 +141,181 @@ class ResolutionMasterSimplifyCanvas {
             }
             app.graph.setDirtyCanvas(true);
         };
+
+        // 需要在节点销毁时移除输入框元素
+        const originalOnRemoved = node.onRemoved;
+        node.onRemoved = function () {
+            if (self.widthInputElement && self.widthInputElement.parentNode) {
+                self.widthInputElement.parentNode.removeChild(self.widthInputElement);
+            }
+            if (self.heightInputElement && self.heightInputElement.parentNode) {
+                self.heightInputElement.parentNode.removeChild(self.heightInputElement);
+            }
+            if (originalOnRemoved) {
+                originalOnRemoved.apply(this, arguments);
+            }
+        };
+    }
+
+    createInputElements() {
+        const self = this;
+
+        // 创建宽度输入框
+        this.widthInputElement = document.createElement('input');
+        this.widthInputElement.type = 'text';
+        this.widthInputElement.className = 'resolution-width-input';
+        this.widthInputElement.placeholder = this.node.properties.width.toString();
+        this.widthInputElement.style.cssText = `
+            position: absolute;
+            width: 50px;
+            height: 18px;
+            padding: 0 5px;
+            font-size: 12px;
+            font-family: Arial, sans-serif;
+            font-weight: bold;
+            color: #5AF;
+            background-color: rgba(90, 170, 255, 0.08);
+            border: 1px solid rgba(90, 170, 255, 0.4);
+            border-radius: 3px;
+            text-align: right;
+            outline: none;
+            box-sizing: border-box;
+            z-index: 10000;
+            display: none;
+            pointer-events: auto;
+        `;
+        document.body.appendChild(this.widthInputElement);
+
+        // 创建高度输入框
+        this.heightInputElement = document.createElement('input');
+        this.heightInputElement.type = 'text';
+        this.heightInputElement.className = 'resolution-height-input';
+        this.heightInputElement.placeholder = this.node.properties.height.toString();
+        this.heightInputElement.style.cssText = `
+            position: absolute;
+            width: 50px;
+            height: 18px;
+            padding: 0 5px;
+            font-size: 12px;
+            font-family: Arial, sans-serif;
+            font-weight: bold;
+            color: #FAB;
+            background-color: rgba(255, 170, 187, 0.08);
+            border: 1px solid rgba(255, 170, 187, 0.4);
+            border-radius: 3px;
+            text-align: right;
+            outline: none;
+            box-sizing: border-box;
+            z-index: 10000;
+            display: none;
+            pointer-events: auto;
+        `;
+        document.body.appendChild(this.heightInputElement);
+
+        // 输入验证和应用函数
+        const validateAndApply = (input, type) => {
+            const value = input.value.trim();
+            if (!value) {
+                input.style.display = 'none';
+                return;
+            }
+
+            let num = parseInt(value);
+            if (isNaN(num)) {
+                input.value = '';
+                return;
+            }
+
+            const props = this.node.properties;
+            const minValue = type === 'width' ? props.canvas_min_x : props.canvas_min_y;
+            const maxValue = type === 'width' ? props.canvas_max_x : props.canvas_max_y;
+            const stepValue = type === 'width' ? props.canvas_step_x : props.canvas_step_y;
+
+            // 应用步长和范围限制
+            num = Math.round(num / stepValue) * stepValue;
+            num = Math.max(minValue, Math.min(maxValue, num));
+
+            // 更新属性
+            if (type === 'width') {
+                props.width = num;
+                if (this.widthWidget) this.widthWidget.value = num;
+            } else {
+                props.height = num;
+                if (this.heightWidget) this.heightWidget.value = num;
+            }
+
+            // 重新计算画布位置
+            this.node.intpos.x = (props.width - props.canvas_min_x) / (props.canvas_max_x - props.canvas_min_x);
+            this.node.intpos.y = (props.height - props.canvas_min_y) / (props.canvas_max_y - props.canvas_min_y);
+
+            // 设置为自定义预设
+            props.selectedPreset = '自定义 (Custom)';
+
+            input.style.display = 'none';
+            app.graph.setDirtyCanvas(true);
+
+            logger.info(`[输出数值编辑] ${type}: ${value} -> ${num}`);
+        };
+
+        // 宽度输入框事件
+        this.widthInputElement.addEventListener('input', (e) => {
+            e.target.value = e.target.value.replace(/[^0-9]/g, '');
+        });
+
+        this.widthInputElement.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                validateAndApply(e.target, 'width');
+            } else if (e.key === 'Escape') {
+                e.target.style.display = 'none';
+                e.target.value = '';
+            }
+        });
+
+        this.widthInputElement.addEventListener('blur', () => {
+            validateAndApply(this.widthInputElement, 'width');
+        });
+
+        this.widthInputElement.addEventListener('focus', (e) => {
+            e.target.select();
+            e.target.style.borderColor = '#5AF';
+            e.target.style.backgroundColor = 'rgba(90, 170, 255, 0.2)';
+        });
+
+        this.widthInputElement.addEventListener('blur', () => {
+            this.widthInputElement.style.borderColor = 'rgba(90, 170, 255, 0.4)';
+            this.widthInputElement.style.backgroundColor = 'rgba(90, 170, 255, 0.08)';
+        });
+
+        // 高度输入框事件
+        this.heightInputElement.addEventListener('input', (e) => {
+            e.target.value = e.target.value.replace(/[^0-9]/g, '');
+        });
+
+        this.heightInputElement.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                validateAndApply(e.target, 'height');
+            } else if (e.key === 'Escape') {
+                e.target.style.display = 'none';
+                e.target.value = '';
+            }
+        });
+
+        this.heightInputElement.addEventListener('blur', () => {
+            validateAndApply(this.heightInputElement, 'height');
+        });
+
+        this.heightInputElement.addEventListener('focus', (e) => {
+            e.target.select();
+            e.target.style.borderColor = '#FAB';
+            e.target.style.backgroundColor = 'rgba(255, 170, 187, 0.2)';
+        });
+
+        this.heightInputElement.addEventListener('blur', () => {
+            this.heightInputElement.style.borderColor = 'rgba(255, 170, 187, 0.4)';
+            this.heightInputElement.style.backgroundColor = 'rgba(255, 170, 187, 0.08)';
+        });
     }
 
     async loadSettings() {
@@ -407,16 +587,28 @@ class ResolutionMasterSimplifyCanvas {
 
         let currentX = margin;
 
-        // 预设下拉框（无语言按钮，占据更多空间）
+        // 预设下拉框（添加交换按钮后重新计算宽度）
+        const swapBtnWidth = 50;
         const saveBtnWidth = 50;
         const deleteBtnWidth = 50;
-        const dropdownWidth = nodeWidth - saveBtnWidth - deleteBtnWidth - margin * 2 - gap * 2;
+        const dropdownWidth = nodeWidth - swapBtnWidth - saveBtnWidth - deleteBtnWidth - margin * 2 - gap * 3;
 
         this.controls.presetDropdown = { x: currentX, y: startY, w: dropdownWidth, h: buttonHeight };
         const presetText = this.node.properties.selectedPreset || '自定义 (Custom)';
         const presetHover = this.hoverElement === 'presetDropdown';
         this.drawDropdown(ctx, currentX, startY, dropdownWidth, buttonHeight, presetText, presetHover);
         currentX += dropdownWidth + gap;
+
+        // 交换按钮（⇄ 图标）
+        this.controls.swapBtn = { x: currentX, y: startY, w: swapBtnWidth, h: buttonHeight };
+        const swapHover = this.hoverElement === 'swapBtn';
+        this.drawButton(ctx, currentX, startY, swapBtnWidth, buttonHeight, "", swapHover);
+        ctx.fillStyle = "#ddd";
+        ctx.font = "16px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("⇄", currentX + swapBtnWidth / 2, startY + buttonHeight / 2 + 1);
+        currentX += swapBtnWidth + gap;
 
         // 保存按钮（💾 图标）
         this.controls.saveBtn = { x: currentX, y: startY, w: saveBtnWidth, h: buttonHeight };
@@ -443,8 +635,10 @@ class ResolutionMasterSimplifyCanvas {
         return startY + buttonHeight + 2;
     }
 
+    /**
+     * 绘制输出引脚数值（点击可编辑）
+     */
     drawOutputValues(ctx) {
-        // 照抄原版 - 在节点右侧显示输出值
         const node = this.node;
 
         ctx.font = "bold 14px Arial";
@@ -452,17 +646,54 @@ class ResolutionMasterSimplifyCanvas {
         ctx.textBaseline = "middle";
 
         if (this.widthWidget && this.heightWidget) {
-            // 计算输出引脚的 Y 位置偏移
             const y_offset_1 = 5 + (LiteGraph.NODE_SLOT_HEIGHT * 0.5);
             const y_offset_2 = 5 + (LiteGraph.NODE_SLOT_HEIGHT * 1.5);
 
-            // 绘制宽度值（蓝色 - 对应蓝色宽度控制点）
-            ctx.fillStyle = "#89F";
+            // 计算可点击区域尺寸
+            const valueAreaWidth = 60;
+            const valueAreaHeight = 20;
+            const valueAreaX = node.size[0] - valueAreaWidth - 5;
+
+            // 宽度值区域
+            this.controls.widthValueArea = {
+                x: valueAreaX,
+                y: y_offset_1 - valueAreaHeight / 2,
+                w: valueAreaWidth,
+                h: valueAreaHeight
+            };
+
+            this.drawValueAreaHoverBackground(ctx, 'widthValueArea', valueAreaX, y_offset_1 - valueAreaHeight / 2, valueAreaWidth, valueAreaHeight, [136, 153, 255]);
+
+            ctx.fillStyle = this.hoverElement === 'widthValueArea' ? "#89F" : "#5AF";
             ctx.fillText(this.widthWidget.value.toString(), node.size[0] - 20, y_offset_1);
 
-            // 绘制高度值（粉色 - 对应粉色高度控制点）
-            ctx.fillStyle = "#F89";
+            // 高度值区域
+            this.controls.heightValueArea = {
+                x: valueAreaX,
+                y: y_offset_2 - valueAreaHeight / 2,
+                w: valueAreaWidth,
+                h: valueAreaHeight
+            };
+
+            this.drawValueAreaHoverBackground(ctx, 'heightValueArea', valueAreaX, y_offset_2 - valueAreaHeight / 2, valueAreaWidth, valueAreaHeight, [248, 136, 153]);
+
+            ctx.fillStyle = this.hoverElement === 'heightValueArea' ? "#F89" : "#FAB";
             ctx.fillText(this.heightWidget.value.toString(), node.size[0] - 20, y_offset_2);
+        }
+    }
+
+    /**
+     * 绘制数值区域悬停背景
+     */
+    drawValueAreaHoverBackground(ctx, controlKey, x, y, w, h, rgb) {
+        if (this.hoverElement === controlKey) {
+            ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.15)`;
+            ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.6)`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, 3);
+            ctx.fill();
+            ctx.stroke();
         }
     }
 
@@ -483,53 +714,120 @@ class ResolutionMasterSimplifyCanvas {
     }
 
     handleMouseDown(e, pos, canvas) {
-        const localY = e.canvasY - this.node.pos[1];
-        const localX = e.canvasX - this.node.pos[0];
+        const relX = e.canvasX - this.node.pos[0];
+        const relY = e.canvasY - this.node.pos[1];
 
-        // 检查三个控制点（优先级从高到低）
-        if (this.controls.canvas2dRightHandle && this.isInRect(localX, localY, this.controls.canvas2dRightHandle)) {
+        // 遍历所有控制区域检测点击
+        for (const key in this.controls) {
+            if (this.isPointInControl(relX, relY, this.controls[key])) {
+                logger.info(`[点击] ${key}`);
+
+                // 处理数值区域点击
+                if (key.endsWith('ValueArea')) {
+                    this.showValueInputDialog(key, e);
+                    return true;
+                }
+
+                break;
+            }
+        }
+
+        // 检查三个控制点
+        if (this.controls.canvas2dRightHandle && this.isPointInControl(relX, relY, this.controls.canvas2dRightHandle)) {
             this.node.capture = true;
             this.captureMode = 'width';
             return true;
         }
 
-        if (this.controls.canvas2dTopHandle && this.isInRect(localX, localY, this.controls.canvas2dTopHandle)) {
+        if (this.controls.canvas2dTopHandle && this.isPointInControl(relX, relY, this.controls.canvas2dTopHandle)) {
             this.node.capture = true;
             this.captureMode = 'height';
             return true;
         }
 
-        if (this.controls.canvas2dMainHandle && this.isInRect(localX, localY, this.controls.canvas2dMainHandle)) {
+        if (this.controls.canvas2dMainHandle && this.isPointInControl(relX, relY, this.controls.canvas2dMainHandle)) {
             this.node.capture = true;
             this.captureMode = 'main';
             return true;
         }
 
-        // 检查画布区域（作为备选）
-        if (this.controls.canvas2d && this.isInRect(localX, localY, this.controls.canvas2d)) {
+        // 检查画布区域
+        if (this.controls.canvas2d && this.isPointInControl(relX, relY, this.controls.canvas2d)) {
             this.node.capture = true;
             this.captureMode = 'main';
             return true;
         }
 
         // 检查按钮点击
-        if (this.controls.presetDropdown && this.isInRect(localX, localY, this.controls.presetDropdown)) {
+        if (this.controls.presetDropdown && this.isPointInControl(relX, relY, this.controls.presetDropdown)) {
             this.showPresetDropdown(e);
             return true;
         }
 
-        if (this.controls.saveBtn && this.isInRect(localX, localY, this.controls.saveBtn)) {
+        if (this.controls.swapBtn && this.isPointInControl(relX, relY, this.controls.swapBtn)) {
+            this.swapWidthHeight();
+            return true;
+        }
+
+        if (this.controls.saveBtn && this.isPointInControl(relX, relY, this.controls.saveBtn)) {
             this.showSavePresetDialog();
             return true;
         }
 
         if (this.controls.deleteBtn && this.controls.deleteBtn.enabled &&
-            this.isInRect(localX, localY, this.controls.deleteBtn)) {
+            this.isPointInControl(relX, relY, this.controls.deleteBtn)) {
             this.deleteCurrentPreset();
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * 显示数值输入对话框
+     */
+    showValueInputDialog(controlKey, e) {
+        let type, currentValue, title;
+
+        if (controlKey === 'widthValueArea') {
+            type = 'width';
+            currentValue = this.widthWidget.value;
+            title = '设置宽度';
+        } else if (controlKey === 'heightValueArea') {
+            type = 'height';
+            currentValue = this.heightWidget.value;
+            title = '设置高度';
+        } else {
+            return;
+        }
+
+        const newValue = prompt(title, currentValue);
+        if (newValue !== null) {
+            const parsedValue = parseInt(newValue);
+            if (!isNaN(parsedValue) && parsedValue > 0) {
+                // 更新widget和properties
+                if (type === 'width') {
+                    this.widthWidget.value = parsedValue;
+                    this.node.properties.width = parsedValue;
+                } else {
+                    this.heightWidget.value = parsedValue;
+                    this.node.properties.height = parsedValue;
+                }
+
+                // 更新画布位置（从当前宽高反向计算intpos）
+                const props = this.node.properties;
+                const rangeX = props.canvas_max_x - props.canvas_min_x;
+                const rangeY = props.canvas_max_y - props.canvas_min_y;
+                this.node.intpos.x = (props.width - props.canvas_min_x) / rangeX;
+                this.node.intpos.y = (props.height - props.canvas_min_y) / rangeY;
+
+                // 切换到自定义预设
+                this.node.properties.selectedPreset = '自定义 (Custom)';
+
+                app.graph.setDirtyCanvas(true);
+                logger.info(`[设置${type}] ${parsedValue}`);
+            }
+        }
     }
 
     handleMouseMove(e, pos, canvas) {
@@ -556,17 +854,26 @@ class ResolutionMasterSimplifyCanvas {
 
         let hovered = null;
 
+        // 检查数值区域
+        if (this.controls.widthValueArea && this.isPointInControl(localX, localY, this.controls.widthValueArea)) {
+            hovered = 'widthValueArea';
+        } else if (this.controls.heightValueArea && this.isPointInControl(localX, localY, this.controls.heightValueArea)) {
+            hovered = 'heightValueArea';
+        }
+
         // 检查画布控制点
-        if (this.controls.canvas2dRightHandle && this.isInRect(localX, localY, this.controls.canvas2dRightHandle)) {
+        if (!hovered && this.controls.canvas2dRightHandle && this.isPointInControl(localX, localY, this.controls.canvas2dRightHandle)) {
             hovered = 'canvas2dRightHandle';
-        } else if (this.controls.canvas2dTopHandle && this.isInRect(localX, localY, this.controls.canvas2dTopHandle)) {
+        } else if (!hovered && this.controls.canvas2dTopHandle && this.isPointInControl(localX, localY, this.controls.canvas2dTopHandle)) {
             hovered = 'canvas2dTopHandle';
-        } else if (this.controls.presetDropdown && this.isInRect(localX, localY, this.controls.presetDropdown)) {
+        } else if (!hovered && this.controls.presetDropdown && this.isPointInControl(localX, localY, this.controls.presetDropdown)) {
             hovered = 'presetDropdown';
-        } else if (this.controls.saveBtn && this.isInRect(localX, localY, this.controls.saveBtn)) {
+        } else if (!hovered && this.controls.swapBtn && this.isPointInControl(localX, localY, this.controls.swapBtn)) {
+            hovered = 'swapBtn';
+        } else if (!hovered && this.controls.saveBtn && this.isPointInControl(localX, localY, this.controls.saveBtn)) {
             hovered = 'saveBtn';
-        } else if (this.controls.deleteBtn && this.controls.deleteBtn.enabled &&
-            this.isInRect(localX, localY, this.controls.deleteBtn)) {
+        } else if (!hovered && this.controls.deleteBtn && this.controls.deleteBtn.enabled &&
+            this.isPointInControl(localX, localY, this.controls.deleteBtn)) {
             hovered = 'deleteBtn';
         }
 
@@ -641,15 +948,16 @@ class ResolutionMasterSimplifyCanvas {
         // 切换到 Custom 预设
         this.node.properties.selectedPreset = '自定义 (Custom)';
 
+        // 隐藏输入框（如果正在编辑）
+        if (this.widthInputElement) this.widthInputElement.style.display = 'none';
+        if (this.heightInputElement) this.heightInputElement.style.display = 'none';
+
         app.graph.setDirtyCanvas(true);
     }
 
-    isInRect(x, y, rect) {
-        // 支持 width/height 和 w/h 两种命名
-        const width = rect.width || rect.w;
-        const height = rect.height || rect.h;
-        return x >= rect.x && x <= rect.x + width &&
-            y >= rect.y && y <= rect.y + height;
+    isPointInControl(x, y, control) {
+        return x >= control.x && x <= control.x + control.w &&
+            y >= control.y && y <= control.y + control.h;
     }
 
     showPresetDropdown(e) {
@@ -681,6 +989,10 @@ class ResolutionMasterSimplifyCanvas {
         const props = this.node.properties;
         this.node.intpos.x = (preset.width - props.canvas_min_x) / (props.canvas_max_x - props.canvas_min_x);
         this.node.intpos.y = (preset.height - props.canvas_min_y) / (props.canvas_max_y - props.canvas_min_y);
+
+        // 隐藏输入框（如果正在编辑）
+        if (this.widthInputElement) this.widthInputElement.style.display = 'none';
+        if (this.heightInputElement) this.heightInputElement.style.display = 'none';
 
         app.graph.setDirtyCanvas(true);
     }
@@ -859,6 +1171,38 @@ class ResolutionMasterSimplifyCanvas {
     }
 
     /**
+     * 交换宽度和高度数值
+     */
+    swapWidthHeight() {
+        const props = this.node.properties;
+
+        // 交换宽度和高度
+        const tempWidth = props.width;
+        props.width = props.height;
+        props.height = tempWidth;
+
+        // 同步到 widgets
+        if (this.widthWidget) this.widthWidget.value = props.width;
+        if (this.heightWidget) this.heightWidget.value = props.height;
+
+        // 重新计算画布位置
+        this.node.intpos.x = (props.width - props.canvas_min_x) / (props.canvas_max_x - props.canvas_min_x);
+        this.node.intpos.y = (props.height - props.canvas_min_y) / (props.canvas_max_y - props.canvas_min_y);
+
+        // 设置为自定义预设
+        this.node.properties.selectedPreset = '自定义 (Custom)';
+
+        // 隐藏输入框（如果正在编辑）
+        if (this.widthInputElement) this.widthInputElement.style.display = 'none';
+        if (this.heightInputElement) this.heightInputElement.style.display = 'none';
+
+        // 触发重绘
+        app.graph.setDirtyCanvas(true);
+
+        logger.info(`[分辨率交换] ${tempWidth}×${props.height} → ${props.width}×${props.height}`);
+    }
+
+    /**
      * 从工作流恢复节点状态
      * 在 ComfyUI 恢复完 widgets 和 properties 后调用
      */
@@ -896,7 +1240,7 @@ app.registerExtension({
 
                 // 添加 onConfigure 钩子，在 ComfyUI 恢复工作流数据后调用
                 const onConfigure = this.onConfigure;
-                this.onConfigure = function(info) {
+                this.onConfigure = function (info) {
                     const result = onConfigure ? onConfigure.apply(this, arguments) : undefined;
 
                     // 从工作流恢复节点状态
