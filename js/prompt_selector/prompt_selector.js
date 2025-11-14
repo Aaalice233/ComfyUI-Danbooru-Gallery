@@ -75,9 +75,10 @@ app.registerExtension({
                 this.promptData = null; // 用于存储从后端获取的数据
                 this.selectedCategory = "default"; // Default value, will be overwritten
                 this.selectionMode = "multi"; // 'single' or 'multi'
-                this.selectedPrompts = {}; // 用于按分类存储多选模式下的选中项
+                this.selectedPrompts = {}; // 用于按分类存储多选模式下的选中项（Map<categoryName, Set<prompt>>）
+                this.promptWeights = {}; // 用于存储提示词权重（Map<categoryName, Map<prompt, weight>>）
                 this.batchMode = false; // 批量操作模式
-                this.selectedForBatch = new Set(); // 批量操作选中的提示词ID
+                this.selectedForBatch = new Set(); // 批量操作选中的提示诏ID
                 this.currentFilter = { favorites: false, tags: [], search: "" }; // 当前过滤条件
                 this.draggedItem = null; // 拖拽的项目
                 this.searchTerm = ""; // 主界面搜索关键词
@@ -194,14 +195,29 @@ app.registerExtension({
 
 
                         this.updateCategoryDropdown();
-                        // Restore selected prompts from node properties for independent state
+                        // Restore selected prompts and weights from node properties for independent state
                         if (this.properties.selectedPrompts) {
                             try {
                                 const savedSelections = JSON.parse(this.properties.selectedPrompts);
-                                // Convert arrays back to Sets
+                                // 将对象或数组转换为 Set
                                 for (const category in savedSelections) {
-                                    if (Array.isArray(savedSelections[category])) {
-                                        this.selectedPrompts[category] = new Set(savedSelections[category]);
+                                    const saved = savedSelections[category];
+                                    const selectionSet = new Set();
+
+                                    if (Array.isArray(saved)) {
+                                        // 兼容旧版本：数组格式
+                                        saved.forEach(prompt => {
+                                            selectionSet.add(prompt);
+                                        });
+                                    } else if (typeof saved === 'object') {
+                                        // 新版本：对象格式，只取key作为选中项
+                                        for (const prompt in saved) {
+                                            selectionSet.add(prompt);
+                                        }
+                                    }
+
+                                    if (selectionSet.size > 0) {
+                                        this.selectedPrompts[category] = selectionSet;
                                     }
                                 }
                             } catch (e) {
@@ -211,6 +227,30 @@ app.registerExtension({
                         } else {
                             // If no selections are saved in the node, start with a clean slate.
                             this.selectedPrompts = {};
+                        }
+
+                        // Restore weights from node properties
+                        if (this.properties.promptWeights) {
+                            try {
+                                const savedWeights = JSON.parse(this.properties.promptWeights);
+                                for (const category in savedWeights) {
+                                    const weightsObj = savedWeights[category];
+                                    if (typeof weightsObj === 'object') {
+                                        const weightsMap = new Map();
+                                        for (const prompt in weightsObj) {
+                                            weightsMap.set(prompt, weightsObj[prompt] || 1);
+                                        }
+                                        if (weightsMap.size > 0) {
+                                            this.promptWeights[category] = weightsMap;
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                logger.error(`[PromptSelector #${this.id}] Failed to parse saved weights:`, e);
+                                this.promptWeights = {};
+                            }
+                        } else {
+                            this.promptWeights = {};
                         }
                         this.renderContent();
                         this.updateOutput(); // 更新一次初始输出
@@ -245,8 +285,10 @@ app.registerExtension({
                     }
                     toggleBtn.style.display = 'flex';
 
-                    const categorySelections = this.selectedPrompts[this.selectedCategory] || new Set();
-                    const allSelected = promptsInCategory.length > 0 && promptsInCategory.every(p => categorySelections.has(p.prompt));
+                    const categorySelections = this.selectedPrompts[this.selectedCategory];
+                    const allSelected = promptsInCategory.length > 0 && promptsInCategory.every(p =>
+                        categorySelections instanceof Set && categorySelections.has(p.prompt)
+                    );
 
                     if (allSelected) {
                         toggleBtn.innerHTML = iconDeselectAll;
@@ -263,7 +305,12 @@ app.registerExtension({
                     if (!category || !category.prompts) return;
 
                     const promptsInCategory = category.prompts;
-                    const categorySelections = this.selectedPrompts[this.selectedCategory] || new Set();
+                    let categorySelections = this.selectedPrompts[this.selectedCategory];
+                    if (!(categorySelections instanceof Set)) {
+                        categorySelections = new Set();
+                        this.selectedPrompts[this.selectedCategory] = categorySelections;
+                    }
+
                     const allSelected = promptsInCategory.length > 0 && promptsInCategory.every(p => categorySelections.has(p.prompt));
 
                     if (allSelected) {
@@ -273,7 +320,6 @@ app.registerExtension({
                         // Select all in current category
                         promptsInCategory.forEach(p => categorySelections.add(p.prompt));
                     }
-                    this.selectedPrompts[this.selectedCategory] = categorySelections;
                     this.renderContent();
                     this.updateOutput();
                 });
@@ -559,6 +605,25 @@ app.registerExtension({
                         const controlsContainer = document.createElement("div");
                         controlsContainer.className = "prompt-item-controls-wrapper";
 
+                        // 权重输入框(新增) - 移到末尾,位置固定
+                        const weightInput = document.createElement("input");
+                        weightInput.type = "text";
+                        weightInput.className = "ps-weight-input";
+                        weightInput.setAttribute('aria-label', '提示词权重');
+                        weightInput.placeholder = "1";
+                        weightInput.title = "输入权重 (Enter应用)";
+
+                        // 从 promptWeights 获取权重值(与选中状态无关)
+                        let categoryWeights = this.promptWeights[this.selectedCategory];
+                        if (!categoryWeights) {
+                            categoryWeights = new Map();
+                            this.promptWeights[this.selectedCategory] = categoryWeights;
+                        }
+                        const currentWeight = categoryWeights.get(p.prompt) || 1;
+                        if (currentWeight !== 1) {
+                            weightInput.value = currentWeight.toFixed(2).replace(/\.?0+$/, '');
+                        }
+
                         const editBtn = document.createElement("button");
                         editBtn.className = "ps-item-edit-btn";
                         editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
@@ -575,9 +640,94 @@ app.registerExtension({
                         controlsContainer.appendChild(copyBtn);
                         controlsContainer.appendChild(editBtn);
                         controlsContainer.appendChild(deleteBtn);
+                        controlsContainer.appendChild(weightInput);
 
                         item.appendChild(textContainer);
                         item.appendChild(controlsContainer);
+
+                        // --- 权重输入框事件处理 ---
+
+                        // 验证并格式化权重值
+                        const validateWeight = (value) => {
+                            if (value === '' || value === null || value === undefined) {
+                                return null; // 空值表示移除权重
+                            }
+                            let num = parseFloat(value);
+                            if (isNaN(num)) return 1; // 非数字返回默认值
+                            num = Math.max(0, Math.min(20, num)); // 限制范围 0-20
+                            return Math.round(num * 100) / 100; // 保留两位小数
+                        };
+
+                        // 应用权重到数据(与选中状态无关)
+                        const applyWeight = (weight) => {
+                            let categoryWeights = this.promptWeights[this.selectedCategory];
+                            if (!categoryWeights) {
+                                categoryWeights = new Map();
+                                this.promptWeights[this.selectedCategory] = categoryWeights;
+                            }
+
+                            if (weight === null || weight === 1) {
+                                // 权重为空或1,设置为默认权重1
+                                categoryWeights.set(p.prompt, 1);
+                            } else {
+                                // 设置自定义权重
+                                categoryWeights.set(p.prompt, weight);
+                            }
+
+                            this.updateOutput();
+
+                            // 短暂高亮提示已应用
+                            weightInput.style.borderColor = 'var(--ps-theme-color)';
+                            setTimeout(() => {
+                                weightInput.style.borderColor = '';
+                            }, 300);
+                        };
+
+                        // 输入验证（实时）
+                        weightInput.addEventListener('input', (e) => {
+                            const value = e.target.value;
+                            // 允许空值、数字、小数点
+                            if (value !== '' && !/^\d*\.?\d{0,2}$/.test(value)) {
+                                e.target.value = e.target.value.slice(0, -1);
+                            }
+                        });
+
+                        // 失焦时应用权重
+                        weightInput.addEventListener('blur', (e) => {
+                            const weight = validateWeight(e.target.value);
+                            if (weight !== null && weight !== 1) {
+                                e.target.value = weight.toFixed(2).replace(/\.?0+$/, '');
+                            } else {
+                                e.target.value = '';
+                            }
+                            applyWeight(weight);
+                        });
+
+                        // 聚焦时全选文本
+                        weightInput.addEventListener('focus', (e) => {
+                            e.target.select();
+                        });
+
+                        // Enter键应用权重
+                        weightInput.addEventListener('keydown', (e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const weight = validateWeight(e.target.value);
+                                if (weight !== null && weight !== 1) {
+                                    e.target.value = weight.toFixed(2).replace(/\.?0+$/, '');
+                                } else {
+                                    e.target.value = '';
+                                }
+                                applyWeight(weight);
+                                e.target.blur(); // 失去焦点
+                            }
+                        });
+
+                        // 阻止权重输入框触发选择/取消选择
+                        weightInput.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                        });
 
                         // --- Hover Tooltip Logic ---
                         item.addEventListener('mouseenter', (e) => {
@@ -649,7 +799,7 @@ app.registerExtension({
                         item.addEventListener('click', (e) => {
                             this.hidePromptTooltip(); // 在处理点击前，强制隐藏悬浮提示
                             // 忽略拖拽带起的点击事件
-                            if (e.target.closest('.ps-item-edit-btn, .ps-item-delete-btn, .ps-item-copy-btn')) {
+                            if (e.target.closest('.ps-item-edit-btn, .ps-item-delete-btn, .ps-item-copy-btn, .ps-weight-input')) {
                                 return;
                             }
                             if (item.classList.contains('dragging')) {
@@ -658,8 +808,8 @@ app.registerExtension({
 
                             const promptValue = p.prompt;
                             if (this.selectionMode === 'single') {
-                                const categorySelections = this.selectedPrompts[this.selectedCategory] || new Set();
-                                const isCurrentlySelected = categorySelections.has(promptValue);
+                                const categorySelections = this.selectedPrompts[this.selectedCategory];
+                                const isCurrentlySelected = categorySelections instanceof Set && categorySelections.has(promptValue);
 
                                 // In single select mode, only one item can be selected across ALL categories.
                                 // So, first, we clear everything.
@@ -668,16 +818,24 @@ app.registerExtension({
                                 // If the clicked item was not the one selected before, we select it.
                                 // If it was already selected, the clear operation above has already deselected it.
                                 if (!isCurrentlySelected) {
-                                    this.selectedPrompts[this.selectedCategory] = new Set([promptValue]);
+                                    const newSet = new Set();
+                                    newSet.add(promptValue);
+                                    this.selectedPrompts[this.selectedCategory] = newSet;
                                 }
                             } else { // multi
-                                const categorySelections = this.selectedPrompts[this.selectedCategory] || new Set();
+                                let categorySelections = this.selectedPrompts[this.selectedCategory];
+                                if (!(categorySelections instanceof Set)) {
+                                    categorySelections = new Set();
+                                    this.selectedPrompts[this.selectedCategory] = categorySelections;
+                                }
+
                                 if (categorySelections.has(promptValue)) {
+                                    // 取消选中
                                     categorySelections.delete(promptValue);
                                 } else {
+                                    // 选中
                                     categorySelections.add(promptValue);
                                 }
-                                this.selectedPrompts[this.selectedCategory] = categorySelections;
                             }
                             this.renderContent(); // Re-render to update selection state
                             this.updateOutput();
@@ -716,7 +874,8 @@ app.registerExtension({
                             });
                         });
 
-                        if (this.selectedPrompts[this.selectedCategory]?.has(p.prompt)) {
+                        if (this.selectedPrompts[this.selectedCategory] instanceof Set &&
+                            this.selectedPrompts[this.selectedCategory].has(p.prompt)) {
                             item.classList.add('selected');
                         }
 
@@ -733,27 +892,56 @@ app.registerExtension({
                     // 按照分类在promptData中的顺序合并，以保持输出的稳定性
                     this.promptData.categories.forEach(cat => {
                         const selectionSet = this.selectedPrompts[cat.name];
-                        if (selectionSet && selectionSet.size > 0) {
+                        const categoryWeights = this.promptWeights[cat.name];
+
+                        if (selectionSet instanceof Set && selectionSet.size > 0) {
                             // 按照提示词在分类中的顺序排序
-                            const sortedPrompts = cat.prompts
-                                .filter(p => selectionSet.has(p.prompt))
-                                .map(p => p.prompt);
-                            allSelected.push(...sortedPrompts);
+                            cat.prompts.forEach(p => {
+                                if (selectionSet.has(p.prompt)) {
+                                    const weight = categoryWeights instanceof Map ? (categoryWeights.get(p.prompt) || 1) : 1;
+                                    let formattedPrompt = p.prompt;
+
+                                    // 根据权重格式化提示词
+                                    if (weight !== undefined && weight !== null && weight !== 1 && weight !== 1.0) {
+                                        // 权重非1，添加括号和权重
+                                        const weightStr = weight.toFixed(2).replace(/\.?0+$/, '');
+                                        formattedPrompt = `(${p.prompt}:${weightStr})`;
+                                    }
+
+                                    allSelected.push(formattedPrompt);
+                                }
+                            });
                         }
                     });
 
                     const outputString = allSelected.join(separator);
                     outputWidget.value = outputString;
-                    // 
-                    // Serialize the selectedPrompts object for saving in properties.
-                    // We need to convert Sets to Arrays for JSON serialization.
+
+                    // Serialize the selectedPrompts (Set) for saving in properties
                     const serializableSelections = {};
                     for (const category in this.selectedPrompts) {
-                        if (this.selectedPrompts[category].size > 0) { // Only save categories with selections
-                            serializableSelections[category] = Array.from(this.selectedPrompts[category]);
+                        const selectionSet = this.selectedPrompts[category];
+                        if (selectionSet instanceof Set && selectionSet.size > 0) {
+                            const arr = Array.from(selectionSet);
+                            serializableSelections[category] = arr;
                         }
                     }
                     this.properties.selectedPrompts = JSON.stringify(serializableSelections);
+
+                    // Serialize the promptWeights (Map) for saving in properties
+                    const serializableWeights = {};
+                    for (const category in this.promptWeights) {
+                        const weightsMap = this.promptWeights[category];
+                        if (weightsMap instanceof Map && weightsMap.size > 0) {
+                            const obj = {};
+                            weightsMap.forEach((weight, prompt) => {
+                                obj[prompt] = weight;
+                            });
+                            serializableWeights[category] = obj;
+                        }
+                    }
+                    this.properties.promptWeights = JSON.stringify(serializableWeights);
+
                     this.updateCategoryDropdown();
                 };
 
@@ -3428,7 +3616,36 @@ app.registerExtension({
                     .prompt-item-controls-wrapper {
                         display: flex;
                         flex-shrink: 0;
+                        align-items: center;
+                        gap: 4px;
                     }
+                    
+                    /* 权重输入框样式 - 始终显示在最右侧 */
+                    .ps-weight-input {
+                        width: 50px;
+                        height: 24px;
+                        padding: 4px 6px;
+                        font-size: 12px;
+                        color: #e0e0e0;
+                        background-color: #2a2a2a;
+                        border: 1px solid #555;
+                        border-radius: 4px;
+                        text-align: center;
+                        outline: none;
+                        transition: all 0.2s ease;
+                        margin-left: 8px;
+                    }
+                    .ps-weight-input:hover {
+                        border-color: #777;
+                    }
+                    .ps-weight-input:focus {
+                        border-color: var(--ps-theme-color);
+                        background-color: #333;
+                    }
+                    .ps-weight-input::placeholder {
+                        color: #666;
+                    }
+                    
                     .ps-item-edit-btn, .ps-item-delete-btn, .ps-item-copy-btn {
                         background: none;
                         border: none;
