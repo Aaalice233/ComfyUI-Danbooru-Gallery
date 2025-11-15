@@ -1334,10 +1334,12 @@ class WorkflowChannelSynchronizer {
                 // 通知用户同步结果（成功Toast只显示一次）
                 if (showToast && result.status === "success") {
                     const { successful_registrations, failed_registrations } = result.sync_result;
-                    if (failed_registrations === 0 && !this.hasShownSyncSuccessToast) {
-                        showToast(`🎉 工作流同步成功！${successful_registrations}个通道已注册`, 'success', 3000);
-                        this.hasShownSyncSuccessToast = true;
-                    } else if (failed_registrations > 0) {
+                    // 注释掉成功通道的toast提示
+                    // if (failed_registrations === 0 && !this.hasShownSyncSuccessToast) {
+                    //     showToast(`🎉 工作流同步成功！${successful_registrations}个通道已注册`, 'success', 3000);
+                    //     this.hasShownSyncSuccessToast = true;
+                    // } else 
+                    if (failed_registrations > 0) {
                         showToast(`⚠️ 同步部分完成：${successful_registrations}个成功, ${failed_registrations}个失败`, 'warning', 4000);
                     }
                 }
