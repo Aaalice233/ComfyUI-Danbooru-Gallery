@@ -62,7 +62,7 @@ class SimpleCheckpointLoaderWithName:
 
     FUNCTION = "load_checkpoint"
     CATEGORY = CATEGORY_TYPE
-    DESCRIPTION = "简化版checkpoint加载器:轻量级、高效、不会因多实例卡死"
+    DESCRIPTION = "简化版checkpoint加载器:轻量级、高效"
     
     @classmethod
     def VALIDATE_INPUTS(cls, ckpt_name, vae_name, **kwargs):
