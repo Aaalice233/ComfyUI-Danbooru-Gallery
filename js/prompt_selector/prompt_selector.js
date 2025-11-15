@@ -84,6 +84,12 @@ app.registerExtension({
                 this.searchTerm = ""; // 主界面搜索关键词
                 this.mainSearchAutocomplete = null; // 主搜索框的自动补全实例
 
+                // 保存队列和状态跟踪（防止并发冲突）
+                this.saveQueue = Promise.resolve(); // 保存队列，确保串行保存
+                this.isSaving = false; // 当前是否正在保存
+                this.saveRetryCount = 0; // 保存重试计数
+                this.maxSaveRetries = 3; // 最大重试次数
+
                 // 获取隐藏的输出小部件
                 const outputWidget = this.widgets.find(w => w.name === "selected_prompts");
                 if (outputWidget) {
@@ -983,19 +989,65 @@ app.registerExtension({
                     }
                 };
 
+                /**
+                 * 保存数据到服务器（使用队列机制防止并发冲突）
+                 *
+                 * @returns {Promise} 保存操作的 Promise
+                 */
                 this.saveData = () => {
-                    return api.fetchApi("/prompt_selector/data", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(this.promptData),
-                    }).then(response => {
-                        if (!response.ok) {
-                            this.showToast(t('save_error'), 'error');
-                        }
+                    // 将保存操作加入队列，确保串行执行
+                    this.saveQueue = this.saveQueue.then(async () => {
+                        // 设置保存状态
+                        this.isSaving = true;
+                        this.saveRetryCount = 0;
+
+                        const attemptSave = async (retryCount = 0) => {
+                            try {
+                                logger.info(`开始保存数据（尝试 ${retryCount + 1}/${this.maxSaveRetries + 1}）...`);
+
+                                const response = await api.fetchApi("/prompt_selector/data", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(this.promptData),
+                                });
+
+                                if (!response.ok) {
+                                    const errorText = await response.text();
+                                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                                }
+
+                                // 保存成功
+                                logger.info("✓ 数据保存成功");
+                                this.isSaving = false;
+                                return true;
+
+                            } catch (error) {
+                                logger.error(`✗ 保存失败（尝试 ${retryCount + 1}）:`, error);
+
+                                // 如果还有重试机会，使用指数退避策略重试
+                                if (retryCount < this.maxSaveRetries) {
+                                    const delayMs = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+                                    logger.warn(`将在 ${delayMs}ms 后重试...`);
+                                    await new Promise(resolve => setTimeout(resolve, delayMs));
+                                    return attemptSave(retryCount + 1);
+                                } else {
+                                    // 重试次数用尽，显示错误
+                                    this.showToast(t('save_error'), 'error');
+                                    this.isSaving = false;
+                                    throw error;
+                                }
+                            }
+                        };
+
+                        return attemptSave();
                     }).catch(error => {
-                        logger.error("保存数据失败:", error);
-                        this.showToast(t('save_error'), 'error');
+                        // 最终失败处理
+                        logger.error("数据保存最终失败:", error);
+                        this.isSaving = false;
+                        // 不再抛出错误，避免影响队列
                     });
+
+                    return this.saveQueue;
                 };
 
                 this.saveLastCategory = (categoryName) => {
@@ -2231,7 +2283,7 @@ app.registerExtension({
                     const oldNameParts = oldName.split('/');
                     const nameToEdit = oldNameParts.pop();
 
-                    this.showInputModal(t('rename_category'), t('new_category_prompt'), nameToEdit, (newNameInput) => {
+                    this.showInputModal(t('rename_category'), t('new_category_prompt'), nameToEdit, async (newNameInput) => {
                         const newName = newNameInput.trim();
                         if (!newName || newName.includes('/') || newName === nameToEdit) {
                             if (newName.includes('/')) this.showToast("分类名不能包含'/'", 'error');
@@ -2271,38 +2323,39 @@ app.registerExtension({
                             }
                             this.selectedPrompts = newSelectedPrompts;
 
-                            this.saveData().then(() => {
-                                this.showToast(t('update_prompt_success'));
+                            // 使用 await 等待保存完成
+                            await this.saveData();
 
-                                if (this.selectedCategory === oldName || this.selectedCategory.startsWith(oldName + '/')) {
-                                    const restOfPath = this.selectedCategory.substring(oldName.length);
-                                    this.selectedCategory = newFullName + restOfPath;
-                                    this.saveLastCategory(this.selectedCategory);
-                                }
+                            this.showToast(t('update_prompt_success'));
 
-                                const modal = document.querySelector('.ps-library-modal');
-                                if (modal) {
-                                    const categoryTreeContainer = modal.querySelector('.ps-category-tree');
-                                    const categoryTree = this.buildCategoryTree(this.promptData.categories);
-                                    const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
-                                    categoryTreeContainer.innerHTML = '';
-                                    categoryTreeContainer.appendChild(treeElement);
+                            if (this.selectedCategory === oldName || this.selectedCategory.startsWith(oldName + '/')) {
+                                const restOfPath = this.selectedCategory.substring(oldName.length);
+                                this.selectedCategory = newFullName + restOfPath;
+                                this.saveLastCategory(this.selectedCategory);
+                            }
 
-                                    const newSelectedItem = categoryTreeContainer.querySelector(`.ps-tree-item[data-full-name="${this.selectedCategory}"]`);
-                                    if (newSelectedItem) {
-                                        newSelectedItem.classList.add('selected');
-                                        let parentLi = newSelectedItem.closest('li.parent');
-                                        while (parentLi) {
-                                            parentLi.classList.add('open');
-                                            parentLi = parentLi.parentElement.closest('li.parent');
-                                        }
+                            const modal = document.querySelector('.ps-library-modal');
+                            if (modal) {
+                                const categoryTreeContainer = modal.querySelector('.ps-category-tree');
+                                const categoryTree = this.buildCategoryTree(this.promptData.categories);
+                                const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
+                                categoryTreeContainer.innerHTML = '';
+                                categoryTreeContainer.appendChild(treeElement);
+
+                                const newSelectedItem = categoryTreeContainer.querySelector(`.ps-tree-item[data-full-name="${this.selectedCategory}"]`);
+                                if (newSelectedItem) {
+                                    newSelectedItem.classList.add('selected');
+                                    let parentLi = newSelectedItem.closest('li.parent');
+                                    while (parentLi) {
+                                        parentLi.classList.add('open');
+                                        parentLi = parentLi.parentElement.closest('li.parent');
                                     }
-
-                                    this.renderPromptList(this.selectedCategory);
                                 }
-                                this.updateCategoryDropdown();
-                                updateUIText(this); // 确保节点上的分类显示更新
-                            });
+
+                                this.renderPromptList(this.selectedCategory);
+                            }
+                            this.updateCategoryDropdown();
+                            updateUIText(this); // 确保节点上的分类显示更新
                         }
                     });
                 };
@@ -2390,17 +2443,19 @@ app.registerExtension({
                         this.showToast(t('cannot_clear_default'), 'error');
                         return;
                     }
-                    this.showConfirmModal(t('clear_category_confirm', { category: categoryName }), () => {
+                    this.showConfirmModal(t('clear_category_confirm', { category: categoryName }), async () => {
                         const category = this.promptData.categories.find(c => c.name === categoryName);
                         if (category) {
                             category.prompts = [];
-                            this.saveData().then(() => {
-                                this.showToast(t('clear_category_success'));
-                                const modal = document.querySelector('.ps-library-modal');
-                                if (modal && this.selectedCategory === categoryName) {
-                                    this.renderPromptList(categoryName);
-                                }
-                            });
+
+                            // 使用 await 等待保存完成
+                            await this.saveData();
+
+                            this.showToast(t('clear_category_success'));
+                            const modal = document.querySelector('.ps-library-modal');
+                            if (modal && this.selectedCategory === categoryName) {
+                                this.renderPromptList(categoryName);
+                            }
                         }
                     });
                 };

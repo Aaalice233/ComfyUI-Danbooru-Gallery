@@ -78,6 +78,8 @@ py/save_image_plus/hash_cache.json
 # Prompt Selector specific
 py/prompt_selector/preview/
 py/prompt_selector/data.json
+py/prompt_selector/data.json.backup_*
+py/prompt_selector/.tmp_*.json
 
 # Multi Character Editor specific
 py/multi_character_editor/settings/

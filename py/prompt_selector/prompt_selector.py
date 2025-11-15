@@ -10,6 +10,7 @@ import shutil
 import io
 import time
 import uuid
+import tempfile
 from datetime import datetime
 
 # Logger导入
@@ -23,6 +24,146 @@ CUSTOM_NODE_DIR = os.path.abspath(os.path.join(PLUGIN_DIR, '..', '..'))
 DATA_FILE = os.path.join(PLUGIN_DIR, "data.json")
 DEFAULT_DATA_FILE = os.path.join(PLUGIN_DIR, "default.json")
 PREVIEW_DIR = os.path.join(PLUGIN_DIR, "preview")
+
+# === 数据安全工具函数 ===
+
+def _validate_data(data):
+    """
+    验证数据结构的完整性
+
+    Args:
+        data: 待验证的数据字典
+
+    Raises:
+        ValueError: 数据结构不完整时抛出异常
+    """
+    if not isinstance(data, dict):
+        raise ValueError("数据必须是字典类型")
+
+    if "version" not in data:
+        raise ValueError("缺少 version 字段")
+
+    if "categories" not in data:
+        raise ValueError("缺少 categories 字段")
+
+    if not isinstance(data["categories"], list):
+        raise ValueError("categories 必须是列表类型")
+
+    if "settings" not in data:
+        raise ValueError("缺少 settings 字段")
+
+    return True
+
+def _create_backup(file_path, max_backups=3):
+    """
+    创建文件备份，保留最近 N 个版本
+
+    Args:
+        file_path: 要备份的文件路径
+        max_backups: 最多保留的备份数量
+    """
+    if not os.path.exists(file_path):
+        return
+
+    try:
+        # 生成备份文件名（带时间戳）
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = f"{file_path}.backup_{timestamp}"
+
+        # 创建备份
+        shutil.copy2(file_path, backup_file)
+        logger.info(f"✓ 已创建备份: {os.path.basename(backup_file)}")
+
+        # 清理旧备份（保留最新的 max_backups 个）
+        backup_dir = os.path.dirname(file_path)
+        backup_pattern = f"{os.path.basename(file_path)}.backup_"
+
+        backups = []
+        for filename in os.listdir(backup_dir):
+            if filename.startswith(backup_pattern):
+                full_path = os.path.join(backup_dir, filename)
+                backups.append((os.path.getmtime(full_path), full_path))
+
+        # 按修改时间排序（最新的在前）
+        backups.sort(reverse=True)
+
+        # 删除多余的备份
+        for _, old_backup in backups[max_backups:]:
+            try:
+                os.remove(old_backup)
+                logger.info(f"✓ 已清理旧备份: {os.path.basename(old_backup)}")
+            except Exception as e:
+                logger.warning(f"⚠ 清理备份失败 {os.path.basename(old_backup)}: {e}")
+
+    except Exception as e:
+        logger.warning(f"⚠ 创建备份失败: {e}")
+
+def _atomic_save_json(file_path, data, create_backup=True):
+    """
+    原子性保存 JSON 数据到文件
+
+    使用临时文件 + 原子重命名机制，确保数据写入的原子性：
+    1. 先写入到临时文件
+    2. 强制刷新到磁盘（fsync）
+    3. 原子重命名覆盖目标文件
+    4. 异常时自动清理临时文件
+
+    Args:
+        file_path: 目标文件路径
+        data: 要保存的数据（字典）
+        create_backup: 是否创建备份
+
+    Raises:
+        ValueError: 数据验证失败
+        IOError: 文件写入失败
+    """
+    # 1. 验证数据结构
+    _validate_data(data)
+
+    # 2. 创建备份
+    if create_backup:
+        _create_backup(file_path)
+
+    # 3. 写入临时文件
+    temp_fd = None
+    temp_path = None
+
+    try:
+        # 在同一目录下创建临时文件（确保在同一文件系统上，os.replace 才能原子操作）
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=os.path.dirname(file_path),
+            prefix='.tmp_',
+            suffix='.json'
+        )
+
+        # 使用文件描述符写入数据
+        with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+            f.flush()
+            os.fsync(f.fileno())  # 强制刷新到磁盘
+
+        temp_fd = None  # 文件已关闭，避免重复关闭
+
+        # 4. 原子重命名（覆盖旧文件）
+        # os.replace 在 Windows 和 Unix 上都是原子操作
+        os.replace(temp_path, file_path)
+
+        logger.info(f"✓ 数据已安全保存: {os.path.basename(file_path)}")
+
+    except Exception as e:
+        logger.error(f"✗ 保存数据失败: {e}")
+        # 清理临时文件
+        if temp_fd is not None:
+            try:
+                os.close(temp_fd)
+            except:
+                pass
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+        raise
 
 class PromptSelector:
     """
@@ -88,11 +229,16 @@ async def get_data(request):
 async def save_data(request):
     try:
         data = await request.json()
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-        
+        # 使用原子保存机制，确保数据安全
+        _atomic_save_json(DATA_FILE, data, create_backup=True)
+
         return web.json_response({"success": True})
+    except ValueError as e:
+        # 数据验证失败
+        logger.error(f"数据验证失败: {e}")
+        return web.json_response({"error": f"数据验证失败: {str(e)}"}, status=400)
     except Exception as e:
+        logger.error(f"保存数据失败: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 @PromptServer.instance.routes.get("/prompt_selector/preview/{filename}")
@@ -290,9 +436,8 @@ async def import_zip(request):
                         with zf.open(zip_image_path) as source, open(target_path, 'wb') as target:
                             shutil.copyfileobj(source, target)
 
-            # 保存合并后的数据
-            with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                json.dump(local_data, f, ensure_ascii=False, indent=4)
+            # 保存合并后的数据（使用原子保存机制）
+            _atomic_save_json(DATA_FILE, local_data, create_backup=True)
 
         return web.json_response({"success": True})
     except Exception as e:
@@ -347,10 +492,10 @@ async def rename_category(request):
                 break
         else:
             return web.json_response({"error": "Category not found"}, status=404)
-            
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(file_data, f, ensure_ascii=False, indent=4)
-            
+
+        # 使用原子保存机制
+        _atomic_save_json(DATA_FILE, file_data, create_backup=True)
+
         return web.json_response({"success": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -388,8 +533,8 @@ async def delete_category(request):
         if "categories" not in file_data:
             file_data["categories"] = []
 
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(file_data, f, ensure_ascii=False, indent=4)
+        # 使用原子保存机制
+        _atomic_save_json(DATA_FILE, file_data, create_backup=True)
 
         return web.json_response({"success": True})
     except Exception as e:
@@ -419,10 +564,10 @@ async def batch_delete_prompts(request):
                         
                 category["prompts"] = [p for p in category["prompts"] if p.get("id") not in prompt_ids]
                 break
-                
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(file_data, f, ensure_ascii=False, indent=4)
-            
+
+        # 使用原子保存机制
+        _atomic_save_json(DATA_FILE, file_data, create_backup=True)
+
         return web.json_response({"success": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -462,10 +607,10 @@ async def batch_move_prompts(request):
                 source_cat["prompts"].remove(prompt)
                 
         target_cat["prompts"].extend(prompts_to_move)
-        
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(file_data, f, ensure_ascii=False, indent=4)
-            
+
+        # 使用原子保存机制
+        _atomic_save_json(DATA_FILE, file_data, create_backup=True)
+
         return web.json_response({"success": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -492,10 +637,10 @@ async def update_prompt_order(request):
                 # 按新顺序重新排列
                 category["prompts"] = [prompt_map[pid] for pid in ordered_ids if pid in prompt_map]
                 break
-                
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(file_data, f, ensure_ascii=False, indent=4)
-            
+
+        # 使用原子保存机制
+        _atomic_save_json(DATA_FILE, file_data, create_backup=True)
+
         return web.json_response({"success": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -522,10 +667,10 @@ async def toggle_favorite(request):
                         prompt["favorite"] = not prompt.get("favorite", False)
                         break
                 break
-                
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(file_data, f, ensure_ascii=False, indent=4)
-            
+
+        # 使用原子保存机制
+        _atomic_save_json(DATA_FILE, file_data, create_backup=True)
+
         return web.json_response({"success": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -608,9 +753,8 @@ def initialize_data_file():
                 merged_data = old_data
                 logger.error("✓ 新数据不存在，直接迁移旧数据")
 
-            # 5. 保存合并后的数据
-            with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                json.dump(merged_data, f, ensure_ascii=False, indent=4)
+            # 5. 保存合并后的数据（使用原子保存机制）
+            _atomic_save_json(DATA_FILE, merged_data, create_backup=False)
             logger.error("✓ 词库数据已保存")
 
             # 6. 迁移 preview 目录
@@ -662,8 +806,7 @@ def initialize_data_file():
                         "save_selection": True
                     }
                 }
-                with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                    json.dump(fallback_data, f, ensure_ascii=False, indent=4)
+                _atomic_save_json(DATA_FILE, fallback_data, create_backup=False)
                 logger.info("📝 已创建空词库结构作为备用方案")
         else:
             # 如果 default.json 也不存在，创建一个基本的空结构
@@ -676,8 +819,7 @@ def initialize_data_file():
                     "save_selection": True
                 }
             }
-            with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                json.dump(fallback_data, f, ensure_ascii=False, indent=4)
+            _atomic_save_json(DATA_FILE, fallback_data, create_backup=False)
             logger.error("⚠️ 默认词库文件不存在，已创建空词库结构")
 
 # 在插件加载时调用初始化
