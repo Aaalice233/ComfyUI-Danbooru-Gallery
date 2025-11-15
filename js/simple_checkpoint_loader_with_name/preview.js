@@ -245,6 +245,64 @@ async function attachPreviewHandlers(menu) {
 app.registerExtension({
     name: "danbooru.SimpleCheckpointLoaderPreview",
 
+    async nodeCreated(node) {
+        // 仅处理SimpleCheckpointLoaderWithName节点
+        if (node.comfyClass !== "SimpleCheckpointLoaderWithName") {
+            return;
+        }
+
+        logger.info("[CheckpointPreview] SimpleCheckpointLoaderWithName节点已创建:", node.id);
+
+        // 查找 ckpt_name widget
+        const ckptWidget = node.widgets?.find(w => w.name === "ckpt_name");
+        if (!ckptWidget) {
+            logger.warn("[CheckpointPreview] 未找到 ckpt_name widget");
+            return;
+        }
+
+        // 验证当前选中的checkpoint是否有效
+        const validateAndResetCheckpoint = () => {
+            const currentValue = ckptWidget.value;
+            const availableOptions = ckptWidget.options?.values || [];
+
+            // 如果当前值不在可用选项中，自动选择第一个
+            if (currentValue && availableOptions.length > 0 && !availableOptions.includes(currentValue)) {
+                logger.warn(`[CheckpointPreview] Checkpoint '${currentValue}' 不存在，自动选择 '${availableOptions[0]}'`);
+                ckptWidget.value = availableOptions[0];
+
+                // 触发widget的callback（如果有）
+                if (ckptWidget.callback) {
+                    ckptWidget.callback(availableOptions[0]);
+                }
+            }
+        };
+
+        // 节点创建时验证（延迟执行，确保 widget 已初始化）
+        setTimeout(validateAndResetCheckpoint, 100);
+
+        // 查找 vae_name widget并验证
+        const vaeWidget = node.widgets?.find(w => w.name === "vae_name");
+        if (vaeWidget) {
+            const validateAndResetVAE = () => {
+                const currentValue = vaeWidget.value;
+                const availableOptions = vaeWidget.options?.values || [];
+
+                // 如果当前值不在可用选项中（且不是Baked VAE），自动选择Baked VAE
+                if (currentValue && currentValue !== "Baked VAE" &&
+                    availableOptions.length > 0 && !availableOptions.includes(currentValue)) {
+                    logger.warn(`[CheckpointPreview] VAE '${currentValue}' 不存在，自动选择 'Baked VAE'`);
+                    vaeWidget.value = "Baked VAE";
+
+                    if (vaeWidget.callback) {
+                        vaeWidget.callback("Baked VAE");
+                    }
+                }
+            };
+
+            setTimeout(validateAndResetVAE, 100);
+        }
+    },
+
     async init(app) {
         // 添加CSS样式（支持图片和视频）
         const style = document.createElement("style");
@@ -298,9 +356,9 @@ app.registerExtension({
                         if (widget?.name === "ckpt_name") {
                             // 通过多种方式尝试找到widget所属的节点
                             const node = widget.node ||
-                                        widget.parent ||
-                                        app.canvas.current_node ||
-                                        app.canvas.node_over;
+                                widget.parent ||
+                                app.canvas.current_node ||
+                                app.canvas.node_over;
 
                             logger.info("[CheckpointPreview] 找到节点:", node?.comfyClass || node?.type);
 
@@ -336,7 +394,7 @@ app.registerExtension({
         // 刷新时清除缓存
         const originalRefresh = app.refreshComboInNodes;
         if (originalRefresh) {
-            app.refreshComboInNodes = async function() {
+            app.refreshComboInNodes = async function () {
                 previewsCache = null;  // 清除缓存
                 lastCacheTime = 0;
                 return await originalRefresh.apply(this, arguments);
