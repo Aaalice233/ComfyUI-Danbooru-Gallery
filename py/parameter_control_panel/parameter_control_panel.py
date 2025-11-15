@@ -861,6 +861,95 @@ try:
                 "message": str(e)
             }, status=500)
 
+    @routes.get('/danbooru_gallery/pcp/get_accessible_params_for_gmm')
+    async def get_accessible_params_for_gmm(request):
+        """获取所有可被组静音管理器访问的布尔参数列表"""
+        try:
+            accessible_params = []
+
+            # 遍历所有节点配置
+            for node_id, config in _node_configs.items():
+                parameters = config.get("parameters", [])
+
+                # 查找 accessible_to_group_mute_manager=True 的 switch 类型参数
+                for param in parameters:
+                    if param.get("type") == "switch" and param.get("accessible_to_group_mute_manager", False):
+                        accessible_params.append({
+                            "node_id": node_id,
+                            "param_name": param.get("name"),
+                            "current_value": param.get("value", False)
+                        })
+
+            return web.json_response({
+                "status": "success",
+                "parameters": accessible_params
+            })
+        except Exception as e:
+            logger.error(f"获取GMM可访问参数错误: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    @routes.post('/danbooru_gallery/pcp/update_param_value')
+    async def update_param_value(request):
+        """更新指定参数的值（用于组静音管理器反向同步）"""
+        try:
+            data = await request.json()
+            node_id = data.get('node_id')
+            param_name = data.get('param_name')
+            new_value = data.get('value')
+
+            if not node_id or not param_name:
+                return web.json_response({
+                    "status": "error",
+                    "message": "缺少 node_id 或 param_name"
+                }, status=400)
+
+            # 获取节点配置
+            config = get_node_config(node_id)
+            if not config:
+                return web.json_response({
+                    "status": "error",
+                    "message": f"节点 '{node_id}' 不存在"
+                }, status=404)
+
+            parameters = config.get("parameters", [])
+            param_found = False
+
+            # 查找并更新参数值
+            for param in parameters:
+                if param.get("name") == param_name:
+                    param["value"] = new_value
+                    param_found = True
+                    logger.info(f"[PCP] 参数值已更新: {param_name} = {new_value} (节点: {node_id[:8]}...)")
+                    break
+
+            if not param_found:
+                return web.json_response({
+                    "status": "error",
+                    "message": f"参数 '{param_name}' 不存在于节点 '{node_id}'"
+                }, status=404)
+
+            # 更新节点配置
+            set_node_config(node_id, parameters)
+
+            return web.json_response({
+                "status": "success",
+                "message": f"参数 '{param_name}' 已更新为 {new_value}"
+            })
+
+        except Exception as e:
+            logger.error(f"更新参数值错误: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
     logger.info("API 路由已注册")
 
 except ImportError as e:

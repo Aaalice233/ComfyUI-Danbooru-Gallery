@@ -111,6 +111,10 @@ app.registerExtension({
             // 初始化循环检测栈
             this._processingStack = new Set();
 
+            // 初始化双向同步标记（用于防止循环更新）
+            this._syncingFromParameter = false;  // 正在从参数同步到组
+            this._syncingToParameter = false;    // 正在从组同步到参数
+
             // 设置节点初始大小
             this.size = [400, 500];
 
@@ -188,6 +192,12 @@ app.registerExtension({
                     this.checkGroupStatesChange();
                 }, 3000); // 每3秒检查一次
                 logger.info('[GMM-UI] 状态检测定时器已启动（3秒间隔）');
+
+                // 启动定时器：检测绑定参数的值变化（双向同步）
+                this.parameterCheckInterval = setInterval(() => {
+                    this.checkParameterValuesChange();
+                }, 3000); // 每3秒检查一次
+                logger.info('[GMM-UI] 参数同步定时器已启动（3秒间隔）');
 
                 logger.info('[GMM-UI] 自定义UI创建完成');
 
@@ -717,6 +727,70 @@ app.registerExtension({
                     background: linear-gradient(135deg, rgba(116, 55, 149, 0.2) 0%, rgba(139, 75, 168, 0.2) 100%);
                     transform: scale(1.02);
                 }
+
+                /* 参数绑定配置样式 */
+                .gmm-parameter-binding-section {
+                    margin-top: 20px;
+                    padding: 15px;
+                    background: rgba(74, 144, 226, 0.05);
+                    border: 1px solid rgba(74, 144, 226, 0.2);
+                    border-radius: 8px;
+                }
+
+                .gmm-parameter-binding-section .gmm-section-header {
+                    margin-bottom: 12px;
+                }
+
+                .gmm-parameter-binding-section .gmm-section-header span {
+                    color: #4A90E2;
+                    font-size: 14px;
+                    font-weight: 600;
+                }
+
+                .gmm-binding-content {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                }
+
+                .gmm-field {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                }
+
+                .gmm-field label {
+                    color: #ccc;
+                    font-size: 13px;
+                }
+
+                .gmm-field select,
+                .gmm-field input[type="text"] {
+                    width: 100%;
+                    padding: 8px 12px;
+                    background: rgba(0, 0, 0, 0.3);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 6px;
+                    color: #E0E0E0;
+                    font-size: 13px;
+                    transition: all 0.2s ease;
+                }
+
+                .gmm-field select:focus,
+                .gmm-field input[type="text"]:focus {
+                    outline: none;
+                    border-color: #4A90E2;
+                    background: rgba(0, 0, 0, 0.4);
+                }
+
+                .gmm-binding-status {
+                    padding: 8px 12px;
+                    background: rgba(255, 193, 7, 0.1);
+                    border-left: 3px solid #FFC107;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    color: #FFC107;
+                }
             `;
             document.head.appendChild(style);
         };
@@ -825,12 +899,27 @@ app.registerExtension({
                         linkage: {
                             on_enable: [],
                             on_disable: []
+                        },
+                        parameterBinding: {
+                            enabled: false,  // 是否启用参数绑定
+                            nodeId: '',      // PCP节点ID
+                            paramName: '',   // 参数名称
+                            mapping: 'normal'  // "normal": true→enable, "inverse": true→disable
                         }
                     };
                     this.properties.groups.push(groupConfig);
                 } else {
                     // 更新状态
                     groupConfig.enabled = this.isGroupEnabled(group);
+                    // 确保旧配置也有parameterBinding字段
+                    if (!groupConfig.parameterBinding) {
+                        groupConfig.parameterBinding = {
+                            enabled: false,
+                            nodeId: '',
+                            paramName: '',
+                            mapping: 'normal'
+                        };
+                    }
                 }
 
                 // 建立组对象到组名的引用映射（用于重命名检测）
@@ -1326,6 +1415,15 @@ app.registerExtension({
                 });
                 window.dispatchEvent(event);
                 logger.info('[GMM] 已广播状态变化事件');
+
+                // 同步到绑定的参数（避免循环：如果是从参数同步来的，不再反向同步）
+                logger.info('[GMM-DEBUG] 检查是否需要同步到参数, _syncingFromParameter:', this._syncingFromParameter);
+                if (!this._syncingFromParameter) {
+                    logger.info('[GMM-DEBUG] 准备调用 syncGroupStateToParameter');
+                    this.syncGroupStateToParameter(groupName, enable);
+                } else {
+                    logger.info('[GMM-DEBUG] 正在从参数同步，跳过反向同步');
+                }
             } finally {
                 // 从处理栈中移除
                 this._processingStack.delete(groupName);
@@ -1414,6 +1512,38 @@ app.registerExtension({
                     <div class="gmm-rules-list" id="gmm-rules-disable"></div>
                 </div>
 
+                <div class="gmm-parameter-binding-section">
+                    <div class="gmm-section-header">
+                        <span>📌 参数绑定（双向同步）</span>
+                    </div>
+                    <div class="gmm-binding-content">
+                        <div class="gmm-field">
+                            <label>
+                                <input type="checkbox" id="gmm-binding-enabled">
+                                启用参数绑定
+                            </label>
+                        </div>
+                        <div id="gmm-binding-config" style="display: none;">
+                            <div class="gmm-field">
+                                <label>选择参数</label>
+                                <select id="gmm-param-selector">
+                                    <option value="">-- 请选择 --</option>
+                                </select>
+                            </div>
+                            <div class="gmm-field">
+                                <label>映射关系</label>
+                                <select id="gmm-mapping-mode">
+                                    <option value="normal">参数True → 组开启</option>
+                                    <option value="inverse">参数True → 组关闭</option>
+                                </select>
+                            </div>
+                            <div class="gmm-binding-status">
+                                💡 启用后，参数值变化会自动控制组状态，组状态变化也会自动更新参数值
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="gmm-dialog-footer">
                     <button class="gmm-button" id="gmm-cancel">取消</button>
                     <button class="gmm-button gmm-button-primary" id="gmm-save">保存</button>
@@ -1433,6 +1563,27 @@ app.registerExtension({
             // 渲染现有规则
             this.renderRules(dialog, tempConfig, 'on_enable');
             this.renderRules(dialog, tempConfig, 'on_disable');
+
+            // 初始化参数绑定配置
+            const bindingCheckbox = dialog.querySelector('#gmm-binding-enabled');
+            const bindingConfig = dialog.querySelector('#gmm-binding-config');
+            const paramSelector = dialog.querySelector('#gmm-param-selector');
+            const mappingMode = dialog.querySelector('#gmm-mapping-mode');
+
+            // 加载可访问的参数列表
+            this.loadAccessibleParameters(paramSelector, tempConfig.parameterBinding);
+
+            // 设置初始值
+            if (tempConfig.parameterBinding && tempConfig.parameterBinding.enabled) {
+                bindingCheckbox.checked = true;
+                bindingConfig.style.display = 'block';
+                mappingMode.value = tempConfig.parameterBinding.mapping || 'normal';
+            }
+
+            // 绑定启用/禁用事件
+            bindingCheckbox.addEventListener('change', (e) => {
+                bindingConfig.style.display = e.target.checked ? 'block' : 'none';
+            });
 
             // 绑定添加规则按钮
             dialog.querySelectorAll('.gmm-add-rule').forEach(btn => {
@@ -1463,6 +1614,26 @@ app.registerExtension({
                 const originalConfig = this.properties.groups.find(g => g.group_name === groupConfig.group_name);
                 if (originalConfig) {
                     originalConfig.linkage = tempConfig.linkage;
+
+                    // 保存参数绑定配置
+                    originalConfig.parameterBinding = {
+                        enabled: bindingCheckbox.checked,
+                        nodeId: '',
+                        paramName: '',
+                        mapping: mappingMode.value || 'normal'
+                    };
+
+                    // 如果启用了绑定，保存选中的参数
+                    if (bindingCheckbox.checked && paramSelector.value) {
+                        try {
+                            const selectedParam = JSON.parse(paramSelector.value);
+                            originalConfig.parameterBinding.nodeId = selectedParam.nodeId;
+                            originalConfig.parameterBinding.paramName = selectedParam.paramName;
+                            logger.info('[GMM] 保存参数绑定配置:', originalConfig.parameterBinding);
+                        } catch (err) {
+                            logger.error('[GMM] 解析参数选择失败:', err);
+                        }
+                    }
                 }
                 logger.info('[GMM] 保存联动配置:', tempConfig.linkage);
                 dialog.remove();
@@ -1478,6 +1649,39 @@ app.registerExtension({
                 };
                 document.addEventListener('click', closeOnOutsideClick);
             }, 100);
+        };
+
+        // 加载可访问的参数列表
+        nodeType.prototype.loadAccessibleParameters = async function(selectElement, currentBinding) {
+            try {
+                const response = await fetch('/danbooru_gallery/pcp/get_accessible_params_for_gmm');
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    selectElement.innerHTML = '<option value="">-- 请选择 --</option>';
+
+                    data.parameters.forEach(param => {
+                        const option = document.createElement('option');
+                        const paramData = {
+                            nodeId: param.node_id,
+                            paramName: param.param_name
+                        };
+                        option.value = JSON.stringify(paramData);
+                        option.textContent = `${param.param_name} (节点: ${param.node_id.substring(0, 8)}...)`;
+
+                        // 如果是当前绑定的参数，设为选中
+                        if (currentBinding &&
+                            currentBinding.nodeId === param.node_id &&
+                            currentBinding.paramName === param.param_name) {
+                            option.selected = true;
+                        }
+
+                        selectElement.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                logger.error('[GMM] 加载可访问参数失败:', error);
+            }
         };
 
         // 渲染规则列表
@@ -1742,6 +1946,114 @@ app.registerExtension({
         };
 
         // 节点被移除时清理资源
+        // 参数值到组状态的映射转换
+        nodeType.prototype.mapParameterToGroupState = function(paramValue, mapping) {
+            if (mapping === "inverse") {
+                return !paramValue;  // true→disable, false→enable
+            }
+            return paramValue;       // true→enable, false→enable (默认)
+        };
+
+        // 组状态到参数值的映射转换
+        nodeType.prototype.mapGroupStateToParameter = function(groupEnabled, mapping) {
+            if (mapping === "inverse") {
+                return !groupEnabled;  // enable→false, disable→true
+            }
+            return groupEnabled;       // enable→true, disable→false (默认)
+        };
+
+        // 检查绑定参数的值变化（参数→组同步）
+        nodeType.prototype.checkParameterValuesChange = async function() {
+            if (this._syncingToParameter) {
+                // 正在同步到参数，跳过检查避免循环
+                return;
+            }
+
+            for (const group of this.properties.groups) {
+                if (!group.parameterBinding?.enabled) continue;
+
+                try {
+                    const response = await fetch(
+                        `/danbooru_gallery/pcp/get_param_value?node_id=${group.parameterBinding.nodeId}&param_name=${encodeURIComponent(group.parameterBinding.paramName)}`
+                    );
+                    const data = await response.json();
+
+                    if (data.status === 'success') {
+                        const expectedGroupState = this.mapParameterToGroupState(
+                            data.value,
+                            group.parameterBinding.mapping
+                        );
+
+                        if (group.enabled !== expectedGroupState) {
+                            // 参数值与组状态不一致，需要同步
+                            logger.info(`[GMM] 参数同步：${group.parameterBinding.paramName} (${data.value}) → ${group.group_name} (${expectedGroupState ? '开启' : '关闭'})`);
+                            this._syncingFromParameter = true;
+                            this.toggleGroup(group.group_name, expectedGroupState);
+                            this._syncingFromParameter = false;
+                        }
+                    }
+                } catch (error) {
+                    // 忽略错误，继续检查下一个
+                }
+            }
+        };
+
+        // 将组状态同步到绑定的参数（组→参数同步）
+        nodeType.prototype.syncGroupStateToParameter = async function(groupName, groupEnabled) {
+            const config = this.properties.groups.find(g => g.group_name === groupName);
+
+            // 调试日志：检查配置
+            logger.info('[GMM-DEBUG] syncGroupStateToParameter 被调用:', groupName, groupEnabled);
+            logger.info('[GMM-DEBUG] 找到的配置:', config);
+            logger.info('[GMM-DEBUG] 参数绑定配置:', config?.parameterBinding);
+
+            if (!config?.parameterBinding?.enabled) {
+                logger.info('[GMM-DEBUG] 参数绑定未启用，跳过同步');
+                return;
+            }
+
+            this._syncingToParameter = true;
+
+            try {
+                const paramValue = this.mapGroupStateToParameter(
+                    groupEnabled,
+                    config.parameterBinding.mapping
+                );
+
+                logger.info(`[GMM] 反向同步：${groupName} (${groupEnabled ? '开启' : '关闭'}) → ${config.parameterBinding.paramName} (${paramValue})`);
+
+                const response = await fetch('/danbooru_gallery/pcp/update_param_value', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        node_id: config.parameterBinding.nodeId,
+                        param_name: config.parameterBinding.paramName,
+                        value: paramValue
+                    })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    // 发送自定义事件，通知PCP刷新UI
+                    const event = new CustomEvent('pcp-param-value-changed', {
+                        detail: {
+                            nodeId: config.parameterBinding.nodeId,
+                            paramName: config.parameterBinding.paramName,
+                            newValue: paramValue,
+                            source: 'gmm',
+                            timestamp: Date.now()
+                        }
+                    });
+                    window.dispatchEvent(event);
+                    logger.info('[GMM] 已发送参数值变化事件通知PCP');
+                }
+            } catch (error) {
+                logger.error('[GMM] 同步参数失败:', error);
+            } finally {
+                this._syncingToParameter = false;
+            }
+        };
+
         const onRemoved = nodeType.prototype.onRemoved;
         nodeType.prototype.onRemoved = function () {
             logger.info('[GMM] 清理节点资源:', this.id);
@@ -1751,6 +2063,13 @@ app.registerExtension({
                 clearInterval(this.stateCheckInterval);
                 this.stateCheckInterval = null;
                 logger.info('[GMM] 状态检测定时器已清理');
+            }
+
+            // 清除参数同步定时器
+            if (this.parameterCheckInterval) {
+                clearInterval(this.parameterCheckInterval);
+                this.parameterCheckInterval = null;
+                logger.info('[GMM] 参数同步定时器已清理');
             }
 
             // 移除事件监听器（使用 window 对象）

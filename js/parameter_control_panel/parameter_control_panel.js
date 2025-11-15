@@ -536,6 +536,23 @@ app.registerExtension({
                 this.loadConfigFromBackend();
             }, 100);
 
+            // 监听来自GMM的参数值变化事件
+            this._pcpEventHandler = (e) => {
+                logger.info('[PCP-DEBUG] 收到事件:', e.type, e.detail);
+                logger.info('[PCP-DEBUG] 当前节点ID:', this.id, '类型:', typeof this.id);
+                logger.info('[PCP-DEBUG] 事件nodeId:', e.detail?.nodeId, '类型:', typeof e.detail?.nodeId);
+
+                // 宽松比较：支持字符串和数字的比较
+                if (e.detail && String(e.detail.nodeId) === String(this.id)) {
+                    logger.info('[PCP] 收到GMM的参数值变化通知:', e.detail);
+                    this.refreshParameterUI(e.detail.paramName, e.detail.newValue);
+                } else {
+                    logger.info('[PCP-DEBUG] 事件不是给当前节点的, nodeId不匹配', String(e.detail?.nodeId), '!=', String(this.id));
+                }
+            };
+            window.addEventListener('pcp-param-value-changed', this._pcpEventHandler);
+            logger.info('[PCP] 已注册参数值变化事件监听器, 节点ID:', this.id, '类型:', typeof this.id);
+
             return result;
         };
 
@@ -3561,6 +3578,7 @@ app.registerExtension({
                         const showTopLeftNotice = switchConfig.show_top_left_notice || false;
                         const noticeText = switchConfig.notice_text || '';
                         const accessibleToGroupExecutor = param?.accessible_to_group_executor || false;
+                        const accessibleToGroupMuteManager = param?.accessible_to_group_mute_manager || false;
                         configPanel.innerHTML = `
                             <div class="pcp-dialog-field">
                                 <label class="pcp-dialog-label">${t('description')}</label>
@@ -3593,6 +3611,15 @@ app.registerExtension({
                                 </label>
                                 <p style="color: #999; font-size: 12px; margin: 4px 0 0 24px;">
                                     勾选后，组执行管理器可以在激进模式条件中使用此参数
+                                </p>
+                            </div>
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">
+                                    <input type="checkbox" id="pcp-switch-accessible-to-group-mute-manager" ${accessibleToGroupMuteManager ? 'checked' : ''} ${this.properties.locked ? 'disabled' : ''}>
+                                    允许组静音管理器访问此参数
+                                </label>
+                                <p style="color: #999; font-size: 12px; margin: 4px 0 0 24px;">
+                                    勾选后，组静音管理器可以实现参数与组状态的双向同步
                                 </p>
                             </div>
                         `;
@@ -3895,11 +3922,15 @@ app.registerExtension({
                     paramData.color = config.color;
                 }
 
-                // 如果是switch类型，保存组执行器访问权限
+                // 如果是switch类型，保存组执行器和组静音管理器访问权限
                 if (type === 'switch') {
                     const accessibleCheckbox = configPanel.querySelector('#pcp-switch-accessible-to-group-executor');
                     if (accessibleCheckbox) {
                         paramData.accessible_to_group_executor = accessibleCheckbox.checked;
+                    }
+                    const accessibleToGMMCheckbox = configPanel.querySelector('#pcp-switch-accessible-to-group-mute-manager');
+                    if (accessibleToGMMCheckbox) {
+                        paramData.accessible_to_group_mute_manager = accessibleToGMMCheckbox.checked;
                     }
                 }
 
@@ -4075,6 +4106,7 @@ app.registerExtension({
             dialog.className = 'pcp-dialog';
 
             const isAccessible = param.accessible_to_group_executor || false;
+            const isAccessibleToGMM = param.accessible_to_group_mute_manager || false;
 
             dialog.innerHTML = `
                 <h3>配置访问权限</h3>
@@ -4088,6 +4120,17 @@ app.registerExtension({
                     </label>
                     <p style="color: #999; font-size: 12px; margin: 8px 0 0 24px;">
                         启用后，组执行管理器可以读取此参数的值，用于控制清理行为的激进模式条件。
+                    </p>
+                </div>
+
+                <div class="pcp-dialog-field">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="pcp-access-gmm-checkbox" ${isAccessibleToGMM ? 'checked' : ''}
+                               style="width: 16px; height: 16px; cursor: pointer;">
+                        <span style="color: #E0E0E0;">允许组静音管理器访问此参数</span>
+                    </label>
+                    <p style="color: #999; font-size: 12px; margin: 8px 0 0 24px;">
+                        启用后，组静音管理器可以实现参数与组状态的双向同步。
                     </p>
                 </div>
 
@@ -4105,6 +4148,7 @@ app.registerExtension({
             document.body.appendChild(overlay);
 
             const checkbox = dialog.querySelector('#pcp-access-checkbox');
+            const gmmCheckbox = dialog.querySelector('#pcp-access-gmm-checkbox');
             const cancelButton = dialog.querySelector('#pcp-access-config-cancel');
             const saveButton = dialog.querySelector('#pcp-access-config-save');
 
@@ -4124,6 +4168,7 @@ app.registerExtension({
             saveButton.addEventListener('click', () => {
                 // 更新参数的访问权限配置
                 param.accessible_to_group_executor = checkbox.checked;
+                param.accessible_to_group_mute_manager = gmmCheckbox.checked;
 
                 // 同步配置
                 this.syncConfig();
@@ -4131,12 +4176,20 @@ app.registerExtension({
                 overlay.remove();
 
                 // 显示提示
-                this.showToast(
-                    checkbox.checked ? '已允许组执行管理器访问' : '已禁止组执行管理器访问',
-                    'success'
-                );
+                const messages = [];
+                if (checkbox.checked) messages.push('组执行管理器');
+                if (gmmCheckbox.checked) messages.push('组静音管理器');
 
-                logger.info('[PCP] Switch参数访问权限已更新:', param.name, checkbox.checked);
+                const toastMsg = messages.length > 0
+                    ? `已允许 ${messages.join('、')} 访问`
+                    : '已禁止所有管理器访问';
+
+                this.showToast(toastMsg, 'success');
+
+                logger.info('[PCP] Switch参数访问权限已更新:', param.name, {
+                    group_executor: checkbox.checked,
+                    group_mute_manager: gmmCheckbox.checked
+                });
             });
 
             // ESC键关闭
@@ -4190,6 +4243,65 @@ app.registerExtension({
             this.syncConfig();
 
             logger.info('[PCP] 参数已更新:', newData);
+        };
+
+        // 刷新指定参数的UI（用于响应GMM的参数值变化）
+        nodeType.prototype.refreshParameterUI = function (paramName, newValue) {
+            logger.info('[PCP] 刷新参数UI:', paramName, '新值:', newValue);
+
+            // 查找参数
+            const param = this.properties.parameters.find(p => p.name === paramName);
+            if (!param) {
+                logger.warn('[PCP] 参数不存在:', paramName);
+                return;
+            }
+
+            // 更新参数值
+            param.value = newValue;
+
+            // 查找对应的UI元素并更新
+            const container = this.widgets?.[0]?.element;
+            if (!container) {
+                logger.warn('[PCP] UI容器不存在');
+                return;
+            }
+
+            // 如果是switch类型，更新switch的状态
+            if (param.type === 'switch') {
+                logger.info('[PCP-DEBUG] 查找switch元素，param.id:', param.id);
+                // 正确的选择器：.pcp-switch 而不是 .pcp-switch-container
+                const switchElement = container.querySelector(`[data-param-id="${param.id}"] .pcp-switch`);
+                logger.info('[PCP-DEBUG] switchElement 找到:', !!switchElement);
+
+                if (switchElement) {
+                    // 直接操作 .pcp-switch 的 active class
+                    if (newValue) {
+                        switchElement.classList.add('active');
+                    } else {
+                        switchElement.classList.remove('active');
+                    }
+                    logger.info('[PCP] Switch UI已更新:', paramName, newValue);
+
+                    // 如果启用了左上角提示，显示/隐藏提示
+                    if (param.config?.show_top_left_notice) {
+                        if (newValue) {
+                            const noticeText = param.config.notice_text || `${param.name}：已开启`;
+                            if (window.globalTopLeftNoticeManager) {
+                                window.globalTopLeftNoticeManager.showNotice(param.name, noticeText);
+                            }
+                        } else {
+                            if (window.globalTopLeftNoticeManager) {
+                                window.globalTopLeftNoticeManager.hideNotice(param.name);
+                            }
+                        }
+                    }
+                } else {
+                    logger.warn('[PCP-DEBUG] switchElement 未找到，selector:', `[data-param-id="${param.id}"] .pcp-switch`);
+                }
+            }
+
+            // 同步到后端（虽然后端已经更新了，但为了保持一致性）
+            this.syncConfig();
         };
 
         // 删除参数
@@ -4666,6 +4778,13 @@ app.registerExtension({
         nodeType.prototype.onRemoved = function () {
             if (onRemoved) {
                 onRemoved.apply(this, arguments);
+            }
+
+            // 移除参数值变化事件监听器
+            if (this._pcpEventHandler) {
+                window.removeEventListener('pcp-param-value-changed', this._pcpEventHandler);
+                this._pcpEventHandler = null;
+                logger.info('[PCP] 已移除参数值变化事件监听器');
             }
 
             // 移除全局样式（如果是最后一个节点）
