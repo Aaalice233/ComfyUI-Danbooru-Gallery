@@ -5,6 +5,20 @@ from ..utils.prompt_formatter import PromptFormatter
 
 LORA_PATTERN = re.compile(r"<lora:[^>]+>")
 
+# 特殊语法关键字列表 - 需要保护括号不被转义
+SYNTAX_KEYWORDS = [
+    'COUPLE', 'MASK', 'FEATHER', 'FILL', 'AND', 'BREAK',
+    'couple', 'mask', 'feather', 'fill', 'and', 'break'
+]
+
+# 特殊语法模式 - 用于精确匹配语法结构
+SYNTAX_PATTERNS = [
+    re.compile(r'\bCOUPLE\s+MASK\s*\(', re.IGNORECASE),  # COUPLE MASK(...)
+    re.compile(r'\bMASK\s*\(', re.IGNORECASE),            # MASK(...)
+    re.compile(r'\bFEATHER\s*\(', re.IGNORECASE),         # FEATHER(...)
+    re.compile(r'\bFILL\s*\(', re.IGNORECASE),            # FILL(...)
+]
+
 class PromptCleaningMaid:
     @classmethod
     def INPUT_TYPES(cls):
@@ -168,6 +182,25 @@ class PromptCleaningMaid:
             return ','.join(tags)
 
     @staticmethod
+    def _contains_special_syntax(tag: str) -> bool:
+        """
+        检测标签是否包含特殊语法（如 COUPLE MASK、FEATHER 等）
+        如果包含特殊语法，则不应该对其括号进行转义
+        """
+        # 方法1: 检查是否匹配特殊语法模式
+        for pattern in SYNTAX_PATTERNS:
+            if pattern.search(tag):
+                return True
+
+        # 方法2: 检查是否包含语法关键字
+        tag_upper = tag.upper()
+        for keyword in SYNTAX_KEYWORDS:
+            if keyword.upper() in tag_upper:
+                return True
+
+        return False
+
+    @staticmethod
     def _process_single_tag_custom(tag: str, underscore_to_space: bool, complete_weight_syntax: bool,
                                  smart_bracket_escaping: bool) -> str:
         """处理单个标签 - 定制版格式化逻辑"""
@@ -181,7 +214,8 @@ class PromptCleaningMaid:
             tag = PromptCleaningMaid._normalize_weight_syntax_custom(tag)
 
         # 步骤3: 智能括号转义（如果启用）
-        if smart_bracket_escaping:
+        # 但是！如果标签包含特殊语法（如 COUPLE MASK），则跳过括号转义
+        if smart_bracket_escaping and not PromptCleaningMaid._contains_special_syntax(tag):
             tag = PromptCleaningMaid._escape_brackets_in_tag_custom(tag)
 
         return tag

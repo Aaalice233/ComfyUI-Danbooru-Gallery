@@ -426,6 +426,22 @@ class MultiCharacterEditor {
                 this.clearAllSelections();
             }
         });
+
+        // 🔧 关键修复：页面关闭前强制保存所有数据，防止角色列表丢失
+        window.addEventListener('beforeunload', (e) => {
+            try {
+                const config = this.dataManager?.getConfig();
+                if (config && config.characters && config.characters.length > 0) {
+                    // 强制同步保存到节点状态
+                    this.saveToNodeState(config);
+                    // 同时保存到localStorage作为双重保障
+                    this.saveToLocalStorage(config);
+                    logger.info('[MultiCharacterEditor] beforeunload: 已强制保存数据，角色数量:', config.characters.length);
+                }
+            } catch (error) {
+                logger.error('[MultiCharacterEditor] beforeunload保存失败:', error);
+            }
+        });
     }
 
     async loadInitialData() {
@@ -440,9 +456,19 @@ class MultiCharacterEditor {
                 const localConfig = this.loadFromLocalStorage();
                 if (localConfig && localConfig.characters && localConfig.characters.length > 0) {
                     config = localConfig;
+                    logger.info('[MultiCharacterEditor] ✅ 从localStorage成功恢复角色数据，数量:', config.characters.length);
 
                     // 立即保存到节点状态
                     this.saveToNodeState(config);
+
+                    // 🔧 新增：显示恢复成功提示
+                    setTimeout(() => {
+                        this.showToast(
+                            `已从备份恢复 ${config.characters.length} 个角色`,
+                            'success',
+                            3000
+                        );
+                    }, 500);
                 } else {
 
                 }
@@ -884,6 +910,15 @@ class MultiCharacterEditor {
             }
 
             this.node.setDirtyCanvas(true, true);
+
+            // 🔧 关键修复：每次保存节点状态时，同时备份到localStorage
+            // 这样即使节点状态丢失，也能从localStorage恢复
+            try {
+                this.saveToLocalStorage(enhancedConfig);
+                logger.debug('[MultiCharacterEditor] 已同步备份到localStorage');
+            } catch (localStorageError) {
+                logger.error('[MultiCharacterEditor] localStorage备份失败（非致命错误）:', localStorageError);
+            }
 
         } catch (error) {
             logger.error('[MultiCharacterEditor] 保存到节点状态失败:', error);
