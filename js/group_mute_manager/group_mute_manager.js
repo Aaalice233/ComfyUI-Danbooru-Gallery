@@ -1522,6 +1522,11 @@ app.registerExtension({
 
                     // 增量更新UI
                     this.updateSingleGroupItem(groupConfig.group_name, actualEnabled);
+
+                    // 同步到绑定的参数（避免循环：如果是从参数同步来的，不再反向同步）
+                    if (!this._syncingFromParameter) {
+                        this.syncGroupStateToParameter(groupConfig.group_name, actualEnabled);
+                    }
                 }
             });
         };
