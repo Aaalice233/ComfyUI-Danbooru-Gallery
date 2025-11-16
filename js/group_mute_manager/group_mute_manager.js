@@ -125,8 +125,14 @@ app.registerExtension({
             this._gmmEventHandler = (e) => {
                 // 只响应其他节点触发的事件，避免重复刷新
                 if (e.detail && e.detail.sourceId !== this._gmmInstanceId) {
-                    logger.info('[GMM] 收到其他节点的状态变化事件，刷新UI');
-                    this.updateGroupsList();
+                    logger.info('[GMM] 收到其他节点的状态变化事件');
+                    // 🚀 使用增量更新，避免整个列表重建
+                    if (e.detail.groupName && e.detail.enabled !== undefined) {
+                        this.updateSingleGroupItem(e.detail.groupName, e.detail.enabled);
+                    } else {
+                        // 如果事件没有包含足够信息，则完整刷新
+                        this.updateGroupsList();
+                    }
                 }
             };
 
@@ -909,8 +915,17 @@ app.registerExtension({
                     };
                     this.properties.groups.push(groupConfig);
                 } else {
-                    // 更新状态
-                    groupConfig.enabled = this.isGroupEnabled(group);
+                    // 🔧 智能状态同步：检查实际状态，必要时同步到配置
+                    // ⚠️ 重要：如果正在执行toggleGroup操作，禁止同步（避免覆盖用户刚设置的状态）
+                    if (!this._isTogglingGroup) {
+                        const actualEnabled = this.isGroupEnabled(group);
+                        if (groupConfig.enabled !== actualEnabled) {
+                            // 状态不一致，可能是通过联动或其他方式改变的，需要同步
+                            logger.info('[GMM-UI] 检测到状态不一致，同步实际状态:', group.title, actualEnabled);
+                            groupConfig.enabled = actualEnabled;
+                        }
+                    }
+
                     // 确保旧配置也有parameterBinding字段
                     if (!groupConfig.parameterBinding) {
                         groupConfig.parameterBinding = {
@@ -942,6 +957,30 @@ app.registerExtension({
             }
 
             logger.info('[GMM-UI] === 组列表更新完成 ===');
+        };
+
+        // 🚀 增量更新：只更新单个组项的开关状态（避免整个列表重建）
+        nodeType.prototype.updateSingleGroupItem = function (groupName, enabled) {
+            if (!this.customUI) {
+                logger.warn('[GMM-UI] customUI 不存在，无法更新组项');
+                return;
+            }
+
+            const item = this.customUI.querySelector(`[data-group-name="${groupName}"]`);
+            if (!item) {
+                logger.warn('[GMM-UI] 未找到组项:', groupName);
+                return;
+            }
+
+            const switchBtn = item.querySelector('.gmm-switch');
+            if (switchBtn) {
+                if (enabled) {
+                    switchBtn.classList.add('active');
+                } else {
+                    switchBtn.classList.remove('active');
+                }
+                logger.info('[GMM-UI] 增量更新组项开关状态:', groupName, '→', enabled);
+            }
         };
 
         // 获取工作流中的所有组
@@ -1069,22 +1108,32 @@ app.registerExtension({
                 const currentState = this.isGroupEnabled(group);
                 const cachedState = this.properties.groupStatesCache[group.title];
 
-                if (cachedState !== undefined && cachedState !== currentState) {
-                    logger.info('[GMM] 检测到组状态变化:', group.title,
-                        cachedState ? '启用 → 禁用' : '禁用 → 启用');
-                    hasStateChange = true;
-                }
+                // ⚠️ 重要：如果正在执行toggleGroup操作，跳过所有检测（避免冲突）
+                if (!this._isTogglingGroup) {
+                    if (cachedState !== undefined && cachedState !== currentState) {
+                        logger.info('[GMM] 检测到组状态变化:', group.title,
+                            cachedState ? '启用 → 禁用' : '禁用 → 启用');
+                        hasStateChange = true;
 
-                // 更新状态缓存
-                this.properties.groupStatesCache[group.title] = currentState;
+                        // 🚀 立即更新配置和UI（增量更新，不重建整个列表）
+                        const config = this.properties.groups.find(g => g.group_name === group.title);
+                        if (config) {
+                            config.enabled = currentState;
+                        }
+                        this.updateSingleGroupItem(group.title, currentState);
+                    }
+
+                    // 更新状态缓存
+                    this.properties.groupStatesCache[group.title] = currentState;
+                }
             });
 
-            // 3. 如果有变化，刷新UI
-            if (hasStateChange || hasRename) {
-                logger.info('[GMM] 自动刷新UI',
-                    hasStateChange ? '(状态变化)' : '',
-                    hasRename ? '(组重命名)' : '');
+            // 3. 只在组重命名时才需要完整刷新UI（状态变化已经用增量更新处理了）
+            if (hasRename) {
+                logger.info('[GMM] 组重命名，刷新UI');
                 this.updateGroupsList();
+            } else if (hasStateChange) {
+                logger.info('[GMM] 组状态变化已通过增量更新处理');
             }
         };
 
@@ -1383,6 +1432,9 @@ app.registerExtension({
             // 添加到处理栈
             this._processingStack.add(groupName);
 
+            // 🔒 设置标志：正在执行toggleGroup操作，禁止智能同步
+            this._isTogglingGroup = true;
+
             try {
                 // 切换节点模式（使用工具函数，支持子图节点递归处理）
                 // LiteGraph.ALWAYS = 0, LiteGraph.NEVER = 2
@@ -1395,11 +1447,14 @@ app.registerExtension({
                     config.enabled = enable;
                 }
 
+                // 更新状态缓存（确保定时器不会错误地检测到状态变化）
+                this.properties.groupStatesCache[groupName] = enable;
+
                 // 触发联动
                 this.applyLinkage(groupName, enable);
 
-                // 更新UI
-                this.updateGroupsList();
+                // 🚀 更新UI（使用增量更新，避免整个列表重建和闪烁）
+                this.updateSingleGroupItem(groupName, enable);
 
                 // 刷新画布
                 app.graph.setDirtyCanvas(true, true);
@@ -1424,10 +1479,51 @@ app.registerExtension({
                 } else {
                     logger.info('[GMM-DEBUG] 正在从参数同步，跳过反向同步');
                 }
+
+                // 🚀 检查其他组是否受到间接影响（例如父组关闭导致子组也被关闭）
+                this.checkAndUpdateAffectedGroups(groupName);
             } finally {
                 // 从处理栈中移除
                 this._processingStack.delete(groupName);
+
+                // 🔓 清除标志：toggleGroup操作完成，恢复智能同步
+                this._isTogglingGroup = false;
             }
+        };
+
+        // 🚀 检查并更新受影响的组（例如父组关闭导致子组也被关闭）
+        nodeType.prototype.checkAndUpdateAffectedGroups = function (excludeGroupName) {
+            if (!app.graph || !app.graph._groups) return;
+
+            logger.info('[GMM] 检查受影响的组（排除:', excludeGroupName, '）');
+
+            // 遍历所有组，检查状态是否改变
+            this.properties.groups.forEach(groupConfig => {
+                // 跳过当前正在操作的组
+                if (groupConfig.group_name === excludeGroupName) return;
+
+                // 查找对应的工作流组对象
+                const group = app.graph._groups.find(g => g && g.title === groupConfig.group_name);
+                if (!group) return;
+
+                // 检查实际状态
+                const actualEnabled = this.isGroupEnabled(group);
+
+                // 如果状态不一致，更新配置和UI
+                if (groupConfig.enabled !== actualEnabled) {
+                    logger.info('[GMM] 检测到组受间接影响:', groupConfig.group_name,
+                        groupConfig.enabled ? '启用 → 禁用' : '禁用 → 启用');
+
+                    // 更新配置
+                    groupConfig.enabled = actualEnabled;
+
+                    // 更新状态缓存
+                    this.properties.groupStatesCache[groupConfig.group_name] = actualEnabled;
+
+                    // 增量更新UI
+                    this.updateSingleGroupItem(groupConfig.group_name, actualEnabled);
+                }
+            });
         };
 
         // 跳转到指定组
