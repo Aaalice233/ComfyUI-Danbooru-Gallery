@@ -67,6 +67,10 @@ class OpenInKritaExtension(Extension):
         self._setup_directory_watcher()
         self.logger.info("目录监控器已启动")
 
+        # 🔥 监听Krita文档打开事件（用于命令行启动）
+        self._setup_document_listener()
+        self.logger.info("文档打开监听器已启动")
+
         # 🔥 创建插件加载完成标志文件，让ComfyUI知道可以发送请求了
         try:
             plugin_loaded_flag = self.monitor_dir / "_plugin_loaded.txt"
@@ -114,6 +118,122 @@ class OpenInKritaExtension(Extension):
             self.watcher.addPath(str(self.monitor_dir))
             self.watcher.directoryChanged.connect(self._on_directory_changed)
             self.logger.info(f"正在监控目录: {self.monitor_dir}")
+
+    def _setup_document_listener(self):
+        """设置文档打开监听器（用于命令行启动）"""
+        try:
+            # 获取Krita的Notifier实例
+            app = Krita.instance()
+            notifier = app.notifier()
+
+            # 监听viewCreated事件（当打开文档时会创建视图）
+            notifier.viewCreated.connect(self._on_view_created)
+            self.logger.info("✓ 已连接viewCreated事件监听器")
+
+        except Exception as e:
+            self.logger.error(f"✗ 设置文档监听器失败: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _on_view_created(self):
+        """当新视图创建时触发（文档被打开）"""
+        try:
+            self.logger.info("===== 检测到视图创建事件 =====")
+
+            # 🔥 延迟500ms后激活图层，确保文档完全加载
+            QTimer.singleShot(500, self._auto_activate_layer)
+
+        except Exception as e:
+            self.logger.error(f"✗ 处理viewCreated事件失败: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _auto_activate_layer(self):
+        """自动激活背景图层"""
+        try:
+            self.logger.info("===== 开始自动激活图层 =====")
+
+            app = Krita.instance()
+            doc = app.activeDocument()
+
+            if not doc:
+                self.logger.warning("⚠ 没有活动文档，跳过图层激活")
+                return
+
+            self.logger.info(f"当前文档: {doc.name()}")
+
+            # 获取所有图层
+            child_nodes = doc.rootNode().childNodes()
+            if not child_nodes:
+                self.logger.warning("⚠ 文档没有图层")
+                return
+
+            # 🔥 优先查找背景图层（名为"Background"或"背景"）
+            target_node = None
+            for node in child_nodes:
+                node_name_lower = node.name().lower()
+                if 'background' in node_name_lower or '背景' in node.name():
+                    target_node = node
+                    self.logger.info(f"✓✓ 找到背景图层: {node.name()}")
+                    break
+
+            # 如果没有背景图层，优先查找绘画图层
+            if not target_node:
+                for node in child_nodes:
+                    if node.type() == "paintlayer":
+                        target_node = node
+                        self.logger.info(f"✓ 找到第一个绘画图层: {node.name()}")
+                        break
+
+            # 如果没有绘画图层，使用第一个节点
+            if not target_node:
+                target_node = child_nodes[0]
+                self.logger.info(f"使用第一个节点: {target_node.name()} (类型: {target_node.type()})")
+
+            # 激活图层
+            self.logger.info(f"正在激活图层: {target_node.name()}")
+
+            # 第1步：通过Document设置活动节点
+            doc.setActiveNode(target_node)
+            self.logger.info("  步骤1: 已调用 doc.setActiveNode()")
+
+            # 第2步：通过View设置活动节点和选择工具
+            window = app.activeWindow()
+            if window:
+                active_view = window.activeView()
+                if active_view and active_view.document() == doc:
+                    self.logger.info("  步骤2: 正在通过View确认并激活...")
+
+                    # 🔥 设置当前节点（确保View和Document同步）
+                    try:
+                        active_view.setCurrentNode(target_node)
+                        self.logger.info("    ✓ View的当前节点已设置")
+                    except AttributeError:
+                        self.logger.info("    ⚠ View.setCurrentNode不可用，使用Document方式")
+
+                    # 🔥 激活选择工具（确保图层被选中并可编辑）
+                    try:
+                        app.action('KritaShape/KisToolSelectRectangular').trigger()
+                        self.logger.info("    ✓ 已激活矩形选择工具")
+                    except:
+                        try:
+                            app.action('KritaShape/KisToolBrush').trigger()
+                            self.logger.info("    ✓ 已激活画笔工具")
+                        except:
+                            self.logger.info("    ⚠ 工具激活失败（非关键）")
+
+                    self.logger.info("  ✓ View设置完成")
+                else:
+                    self.logger.warning("  步骤2跳过: activeView为空或文档不匹配")
+            else:
+                self.logger.warning("  步骤2跳过: 没有活动窗口")
+
+            self.logger.info("===== 图层激活完成 =====")
+
+        except Exception as e:
+            self.logger.error(f"✗ 自动激活图层失败: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _activate_krita_window(self):
         """激活Krita窗口（Windows）"""
@@ -254,18 +374,27 @@ class OpenInKritaExtension(Extension):
                 self.logger.info("所有图层已可见，无需修改")
 
             # ✅ 步骤2：激活第一个图层
-            # 优先查找绘画图层
+            # 🔥 优先查找背景图层（名为"Background"或"背景"或包含这些关键词）
             target_node = None
             for node in child_nodes:
-                if node.type() == "paintlayer":
+                node_name_lower = node.name().lower()
+                if 'background' in node_name_lower or '背景' in node.name():
                     target_node = node
-                    self.logger.info(f"✓ 找到第一个绘画图层: {node.name()}")
+                    self.logger.info(f"✓✓ 找到背景图层: {node.name()}")
                     break
+
+            # 如果没有背景图层，优先查找绘画图层
+            if not target_node:
+                for node in child_nodes:
+                    if node.type() == "paintlayer":
+                        target_node = node
+                        self.logger.info(f"✓ 找到第一个绘画图层: {node.name()}")
+                        break
 
             # 如果没有绘画图层，使用第一个节点
             if not target_node:
                 target_node = child_nodes[0]
-                self.logger.info(f"未找到绘画图层，使用第一个节点: {target_node.name()} (类型: {target_node.type()})")
+                self.logger.info(f"未找到特定图层，使用第一个节点: {target_node.name()} (类型: {target_node.type()})")
 
             # 🔥 多步骤激活图层（通过Document和View双重设置）
             self.logger.info(f"正在激活图层: {target_node.name()}")
@@ -274,16 +403,37 @@ class OpenInKritaExtension(Extension):
             doc.setActiveNode(target_node)
             self.logger.info("  步骤1: 已调用 doc.setActiveNode()")
 
-            # 第2步：通过View设置活动节点（更可靠）
+            # 第2步：通过View设置活动节点和选择工具
             app = Krita.instance()
             window = app.activeWindow()
             if window:
                 active_view = window.activeView()
                 if active_view and active_view.document() == doc:
-                    self.logger.info("  步骤2: 正在通过View设置活动节点...")
-                    # 🔥 修正API调用：View没有setCurrentNode，要用setCurrentNode的正确方法
-                    # Krita API: view没有直接设置节点的方法，只能通过document
-                    self.logger.info("  ✓ View检查完成（活动视图已确认）")
+                    self.logger.info("  步骤2: 正在通过View确认并激活...")
+
+                    # 🔥 设置当前节点（确保View和Document同步）
+                    try:
+                        # 强制刷新视图以同步选择
+                        active_view.setCurrentNode(target_node)
+                        self.logger.info("    ✓ View的当前节点已设置")
+                    except AttributeError:
+                        # 某些Krita版本可能没有这个方法
+                        self.logger.info("    ⚠ View.setCurrentNode不可用，使用Document方式")
+
+                    # 🔥 激活选择工具（确保图层被选中并可编辑）
+                    try:
+                        # 尝试激活KritaShape/DefaultTool（选择工具）
+                        app.action('KritaShape/KisToolSelectRectangular').trigger()
+                        self.logger.info("    ✓ 已激活矩形选择工具")
+                    except:
+                        try:
+                            # 如果矩形选择工具失败，尝试激活画笔工具
+                            app.action('KritaShape/KisToolBrush').trigger()
+                            self.logger.info("    ✓ 已激活画笔工具")
+                        except:
+                            self.logger.info("    ⚠ 工具激活失败（非关键）")
+
+                    self.logger.info("  ✓ View设置完成")
                 else:
                     self.logger.warning("  步骤2跳过: activeView为空或文档不匹配")
             else:
@@ -539,6 +689,15 @@ class OpenInKritaExtension(Extension):
                 # 打开文件
                 doc = app.openDocument(str(image_path))
                 if doc:
+                    # 🔥 立即清理自动保存文件，避免恢复对话框
+                    try:
+                        autosave_file = Path(str(image_path) + "~")
+                        if autosave_file.exists():
+                            autosave_file.unlink()
+                            self.logger.info(f"✓ 已删除自动保存文件: {autosave_file.name}")
+                    except Exception as e:
+                        self.logger.warning(f"⚠ 删除自动保存文件失败: {e}")
+
                     # 获取窗口（优先使用activeWindow，如果为None则使用windows()[0]）
                     window = app.activeWindow()
                     if not window:

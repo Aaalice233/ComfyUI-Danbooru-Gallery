@@ -686,9 +686,9 @@ try:
                 "error": str(e)
             }, status=500)
 
-    # Open In Krita 相关API路由
+    # Open In Krita / Fetch From Krita 相关API路由
     import base64
-    from .py.open_in_krita.open_in_krita import OpenInKrita
+    from .py.open_in_krita.open_in_krita import FetchFromKrita
     from .py.open_in_krita.krita_manager import get_manager as get_krita_manager
     from .py.open_in_krita.plugin_installer import KritaPluginInstaller
 
@@ -718,7 +718,7 @@ try:
                 }, status=400)
 
             # 检查是否有待处理的数据
-            pending_data = OpenInKrita.get_pending_data(node_id)
+            pending_data = FetchFromKrita.get_pending_data(node_id)
 
             if pending_data:
                 return web.json_response({
@@ -758,7 +758,7 @@ try:
             # 解码图像数据
             if image_base64:
                 image_bytes = base64.b64decode(image_base64)
-                image_tensor = OpenInKrita.load_image_from_bytes(image_bytes)
+                image_tensor = FetchFromKrita.load_image_from_bytes(image_bytes)
             else:
                 return web.json_response({
                     "status": "error",
@@ -768,14 +768,14 @@ try:
             # 解码蒙版数据（可选）
             if mask_base64:
                 mask_bytes = base64.b64decode(mask_base64)
-                mask_tensor = OpenInKrita.load_mask_from_bytes(mask_bytes)
+                mask_tensor = FetchFromKrita.load_mask_from_bytes(mask_bytes)
             else:
                 # 创建空蒙版
                 import torch
                 mask_tensor = torch.zeros((image_tensor.shape[1], image_tensor.shape[2]))
 
             # 存储待处理数据
-            OpenInKrita.set_pending_data(node_id, image_tensor, mask_tensor)
+            FetchFromKrita.set_pending_data(node_id, image_tensor, mask_tensor)
 
             logger.error(f"[OpenInKrita] 接收到Krita数据: node_id={node_id}, image_shape={image_tensor.shape}, mask_shape={mask_tensor.shape}")
 
@@ -901,10 +901,81 @@ try:
 
             logger.error(f"[OpenInKrita] Krita路径已设置: {krita_path}")
 
+            # 路径设置成功后，自动检查并安装插件
+            from .py.open_in_krita.plugin_installer import KritaPluginInstaller
+            installer = KritaPluginInstaller()
+
+            plugin_status = {
+                "installed": False,
+                "version": None,
+                "auto_installed": False
+            }
+
+            # 检查是否需要安装/更新插件
+            if installer.needs_update():
+                installed_version = installer.get_installed_version()
+                source_version = installer.source_version
+
+                # 发送Toast：开始检查插件
+                PromptServer.instance.send_sync("open-in-krita-notification", {
+                    "node_id": "",
+                    "message": "🔍 检查Krita插件状态...",
+                    "type": "info"
+                })
+
+                if installed_version:
+                    logger.info(f"[OpenInKrita] 发现插件版本更新: {installed_version} -> {source_version}")
+                    # 发送Toast：需要更新
+                    PromptServer.instance.send_sync("open-in-krita-notification", {
+                        "node_id": "",
+                        "message": f"📦 更新Krita插件\n{installed_version} → {source_version}",
+                        "type": "info"
+                    })
+                else:
+                    logger.info(f"[OpenInKrita] 插件未安装，准备安装 v{source_version}")
+                    # 发送Toast：首次安装
+                    PromptServer.instance.send_sync("open-in-krita-notification", {
+                        "node_id": "",
+                        "message": f"📦 安装Krita插件 v{source_version}...",
+                        "type": "info"
+                    })
+
+                # 执行安装
+                install_success = installer.install_plugin(force=True)
+
+                if install_success:
+                    plugin_status["installed"] = True
+                    plugin_status["version"] = source_version
+                    plugin_status["auto_installed"] = True
+
+                    logger.info(f"[OpenInKrita] 插件安装成功: v{source_version}")
+                    # 发送Toast：安装成功
+                    PromptServer.instance.send_sync("open-in-krita-notification", {
+                        "node_id": "",
+                        "message": f"✓ Krita插件已安装 v{source_version}\n插件已自动启用，重启Krita生效",
+                        "type": "success"
+                    })
+                else:
+                    logger.warning(f"[OpenInKrita] 插件安装失败")
+                    # 发送Toast：安装失败
+                    PromptServer.instance.send_sync("open-in-krita-notification", {
+                        "node_id": "",
+                        "message": "⚠️ 插件安装失败，请查看日志",
+                        "type": "warning"
+                    })
+            else:
+                # 插件已是最新版本
+                current_version = installer.get_installed_version()
+                plugin_status["installed"] = True
+                plugin_status["version"] = current_version
+                plugin_status["auto_installed"] = False
+                logger.info(f"[OpenInKrita] 插件已是最新版本: v{current_version}")
+
             return web.json_response({
                 "status": "success",
                 "path": str(krita_path),
-                "message": "Krita路径已设置"
+                "message": "Krita路径已设置",
+                "plugin": plugin_status
             })
 
         except Exception as e:
@@ -974,42 +1045,12 @@ try:
                 "message": str(e)
             }, status=500)
 
-    @PromptServer.instance.routes.post("/open_in_krita/cancel_wait")
-    async def cancel_wait(request):
-        """取消节点等待"""
-        try:
-            data = await request.json()
-            node_id = data.get("node_id", "")
-
-            if not node_id:
-                return web.json_response({
-                    "status": "error",
-                    "message": "缺少node_id参数"
-                }, status=400)
-
-            # 调用节点的取消方法
-            OpenInKrita.cancel_waiting(node_id)
-
-            return web.json_response({
-                "status": "success",
-                "message": "已取消等待"
-            })
-
-        except Exception as e:
-            import traceback
-            logger.error(f"[OpenInKrita] 取消等待失败: {e}")
-            logger.debug(traceback.format_exc())
-            return web.json_response({
-                "status": "error",
-                "message": str(e)
-            }, status=500)
-
     @PromptServer.instance.routes.get("/open_in_krita/check_krita_status")
     async def check_krita_status(request):
         """检查Krita进程是否正在运行"""
         try:
-            # 创建临时的OpenInKrita实例来调用_is_krita_running方法
-            temp_node = OpenInKrita()
+            # 创建临时的FetchFromKrita实例来调用_is_krita_running方法
+            temp_node = FetchFromKrita()
             is_running = temp_node._is_krita_running()
 
             return web.json_response({
@@ -1026,206 +1067,145 @@ try:
                 "is_running": False
             }, status=500)
 
-    @PromptServer.instance.routes.get("/open_in_krita/check_waiting_status")
-    async def check_waiting_status(request):
-        """检查节点是否处于等待状态"""
-        try:
-            from .py.open_in_krita.open_in_krita import _waiting_nodes
-
-            node_id = request.query.get("node_id", "")
-
-            if not node_id:
-                return web.json_response({
-                    "status": "error",
-                    "message": "缺少node_id参数",
-                    "is_waiting": False
-                }, status=400)
-
-            # 检查节点是否在等待字典中且waiting=True
-            is_waiting = node_id in _waiting_nodes and _waiting_nodes[node_id].get("waiting", False)
-
-            return web.json_response({
-                "is_waiting": is_waiting
-            })
-
-        except Exception as e:
-            import traceback
-            logger.error(f"[OpenInKrita] 检查等待状态失败: {e}")
-            logger.debug(traceback.format_exc())
-            return web.json_response({
-                "status": "error",
-                "message": str(e),
-                "is_waiting": False
-            }, status=500)
-
-    @PromptServer.instance.routes.post("/open_in_krita/set_fetch_mode")
-    async def set_fetch_mode(request):
-        """设置节点为'从Krita获取数据'模式"""
+    @PromptServer.instance.routes.post("/simple_load_image/open_in_krita")
+    async def simple_load_image_open_in_krita(request):
+        """简易图像加载器：在Krita中打开指定图像"""
         try:
             data = await request.json()
             node_id = data.get("node_id", "")
-
-            if not node_id:
-                return web.json_response({
-                    "status": "error",
-                    "message": "缺少node_id参数"
-                }, status=400)
-
-            # 设置fetch模式标志
-            OpenInKrita.set_fetch_mode(node_id)
-
-            logger.error(f"[OpenInKrita] Set fetch mode for node {node_id}")
-
-            return web.json_response({
-                "status": "success",
-                "message": "已设置获取模式"
-            })
-
-        except Exception as e:
-            import traceback
-            logger.error(f"[OpenInKrita] 设置fetch模式失败: {e}")
-            logger.debug(traceback.format_exc())
-            return web.json_response({
-                "status": "error",
-                "message": str(e)
-            }, status=500)
-
-    @PromptServer.instance.routes.post("/open_in_krita/fetch_from_krita")
-    async def fetch_from_krita(request):
-        """从Krita获取当前数据（按钮触发）"""
-        try:
-            data = await request.json()
-            node_id = data.get("node_id", "")
-
-            if not node_id:
-                return web.json_response({
-                    "status": "error",
-                    "message": "缺少node_id参数"
-                }, status=400)
-
-            # 创建临时节点实例用于检查Krita状态
-            temp_node = OpenInKrita()
-
-            # 检查1: Krita进程是否存在
-            if not temp_node._is_krita_running():
-                logger.error(f"[OpenInKrita] Krita进程未运行，无法获取数据")
-                # 发送Toast通知
-                PromptServer.instance.send_sync("open-in-krita-notification", {
-                    "node_id": node_id,
-                    "message": "⚠ Krita未运行\n请先启动Krita",
-                    "type": "warning"
-                })
-                return web.json_response({
-                    "status": "error",
-                    "message": "⚠ Krita未运行，请先启动Krita"
-                }, status=400)
-
-            # 检查2: Krita中是否打开了图像
-            has_document = temp_node._check_krita_has_document(node_id)
-            if not has_document:
-                logger.error(f"[OpenInKrita] Krita中未打开图像")
-                # 发送Toast通知
-                PromptServer.instance.send_sync("open-in-krita-notification", {
-                    "node_id": node_id,
-                    "message": "⚠ Krita中未打开图像\n请先在Krita中打开或创建图像",
-                    "type": "warning"
-                })
-                return web.json_response({
-                    "status": "error",
-                    "message": "⚠ Krita中未打开图像"
-                }, status=400)
-
-            import tempfile
-            from pathlib import Path
-            import asyncio
-
-            # 临时文件目录
-            temp_dir = Path(tempfile.gettempdir()) / "open_in_krita"
-            temp_dir.mkdir(exist_ok=True)
-
-            # 创建请求文件
-            timestamp = int(time.time() * 1000)
-            request_file = temp_dir / f"fetch_{node_id}_{timestamp}.request"
-            response_file = temp_dir / f"fetch_{node_id}_{timestamp}.response"
-
-            # 写入请求文件（空文件作为信号）
-            request_file.write_text("", encoding='utf-8')
-            logger.error(f"[OpenInKrita] 已创建fetch请求: {request_file.name}")
-
-            # 等待响应文件出现（超时10秒）
-            max_wait = 10.0
-            check_interval = 0.1
-            elapsed = 0
-
-            while elapsed < max_wait:
-                if response_file.exists():
-                    logger.error(f"[OpenInKrita] 检测到响应文件: {response_file.name}")
-                    break
-                await asyncio.sleep(check_interval)
-                elapsed += check_interval
-
-            if not response_file.exists():
-                logger.error(f"[OpenInKrita] 等待响应超时 ({max_wait}s)")
-                # 清理请求文件
-                request_file.unlink(missing_ok=True)
-                return web.json_response({
-                    "status": "timeout",
-                    "message": "等待Krita响应超时，请确保Krita正在运行"
-                }, status=408)
-
-            # 读取响应数据
-            import json
-            response_data = json.loads(response_file.read_text(encoding='utf-8'))
-
-            image_path = response_data.get("image_path")
-            mask_path = response_data.get("mask_path")
+            image_path = data.get("image_path", "")
 
             if not image_path:
-                # 清理文件
-                response_file.unlink(missing_ok=True)
                 return web.json_response({
                     "status": "error",
-                    "message": "Krita未返回图像数据"
-                }, status=500)
+                    "message": "缺少image_path参数"
+                }, status=400)
 
-            # 加载图像和蒙版
-            image_file = Path(image_path)
-            image_tensor = OpenInKrita._load_image_from_file(OpenInKrita(), image_file)
+            # 检查Krita路径是否已设置
+            manager = get_krita_manager()
+            krita_path = manager.get_krita_path()
 
-            if mask_path:
-                mask_file = Path(mask_path)
-                mask_tensor = OpenInKrita._load_mask_from_file(OpenInKrita(), mask_file)
-            else:
-                # 创建空蒙版
-                import torch
-                mask_tensor = torch.zeros((image_tensor.shape[1], image_tensor.shape[2]))
+            if not krita_path:
+                logger.warning(f"[SimpleLoadImage] Krita路径未设置")
+                # 发送Toast通知
+                PromptServer.instance.send_sync("simple-load-image-notification", {
+                    "node_id": node_id,
+                    "message": "⚠️ 请先设置Krita路径\n右键节点 → 设置Krita路径",
+                    "type": "warning"
+                })
+                return web.json_response({
+                    "status": "error",
+                    "message": "未设置Krita路径",
+                    "show_setup": True
+                })
 
-            # 存储到pending data
-            OpenInKrita.set_pending_data(node_id, image_tensor, mask_tensor)
+            # 获取图像的完整路径
+            try:
+                import folder_paths
+                full_image_path = folder_paths.get_annotated_filepath(image_path)
+            except Exception as e:
+                logger.error(f"[SimpleLoadImage] 获取图像路径失败: {e}")
+                return web.json_response({
+                    "status": "error",
+                    "message": f"图像路径获取失败: {str(e)}"
+                }, status=400)
 
-            logger.error(f"[OpenInKrita] ✓ 数据已获取: node_id={node_id}, image={image_tensor.shape}, mask={mask_tensor.shape}")
+            from pathlib import Path
+            image_file = Path(full_image_path)
 
-            # 发送成功Toast到ComfyUI前端
-            PromptServer.instance.send_sync("open-in-krita-notification", {
+            if not image_file.exists():
+                return web.json_response({
+                    "status": "error",
+                    "message": f"图像文件不存在: {full_image_path}"
+                }, status=400)
+
+            # 🔥 在启动Krita之前，强制重装插件确保使用最新版本
+            from .py.open_in_krita.plugin_installer import KritaPluginInstaller
+            installer = KritaPluginInstaller()
+
+            installed_version = installer.get_installed_version()
+            source_version = installer.source_version
+
+            # 发送Toast：准备重装插件
+            logger.info(f"[SimpleLoadImage] 强制重装Krita插件: v{source_version}")
+            PromptServer.instance.send_sync("simple-load-image-notification", {
                 "node_id": node_id,
-                "message": "✓ 已从Krita获取数据\n图像和蒙版已准备就绪",
-                "type": "success"
+                "message": f"🔄 正在更新Krita插件至 v{source_version}...",
+                "type": "info"
             })
 
-            # 清理临时文件
-            response_file.unlink(missing_ok=True)
-            if mask_path:
-                Path(mask_path).unlink(missing_ok=True)
-            image_file.unlink(missing_ok=True)
+            # 如果Krita正在运行，需要先关闭它以完成更新
+            if manager.is_krita_running():
+                logger.info(f"[SimpleLoadImage] Krita正在运行，准备关闭以完成插件更新")
+                PromptServer.instance.send_sync("simple-load-image-notification", {
+                    "node_id": node_id,
+                    "message": "⏸️ 正在关闭Krita以完成插件更新...",
+                    "type": "info"
+                })
 
-            return web.json_response({
-                "status": "success",
-                "message": "✓ 已从Krita获取数据，可以执行工作流了"
-            })
+                # 关闭Krita进程
+                if not installer.kill_krita_process():
+                    logger.warning(f"[SimpleLoadImage] 关闭Krita进程失败，将尝试继续安装")
+
+                # 等待进程完全关闭
+                import time
+                time.sleep(2)
+
+            # 🔥 强制执行插件安装（无论版本是否相同）
+            install_success = installer.install_plugin(force=True)
+
+            if install_success:
+                logger.info(f"[SimpleLoadImage] 插件安装成功: v{source_version}")
+                PromptServer.instance.send_sync("simple-load-image-notification", {
+                    "node_id": node_id,
+                    "message": f"✓ Krita插件已更新至 v{source_version}\n正在启动Krita...",
+                    "type": "success"
+                })
+
+                # 🔥 等待1秒，确保插件文件完全写入磁盘
+                import time
+                time.sleep(1)
+            else:
+                logger.warning(f"[SimpleLoadImage] 插件安装失败，将使用现有版本继续")
+                PromptServer.instance.send_sync("simple-load-image-notification", {
+                    "node_id": node_id,
+                    "message": "⚠️ 插件安装失败\n将使用现有版本启动Krita",
+                    "type": "warning"
+                })
+
+            # 使用KritaManager启动Krita并打开图像
+            try:
+                success = manager.launch_krita(str(image_file))
+                if success:
+                    logger.info(f"[SimpleLoadImage] Krita已启动，正在打开图像: {image_file.name}")
+                    # 发送成功Toast通知
+                    PromptServer.instance.send_sync("simple-load-image-notification", {
+                        "node_id": node_id,
+                        "message": f"✓ Krita已启动\n正在打开图像: {image_file.name}",
+                        "type": "success"
+                    })
+                    return web.json_response({
+                        "status": "success",
+                        "message": f"Krita已启动，正在打开图像: {image_file.name}"
+                    })
+                else:
+                    logger.error(f"[SimpleLoadImage] 启动Krita失败")
+                    return web.json_response({
+                        "status": "error",
+                        "message": "启动Krita失败，请检查Krita路径设置"
+                    }, status=500)
+            except Exception as e:
+                import traceback
+                logger.error(f"[SimpleLoadImage] 启动Krita时出错: {e}")
+                logger.debug(traceback.format_exc())
+                return web.json_response({
+                    "status": "error",
+                    "message": f"启动Krita失败: {str(e)}"
+                }, status=500)
 
         except Exception as e:
             import traceback
-            logger.error(f"[OpenInKrita] 从Krita获取数据失败: {e}")
+            logger.error(f"[SimpleLoadImage] 处理请求失败: {e}")
             logger.debug(traceback.format_exc())
             return web.json_response({
                 "status": "error",
@@ -1233,7 +1213,7 @@ try:
             }, status=500)
 
     # API注册成功统计
-    _api_count = 27  # 根据上面注册的API端点数量统计（包括新增的日志接收端点）
+    _api_count = 24  # 根据上面注册的API端点数量统计（已移除fetch模式相关的4个API）
 
     # 控制台输出
     print("=" * 70, file=sys.stderr)

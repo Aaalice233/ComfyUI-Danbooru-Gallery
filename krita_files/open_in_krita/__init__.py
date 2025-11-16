@@ -3,7 +3,7 @@ Open In Krita - ComfyUI Bridge Plugin
 与ComfyUI进行图像和选区交互的Krita插件
 """
 
-__version__ = "1.0.15"  # 新增：安装Krita插件时显示Toast提示，让用户知道插件正在安装/安装成功
+__version__ = "1.0.16"  # 新增：监听viewCreated事件，自动激活背景图层（支持命令行启动）
 
 import sys
 import tempfile

@@ -1474,8 +1474,16 @@ app.registerExtension({
                 // 同步到绑定的参数（避免循环：如果是从参数同步来的，不再反向同步）
                 logger.info('[GMM-DEBUG] 检查是否需要同步到参数, _syncingFromParameter:', this._syncingFromParameter);
                 if (!this._syncingFromParameter) {
-                    logger.info('[GMM-DEBUG] 准备调用 syncGroupStateToParameter');
-                    this.syncGroupStateToParameter(groupName, enable);
+                    // 检查同步模式，只在双向同步模式下才反向同步
+                    const config = this.properties.groups.find(g => g.group_name === groupName);
+                    const syncMode = config?.parameterBinding?.syncMode || 'bidirectional';
+                    logger.info('[GMM-DEBUG] 同步模式:', syncMode);
+                    if (syncMode === 'bidirectional') {
+                        logger.info('[GMM-DEBUG] 双向同步模式，准备调用 syncGroupStateToParameter');
+                        this.syncGroupStateToParameter(groupName, enable);
+                    } else {
+                        logger.info('[GMM-DEBUG] 单向同步模式，跳过反向同步');
+                    }
                 } else {
                     logger.info('[GMM-DEBUG] 正在从参数同步，跳过反向同步');
                 }
@@ -1525,7 +1533,11 @@ app.registerExtension({
 
                     // 同步到绑定的参数（避免循环：如果是从参数同步来的，不再反向同步）
                     if (!this._syncingFromParameter) {
-                        this.syncGroupStateToParameter(groupConfig.group_name, actualEnabled);
+                        // 检查同步模式，只在双向同步模式下才反向同步
+                        const syncMode = groupConfig?.parameterBinding?.syncMode || 'bidirectional';
+                        if (syncMode === 'bidirectional') {
+                            this.syncGroupStateToParameter(groupConfig.group_name, actualEnabled);
+                        }
                     }
                 }
             });
@@ -1615,7 +1627,7 @@ app.registerExtension({
 
                 <div class="gmm-parameter-binding-section">
                     <div class="gmm-section-header">
-                        <span>📌 参数绑定（双向同步）</span>
+                        <span>📌 参数绑定</span>
                     </div>
                     <div class="gmm-binding-content">
                         <div class="gmm-field">
@@ -1638,7 +1650,14 @@ app.registerExtension({
                                     <option value="inverse">参数True → 组关闭</option>
                                 </select>
                             </div>
-                            <div class="gmm-binding-status">
+                            <div class="gmm-field">
+                                <label>同步模式</label>
+                                <select id="gmm-sync-mode">
+                                    <option value="bidirectional">双向同步（参数 ↔ 组）</option>
+                                    <option value="unidirectional">单向同步（参数 → 组）</option>
+                                </select>
+                            </div>
+                            <div class="gmm-binding-status" id="gmm-binding-status-text">
                                 💡 启用后，参数值变化会自动控制组状态，组状态变化也会自动更新参数值
                             </div>
                         </div>
@@ -1670,6 +1689,8 @@ app.registerExtension({
             const bindingConfig = dialog.querySelector('#gmm-binding-config');
             const paramSelector = dialog.querySelector('#gmm-param-selector');
             const mappingMode = dialog.querySelector('#gmm-mapping-mode');
+            const syncModeSelector = dialog.querySelector('#gmm-sync-mode');
+            const bindingStatusText = dialog.querySelector('#gmm-binding-status-text');
 
             // 加载可访问的参数列表
             this.loadAccessibleParameters(paramSelector, tempConfig.parameterBinding);
@@ -1679,12 +1700,31 @@ app.registerExtension({
                 bindingCheckbox.checked = true;
                 bindingConfig.style.display = 'block';
                 mappingMode.value = tempConfig.parameterBinding.mapping || 'normal';
+                syncModeSelector.value = tempConfig.parameterBinding.syncMode || 'bidirectional';
+            } else {
+                syncModeSelector.value = 'bidirectional'; // 默认双向
             }
+
+            // 更新绑定状态提示文本的函数
+            const updateBindingStatusText = () => {
+                const syncMode = syncModeSelector.value;
+                if (syncMode === 'bidirectional') {
+                    bindingStatusText.textContent = '💡 启用后，参数值变化会自动控制组状态，组状态变化也会自动更新参数值';
+                } else {
+                    bindingStatusText.textContent = '💡 启用后，参数值变化会自动控制组状态（组状态变化不影响参数）';
+                }
+            };
+
+            // 初始化时更新一次提示文本
+            updateBindingStatusText();
 
             // 绑定启用/禁用事件
             bindingCheckbox.addEventListener('change', (e) => {
                 bindingConfig.style.display = e.target.checked ? 'block' : 'none';
             });
+
+            // 绑定同步模式改变事件
+            syncModeSelector.addEventListener('change', updateBindingStatusText);
 
             // 绑定添加规则按钮
             dialog.querySelectorAll('.gmm-add-rule').forEach(btn => {
@@ -1721,7 +1761,8 @@ app.registerExtension({
                         enabled: bindingCheckbox.checked,
                         nodeId: '',
                         paramName: '',
-                        mapping: mappingMode.value || 'normal'
+                        mapping: mappingMode.value || 'normal',
+                        syncMode: syncModeSelector.value || 'bidirectional'
                     };
 
                     // 如果启用了绑定，保存选中的参数
@@ -2080,14 +2121,31 @@ app.registerExtension({
                     const data = await response.json();
 
                     if (data.status === 'success') {
-                        const expectedGroupState = this.mapParameterToGroupState(
-                            data.value,
-                            group.parameterBinding.mapping
-                        );
+                        // 🔥 关键修复：只有参数值真正变化时才同步，而不是简单比较组状态
+                        const currentParamValue = data.value;
+                        const lastParamValue = group.parameterBinding.lastParamValue;
 
-                        if (group.enabled !== expectedGroupState) {
-                            // 参数值与组状态不一致，需要同步
-                            logger.info(`[GMM] 参数同步：${group.parameterBinding.paramName} (${data.value}) → ${group.group_name} (${expectedGroupState ? '开启' : '关闭'})`);
+                        // 如果是第一次检查，记录当前值但不同步
+                        if (lastParamValue === undefined) {
+                            group.parameterBinding.lastParamValue = currentParamValue;
+                            logger.info(`[GMM] 初始化参数值记录：${group.parameterBinding.paramName} = ${currentParamValue}`);
+                            continue;
+                        }
+
+                        // 🔥 只有参数值真正发生变化时才触发同步
+                        if (currentParamValue !== lastParamValue) {
+                            const expectedGroupState = this.mapParameterToGroupState(
+                                currentParamValue,
+                                group.parameterBinding.mapping
+                            );
+
+                            logger.info(`[GMM] 检测到参数值变化：${group.parameterBinding.paramName} (${lastParamValue} → ${currentParamValue})`);
+                            logger.info(`[GMM] 参数同步：${group.parameterBinding.paramName} (${currentParamValue}) → ${group.group_name} (${expectedGroupState ? '开启' : '关闭'})`);
+
+                            // 更新记录的参数值
+                            group.parameterBinding.lastParamValue = currentParamValue;
+
+                            // 执行同步
                             this._syncingFromParameter = true;
                             this.toggleGroup(group.group_name, expectedGroupState);
                             this._syncingFromParameter = false;
@@ -2135,6 +2193,10 @@ app.registerExtension({
 
                 const data = await response.json();
                 if (data.status === 'success') {
+                    // 🔥 更新参数值记录，避免下次检查时触发重复同步
+                    config.parameterBinding.lastParamValue = paramValue;
+                    logger.info(`[GMM] 已更新参数值记录：${config.parameterBinding.paramName} = ${paramValue}`);
+
                     // 发送自定义事件，通知PCP刷新UI
                     const event = new CustomEvent('pcp-param-value-changed', {
                         detail: {
