@@ -45,7 +45,6 @@ from .py.parameter_break import NODE_CLASS_MAPPINGS as pb_mappings, NODE_DISPLAY
 from .py.simple_load_image import NODE_CLASS_MAPPINGS as sli_mappings, NODE_DISPLAY_NAME_MAPPINGS as sli_display_mappings
 from .py.simple_string_split import NODE_CLASS_MAPPINGS as sss_mappings, NODE_DISPLAY_NAME_MAPPINGS as sss_display_mappings
 from .py.save_image_plus import NODE_CLASS_MAPPINGS as sip_mappings, NODE_DISPLAY_NAME_MAPPINGS as sip_display_mappings
-from .py.pixel_ksample_upscaler_sharpening import NODE_CLASS_MAPPINGS as pkus_mappings, NODE_DISPLAY_NAME_MAPPINGS as pkus_display_mappings
 from .py.simple_value_switch import NODE_CLASS_MAPPINGS as svs_mappings, NODE_DISPLAY_NAME_MAPPINGS as svs_display_mappings
 
 # 导入优化执行系统
@@ -105,7 +104,6 @@ NODE_CLASS_MAPPINGS = {
     **sli_mappings,
     **sss_mappings,
     **sip_mappings,
-    **pkus_mappings,
     **svs_mappings,
     **opt_mappings,
     **workflow_description_mappings,
@@ -133,7 +131,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **sli_display_mappings,
     **sss_display_mappings,
     **sip_display_mappings,
-    **pkus_display_mappings,
     **svs_display_mappings,
     **opt_display_mappings,
     **workflow_description_display_mappings,
@@ -144,7 +141,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 
 # 统计节点加载情况
 _node_load_stats["total_nodes"] = len(NODE_CLASS_MAPPINGS)
-_node_load_stats["loaded_modules"] = 24  # 成功导入的模块数（根据上面的import语句统计）
+_node_load_stats["loaded_modules"] = 23  # 成功导入的模块数(根据上面的import语句统计)
 
 # 控制台输出
 print("=" * 70, file=sys.stderr)
