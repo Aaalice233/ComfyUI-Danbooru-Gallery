@@ -33,13 +33,13 @@
   - [⚡ 组执行管理器 (Group Executor Manager)](#-组执行管理器-group-executor-manager)
   - [🔇 组静音管理器 (Group Mute Manager)](#-组静音管理器-group-mute-manager)
   - [🧭 快速组导航器 (Quick Group Navigation)](#-快速组导航器-quick-group-navigation)
-  - [🔍 后续执行组是否有效 (Has Next Executor Group)](#-后续执行组是否有效-has-next-executor-group)
   - [🖼️ 图像缓存节点 (Image Cache Nodes)](#-图像缓存节点-image-cache-nodes)
   - [📝 文本缓存节点 (Text Cache Nodes)](#-文本缓存节点-text-cache-nodes)
   - [📐 分辨率大师简化版 (Resolution Master Simplify)](#-分辨率大师简化版-resolution-master-simplify)
   - [📦 简易Checkpoint加载器 (Simple Checkpoint Loader)](#-简易checkpoint加载器-simple-checkpoint-loader)
   - [🔔 简易通知 (Simple Notify)](#-简易通知-simple-notify)
   - [✂️ 简易字符串分隔 (Simple String Split)](#-简易字符串分隔-simple-string-split)
+  - [🔀 简易值切换 (Simple Value Switch)](#-简易值切换-simple-value-switch)
 - [安装说明](#安装说明)
 - [系统要求](#系统要求)
 - [高级功能](#高级功能)
@@ -66,13 +66,13 @@
   - [⚡ Group Executor Manager](#-group-executor-manager)
   - [🔇 Group Mute Manager](#-group-mute-manager)
   - [🧭 Quick Group Navigation](#-quick-group-navigation)
-  - [🔍 Has Next Executor Group](#-has-next-executor-group)
   - [🖼️ Image Cache Nodes](#-image-cache-nodes)
   - [📝 Text Cache Nodes](#-text-cache-nodes-1)
   - [📐 Resolution Master Simplify](#-resolution-master-simplify)
   - [📦 Simple Checkpoint Loader](#-simple-checkpoint-loader)
   - [🔔 Simple Notify](#-simple-notify-1)
   - [✂️ Simple String Split](#-simple-string-split-1)
+  - [🔀 Simple Value Switch](#-simple-value-switch)
 - [Installation](#installation)
 - [System Requirements](#system-requirements-1)
 - [Advanced Features](#advanced-features)
@@ -1123,168 +1123,6 @@ Open In Krita 节点实现了 ComfyUI 与 Krita 之间的双向数据交互，�
 
 ---
 
-### 🔍 后续执行组是否有效 (Has Next Executor Group)
-
-**智能工作流条件执行节点**
-
-后续执行组是否有效节点与组执行管理器深度集成，用于检测当前执行组之后是否还有待执行的组，帮助实现智能的工作流条件分支和优化执行流程。
-
-#### 核心功能
-- 🔍 **智能检测**: 自动检测后续是否有待执行的组
-- 🚫 **排除组配置**: 可视化配置界面，灵活管理需要排除检测的组
-- 🔒 **锁定模式**: 防止误操作的双击锁定功能
-- 🔄 **组重命名跟踪**: 自动检测并更新重命名后的组名
-- 💾 **工作流集成**: 配置随工作流保存，支持跨环境迁移
-- 🎯 **精确控制**: 自动过滤被禁用的组和无效组名
-- 📊 **详细输出**: 提供后续组列表和布尔判断两种输出
-
-#### 输出类型
-- **next_groups** (STRING): 所有后续待执行的组名，每行一个
-- **has_next** (BOOLEAN): 是否还有下一个待执行的组
-
-#### 使用场景
-- **条件分支**: 根据是否有后续组来决定执行路径
-  ```
-  示例：只在最后一个组时执行最终保存
-  后续执行组检测 → Switch节点 → 保存图像 / 跳过保存
-  ```
-
-- **流程优化**: 避免不必要的处理步骤
-  ```
-  示例：只在有后续组时保留中间结果
-  后续执行组检测 → 条件缓存 → 清理临时文件
-  ```
-
-- **资源管理**: 智能控制资源使用
-  ```
-  示例：最后一个组时释放GPU显存
-  后续执行组检测 → 显存管理 → 卸载模型
-  ```
-
-- **批量处理**: 在批量工作流中区分中间步骤和最终步骤
-  ```
-  示例：批量生成时只在最后输出通知
-  后续执行组检测 → 通知节点 → "全部完成！"
-  ```
-
-#### 使用方法
-1. 添加 `Danbooru > 后续执行组是否有效 (Has Next Executor Group)` 节点
-2. 双击节点打开配置界面
-3. 点击"添加排除组"按钮，从下拉菜单选择要排除的组
-4. 可选：双击锁定按钮🔒防止误操作
-5. 连接 `has_next` 输出到 Switch 或其他条件节点
-6. 保存工作流，配置会自动随工作流保存
-
-#### 配置说明
-
-**排除组列表**：
-- 可搜索的下拉框选择组名
-- 支持多个排除组配置
-- 点击删除按钮❌移除排除组
-- 点击刷新按钮🔄更新组列表
-
-**锁定模式**：
-- 双击锁定按钮切换锁定状态
-- 锁定后无法添加/删除/修改配置
-- 适合在生产环境防止误操作
-
-**组名验证**：
-- 加载工作流时自动验证组名是否存在
-- 自动清理不存在的组（如工作流迁移后）
-- 控制台输出详细的清理信息
-
-#### 智能特性
-
-**自动组重命名跟踪**：
-```
-1. 配置排除组："测试组A"
-2. 在ComfyUI中重命名组为："生产组A"
-3. 节点自动检测并更新配置为："生产组A"
-4. 保存工作流时更新后的配置会被保存
-```
-
-**跨环境迁移**：
-```
-1. 在项目A中配置排除组："项目A特定组"
-2. 工作流复制到项目B
-3. 加载时自动清理不存在的组
-4. 控制台提示：⚠️ 组 "项目A特定组" 不存在，已自动清理
-```
-
-**状态检测机制**：
-- ✅ 自动检测组内所有节点是否被禁用
-- ✅ 支持深度优先遍历（包括子图节点）
-- ✅ 实时同步禁用状态到后端
-- ✅ 执行前主动检测最新状态
-
-#### 配置持久化
-
-**工作流序列化**：
-- 配置通过 `onSerialize`/`onConfigure` 机制保存
-- 随工作流 JSON 文件一起保存和加载
-- 不依赖本地配置文件，支持工作流自由迁移
-- 每个工作流拥有独立的配置，互不影响
-
-#### 与组执行管理器集成
-
-**完美配合**：
-```
-组执行管理器配置：
-├── 组1：预处理
-├── 组2：主生成
-├── 组3：后处理（排除）
-└── 组4：保存
-
-后续执行组检测节点会自动：
-- 跳过"组3：后处理"（在排除列表中）
-- 跳过组内节点全部被禁用的组
-- 返回实际会执行的后续组
-```
-
-#### 使用示例
-
-**示例1：条件保存**
-```
-[组1: 生成] → 图像
-           ↓
-[组2: 后处理] → 图像 → 后续执行组检测
-                              ↓
-                         has_next → Switch
-                              ↓           ↓
-                           True(跳过)  False(保存)
-```
-
-**示例2：资源优化**
-```
-后续执行组检测 → has_next
-                    ↓
-                  False → 卸载模型 → 清理缓存 → 发送通知
-```
-
-**示例3：批量任务通知**
-```
-[for each item]
-    ↓
-执行任务 → 后续执行组检测
-                ↓
-            has_next == False → 简易通知("全部任务完成!")
-```
-
-#### 技术细节
-- 基于组执行管理器的全局配置进行检测
-- 使用 WeakMap 追踪组对象引用，支持重命名检测
-- 每2秒自动检查组列表和重命名变化
-- 配置通过ComfyUI原生序列化机制保存
-- 自动过滤空组名和无效引用
-
-#### 注意事项
-- ⚠️ 节点仅检测组配置，不检查组内节点是否被静音/bypass
-- ⚠️ 需要配合组执行管理器使用才能发挥作用
-- ⚠️ 锁定模式需要双击锁定按钮才能切换
-- ⚠️ 旧工作流加载时排除组配置为空，需要重新配置
-
----
-
 ### 🖼️ 图像缓存节点 (Image Cache Nodes)
 
 **智能图像缓存和获取节点组**
@@ -1600,6 +1438,95 @@ Open In Krita 节点实现了 ComfyUI 与 Krita 之间的双向数据交互，�
 
 ---
 
+### 🔀 简易值切换 (Simple Value Switch)
+
+**优先级值选择节点**
+
+简易值切换节点接受任意数量和类型的输入，输出第一个非空值。这是一个通用的值优先级选择工具，可用于默认值回退、条件值选择等场景。
+
+#### 核心功能
+- 🔀 **优先级选择**: 遍历所有输入，返回第一个非空值
+- 🎯 **任意类型支持**: 支持图像、文本、模型等所有 ComfyUI 类型
+- 🔢 **动态输入**: 支持任意数量的输入引脚（渐进式添加）
+- 🧠 **智能判空**: 不仅判断 None，还识别空字典、空对象等
+- 🔗 **工作流灵活**: 简化条件逻辑，减少分支节点使用
+
+#### 工作原理
+
+节点按顺序检查所有输入值：
+1. 从第一个输入开始遍历
+2. 检查值是否为空（None、空字典、空 Context 等）
+3. 返回第一个非空值
+4. 如果所有值都为空，返回 None
+
+#### 使用方法
+1. 添加 `danbooru > 简易值切换 (Simple Value Switch)` 节点
+2. 连接多个可能的输入值（按优先级从高到低）
+3. 第一个输入会自动显示，连接后会自动显示下一个输入
+4. 节点输出第一个非空的输入值
+
+#### 输入参数
+- **value_1, value_2, ...** (任意类型，可选): 按优先级顺序的候选值
+  - 所有输入都是可选的
+  - 支持任意 ComfyUI 类型（通配符类型 `*`）
+  - 输入数量动态扩展（前端自动管理）
+
+#### 输出参数
+- **output** (任意类型): 第一个非空的输入值，如果都为空则为 None
+
+#### 使用示例
+
+**示例 1：默认值回退**
+```
+用户输入值 (可能为空) → value_1
+默认值 "hello"          → value_2
+                          ↓
+                       输出：优先输出用户输入，空则输出默认值
+```
+
+**示例 2：多优先级选择**
+```
+高优先级参数 (可能不可用) → value_1
+中优先级参数 (备用方案)   → value_2
+低优先级参数 (兜底方案)   → value_3
+                            ↓
+                         输出：第一个可用的参数
+```
+
+**示例 3：条件图像选择**
+```
+条件路径A生成的图像 → value_1
+条件路径B生成的图像 → value_2
+默认占位图像       → value_3
+                    ↓
+                 输出：第一个成功生成的图像
+```
+
+#### 应用场景
+- **默认值设置**: 提供默认值回退机制
+- **条件选择**: 简化多条件值选择逻辑
+- **容错处理**: 当主值不可用时自动使用备用值
+- **参数优化**: 灵活切换不同来源的参数
+- **工作流简化**: 减少复杂的 Switch 节点链
+
+#### 空值判断规则
+
+节点使用增强的空值判断逻辑：
+- `None` → 空
+- `{}` (空字典) → 空
+- 空 Context 对象 → 空
+- 其他所有值 → 非空（包括 `0`, `False`, `""` 等）
+
+**注意**: 空字符串 `""`、数字 `0`、布尔值 `False` 被视为**非空**有效值
+
+#### 技术特点
+- **通配符类型**: 使用 AnyType (`*`) 支持所有 ComfyUI 类型
+- **渐进式输入**: 前端 JavaScript 动态管理输入引脚
+- **性能优化**: 短路求值，找到第一个非空值即返回
+- **类型安全**: 保持输入类型，无类型转换
+
+---
+
 ## 安装说明
 
 ### 方法一：ComfyUI Manager 安装（推荐）
@@ -1738,9 +1665,6 @@ ComfyUI-Danbooru-Gallery/
 │   └── group_mute_manager.py
 ├── quick_group_navigation/         # 快速组导航器
 │   └── __init__.py
-├── has_next_executor_group/        # 后续执行组是否有效节点
-│   ├── __init__.py
-│   └── has_next_executor_group.py
 ├── image_cache_save/               # 图像缓存保存节点
 │   ├── __init__.py
 │   └── image_cache_save.py
@@ -1776,6 +1700,9 @@ ComfyUI-Danbooru-Gallery/
 ├── simple_string_split/            # 简易字符串分隔
 │   ├── __init__.py
 │   └── simple_string_split.py
+├── simple_value_switch/            # 简易值切换
+│   ├── __init__.py
+│   └── simple_value_switch.py
 ├── open_in_krita/                  # Open In Krita (Krita集成)
 │   ├── __init__.py
 │   ├── open_in_krita.py            # 主节点逻辑
@@ -2805,166 +2732,6 @@ Quick Group Navigation uses the global Toast notification system, providing:
 
 ---
 
-### 🔍 Has Next Executor Group
-
-**Intelligent Workflow Conditional Execution Node**
-
-Has Next Executor Group node integrates deeply with Group Executor Manager to detect whether there are pending groups to execute after the current group, enabling smart workflow conditional branching and optimized execution flow.
-
-#### Core Features
-- 🔍 **Smart Detection**: Automatically detect if there are pending groups to execute
-- 🚫 **Exclude Group Configuration**: Visual configuration interface to flexibly manage groups to exclude from detection
-- 🔒 **Lock Mode**: Double-click lock feature to prevent accidental operations
-- 🔄 **Group Rename Tracking**: Automatically detect and update renamed group names
-- 💾 **Workflow Integration**: Configuration saved with workflow, supports cross-environment migration
-- 🎯 **Precise Control**: Automatically filter disabled groups and invalid group names
-- 📊 **Detailed Output**: Provides both next group list and boolean judgment outputs
-
-#### Output Types
-- **next_groups** (STRING): All pending group names to execute, one per line
-- **has_next** (BOOLEAN): Whether there is a next group to execute
-
-#### Use Cases
-- **Conditional Branching**: Decide execution path based on whether there are subsequent groups
-  ```
-  Example: Only execute final save on the last group
-  Next Group Detection → Switch Node → Save Image / Skip Save
-  ```
-
-- **Flow Optimization**: Avoid unnecessary processing steps
-  ```
-  Example: Only keep intermediate results when there are subsequent groups
-  Next Group Detection → Conditional Cache → Clean Temp Files
-  ```
-
-- **Resource Management**: Intelligently control resource usage
-  ```
-  Example: Release GPU memory on the last group
-  Next Group Detection → Memory Management → Unload Models
-  ```
-
-- **Batch Processing**: Distinguish between intermediate and final steps in batch workflows
-  ```
-  Example: Only output notification at the end of batch generation
-  Next Group Detection → Notification Node → "All Complete!"
-  ```
-
-#### Usage
-1. Add `Danbooru > Has Next Executor Group` node
-2. Double-click node to open configuration interface
-3. Click "Add Exclude Group" button, select group from dropdown
-4. Optional: Double-click lock button 🔒 to prevent accidental changes
-5. Connect `has_next` output to Switch or other conditional nodes
-6. Save workflow, configuration will automatically save with workflow
-
-#### Configuration
-
-**Exclude Group List**:
-- Searchable dropdown for group name selection
-- Support multiple exclude group configurations
-- Click delete button ❌ to remove exclude group
-- Click refresh button 🔄 to update group list
-
-**Lock Mode**:
-- Double-click lock button to toggle lock status
-- Cannot add/delete/modify configuration when locked
-- Suitable for preventing accidental changes in production environment
-
-**Group Name Validation**:
-- Automatically validate group names exist when loading workflow
-- Automatically clean non-existent groups (e.g., after workflow migration)
-- Output detailed cleaning information to console
-
-#### Smart Features
-
-**Automatic Group Rename Tracking**:
-```
-1. Configure exclude group: "Test Group A"
-2. Rename group in ComfyUI to: "Production Group A"
-3. Node automatically detects and updates config to: "Production Group A"
-4. Updated configuration saved when workflow is saved
-```
-
-**Cross-Environment Migration**:
-```
-1. Configure exclude group in Project A: "Project A Specific Group"
-2. Copy workflow to Project B
-3. Automatically clean non-existent groups on load
-4. Console prompt: ⚠️ Group "Project A Specific Group" not found, auto-cleaned
-```
-
-**Status Detection Mechanism**:
-- ✅ Automatically detect if all nodes in group are disabled
-- ✅ Support depth-first traversal (including subgraph nodes)
-- ✅ Real-time sync disabled status to backend
-- ✅ Proactively detect latest status before execution
-
-#### Configuration Persistence
-
-**Workflow Serialization**:
-- Configuration saved via `onSerialize`/`onConfigure` mechanism
-- Saved and loaded with workflow JSON file
-- Not dependent on local config files, supports free workflow migration
-- Each workflow has independent configuration without interference
-
-#### Integration with Group Executor Manager
-
-**Perfect Cooperation**:
-```
-Group Executor Manager Configuration:
-├── Group 1: Preprocessing
-├── Group 2: Main Generation
-├── Group 3: Post-processing (Excluded)
-└── Group 4: Save
-
-Next Group Detection node automatically:
-- Skip "Group 3: Post-processing" (in exclude list)
-- Skip groups where all nodes are disabled
-- Return actually executing subsequent groups
-```
-
-#### Usage Examples
-
-**Example 1: Conditional Save**
-```
-[Group 1: Generate] → Image
-           ↓
-[Group 2: Post-process] → Image → Has Next Executor Group
-                              ↓
-                         has_next → Switch
-                              ↓           ↓
-                           True(Skip)  False(Save)
-```
-
-**Example 2: Resource Optimization**
-```
-Has Next Executor Group → has_next
-                    ↓
-                  False → Unload Models → Clean Cache → Send Notification
-```
-
-**Example 3: Batch Task Notification**
-```
-[for each item]
-    ↓
-Execute Task → Has Next Executor Group
-                ↓
-            has_next == False → Simple Notify("All tasks complete!")
-```
-
-#### Technical Details
-- Detection based on Group Executor Manager's global configuration
-- Use WeakMap to track group object references, supports rename detection
-- Auto check group list and rename changes every 2 seconds
-- Configuration saved via ComfyUI native serialization mechanism
-- Automatically filter empty group names and invalid references
-
-#### Notes
-- ⚠️ Node only checks group configuration, not whether nodes in group are muted/bypassed
-- ⚠️ Needs to work with Group Executor Manager to function properly
-- ⚠️ Lock mode requires double-click on lock button to toggle
-- ⚠️ Old workflows will have empty exclude group config on load, needs reconfiguration
-
 ---
 
 ### 🖼️ Image Cache Nodes
@@ -3282,6 +3049,95 @@ This node is simplified from:
 
 ---
 
+### 🔀 Simple Value Switch
+
+**Priority Value Selection Node**
+
+Simple Value Switch node accepts any number and type of inputs, and outputs the first non-empty value. This is a universal value priority selection tool that can be used for default value fallback, conditional value selection, and other scenarios.
+
+#### Core Features
+- 🔀 **Priority Selection**: Iterates through all inputs and returns the first non-empty value
+- 🎯 **Any Type Support**: Supports all ComfyUI types including images, text, models, etc.
+- 🔢 **Dynamic Inputs**: Supports any number of input pins (progressive addition)
+- 🧠 **Smart Empty Check**: Not only checks None, but also recognizes empty dicts, empty objects, etc.
+- 🔗 **Workflow Flexibility**: Simplifies conditional logic, reduces branching node usage
+
+#### How It Works
+
+The node checks all input values in order:
+1. Starts iterating from the first input
+2. Checks if the value is empty (None, empty dict, empty Context, etc.)
+3. Returns the first non-empty value
+4. Returns None if all values are empty
+
+#### Usage
+1. Add `danbooru > Simple Value Switch` node
+2. Connect multiple possible input values (from high to low priority)
+3. The first input is automatically displayed, subsequent inputs appear after connection
+4. Node outputs the first non-empty input value
+
+#### Input Parameters
+- **value_1, value_2, ...** (Any type, optional): Candidate values in priority order
+  - All inputs are optional
+  - Supports any ComfyUI type (wildcard type `*`)
+  - Input count expands dynamically (frontend auto-manages)
+
+#### Output Parameters
+- **output** (Any type): The first non-empty input value, None if all are empty
+
+#### Usage Examples
+
+**Example 1: Default Value Fallback**
+```
+User Input Value (may be empty) → value_1
+Default Value "hello"           → value_2
+                                   ↓
+                                Output: User input if available, otherwise default
+```
+
+**Example 2: Multi-Priority Selection**
+```
+High Priority Param (may be unavailable) → value_1
+Medium Priority Param (backup)           → value_2
+Low Priority Param (fallback)            → value_3
+                                            ↓
+                                         Output: First available parameter
+```
+
+**Example 3: Conditional Image Selection**
+```
+Image from Conditional Path A → value_1
+Image from Conditional Path B → value_2
+Default Placeholder Image     → value_3
+                                ↓
+                             Output: First successfully generated image
+```
+
+#### Application Scenarios
+- **Default Values**: Provide default value fallback mechanism
+- **Conditional Selection**: Simplify multi-condition value selection logic
+- **Error Handling**: Automatically use backup value when primary value is unavailable
+- **Parameter Optimization**: Flexibly switch between different parameter sources
+- **Workflow Simplification**: Reduce complex Switch node chains
+
+#### Empty Value Judgment Rules
+
+The node uses enhanced empty value judgment logic:
+- `None` → Empty
+- `{}` (empty dict) → Empty
+- Empty Context object → Empty
+- All other values → Non-empty (including `0`, `False`, `""`, etc.)
+
+**Note**: Empty string `""`, number `0`, boolean `False` are considered **non-empty** valid values
+
+#### Technical Highlights
+- **Wildcard Type**: Uses AnyType (`*`) to support all ComfyUI types
+- **Progressive Inputs**: Frontend JavaScript dynamically manages input pins
+- **Performance Optimization**: Short-circuit evaluation, returns immediately upon finding first non-empty value
+- **Type Safety**: Preserves input type, no type conversion
+
+---
+
 ## Installation
 
 ### Method 1: ComfyUI Manager Installation (Recommended)
@@ -3361,143 +3217,160 @@ pip install -r requirements.txt
 
 ```
 ComfyUI-Danbooru-Gallery/
-├── __init__.py                     # Plugin entry point
-├── danbooru_gallery/
-│   ├── __init__.py
-│   └── danbooru_gallery.py         # Danbooru Gallery backend logic
-├── character_feature_swap/
-│   ├── __init__.py
-│   └── character_feature_swap.py   # Character Feature Swap backend logic
-├── prompt_selector/
-│   ├── __init__.py
-│   └── prompt_selector.py          # Prompt Selector backend logic
-├── multi_character_editor/
-│   ├── __init__.py
-│   ├── multi_character_editor.py   # Multi Character Editor backend logic
-│   ├── doc/                        # Syntax documentation
-│   │   ├── complete_syntax_guide.md
-│   │   └── complete_syntax_guide_en.md
-│   └── settings/                   # Configuration and preset files
-│       ├── editor_settings.json
-│       ├── presets.json
-│       └── preset_images/
-├── prompt_cleaning_maid/           # Prompt Cleaning Maid
-│   ├── __init__.py
-│   └── prompt_cleaning_maid.py
-├── parameter_control_panel/        # Parameter Control Panel
-│   ├── __init__.py
-│   └── parameter_control_panel.py
-├── parameter_break/                # Parameter Break
-│   ├── __init__.py
-│   └── parameter_break.py
-├── workflow_description/           # Workflow Description
-│   ├── __init__.py
-│   ├── workflow_description.py
-│   └── settings.json               # Version record settings file
-├── simple_image_compare/           # Simple Image Compare
-│   ├── __init__.py
-│   └── simple_image_compare.py
-├── simple_load_image/              # Simple Load Image
-│   ├── __init__.py
-│   └── simple_load_image.py
-├── save_image_plus/                # Save Image Plus
-│   ├── __init__.py
-│   └── save_image_plus.py
-├── metadata_collector/             # Metadata Collector Module
-│   ├── __init__.py
-│   ├── metadata_hook.py            # Hook Installation (Chain Support)
-│   ├── metadata_registry.py       # Metadata Registry
-│   ├── metadata_processor.py      # Metadata Processor
-│   ├── node_extractors.py         # Node Extractors
-│   └── constants.py                # Constant Definitions
-├── group_executor_manager/         # Group Executor Manager
-│   ├── __init__.py
-│   └── group_executor_manager.py
-├── group_executor_trigger/         # Group Executor Trigger
-│   └── group_executor_trigger.py
-├── group_mute_manager/             # Group Mute Manager
-│   ├── __init__.py
-│   └── group_mute_manager.py
-├── quick_group_navigation/         # Quick Group Navigation
-│   └── __init__.py
-├── has_next_executor_group/        # Has Next Executor Group node
-│   ├── __init__.py
-│   └── has_next_executor_group.py
-├── image_cache_save/               # Image Cache Save node
-│   ├── __init__.py
-│   └── image_cache_save.py
-├── image_cache_get/                # Image Cache Get node
-│   ├── __init__.py
-│   └── image_cache_get.py
-├── image_cache_manager/            # Image Cache Manager
-│   ├── __init__.py
-│   └── image_cache_manager.py
-├── global_text_cache_save/         # Global Text Cache Save node
-│   ├── __init__.py
-│   └── global_text_cache_save.py
-├── global_text_cache_get/          # Global Text Cache Get node
-│   ├── __init__.py
-│   └── global_text_cache_get.py
-├── text_cache_manager/             # Text Cache Manager
-│   ├── __init__.py
-│   └── text_cache_manager.py
-├── text_cache_viewer/              # Text Cache Viewer node
-│   ├── __init__.py
-│   └── text_cache_viewer.py
-├── resolution_master_simplify/     # Resolution Master Simplify
-│   ├── __init__.py
-│   ├── resolution_master_simplify.py
-│   └── settings.json
-├── simple_checkpoint_loader_with_name/  # Simple Checkpoint Loader
-│   ├── __init__.py
-│   └── simple_checkpoint_loader_with_name.py
-├── simple_notify/                  # Simple Notify
-│   ├── __init__.py
-│   ├── simple_notify.py
-│   └── notify.mp3
-├── simple_string_split/            # Simple String Split
-│   ├── __init__.py
-│   └── simple_string_split.py
-├── open_in_krita/                  # Open In Krita (Krita Integration)
-│   ├── __init__.py
-│   ├── open_in_krita.py            # Main node logic
-│   ├── krita_manager.py            # Krita path manager
-│   └── plugin_installer.py         # Krita plugin auto-installer
-├── krita_files/                    # Krita plugin source files
-│   ├── open_in_krita.desktop       # Krita plugin config file
-│   └── open_in_krita/              # Krita plugin Python code
-│       ├── __init__.py
-│       ├── extension.py            # Krita extension main logic
-│       ├── communication.py        # ComfyUI communication module
-│       └── logger.py               # Logger
-├── install.py                      # Smart installation script
-├── requirements.txt                # Dependency list
-├── js/
-│   ├── danbooru_gallery.js         # Danbooru Gallery frontend
-│   ├── character_feature_swap.js   # Character Feature Swap frontend
-│   ├── prompt_selector.js          # Prompt Selector frontend
-│   ├── multi_character_editor.js   # Multi Character Editor frontend
-│   ├── multi_character_editor/     # Multi Character Editor components
+├── py/                             # Backend Python modules
+│   ├── __init__.py                 # Plugin entry point
+│   ├── danbooru_gallery/           # Danbooru Gallery module
+│   │   ├── __init__.py
+│   │   ├── danbooru_gallery.py     # Backend logic
+│   │   └── zh_cn/                  # Chinese translation data
+│   │       ├── all_tags_cn.json
+│   │       ├── danbooru.csv
+│   │       └── wai_characters.csv
+│   ├── character_feature_swap/     # Character Feature Swap module
+│   │   ├── __init__.py
+│   │   └── character_feature_swap.py
+│   ├── prompt_selector/            # Prompt Selector module
+│   │   ├── __init__.py
+│   │   ├── prompt_selector.py
+│   │   └── default.json            # Default prompts
+│   ├── multi_character_editor/     # Multi Character Editor module
+│   │   ├── __init__.py
+│   │   ├── multi_character_editor.py
+│   │   └── doc/                    # Syntax documentation
+│   │       ├── complete_syntax_guide.md
+│   │       └── complete_syntax_guide_en.md
+│   ├── prompt_cleaning_maid/       # Prompt Cleaning Maid module
+│   │   ├── __init__.py
+│   │   └── prompt_cleaning_maid.py
+│   ├── parameter_control_panel/    # Parameter Control Panel module
+│   │   ├── __init__.py
+│   │   └── parameter_control_panel.py
+│   ├── parameter_break/            # Parameter Break module
+│   │   ├── __init__.py
+│   │   └── parameter_break.py
+│   ├── workflow_description/       # Workflow Description module
+│   │   ├── __init__.py
+│   │   └── workflow_description.py
+│   ├── simple_image_compare/       # Simple Image Compare module
+│   │   ├── __init__.py
+│   │   └── simple_image_compare.py
+│   ├── simple_load_image/          # Simple Load Image module
+│   │   ├── __init__.py
+│   │   └── simple_load_image.py
+│   ├── pixel_ksample_upscaler_sharpening/  # Pixel Upscaler module
+│   │   ├── __init__.py
+│   │   ├── node.py
+│   │   └── upscaler.py
+│   ├── save_image_plus/            # Save Image Plus module
+│   │   ├── __init__.py
+│   │   ├── save_image_plus.py
+│   │   └── hash_cache_manager.py
+│   ├── metadata_collector/         # Metadata Collector module
+│   │   ├── __init__.py
+│   │   ├── metadata_hook.py        # Hook Installation
+│   │   ├── metadata_registry.py   # Metadata Registry
+│   │   ├── metadata_processor.py  # Metadata Processor
+│   │   ├── node_extractors.py     # Node Extractors
+│   │   └── constants.py            # Constants
+│   ├── group_executor_manager/     # Group Executor Manager module
+│   │   ├── __init__.py
+│   │   ├── group_executor_manager.py
+│   │   └── execution_coordinator.py
+│   ├── group_executor_trigger/     # Group Executor Trigger module
+│   │   ├── __init__.py
+│   │   └── group_executor_trigger.py
+│   ├── group_mute_manager/         # Group Mute Manager module
+│   │   ├── __init__.py
+│   │   └── group_mute_manager.py
+│   ├── quick_group_navigation/     # Quick Group Navigation module
+│   │   └── __init__.py
+│   ├── image_cache_save/           # Image Cache Save module
+│   │   ├── __init__.py
+│   │   └── image_cache_save.py
+│   ├── image_cache_get/            # Image Cache Get module
+│   │   ├── __init__.py
+│   │   └── image_cache_get.py
+│   ├── image_cache_manager/        # Image Cache Manager module
+│   │   ├── __init__.py
+│   │   └── image_cache_manager.py
+│   ├── global_text_cache_save/     # Global Text Cache Save module
+│   │   ├── __init__.py
+│   │   └── global_text_cache_save.py
+│   ├── global_text_cache_get/      # Global Text Cache Get module
+│   │   ├── __init__.py
+│   │   └── global_text_cache_get.py
+│   ├── text_cache_manager/         # Text Cache Manager module
+│   │   ├── __init__.py
+│   │   ├── text_cache_manager.py
+│   │   └── api.py
+│   ├── text_cache_viewer/          # Text Cache Viewer module
+│   │   ├── __init__.py
+│   │   └── text_cache_viewer.py
+│   ├── resolution_master_simplify/ # Resolution Master Simplify module
+│   │   ├── __init__.py
+│   │   └── resolution_master_simplify.py
+│   ├── simple_checkpoint_loader_with_name/  # Simple Checkpoint Loader module
+│   │   ├── __init__.py
+│   │   ├── simple_checkpoint_loader_with_name.py
+│   │   └── preview_api.py
+│   ├── simple_notify/              # Simple Notify module
+│   │   ├── __init__.py
+│   │   └── simple_notify.py
+│   ├── simple_string_split/        # Simple String Split module
+│   │   ├── __init__.py
+│   │   └── simple_string_split.py
+│   ├── simple_value_switch/        # Simple Value Switch module
+│   │   ├── __init__.py
+│   │   └── simple_value_switch.py
+│   ├── open_in_krita/              # Open In Krita module
+│   │   ├── __init__.py
+│   │   ├── open_in_krita.py        # Main node logic
+│   │   ├── krita_manager.py        # Krita path manager
+│   │   ├── plugin_installer.py    # Plugin auto-installer
+│   │   ├── reinstall_krita_plugin.py
+│   │   └── uninstall_krita_plugin.py
+│   ├── shared/                     # Shared modules
+│   │   ├── __init__.py
+│   │   ├── cache/                  # Cache system
+│   │   │   ├── autocomplete_cache.py
+│   │   │   └── autocomplete_db.py
+│   │   ├── db/                     # Database utilities
+│   │   │   ├── db_manager.py
+│   │   │   └── tag_database.py
+│   │   ├── fetcher/                # Data fetchers
+│   │   │   ├── api_fetcher.py
+│   │   │   └── image_fetcher.py
+│   │   ├── sync/                   # Sync modules
+│   │   │   ├── cloud_sync.py
+│   │   │   ├── favorites_manager.py
+│   │   │   ├── server.py
+│   │   │   └── settings_manager.py
+│   │   └── translation/            # Translation utilities
+│   │       ├── translator.py
+│   │       └── zh_translator.py
+│   └── utils/                      # Utility modules
+│       ├── config_api.py
+│       ├── config_manager.py
+│       ├── image_processor.py
+│       ├── logger.py
+│       ├── logger_api.py
+│       └── toast_api.py
+├── js/                             # Frontend JavaScript modules
+│   ├── danbooru_gallery/           # Danbooru Gallery frontend
+│   │   └── danbooru_gallery.js
+│   ├── character_feature_swap/     # Character Feature Swap frontend
+│   │   └── character_feature_swap.js
+│   ├── prompt_selector/            # Prompt Selector frontend
+│   │   └── prompt_selector.js
+│   ├── multi_character_editor/     # Multi Character Editor frontend
+│   │   ├── multi_character_editor.js
 │   │   ├── character_editor.js
 │   │   ├── mask_editor.js
 │   │   ├── output_area.js
 │   │   ├── preset_manager.js
 │   │   └── settings_menu.js
-│   ├── native-execution/           # Group Execution System frontend
-│   │   ├── __init__.js
-│   │   ├── cache-control-events.js
-│   │   └── optimized-execution-engine.js
-│   ├── group_executor_manager/     # Group Executor Manager frontend
-│   │   └── group_executor_manager.js
-│   ├── group_mute_manager/         # Group Mute Manager frontend
-│   │   └── group_mute_manager.js
-│   ├── quick_group_navigation/     # Quick Group Navigation frontend
-│   │   ├── quick_group_navigation.js
-│   │   ├── floating_navigator.js
-│   │   ├── styles.css
-│   │   └── README.md
-│   ├── resolution_master_simplify/ # Resolution Master Simplify frontend
-│   │   └── resolution_master_simplify.js
+│   ├── prompt_cleaning_maid/       # Prompt Cleaning Maid frontend
+│   │   └── prompt_cleaning_maid.js
 │   ├── parameter_control_panel/    # Parameter Control Panel frontend
 │   │   └── parameter_control_panel.js
 │   ├── parameter_break/            # Parameter Break frontend
@@ -3506,31 +3379,81 @@ ComfyUI-Danbooru-Gallery/
 │   │   └── workflow_description.js
 │   ├── simple_image_compare/       # Simple Image Compare frontend
 │   │   └── simple_image_compare.js
-│   ├── global_text_cache_save/     # Global Text Cache Save node frontend
-│   │   └── global_text_cache_save.js
-│   ├── global_text_cache_get/      # Global Text Cache Get node frontend
-│   │   └── global_text_cache_get.js
-│   ├── text_cache_viewer/          # Text Cache Viewer frontend
-│   │   └── text_cache_viewer.js
-│   ├── simple_checkpoint_loader_with_name/  # Simple Checkpoint Loader frontend (reserved)
+│   ├── simple_load_image/          # Simple Load Image frontend
+│   │   └── simple_load_image.js
+│   ├── simple_checkpoint_loader_with_name/  # Simple Checkpoint Loader frontend
+│   │   └── preview.js
 │   ├── simple_notify/              # Simple Notify frontend
 │   │   └── simple_notify.js
+│   ├── simple_value_switch/        # Simple Value Switch frontend
+│   │   └── simple_value_switch.js
+│   ├── native-execution/           # Native execution system
+│   │   ├── cache-control-events.js
+│   │   ├── execution-engine.js
+│   │   ├── execution-lock.js
+│   │   └── state-manager.js
+│   ├── group_executor/             # Group Executor frontend
+│   │   └── group_executor_manager.js
+│   ├── group_mute_manager/         # Group Mute Manager frontend
+│   │   └── group_mute_manager.js
+│   ├── quick_group_navigation/     # Quick Group Navigation frontend
+│   │   ├── quick_group_navigation.js
+│   │   ├── floating_navigator.js
+│   │   └── styles.css
+│   ├── image_cache/                # Image Cache frontend
+│   │   ├── image_cache_save.js
+│   │   ├── image_cache_get.js
+│   │   ├── image_cache_toast.js
+│   │   └── image_cache_channel_updater.js
+│   ├── global_text_cache_save/     # Global Text Cache Save frontend
+│   │   └── global_text_cache_save.js
+│   ├── global_text_cache_get/      # Global Text Cache Get frontend
+│   │   └── global_text_cache_get.js
+│   ├── text_cache/                 # Text Cache frontend
+│   │   └── text_cache_channel_updater.js
+│   ├── text_cache_viewer/          # Text Cache Viewer frontend
+│   │   └── text_cache_viewer.js
+│   ├── resolution_master_simplify/ # Resolution Master Simplify frontend
+│   │   └── resolution_master_simplify.js
 │   ├── open_in_krita/              # Open In Krita frontend
 │   │   ├── open_in_krita.js
 │   │   └── setup_dialog.js
+│   ├── utils/                      # Frontend utilities
+│   │   └── error_rate_limiter.js
 │   └── global/                     # Global shared components
 │       ├── autocomplete_cache.js
 │       ├── autocomplete_ui.js
 │       ├── color_manager.js
+│       ├── debug_config.js
+│       ├── logger_client.js
 │       ├── multi_language.js
+│       ├── tag_sync_listener.js
 │       ├── toast_manager.js
 │       └── translations/
-│           ├── resolution_simplify_translations.js
-│           └── ...
-├── danbooru_gallery/zh_cn/         # Chinese translation data
-│   ├── all_tags_cn.json
-│   ├── danbooru.csv
-│   └── wai_characters.csv
+│           ├── chinese.js
+│           ├── english.js
+│           ├── group_executor_translations.js
+│           ├── multi_character_translations.js
+│           ├── parameter_panel_translations.js
+│           ├── prompt_selector_translations.js
+│           └── resolution_simplify_translations.js
+├── krita_files/open_in_krita/      # Krita plugin source files
+│   ├── __init__.py
+│   ├── extension.py                # Krita extension main logic
+│   ├── communication.py            # ComfyUI communication module
+│   └── logger.py                   # Logger
+├── tools/                          # Development tools
+│   ├── debug_metadata.py           # Metadata debug tool
+│   ├── force_delete_db.py          # Force delete database
+│   ├── migrate_debug_print.py      # Migrate debug print
+│   ├── migrate_print.py            # Migrate print statements
+│   ├── replace_console_to_logger.py # Replace console to logger
+│   ├── test_db_health.py           # Database health test
+│   └── README.md                   # Tools documentation
+├── config.json                     # Plugin configuration
+├── requirements.txt                # Python dependencies
+├── pyproject.toml                  # Python project metadata
+├── package-lock.json               # Node.js dependencies lock
 └── README.md                       # Documentation
 ```
 
