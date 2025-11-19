@@ -241,12 +241,9 @@ class MaskEditor {
         if (rect.width <= 0 || rect.height <= 0) {
             if (retryCount < maxRetries) {
                 logger.warn(`[MaskEditor] resizeCanvasWithRetry: 容器尺寸无效 (${rect.width}x${rect.height})，第${retryCount + 1}次重试`);
-                // 延迟后重试
                 setTimeout(() => {
                     this.resizeCanvasWithRetry(retryCount + 1, maxRetries);
                 }, 100 * (retryCount + 1)); // 递增延迟时间
-            } else {
-                logger.error('[MaskEditor] resizeCanvasWithRetry: 重试次数已达上限，容器尺寸仍然无效');
             }
             return;
         }

@@ -129,7 +129,7 @@ function setupMonitoring(node) {
     const originalCallback = targetWidget.callback;
 
     // 创建带防抖的新callback
-    const newCallback = function(value) {
+    const newCallback = function (value) {
         // 调用原始callback
         if (originalCallback) {
             originalCallback.call(this, value);
@@ -728,7 +728,7 @@ app.registerExtension({
 
             // 节点创建时的处理
             const onNodeCreated = nodeType.prototype.onNodeCreated;
-            nodeType.prototype.onNodeCreated = function() {
+            nodeType.prototype.onNodeCreated = function () {
                 const result = onNodeCreated?.apply(this, arguments);
 
                 // 创建预览容器
@@ -893,7 +893,7 @@ app.registerExtension({
 
             // 节点移除时清理
             const onRemoved = nodeType.prototype.onRemoved;
-            nodeType.prototype.onRemoved = function() {
+            nodeType.prototype.onRemoved = function () {
                 cleanupMonitoring(this);
                 return onRemoved?.apply(this, arguments);
             };
@@ -1344,11 +1344,6 @@ class WorkflowChannelSynchronizer {
                     }
                 }
 
-            } else {
-                this.throttledErrorLog("[WorkflowSynchronizer] ❌ 后端同步失败:", response.status);
-                if (showToast) {
-                    showToast(`❌ 工作流同步失败: ${response.status}`, 'error', 4000);
-                }
             }
 
         } catch (error) {
