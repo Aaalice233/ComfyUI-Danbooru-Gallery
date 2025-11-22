@@ -9,6 +9,395 @@ import { createLogger } from '../global/logger_client.js';
 // 创建logger实例
 const logger = createLogger('prompt_selector');
 
+// ============================================================================
+// 数据同步管理器 - 处理多节点间的数据同步和智能合并
+// ============================================================================
+
+/**
+ * 提示词数据同步管理器
+ *
+ * 功能：
+ * 1. 定时轮询检查服务器数据更新（每3秒）
+ * 2. 智能合并本地和服务器数据（基于时间戳）
+ * 3. 管理同步状态和错误处理
+ * 4. 支持暂停/恢复同步
+ */
+class PromptDataSyncManager {
+    constructor(node) {
+        this.node = node; // 关联的节点实例
+        this.lastModified = null; // 上次同步的服务器时间戳
+        this.syncTimer = null; // 定时器句柄
+        this.syncInterval = 3000; // 同步间隔（毫秒）
+        this.isSyncing = false; // 是否正在同步
+        this.isPaused = false; // 是否暂停同步
+        this.syncErrorCount = 0; // 连续同步错误计数
+        this.maxSyncErrors = 5; // 最大连续错误数
+        this.onSyncCallback = null; // 同步完成回调
+        this.onErrorCallback = null; // 错误回调
+    }
+
+    /**
+     * 启动定时同步
+     */
+    start() {
+        if (this.syncTimer) {
+            logger.warn("同步管理器已经在运行");
+            return;
+        }
+
+        logger.info("启动数据同步管理器");
+        this.isPaused = false;
+        this.syncErrorCount = 0;
+
+        // 立即执行一次同步（但不阻塞）
+        this.checkForUpdates();
+
+        // 启动定时器
+        this.syncTimer = setInterval(() => {
+            if (!this.isPaused && !this.isSyncing) {
+                this.checkForUpdates();
+            }
+        }, this.syncInterval);
+    }
+
+    /**
+     * 停止定时同步
+     */
+    stop() {
+        if (this.syncTimer) {
+            clearInterval(this.syncTimer);
+            this.syncTimer = null;
+            logger.info("数据同步管理器已停止");
+        }
+    }
+
+    /**
+     * 暂停同步（临时）
+     */
+    pause() {
+        this.isPaused = true;
+        logger.info("数据同步已暂停");
+    }
+
+    /**
+     * 恢复同步
+     */
+    resume() {
+        this.isPaused = false;
+        logger.info("数据同步已恢复");
+        // 恢复时立即检查更新
+        this.checkForUpdates();
+    }
+
+    /**
+     * 检查服务器是否有更新
+     */
+    async checkForUpdates() {
+        if (this.isSyncing || this.isPaused) {
+            return;
+        }
+
+        this.isSyncing = true;
+
+        try {
+            // 获取服务器元数据（轻量级）
+            const response = await api.fetchApi("/prompt_selector/metadata");
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const metadata = await response.json();
+            const serverLastModified = metadata.last_modified;
+
+            // 如果是首次检查，记录时间戳
+            if (this.lastModified === null) {
+                this.lastModified = serverLastModified;
+                logger.info(`初始同步时间戳: ${serverLastModified}`);
+                this.syncErrorCount = 0;
+                this.isSyncing = false;
+                return;
+            }
+
+            // 比较时间戳，检测是否有更新
+            if (serverLastModified !== this.lastModified) {
+                logger.info(`检测到服务器数据更新: ${serverLastModified}`);
+                await this.syncFromServer();
+                this.lastModified = serverLastModified;
+            }
+
+            this.syncErrorCount = 0; // 重置错误计数
+        } catch (error) {
+            this.syncErrorCount++;
+            logger.error(`同步检查失败 (${this.syncErrorCount}/${this.maxSyncErrors}):`, error);
+
+            // 如果连续错误过多，暂停同步并通知
+            if (this.syncErrorCount >= this.maxSyncErrors) {
+                logger.error("连续同步错误过多，暂停自动同步");
+                this.pause();
+                if (this.onErrorCallback) {
+                    this.onErrorCallback(new Error("连续同步失败，已暂停自动同步"));
+                }
+            }
+        } finally {
+            this.isSyncing = false;
+        }
+    }
+
+    /**
+     * 从服务器同步最新数据并智能合并
+     */
+    async syncFromServer() {
+        try {
+            logger.info("从服务器拉取最新数据...");
+
+            // 获取完整服务器数据
+            const response = await api.fetchApi("/prompt_selector/data");
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const serverData = await response.json();
+
+            // 执行智能合并
+            const mergedData = this.smartMerge(this.node.promptData, serverData);
+
+            // 更新节点数据
+            this.node.promptData = mergedData;
+
+            logger.info("✓ 数据同步完成");
+
+            // 触发回调通知UI更新
+            if (this.onSyncCallback) {
+                this.onSyncCallback(mergedData);
+            }
+
+            // 触发自定义事件（用于UI更新）
+            document.dispatchEvent(new CustomEvent('ps-data-synced', {
+                detail: { data: mergedData }
+            }));
+
+        } catch (error) {
+            logger.error("从服务器同步数据失败:", error);
+            throw error;
+        }
+    }
+
+    /**
+     * 智能合并算法：基于时间戳合并本地和服务器数据
+     *
+     * 规则：
+     * 1. 新增项目：两边都保留
+     * 2. 修改项目：保留 updated_at 较新的版本
+     * 3. 删除检测：如果服务器有但本地没有，比较时间戳判断是"服务器新增"还是"本地删除"
+     * 4. ID 冲突：优先保留 updated_at 较新的
+     *
+     * @param {Object} localData - 本地数据
+     * @param {Object} serverData - 服务器数据
+     * @returns {Object} 合并后的数据
+     */
+    smartMerge(localData, serverData) {
+        // 如果本地数据为空，直接使用服务器数据
+        if (!localData || !localData.categories) {
+            logger.info("本地数据为空，使用服务器数据");
+            return serverData;
+        }
+
+        logger.info("执行智能合并...");
+
+        const merged = {
+            version: serverData.version,
+            settings: { ...serverData.settings },
+            last_modified: serverData.last_modified,
+            categories: []
+        };
+
+        // 获取本地数据的最后修改时间（用于判断删除操作）
+        const localLastModified = new Date(localData.last_modified || 0);
+
+        // 创建服务器分类的映射（按名称）
+        const serverCategoriesMap = {};
+        for (const serverCat of serverData.categories || []) {
+            serverCategoriesMap[serverCat.name] = serverCat;
+        }
+
+        // 创建本地分类的映射
+        const localCategoriesMap = {};
+        for (const localCat of localData.categories || []) {
+            localCategoriesMap[localCat.name] = localCat;
+        }
+
+        // 合并所有分类（服务器 + 本地独有的）
+        const allCategoryNames = new Set([
+            ...Object.keys(serverCategoriesMap),
+            ...Object.keys(localCategoriesMap)
+        ]);
+
+        for (const categoryName of allCategoryNames) {
+            const serverCat = serverCategoriesMap[categoryName];
+            const localCat = localCategoriesMap[categoryName];
+
+            // 情况1：仅服务器有
+            if (serverCat && !localCat) {
+                // 检查是"服务器新增"还是"本地删除"
+                const serverCatTime = new Date(serverCat.updated_at || 0);
+                if (serverCatTime > localLastModified) {
+                    // 服务器分类比本地数据新 → 服务器新增的分类
+                    merged.categories.push(serverCat);
+                }
+                // 否则：是本地删除的分类，不添加
+                continue;
+            }
+
+            // 情况2：仅本地有 - 检查是"本地新建"还是"服务器删除"
+            if (!serverCat && localCat) {
+                const localCatTime = new Date(localCat.updated_at || 0);
+                const serverLastModified = new Date(serverData.last_modified || 0);
+
+                // 如果本地分类的时间戳 > 服务器的 last_modified
+                // 说明是本地新建的（在服务器最后更新之后创建），保留
+                if (localCatTime > serverLastModified) {
+                    merged.categories.push(localCat);
+                }
+                // 否则：是服务器删除的分类（服务器在这个分类之后有更新），不添加
+                continue;
+            }
+
+            // 情况3：两边都有，需要合并提示词
+            const mergedCategory = {
+                name: categoryName,
+                updated_at: serverCat.updated_at,
+                prompts: []
+            };
+
+            // 合并提示词（基于 ID）
+            const serverPromptsMap = {};
+            for (const prompt of serverCat.prompts || []) {
+                if (prompt.id) {
+                    serverPromptsMap[prompt.id] = prompt;
+                }
+            }
+
+            const localPromptsMap = {};
+            for (const prompt of localCat.prompts || []) {
+                if (prompt.id) {
+                    localPromptsMap[prompt.id] = prompt;
+                }
+            }
+
+            const allPromptIds = new Set([
+                ...Object.keys(serverPromptsMap),
+                ...Object.keys(localPromptsMap)
+            ]);
+
+            for (const promptId of allPromptIds) {
+                const serverPrompt = serverPromptsMap[promptId];
+                const localPrompt = localPromptsMap[promptId];
+
+                // 仅服务器有：检查是"服务器新增"还是"本地删除"
+                if (serverPrompt && !localPrompt) {
+                    const serverPromptTime = new Date(serverPrompt.updated_at || serverPrompt.created_at || 0);
+
+                    // 如果服务器提示词的时间戳 > 本地数据的 last_modified
+                    // 说明是服务器新增的，保留
+                    if (serverPromptTime > localLastModified) {
+                        mergedCategory.prompts.push(serverPrompt);
+                    }
+                    // 否则：是本地删除的提示词，不添加
+                    continue;
+                }
+
+                // 仅本地有：检查是"本地新增"还是"服务器删除"
+                if (!serverPrompt && localPrompt) {
+                    const localPromptTime = new Date(localPrompt.updated_at || localPrompt.created_at || 0);
+                    const serverLastModified = new Date(serverData.last_modified || 0);
+
+                    // 如果本地提示词的时间戳 > 服务器的 last_modified
+                    // 说明是本地新增的（在服务器最后更新之后创建），保留
+                    if (localPromptTime > serverLastModified) {
+                        logger.info(`[SmartMerge] 保留本地新增提示词: ${localPrompt.alias || localPrompt.prompt} (${localPromptTime.toISOString()} > ${serverLastModified.toISOString()})`);
+                        mergedCategory.prompts.push(localPrompt);
+                    } else {
+                        logger.info(`[SmartMerge] 检测到服务器删除提示词: ${localPrompt.alias || localPrompt.prompt} (${localPromptTime.toISOString()} <= ${serverLastModified.toISOString()})`);
+                    }
+                    // 否则：是服务器删除的提示词（服务器在这个提示词之后有更新），不添加
+                    continue;
+                }
+
+                // 两边都有：比较时间戳
+                const serverTime = new Date(serverPrompt.updated_at || serverPrompt.created_at || 0);
+                const localTime = new Date(localPrompt.updated_at || localPrompt.created_at || 0);
+
+                if (serverTime >= localTime) {
+                    mergedCategory.prompts.push(serverPrompt);
+                } else {
+                    mergedCategory.prompts.push(localPrompt);
+                }
+            }
+
+            // 比较分类级别的时间戳
+            const serverCatTime = new Date(serverCat.updated_at || 0);
+            const localCatTime = new Date(localCat.updated_at || 0);
+
+            if (localCatTime > serverCatTime) {
+                mergedCategory.updated_at = localCat.updated_at;
+            }
+
+            merged.categories.push(mergedCategory);
+        }
+
+        logger.info(`✓ 智能合并完成: ${merged.categories.length} 个分类`);
+        return merged;
+    }
+
+    /**
+     * 设置同步完成回调
+     */
+    onSync(callback) {
+        this.onSyncCallback = callback;
+    }
+
+    /**
+     * 设置错误回调
+     */
+    onError(callback) {
+        this.onErrorCallback = callback;
+    }
+
+    /**
+     * 更新本地数据的时间戳
+     * 在任何本地修改操作后调用此方法，确保智能合并能正确识别本地更改
+     *
+     * @param {Object} promptData - 提示词数据对象
+     * @param {string} categoryName - 分类名称（可选，如果提供则同时更新分类时间戳）
+     * @param {string} promptId - 提示词ID（可选，如果提供则同时更新提示词时间戳）
+     */
+    static updateLocalTimestamps(promptData, categoryName = null, promptId = null) {
+        const now = new Date().toISOString();
+
+        // 总是更新全局 last_modified
+        promptData.last_modified = now;
+
+        // 如果指定了分类名称，更新分类的 updated_at
+        if (categoryName) {
+            const category = promptData.categories.find(c => c.name === categoryName);
+            if (category) {
+                category.updated_at = now;
+
+                // 如果指定了提示词ID，更新提示词的 updated_at
+                if (promptId) {
+                    const prompt = category.prompts.find(p => p.id === promptId);
+                    if (prompt) {
+                        prompt.updated_at = now;
+                    }
+                }
+            }
+        }
+
+        return now;
+    }
+}
+
 // 提示词选择器节点
 app.registerExtension({
     name: "Comfy.PromptSelector",
@@ -89,6 +478,10 @@ app.registerExtension({
                 this.isSaving = false; // 当前是否正在保存
                 this.saveRetryCount = 0; // 保存重试计数
                 this.maxSaveRetries = 3; // 最大重试次数
+
+                // 初始化数据同步管理器（多节点数据同步）
+                this.syncManager = new PromptDataSyncManager(this);
+                this.syncStatus = 'idle'; // 同步状态: idle, syncing, error
 
                 // 获取隐藏的输出小部件
                 const outputWidget = this.widgets.find(w => w.name === "selected_prompts");
@@ -261,6 +654,40 @@ app.registerExtension({
                         this.renderContent();
                         this.updateOutput(); // 更新一次初始输出
                         updateUIText(this);
+
+                        // 启动数据同步管理器（自动检测多节点间的数据变更）
+                        logger.info("启动数据同步管理器...");
+
+                        // 设置同步完成回调（更新UI）
+                        this.syncManager.onSync((mergedData) => {
+                            logger.info("同步完成，刷新UI");
+                            this.syncStatus = 'idle';
+
+                            // 更新本地 promptData（关键！）
+                            this.promptData = mergedData;
+
+                            // 检查当前分类是否还存在
+                            const categoryExists = mergedData.categories.some(c => c.name === this.selectedCategory);
+                            if (!categoryExists && mergedData.categories.length > 0) {
+                                this.selectedCategory = mergedData.categories[0].name;
+                                this.properties.selectedCategory = this.selectedCategory;
+                            }
+
+                            // 刷新UI
+                            this.updateCategoryDropdown();
+                            this.renderContent();
+                            this.updateOutput();
+                        });
+
+                        // 设置错误回调
+                        this.syncManager.onError((error) => {
+                            logger.error("同步错误:", error);
+                            this.syncStatus = 'error';
+                            this.showToast('数据同步失败，已暂停自动同步', 'error');
+                        });
+
+                        // 启动自动同步
+                        this.syncManager.start();
                     })
                     .catch(error => {
                         logger.error("加载提示词数据失败:", error);
@@ -862,21 +1289,8 @@ app.registerExtension({
                         deleteBtn.addEventListener('click', (e) => {
                             e.stopPropagation(); // Prevent item's click event
                             this.showConfirmModal(t('delete_prompt_confirm', { prompt: p.alias || p.prompt }), () => {
-                                const category = this.promptData.categories.find(c => c.name === this.selectedCategory);
-                                if (category) {
-                                    const promptIndex = category.prompts.findIndex(item => item.id === p.id);
-                                    if (promptIndex > -1) {
-                                        category.prompts.splice(promptIndex, 1);
-                                        // 当一个提示词被删除时，需要从所有分类的选中项中移除它
-                                        Object.values(this.selectedPrompts).forEach(selectionSet => {
-                                            selectionSet.delete(p.prompt);
-                                        });
-                                        this.saveData();
-                                        this.showToast(t('delete_success'));
-                                        this.renderContent();
-                                        this.updateOutput();
-                                    }
-                                }
+                                // 调用统一的 deletePrompt 方法（会调用后端API并重新拉取数据）
+                                this.deletePrompt(this.selectedCategory, p.id);
                             });
                         });
 
@@ -990,7 +1404,14 @@ app.registerExtension({
                 };
 
                 /**
-                 * 保存数据到服务器（使用队列机制防止并发冲突）
+                 * 保存数据到服务器（使用队列机制防止并发冲突 + 智能合并）
+                 *
+                 * 保存流程：
+                 * 1. 暂停自动同步
+                 * 2. 从服务器拉取最新数据
+                 * 3. 执行智能合并（本地修改 + 服务器最新数据）
+                 * 4. 保存合并后的数据
+                 * 5. 恢复自动同步
                  *
                  * @returns {Promise} 保存操作的 Promise
                  */
@@ -1001,24 +1422,71 @@ app.registerExtension({
                         this.isSaving = true;
                         this.saveRetryCount = 0;
 
+                        // 暂停自动同步（避免在保存过程中发生同步）
+                        if (this.syncManager) {
+                            this.syncManager.pause();
+                        }
+
                         const attemptSave = async (retryCount = 0) => {
                             try {
                                 logger.info(`开始保存数据（尝试 ${retryCount + 1}/${this.maxSaveRetries + 1}）...`);
 
-                                const response = await api.fetchApi("/prompt_selector/data", {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify(this.promptData),
-                                });
+                                // === 步骤1：拉取服务器最新数据 ===
+                                logger.info("正在拉取服务器最新数据以执行智能合并...");
+                                const serverResponse = await api.fetchApi("/prompt_selector/data");
 
-                                if (!response.ok) {
-                                    const errorText = await response.text();
-                                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                                if (!serverResponse.ok) {
+                                    throw new Error(`拉取服务器数据失败: HTTP ${serverResponse.status}`);
                                 }
 
-                                // 保存成功
-                                logger.info("✓ 数据保存成功");
+                                const serverData = await serverResponse.json();
+
+                                // === 步骤2：智能合并本地和服务器数据 ===
+                                logger.info("执行智能合并（本地修改 + 服务器最新）...");
+                                const mergedData = this.syncManager.smartMerge(this.promptData, serverData);
+
+                                // 更新本地数据为合并后的结果
+                                this.promptData = mergedData;
+
+                                // === 步骤3：保存合并后的数据 ===
+                                logger.info("保存合并后的数据到服务器...");
+                                const saveResponse = await api.fetchApi("/prompt_selector/data", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(mergedData),
+                                });
+
+                                if (!saveResponse.ok) {
+                                    const errorText = await saveResponse.text();
+                                    throw new Error(`HTTP ${saveResponse.status}: ${errorText}`);
+                                }
+
+                                const saveResult = await saveResponse.json();
+
+                                // 使用服务器返回的最新数据更新本地状态（包含所有更新后的时间戳）
+                                if (saveResult.success && saveResult.data) {
+                                    this.promptData = saveResult.data;
+
+                                    // 更新同步管理器的时间戳
+                                    if (this.syncManager) {
+                                        this.syncManager.lastModified = saveResult.data.last_modified;
+                                    }
+
+                                    logger.info(`✓ 数据已保存并更新，last_modified: ${saveResult.data.last_modified}`);
+                                } else {
+                                    // 兼容旧版本响应格式
+                                    if (saveResult.last_modified && this.syncManager) {
+                                        this.syncManager.lastModified = saveResult.last_modified;
+                                    }
+                                    logger.info("✓ 数据保存成功（含智能合并）");
+                                }
                                 this.isSaving = false;
+
+                                // 恢复自动同步
+                                if (this.syncManager) {
+                                    this.syncManager.resume();
+                                }
+
                                 return true;
 
                             } catch (error) {
@@ -1034,6 +1502,12 @@ app.registerExtension({
                                     // 重试次数用尽，显示错误
                                     this.showToast(t('save_error'), 'error');
                                     this.isSaving = false;
+
+                                    // 恢复自动同步（即使保存失败）
+                                    if (this.syncManager) {
+                                        this.syncManager.resume();
+                                    }
+
                                     throw error;
                                 }
                             }
@@ -1044,6 +1518,12 @@ app.registerExtension({
                         // 最终失败处理
                         logger.error("数据保存最终失败:", error);
                         this.isSaving = false;
+
+                        // 确保恢复自动同步
+                        if (this.syncManager) {
+                            this.syncManager.resume();
+                        }
+
                         // 不再抛出错误，避免影响队列
                     });
 
@@ -1414,6 +1894,7 @@ app.registerExtension({
                             }
                         }
 
+                        const now = new Date().toISOString();
                         const newId = `prompt-${Date.now()}`;
                         const updatedPrompt = {
                             id: isNew ? newId : prompt.id,
@@ -1424,7 +1905,8 @@ app.registerExtension({
                             tags: prompt.tags || [],
                             favorite: prompt.favorite || false,
                             template: prompt.template || false,
-                            created_at: prompt.created_at || new Date().toISOString(),
+                            created_at: prompt.created_at || now,
+                            updated_at: now,  // 添加/更新时设置 updated_at
                             usage_count: prompt.usage_count || 0,
                             last_used: prompt.last_used
                         };
@@ -1440,7 +1922,7 @@ app.registerExtension({
                                 let category = this.promptData.categories.find(c => c.name === categoryName);
                                 // 如果分类不存在，则创建它
                                 if (!category) {
-                                    category = { name: categoryName, prompts: [] };
+                                    category = { name: categoryName, prompts: [], updated_at: now };
                                     this.promptData.categories.push(category);
                                 }
                                 category.prompts.push(updatedPrompt);
@@ -1464,6 +1946,8 @@ app.registerExtension({
                                     }
                                 }
                             }
+
+                            // saveData() 会自动从服务器获取最新的时间戳，无需手动更新
 
                             await this.saveData();
 
@@ -1676,9 +2160,27 @@ app.registerExtension({
                     };
                     document.addEventListener('ps-data-updated', dataUpdateHandler);
 
+                    // 监听同步事件，当其他节点修改数据时自动刷新弹窗
+                    const dataSyncedHandler = (e) => {
+                        logger.info("词库弹窗检测到数据同步，刷新列表");
+
+                        // 刷新分类树
+                        const categoryTree = this.buildCategoryTree(this.promptData.categories);
+                        const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
+                        categoryTreeContainer.innerHTML = '';
+                        categoryTreeContainer.appendChild(treeElement);
+
+                        // 刷新当前显示的提示词列表
+                        if (this.selectedCategory) {
+                            this.renderPromptList(this.selectedCategory);
+                        }
+                    };
+                    document.addEventListener('ps-data-synced', dataSyncedHandler);
+
                     const closeModal = () => {
                         document.removeEventListener('keydown', handleKeydown);
                         document.removeEventListener('ps-data-updated', dataUpdateHandler);
+                        document.removeEventListener('ps-data-synced', dataSyncedHandler);
                         modal.remove();
                     };
                     modal.querySelector("#ps-library-close").addEventListener("click", closeModal);
@@ -1860,18 +2362,25 @@ app.registerExtension({
                                 });
 
                                 if (response.ok) {
-                                    // 更新本地数据
-                                    const category = this.promptData.categories.find(c => c.name === this.selectedCategory);
-                                    if (category) {
-                                        const promptsToDelete = category.prompts.filter(p => this.selectedForBatch.has(p.id));
-                                        // 从选中项中移除
-                                        if (this.selectedPrompts[this.selectedCategory]) {
-                                            promptsToDelete.forEach(p => {
-                                                this.selectedPrompts[this.selectedCategory].delete(p.prompt);
-                                            });
-                                        }
-                                        category.prompts = category.prompts.filter(p => !this.selectedForBatch.has(p.id));
+                                    logger.info("✓ 批量删除成功，从服务器重新拉取最新数据");
+
+                                    // 从服务器重新拉取数据（包括后端更新的时间戳）
+                                    const dataResponse = await api.fetchApi("/prompt_selector/data");
+                                    const freshData = await dataResponse.json();
+                                    this.promptData = freshData;
+
+                                    // 更新同步管理器的时间戳
+                                    if (this.syncManager) {
+                                        this.syncManager.lastModified = freshData.last_modified;
                                     }
+
+                                    logger.info(`服务器数据已更新，last_modified: ${freshData.last_modified}`);
+
+                                    // 触发数据同步事件，通知其他UI组件（如library modal）刷新
+                                    document.dispatchEvent(new CustomEvent('ps-data-synced', {
+                                        detail: { data: freshData }
+                                    }));
+
                                     this.selectedForBatch.clear();
                                     this.renderPromptList(this.selectedCategory);
                                     this.renderContent(); // 刷新主节点
@@ -1911,15 +2420,24 @@ app.registerExtension({
                                         });
 
                                         if (response.ok) {
-                                            const data = await response.json();
-                                            // 更新本地数据
-                                            if (data.categories) {
-                                                this.promptData.categories = data.categories;
-                                            } else {
-                                                // If categories are missing, re-fetch all data to ensure consistency
-                                                const refreshedData = await api.fetchApi("/prompt_selector/data").then(r => r.json());
-                                                this.promptData = refreshedData;
+                                            logger.info("✓ 批量移动成功，从服务器重新拉取最新数据");
+
+                                            // 从服务器重新拉取最新数据（包含更新后的时间戳）
+                                            const refreshedData = await api.fetchApi("/prompt_selector/data").then(r => r.json());
+                                            this.promptData = refreshedData;
+
+                                            // 更新同步管理器的时间戳
+                                            if (this.syncManager) {
+                                                this.syncManager.lastModified = refreshedData.last_modified;
                                             }
+
+                                            logger.info(`服务器数据已更新，last_modified: ${refreshedData.last_modified}`);
+
+                                            // 触发数据同步事件，通知其他UI组件（如library modal）刷新
+                                            document.dispatchEvent(new CustomEvent('ps-data-synced', {
+                                                detail: { data: refreshedData }
+                                            }));
+
                                             this.selectedForBatch.clear();
                                             this.renderPromptList(this.selectedCategory);
                                             this.showToast('批量移动成功！');
@@ -1978,19 +2496,42 @@ app.registerExtension({
                             return;
                         }
 
-                        category.prompts = [...favorites, ...nonFavorites];
+                        // 生成新的排序ID列表
+                        const orderedIds = [...favorites, ...nonFavorites].map(p => p.id);
 
                         try {
-                            await this.saveData();
+                            // ✅ 调用后端排序 API
+                            await api.fetchApi("/prompt_selector/prompts/update_order", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    category: categoryName,
+                                    ordered_ids: orderedIds
+                                })
+                            });
+
+                            logger.info("✓ 收藏置顶成功，从服务器重新拉取最新数据");
+
+                            // ✅ 重新拉取数据
+                            const freshData = await api.fetchApi("/prompt_selector/data").then(r => r.json());
+                            this.promptData = freshData;
+
+                            if (this.syncManager) {
+                                this.syncManager.lastModified = freshData.last_modified;
+                            }
+
+                            // 触发数据同步事件，通知其他UI组件（如library modal）刷新
+                            document.dispatchEvent(new CustomEvent('ps-data-synced', {
+                                detail: { data: freshData }
+                            }));
+
                             this.renderPromptList(categoryName, '', true);
-                            // 刷新外部列表和输出
                             this.renderContent();
                             this.updateOutput();
                             this.showToast("收藏词条已置顶！");
                         } catch (error) {
                             logger.error("置顶收藏失败:", error);
                             this.showToast("操作失败，请重试", 'error');
-                            // 如果失败，可能需要恢复原始顺序
                         }
                     });
                 };
@@ -2133,14 +2674,23 @@ app.registerExtension({
                         });
 
                         if (response.ok) {
-                            // 更新本地数据
-                            const category = this.promptData.categories.find(c => c.name === categoryName);
-                            if (category) {
-                                const prompt = category.prompts.find(p => p.id === promptId);
-                                if (prompt) {
-                                    prompt.favorite = !prompt.favorite;
-                                }
+                            logger.info("✓ 收藏状态切换成功，从服务器重新拉取最新数据");
+
+                            // 从服务器重新拉取数据（包括后端更新的时间戳）
+                            const dataResponse = await api.fetchApi("/prompt_selector/data");
+                            const freshData = await dataResponse.json();
+                            this.promptData = freshData;
+
+                            // 更新同步管理器的时间戳
+                            if (this.syncManager) {
+                                this.syncManager.lastModified = freshData.last_modified;
                             }
+
+                            // 触发数据同步事件，通知其他UI组件（如library modal）刷新
+                            document.dispatchEvent(new CustomEvent('ps-data-synced', {
+                                detail: { data: freshData }
+                            }));
+
                             // 重新渲染列表
                             const modal = document.querySelector('.ps-library-modal');
                             if (modal) {
@@ -2154,6 +2704,8 @@ app.registerExtension({
 
                 this.deletePrompt = async (categoryName, promptId) => {
                     try {
+                        logger.info(`🗑️ 开始删除提示词: category="${categoryName}", promptId="${promptId}"`);
+
                         const response = await api.fetchApi("/prompt_selector/prompts/batch_delete", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
@@ -2161,16 +2713,37 @@ app.registerExtension({
                         });
 
                         if (response.ok) {
-                            // 更新本地数据
+                            logger.info("✓ 后端删除成功，从服务器重新拉取最新数据");
+
+                            // 从服务器重新拉取数据（包括后端更新的时间戳）
+                            const dataResponse = await api.fetchApi("/prompt_selector/data");
+                            const freshData = await dataResponse.json();
+                            this.promptData = freshData;
+
+                            // 更新同步管理器的时间戳
+                            if (this.syncManager) {
+                                this.syncManager.lastModified = freshData.last_modified;
+                            }
+
+                            logger.info(`服务器数据已更新，last_modified: ${freshData.last_modified}`);
+
+                            // 从选中项中移除已删除的提示词
                             const category = this.promptData.categories.find(c => c.name === categoryName);
-                            if (category) {
-                                const promptToDelete = category.prompts.find(p => p.id === promptId);
-                                category.prompts = category.prompts.filter(p => p.id !== promptId);
-                                // 从选中项中移除
-                                if (promptToDelete && this.selectedPrompts[categoryName]) {
-                                    this.selectedPrompts[categoryName].delete(promptToDelete.prompt);
+                            if (category && this.selectedPrompts[categoryName]) {
+                                // 检查哪些选中的提示词已经被删除
+                                const validPrompts = new Set(category.prompts.map(p => p.prompt));
+                                for (const selectedPrompt of this.selectedPrompts[categoryName]) {
+                                    if (!validPrompts.has(selectedPrompt)) {
+                                        this.selectedPrompts[categoryName].delete(selectedPrompt);
+                                    }
                                 }
                             }
+
+                            // 触发数据同步事件，通知其他UI组件（如library modal）刷新
+                            document.dispatchEvent(new CustomEvent('ps-data-synced', {
+                                detail: { data: freshData }
+                            }));
+
                             // 重新渲染列表
                             const modal = document.querySelector('.ps-library-modal');
                             if (modal) {
@@ -2193,8 +2766,8 @@ app.registerExtension({
                     const category = this.promptData.categories.find(c => c.name === categoryName);
                     if (!category) return;
 
-                    // 重新排序本地数据
-                    const prompts = category.prompts;
+                    // 重新排序本地数据（临时，仅用于生成orderedIds）
+                    const prompts = [...category.prompts]; // 创建副本
                     const [movedItem] = prompts.splice(fromIndex, 1);
                     prompts.splice(toIndex, 0, movedItem);
 
@@ -2206,6 +2779,23 @@ app.registerExtension({
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ category: categoryName, ordered_ids: orderedIds })
                         });
+
+                        logger.info("✓ 排序更新成功，从服务器重新拉取最新数据");
+
+                        // 从服务器重新拉取数据（包括后端更新的时间戳）
+                        const dataResponse = await api.fetchApi("/prompt_selector/data");
+                        const freshData = await dataResponse.json();
+                        this.promptData = freshData;
+
+                        // 更新同步管理器的时间戳
+                        if (this.syncManager) {
+                            this.syncManager.lastModified = freshData.last_modified;
+                        }
+
+                        // 触发数据同步事件，通知其他UI组件（如library modal）刷新
+                        document.dispatchEvent(new CustomEvent('ps-data-synced', {
+                            detail: { data: freshData }
+                        }));
                     } catch (error) {
                         logger.error("更新排序失败:", error);
                     }
@@ -2322,6 +2912,8 @@ app.registerExtension({
                                 }
                             }
                             this.selectedPrompts = newSelectedPrompts;
+
+                            // saveData() 会自动从服务器获取最新的时间戳，无需手动更新
 
                             // 使用 await 等待保存完成
                             await this.saveData();
@@ -2445,17 +3037,50 @@ app.registerExtension({
                     }
                     this.showConfirmModal(t('clear_category_confirm', { category: categoryName }), async () => {
                         const category = this.promptData.categories.find(c => c.name === categoryName);
-                        if (category) {
-                            category.prompts = [];
-
-                            // 使用 await 等待保存完成
-                            await this.saveData();
-
+                        if (!category || category.prompts.length === 0) {
                             this.showToast(t('clear_category_success'));
-                            const modal = document.querySelector('.ps-library-modal');
-                            if (modal && this.selectedCategory === categoryName) {
-                                this.renderPromptList(categoryName);
+                            return;
+                        }
+
+                        // 获取所有提示词ID
+                        const promptIds = category.prompts.map(p => p.id);
+
+                        try {
+                            // ✅ 调用批量删除 API
+                            const response = await api.fetchApi("/prompt_selector/prompts/batch_delete", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    category: categoryName,
+                                    prompt_ids: promptIds
+                                })
+                            });
+
+                            if (response.ok) {
+                                logger.info("✓ 分类已清空，从服务器重新拉取最新数据");
+
+                                // ✅ 重新拉取数据
+                                const freshData = await api.fetchApi("/prompt_selector/data").then(r => r.json());
+                                this.promptData = freshData;
+
+                                if (this.syncManager) {
+                                    this.syncManager.lastModified = freshData.last_modified;
+                                }
+
+                                // 触发数据同步事件，通知其他UI组件（如library modal）刷新
+                                document.dispatchEvent(new CustomEvent('ps-data-synced', {
+                                    detail: { data: freshData }
+                                }));
+
+                                this.showToast(t('clear_category_success'));
+                                const modal = document.querySelector('.ps-library-modal');
+                                if (modal && this.selectedCategory === categoryName) {
+                                    this.renderPromptList(categoryName);
+                                }
                             }
+                        } catch (error) {
+                            logger.error("清空分类失败:", error);
+                            this.showToast(error.message, 'error');
                         }
                     });
                 };
@@ -3377,6 +4002,13 @@ app.registerExtension({
             // 节点移除时的回调
             const onRemoved = nodeType.prototype.onRemoved;
             nodeType.prototype.onRemoved = function () {
+                // 停止数据同步管理器（防止内存泄漏）
+                if (this.syncManager) {
+                    logger.info("停止数据同步管理器...");
+                    this.syncManager.stop();
+                    this.syncManager = null;
+                }
+
                 // 移除所有可能悬浮的UI元素
                 this.hidePromptTooltip?.();
                 this.hideActivePromptsPreview?.();

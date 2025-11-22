@@ -70,6 +70,7 @@ logs/*
 # 临时文件
 *.tmp
 *.temp
+temp_*
 
 # Cache files
 py/character_feature_swap/cache/

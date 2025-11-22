@@ -225,14 +225,63 @@ async def get_data(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
+@PromptServer.instance.routes.get("/prompt_selector/metadata")
+async def get_metadata(request):
+    """
+    获取数据元信息（不返回完整数据，仅用于检查是否有更新）
+
+    返回格式:
+    {
+        "last_modified": "2025-01-22T10:30:45.123Z",
+        "version": "1.6",
+        "categories_count": 5,
+        "total_prompts": 120
+    }
+    """
+    if not os.path.exists(DATA_FILE):
+        return web.json_response({"error": "Data file not found"}, status=404)
+    try:
+        with open(DATA_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        total_prompts = sum(len(cat.get("prompts", [])) for cat in data.get("categories", []))
+
+        metadata = {
+            "last_modified": data.get("last_modified"),
+            "version": data.get("version"),
+            "categories_count": len(data.get("categories", [])),
+            "total_prompts": total_prompts
+        }
+
+        return web.json_response(metadata)
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
 @PromptServer.instance.routes.post("/prompt_selector/data")
 async def save_data(request):
     try:
-        data = await request.json()
-        # 使用原子保存机制，确保数据安全
-        _atomic_save_json(DATA_FILE, data, create_backup=True)
+        new_data = await request.json()
 
-        return web.json_response({"success": True})
+        # 读取旧数据用于智能时间戳更新
+        old_data = None
+        if os.path.exists(DATA_FILE):
+            try:
+                with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                    old_data = json.load(f)
+            except Exception as e:
+                logger.warning(f"读取旧数据失败，将跳过时间戳比较: {e}")
+
+        # 智能更新时间戳（检测变更并只更新修改的项）
+        updated_data = _update_timestamps(new_data, old_data)
+
+        # 使用原子保存机制，确保数据安全
+        _atomic_save_json(DATA_FILE, updated_data, create_backup=True)
+
+        # 返回完整的最新数据（包含所有更新后的时间戳）
+        return web.json_response({
+            "success": True,
+            "data": updated_data
+        })
     except ValueError as e:
         # 数据验证失败
         logger.error(f"数据验证失败: {e}")
@@ -296,7 +345,7 @@ async def upload_image(request):
         return web.json_response({"error": str(e)}, status=500)
 
 def _ensure_data_compatibility(data):
-    """确保导入的数据与当前版本兼容"""
+    """确保导入的数据与当前版本兼容，自动添加时间戳字段"""
     if "version" not in data:
         data["version"] = "1.6" # 假设是旧版本
 
@@ -307,11 +356,19 @@ def _ensure_data_compatibility(data):
             "save_selection": True
         }
 
+    # 添加全局 last_modified 时间戳
+    if "last_modified" not in data:
+        data["last_modified"] = datetime.now().isoformat()
+
     for category in data.get("categories", []):
         # 移除旧的 last_selected 字段
         if "last_selected" in category:
             del category["last_selected"]
-            
+
+        # 为分类添加 updated_at 时间戳
+        if "updated_at" not in category:
+            category["updated_at"] = datetime.now().isoformat()
+
         for prompt in category.get("prompts", []):
             if "id" not in prompt or not prompt["id"]:
                 prompt["id"] = str(uuid.uuid4())
@@ -325,11 +382,119 @@ def _ensure_data_compatibility(data):
                 prompt["image"] = ""
             if "created_at" not in prompt:
                 prompt["created_at"] = datetime.now().isoformat()
+            # 为提示词添加 updated_at 时间戳
+            if "updated_at" not in prompt:
+                prompt["updated_at"] = prompt.get("created_at", datetime.now().isoformat())
             if "usage_count" not in prompt:
                 prompt["usage_count"] = 0
             if "last_used" not in prompt:
                 prompt["last_used"] = None
     return data
+
+def _update_timestamps(new_data, old_data=None):
+    """
+    智能更新时间戳：
+    1. 比较新旧数据，检测哪些提示词被修改
+    2. 为新增的提示词添加 created_at 和 updated_at
+    3. 为修改的提示词更新 updated_at
+    4. 更新全局 last_modified
+
+    Args:
+        new_data: 新的数据（从客户端接收）
+        old_data: 旧的数据（从文件读取），如果为 None 则跳过比较
+
+    Returns:
+        更新时间戳后的 new_data
+    """
+    now = datetime.now().isoformat()
+
+    # 更新全局 last_modified
+    new_data["last_modified"] = now
+
+    # 如果没有旧数据，直接确保所有字段存在
+    if old_data is None:
+        return _ensure_data_compatibility(new_data)
+
+    # 创建旧数据的快速查找映射
+    old_categories_map = {cat["name"]: cat for cat in old_data.get("categories", [])}
+
+    for new_category in new_data.get("categories", []):
+        cat_name = new_category.get("name")
+        old_category = old_categories_map.get(cat_name)
+
+        # 如果是新分类
+        if not old_category:
+            new_category["updated_at"] = now
+            # 新分类中的所有提示词也是新的
+            for prompt in new_category.get("prompts", []):
+                if "created_at" not in prompt:
+                    prompt["created_at"] = now
+                prompt["updated_at"] = now
+            continue
+
+        # 比较分类级别的变更（如分类名称、设置等）
+        category_modified = False
+        for key in new_category:
+            if key in ("prompts", "updated_at"):
+                continue
+            if new_category.get(key) != old_category.get(key):
+                category_modified = True
+                break
+
+        # 创建旧提示词的快速查找映射（使用 ID）
+        old_prompts_map = {p.get("id"): p for p in old_category.get("prompts", []) if p.get("id")}
+
+        # 检查提示词变更
+        for new_prompt in new_category.get("prompts", []):
+            prompt_id = new_prompt.get("id")
+
+            # 如果提示词没有 ID，是新提示词
+            if not prompt_id:
+                new_prompt["id"] = str(uuid.uuid4())
+                new_prompt["created_at"] = now
+                new_prompt["updated_at"] = now
+                category_modified = True
+                continue
+
+            old_prompt = old_prompts_map.get(prompt_id)
+
+            # 如果是新提示词（ID 不在旧数据中）
+            if not old_prompt:
+                if "created_at" not in new_prompt:
+                    new_prompt["created_at"] = now
+                new_prompt["updated_at"] = now
+                category_modified = True
+                continue
+
+            # 比较提示词内容是否变更
+            prompt_modified = False
+            for key in new_prompt:
+                if key in ("updated_at", "last_used", "usage_count"):
+                    continue
+                if new_prompt.get(key) != old_prompt.get(key):
+                    prompt_modified = True
+                    category_modified = True
+                    break
+
+            # 如果提示词被修改，更新 updated_at
+            if prompt_modified:
+                new_prompt["updated_at"] = now
+            else:
+                # 保持旧的时间戳
+                new_prompt["updated_at"] = old_prompt.get("updated_at", old_prompt.get("created_at", now))
+
+            # 确保 created_at 存在
+            if "created_at" not in new_prompt:
+                new_prompt["created_at"] = old_prompt.get("created_at", now)
+
+        # 更新分类的 updated_at
+        if category_modified:
+            new_category["updated_at"] = now
+        else:
+            new_category["updated_at"] = old_category.get("updated_at", now)
+
+    # 确保所有必需字段存在
+    return _ensure_data_compatibility(new_data)
 
 @PromptServer.instance.routes.post("/prompt_selector/pre_import")
 async def pre_import_zip(request):
@@ -486,12 +651,19 @@ async def rename_category(request):
             return web.json_response({"error": "Category name already exists"}, status=400)
             
         # 查找并重命名分类
+        renamed_category = None
         for category in file_data["categories"]:
             if category["name"] == old_name:
                 category["name"] = new_name
+                renamed_category = category
                 break
         else:
             return web.json_response({"error": "Category not found"}, status=404)
+
+        # 更新分类和全局时间戳
+        now = datetime.now().isoformat()
+        renamed_category["updated_at"] = now
+        file_data["last_modified"] = now
 
         # 使用原子保存机制
         _atomic_save_json(DATA_FILE, file_data, create_backup=True)
@@ -561,8 +733,13 @@ async def batch_delete_prompts(request):
                 for i, prompt in enumerate(category["prompts"]):
                     if not prompt.get("id"):
                         prompt["id"] = str(uuid.uuid4())
-                        
+
                 category["prompts"] = [p for p in category["prompts"] if p.get("id") not in prompt_ids]
+
+                # 更新分类和全局时间戳（删除操作）
+                now = datetime.now().isoformat()
+                category["updated_at"] = now
+                file_data["last_modified"] = now
                 break
 
         # 使用原子保存机制
@@ -605,8 +782,14 @@ async def batch_move_prompts(request):
             if prompt.get("id") in prompt_ids:
                 prompts_to_move.append(prompt)
                 source_cat["prompts"].remove(prompt)
-                
+
         target_cat["prompts"].extend(prompts_to_move)
+
+        # 更新源分类和目标分类的时间戳
+        now = datetime.now().isoformat()
+        source_cat["updated_at"] = now
+        target_cat["updated_at"] = now
+        file_data["last_modified"] = now
 
         # 使用原子保存机制
         _atomic_save_json(DATA_FILE, file_data, create_backup=True)
@@ -636,6 +819,11 @@ async def update_prompt_order(request):
                 prompt_map = {p.get("id"): p for p in category["prompts"]}
                 # 按新顺序重新排列
                 category["prompts"] = [prompt_map[pid] for pid in ordered_ids if pid in prompt_map]
+
+                # 更新分类和全局时间戳（排序操作）
+                now = datetime.now().isoformat()
+                category["updated_at"] = now
+                file_data["last_modified"] = now
                 break
 
         # 使用原子保存机制
@@ -665,6 +853,12 @@ async def toggle_favorite(request):
                 for prompt in category["prompts"]:
                     if prompt.get("id") == prompt_id:
                         prompt["favorite"] = not prompt.get("favorite", False)
+
+                        # 更新提示词、分类和全局时间戳
+                        now = datetime.now().isoformat()
+                        prompt["updated_at"] = now
+                        category["updated_at"] = now
+                        file_data["last_modified"] = now
                         break
                 break
 
@@ -799,6 +993,7 @@ def initialize_data_file():
                 # 如果复制失败，创建一个基本的空结构
                 fallback_data = {
                     "version": "1.6",
+                    "last_modified": datetime.now().isoformat(),
                     "categories": [],
                     "settings": {
                         "language": "zh-CN",
@@ -812,6 +1007,7 @@ def initialize_data_file():
             # 如果 default.json 也不存在，创建一个基本的空结构
             fallback_data = {
                 "version": "1.6",
+                "last_modified": datetime.now().isoformat(),
                 "categories": [],
                 "settings": {
                     "language": "zh-CN",
@@ -821,6 +1017,39 @@ def initialize_data_file():
             }
             _atomic_save_json(DATA_FILE, fallback_data, create_backup=False)
             logger.error("⚠️ 默认词库文件不存在，已创建空词库结构")
+
+    # === 新增：升级现有数据文件，添加时间戳字段 ===
+    # 如果 data.json 已存在，检查并添加缺失的时间戳字段
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                existing_data = json.load(f)
+
+            # 检查是否缺少 last_modified 字段
+            needs_upgrade = "last_modified" not in existing_data
+
+            # 检查分类和提示词是否缺少时间戳
+            for category in existing_data.get("categories", []):
+                if "updated_at" not in category:
+                    needs_upgrade = True
+                    break
+                for prompt in category.get("prompts", []):
+                    if "updated_at" not in prompt:
+                        needs_upgrade = True
+                        break
+                if needs_upgrade:
+                    break
+
+            # 如果需要升级，使用 _ensure_data_compatibility 添加时间戳
+            if needs_upgrade:
+                logger.info("📝 检测到数据文件缺少时间戳字段，正在升级...")
+                upgraded_data = _ensure_data_compatibility(existing_data)
+                _atomic_save_json(DATA_FILE, upgraded_data, create_backup=True)
+                logger.info("✅ 数据文件已升级，添加了时间戳字段")
+
+        except Exception as e:
+            logger.error(f"⚠️ 升级数据文件失败: {e}")
+            # 不影响启动，继续运行
 
 # 在插件加载时调用初始化
 initialize_data_file()
