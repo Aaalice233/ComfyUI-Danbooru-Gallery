@@ -10,6 +10,50 @@ import { createLogger } from '../global/logger_client.js';
 const logger = createLogger('prompt_selector');
 
 // ============================================================================
+// 工具函数
+// ============================================================================
+
+/**
+ * 生成唯一的分类ID
+ * 格式: cat-{timestamp}-{random}
+ * @returns {string} 唯一的分类ID
+ */
+function generateCategoryId() {
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    return `cat-${timestamp}-${random}`;
+}
+
+/**
+ * 数据迁移：为旧数据中缺少ID的分类添加唯一ID
+ * @param {Object} promptData - 提示词数据对象
+ * @returns {boolean} 是否进行了迁移
+ */
+function migrateCategoriesToId(promptData) {
+    if (!promptData || !promptData.categories) {
+        return false;
+    }
+
+    let migrated = false;
+    const now = new Date().toISOString();  // 生成当前时间戳
+
+    for (const category of promptData.categories) {
+        if (!category.id) {
+            category.id = generateCategoryId();
+            category.updated_at = now;  // 🔧 关键修复：更新时间戳，确保smartMerge能正确判断
+            migrated = true;
+            logger.info(`为分类 "${category.name}" 生成ID: ${category.id}`);
+        }
+    }
+
+    if (migrated) {
+        logger.info("✓ 分类数据迁移完成，已为旧数据添加ID");
+    }
+
+    return migrated;
+}
+
+// ============================================================================
 // 数据同步管理器 - 处理多节点间的数据同步和智能合并
 // ============================================================================
 
@@ -215,27 +259,33 @@ class PromptDataSyncManager {
         // 获取本地数据的最后修改时间（用于判断删除操作）
         const localLastModified = new Date(localData.last_modified || 0);
 
-        // 创建服务器分类的映射（按名称）
+        // 创建服务器分类的映射（按ID，优先；如果没有ID则降级使用name）
         const serverCategoriesMap = {};
+        const serverCategoriesByName = {};  // 备用：按name的映射，用于处理旧数据
         for (const serverCat of serverData.categories || []) {
-            serverCategoriesMap[serverCat.name] = serverCat;
+            const key = serverCat.id || `name:${serverCat.name}`;  // 优先ID，降级name
+            serverCategoriesMap[key] = serverCat;
+            serverCategoriesByName[serverCat.name] = serverCat;  // 备用映射
         }
 
-        // 创建本地分类的映射
+        // 创建本地分类的映射（按ID，优先；如果没有ID则降级使用name）
         const localCategoriesMap = {};
+        const localCategoriesByName = {};  // 备用：按name的映射，用于处理旧数据
         for (const localCat of localData.categories || []) {
-            localCategoriesMap[localCat.name] = localCat;
+            const key = localCat.id || `name:${localCat.name}`;  // 优先ID，降级name
+            localCategoriesMap[key] = localCat;
+            localCategoriesByName[localCat.name] = localCat;  // 备用映射
         }
 
         // 合并所有分类（服务器 + 本地独有的）
-        const allCategoryNames = new Set([
+        const allCategoryKeys = new Set([
             ...Object.keys(serverCategoriesMap),
             ...Object.keys(localCategoriesMap)
         ]);
 
-        for (const categoryName of allCategoryNames) {
-            const serverCat = serverCategoriesMap[categoryName];
-            const localCat = localCategoriesMap[categoryName];
+        for (const categoryKey of allCategoryKeys) {
+            const serverCat = serverCategoriesMap[categoryKey];
+            const localCat = localCategoriesMap[categoryKey];
 
             // 情况1：仅服务器有
             if (serverCat && !localCat) {
@@ -264,9 +314,15 @@ class PromptDataSyncManager {
             }
 
             // 情况3：两边都有，需要合并提示词
+            // 比较分类级别的时间戳，使用更新的数据
+            const serverCatTime = new Date(serverCat.updated_at || 0);
+            const localCatTime = new Date(localCat.updated_at || 0);
+            const useLocal = localCatTime > serverCatTime;
+
             const mergedCategory = {
-                name: categoryName,
-                updated_at: serverCat.updated_at,
+                id: serverCat.id || localCat.id,  // 保留ID（优先服务器）
+                name: useLocal ? localCat.name : serverCat.name,  // 使用更新的那边的名称（处理重命名）
+                updated_at: useLocal ? localCat.updated_at : serverCat.updated_at,
                 prompts: []
             };
 
@@ -333,14 +389,6 @@ class PromptDataSyncManager {
                 } else {
                     mergedCategory.prompts.push(localPrompt);
                 }
-            }
-
-            // 比较分类级别的时间戳
-            const serverCatTime = new Date(serverCat.updated_at || 0);
-            const localCatTime = new Date(localCat.updated_at || 0);
-
-            if (localCatTime > serverCatTime) {
-                mergedCategory.updated_at = localCat.updated_at;
             }
 
             merged.categories.push(mergedCategory);
@@ -571,6 +619,16 @@ app.registerExtension({
                     .then(response => response.json())
                     .then(data => {
                         this.promptData = data;
+
+                        // 数据迁移：为旧数据添加分类ID
+                        const migrated = migrateCategoriesToId(this.promptData);
+                        if (migrated) {
+                            // 迁移后需要保存数据
+                            this.saveData().catch(err => {
+                                logger.error("迁移后保存数据失败:", err);
+                            });
+                        }
+
                         // 转换语言代码：zh-CN -> zh, en-US -> en
                         const legacyLang = this.promptData.settings?.language || "zh-CN";
                         const globalLang = legacyLang === "zh-CN" ? "zh" : "en";
@@ -2286,7 +2344,11 @@ app.registerExtension({
                                 this.showToast(t('category_exists'), 'error');
                                 return;
                             }
-                            const newCategory = { name: finalName, prompts: [] };
+                            const newCategory = {
+                                id: generateCategoryId(),
+                                name: finalName,
+                                prompts: []
+                            };
                             this.promptData.categories.push(newCategory);
                             this.saveData();
 
@@ -2833,7 +2895,11 @@ app.registerExtension({
                                 this.showToast(t('category_exists'), 'error');
                                 return;
                             }
-                            const newCategory = { name: finalName, prompts: [] };
+                            const newCategory = {
+                                id: generateCategoryId(),
+                                name: finalName,
+                                prompts: []
+                            };
                             this.promptData.categories.push(newCategory);
                             this.saveData();
                             // Refresh tree
@@ -2889,13 +2955,16 @@ app.registerExtension({
                         }
 
                         let wasUpdated = false;
+                        const now = new Date().toISOString();
                         this.promptData.categories.forEach(cat => {
                             if (cat.name === oldName) {
                                 cat.name = newFullName;
+                                cat.updated_at = now;  // 更新时间戳，确保smartMerge能识别这是最新修改
                                 wasUpdated = true;
                             } else if (cat.name.startsWith(oldName + '/')) {
                                 const restOfPath = cat.name.substring(oldName.length);
                                 cat.name = newFullName + restOfPath;
+                                cat.updated_at = now;  // 更新子分类时间戳
                                 wasUpdated = true;
                             }
                         });
