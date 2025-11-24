@@ -14,6 +14,22 @@ const logger = createLogger('prompt_selector');
 // ============================================================================
 
 /**
+ * 简单的字符串哈希函数（用于生成确定性ID）
+ * @param {string} str - 要哈希的字符串
+ * @returns {string} 哈希值（十六进制字符串）
+ */
+function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    // 转换为正数并返回16进制字符串
+    return Math.abs(hash).toString(16).padStart(8, '0');
+}
+
+/**
  * 生成唯一的分类ID
  * 格式: cat-{timestamp}-{random}
  * @returns {string} 唯一的分类ID
@@ -25,7 +41,19 @@ function generateCategoryId() {
 }
 
 /**
- * 数据迁移：为旧数据中缺少ID的分类添加唯一ID
+ * 基于分类名称生成确定性ID（用于数据迁移）
+ * 相同的分类名称在不同节点上会生成相同的ID
+ * 格式: cat-{hash}
+ * @param {string} categoryName - 分类名称
+ * @returns {string} 确定性的分类ID
+ */
+function generateDeterministicId(categoryName) {
+    const hash = simpleHash(categoryName);
+    return `cat-${hash}`;
+}
+
+/**
+ * 数据迁移：为旧数据中缺少ID的分类添加确定性ID
  * @param {Object} promptData - 提示词数据对象
  * @returns {boolean} 是否进行了迁移
  */
@@ -39,15 +67,16 @@ function migrateCategoriesToId(promptData) {
 
     for (const category of promptData.categories) {
         if (!category.id) {
-            category.id = generateCategoryId();
-            category.updated_at = now;  // 🔧 关键修复：更新时间戳，确保smartMerge能正确判断
+            // 使用确定性ID生成，确保相同分类名称在不同节点上生成相同的ID
+            category.id = generateDeterministicId(category.name);
+            category.updated_at = now;  // 更新时间戳，确保smartMerge能正确判断
             migrated = true;
-            logger.info(`为分类 "${category.name}" 生成ID: ${category.id}`);
+            logger.info(`为分类 "${category.name}" 生成确定性ID: ${category.id}`);
         }
     }
 
     if (migrated) {
-        logger.info("✓ 分类数据迁移完成，已为旧数据添加ID");
+        logger.info("✓ 分类数据迁移完成，已为旧数据添加确定性ID");
     }
 
     return migrated;
@@ -218,7 +247,10 @@ class PromptDataSyncManager {
 
             // 触发自定义事件（用于UI更新）
             document.dispatchEvent(new CustomEvent('ps-data-synced', {
-                detail: { data: mergedData }
+                detail: {
+                    data: mergedData,
+                    sourceNodeId: this.node.id  // 传递节点ID
+                }
             }));
 
         } catch (error) {
@@ -228,13 +260,37 @@ class PromptDataSyncManager {
     }
 
     /**
-     * 智能合并算法：基于时间戳合并本地和服务器数据
+     * 分类查找辅助函数：统一的分类匹配逻辑
+     * 
+     * 优先使用ID匹配，如果ID不存在或匹配失败，降级使用name匹配
+     * 
+     * @param {Object} targetCat - 目标分类对象
+     * @param {Object} categoriesById - 按ID索引的分类映射
+     * @param {Object} categoriesByName - 按name索引的分类映射
+     * @returns {Object|null} 匹配的分类对象，如果未找到返回null
+     */
+    findCategoryMatch(targetCat, categoriesById, categoriesByName) {
+        // 优先使用ID查找
+        if (targetCat.id && categoriesById[targetCat.id]) {
+            return categoriesById[targetCat.id];
+        }
+
+        // 降级使用name查找
+        if (targetCat.name && categoriesByName[targetCat.name]) {
+            return categoriesByName[targetCat.name];
+        }
+
+        return null;
+    }
+
+    /**
+     * 智能合并算法：合并本地和服务器数据
      *
-     * 规则：
-     * 1. 新增项目：两边都保留
-     * 2. 修改项目：保留 updated_at 较新的版本
-     * 3. 删除检测：如果服务器有但本地没有，比较时间戳判断是"服务器新增"还是"本地删除"
-     * 4. ID 冲突：优先保留 updated_at 较新的
+     * 修复后的规则：
+     * 1. 仅服务器有：直接添加（服务器新增的分类）
+     * 2. 仅本地有：直接添加（本地新建的分类）
+     * 3. 两边都有：比较时间戳，使用较新的数据，并合并提示词
+     * 4. 移除基于时间戳的"删除推断"逻辑，改为直接检查数据存在性
      *
      * @param {Object} localData - 本地数据
      * @param {Object} serverData - 服务器数据
@@ -243,11 +299,12 @@ class PromptDataSyncManager {
     smartMerge(localData, serverData) {
         // 如果本地数据为空，直接使用服务器数据
         if (!localData || !localData.categories) {
-            logger.info("本地数据为空，使用服务器数据");
+            logger.info("[SmartMerge] 本地数据为空，使用服务器数据");
             return serverData;
         }
 
-        logger.info("执行智能合并...");
+        logger.info("[SmartMerge] 开始执行智能合并...");
+        logger.info(`[SmartMerge] 本地分类数: ${localData.categories.length}, 服务器分类数: ${serverData.categories.length}`);
 
         const merged = {
             version: serverData.version,
@@ -256,145 +313,126 @@ class PromptDataSyncManager {
             categories: []
         };
 
-        // 获取本地数据的最后修改时间（用于判断删除操作）
-        const localLastModified = new Date(localData.last_modified || 0);
-
-        // 创建服务器分类的映射（按ID，优先；如果没有ID则降级使用name）
-        const serverCategoriesMap = {};
-        const serverCategoriesByName = {};  // 备用：按name的映射，用于处理旧数据
+        // 创建服务器分类的映射（独立的 ById 和 ByName 映射）
+        const serverCategoriesById = {};
+        const serverCategoriesByName = {};
         for (const serverCat of serverData.categories || []) {
-            const key = serverCat.id || `name:${serverCat.name}`;  // 优先ID，降级name
-            serverCategoriesMap[key] = serverCat;
-            serverCategoriesByName[serverCat.name] = serverCat;  // 备用映射
+            if (serverCat.id) {
+                serverCategoriesById[serverCat.id] = serverCat;
+            }
+            serverCategoriesByName[serverCat.name] = serverCat;
         }
 
-        // 创建本地分类的映射（按ID，优先；如果没有ID则降级使用name）
-        const localCategoriesMap = {};
-        const localCategoriesByName = {};  // 备用：按name的映射，用于处理旧数据
+        // 创建本地分类的映射（独立的 ById 和 ByName 映射）
+        const localCategoriesById = {};
+        const localCategoriesByName = {};
         for (const localCat of localData.categories || []) {
-            const key = localCat.id || `name:${localCat.name}`;  // 优先ID，降级name
-            localCategoriesMap[key] = localCat;
-            localCategoriesByName[localCat.name] = localCat;  // 备用映射
+            if (localCat.id) {
+                localCategoriesById[localCat.id] = localCat;
+            }
+            localCategoriesByName[localCat.name] = localCat;
         }
 
-        // 合并所有分类（服务器 + 本地独有的）
-        const allCategoryKeys = new Set([
-            ...Object.keys(serverCategoriesMap),
-            ...Object.keys(localCategoriesMap)
-        ]);
+        // 用于标记已处理的本地分类
+        const processedLocalCategories = new Set();
 
-        for (const categoryKey of allCategoryKeys) {
-            const serverCat = serverCategoriesMap[categoryKey];
-            const localCat = localCategoriesMap[categoryKey];
+        // 第一步：遍历所有服务器分类
+        for (const serverCat of serverData.categories || []) {
+            const localCat = this.findCategoryMatch(serverCat, localCategoriesById, localCategoriesByName);
 
-            // 情况1：仅服务器有
-            if (serverCat && !localCat) {
-                // 检查是"服务器新增"还是"本地删除"
+            if (!localCat) {
+                // 情况1：仅服务器有（服务器新增的分类）
+                logger.info(`[SmartMerge] 检测到服务器新增分类: "${serverCat.name}" (ID: ${serverCat.id || 'none'})`);
+                merged.categories.push(serverCat);
+            } else {
+                // 情况3：两边都有，需要合并
+                logger.info(`[SmartMerge] 合并分类: "${serverCat.name}" (本地ID: ${localCat.id || 'none'}, 服务器ID: ${serverCat.id || 'none'})`);
+
+                // 标记本地分类已处理
+                processedLocalCategories.add(localCat);
+
+                // 比较分类级别的时间戳，使用更新的数据
                 const serverCatTime = new Date(serverCat.updated_at || 0);
-                if (serverCatTime > localLastModified) {
-                    // 服务器分类比本地数据新 → 服务器新增的分类
-                    merged.categories.push(serverCat);
-                }
-                // 否则：是本地删除的分类，不添加
-                continue;
-            }
-
-            // 情况2：仅本地有 - 检查是"本地新建"还是"服务器删除"
-            if (!serverCat && localCat) {
                 const localCatTime = new Date(localCat.updated_at || 0);
-                const serverLastModified = new Date(serverData.last_modified || 0);
+                const useLocal = localCatTime > serverCatTime;
 
-                // 如果本地分类的时间戳 > 服务器的 last_modified
-                // 说明是本地新建的（在服务器最后更新之后创建），保留
-                if (localCatTime > serverLastModified) {
-                    merged.categories.push(localCat);
+                const mergedCategory = {
+                    id: serverCat.id || localCat.id,  // 保留ID（优先服务器）
+                    name: useLocal ? localCat.name : serverCat.name,  // 使用更新的那边的名称（处理重命名）
+                    updated_at: useLocal ? localCat.updated_at : serverCat.updated_at,
+                    prompts: []
+                };
+
+                // 合并提示词（基于 ID）
+                const serverPromptsMap = {};
+                for (const prompt of serverCat.prompts || []) {
+                    if (prompt.id) {
+                        serverPromptsMap[prompt.id] = prompt;
+                    }
                 }
-                // 否则：是服务器删除的分类（服务器在这个分类之后有更新），不添加
-                continue;
-            }
 
-            // 情况3：两边都有，需要合并提示词
-            // 比较分类级别的时间戳，使用更新的数据
-            const serverCatTime = new Date(serverCat.updated_at || 0);
-            const localCatTime = new Date(localCat.updated_at || 0);
-            const useLocal = localCatTime > serverCatTime;
-
-            const mergedCategory = {
-                id: serverCat.id || localCat.id,  // 保留ID（优先服务器）
-                name: useLocal ? localCat.name : serverCat.name,  // 使用更新的那边的名称（处理重命名）
-                updated_at: useLocal ? localCat.updated_at : serverCat.updated_at,
-                prompts: []
-            };
-
-            // 合并提示词（基于 ID）
-            const serverPromptsMap = {};
-            for (const prompt of serverCat.prompts || []) {
-                if (prompt.id) {
-                    serverPromptsMap[prompt.id] = prompt;
+                const localPromptsMap = {};
+                for (const prompt of localCat.prompts || []) {
+                    if (prompt.id) {
+                        localPromptsMap[prompt.id] = prompt;
+                    }
                 }
-            }
 
-            const localPromptsMap = {};
-            for (const prompt of localCat.prompts || []) {
-                if (prompt.id) {
-                    localPromptsMap[prompt.id] = prompt;
-                }
-            }
+                const allPromptIds = new Set([
+                    ...Object.keys(serverPromptsMap),
+                    ...Object.keys(localPromptsMap)
+                ]);
 
-            const allPromptIds = new Set([
-                ...Object.keys(serverPromptsMap),
-                ...Object.keys(localPromptsMap)
-            ]);
+                for (const promptId of allPromptIds) {
+                    const serverPrompt = serverPromptsMap[promptId];
+                    const localPrompt = localPromptsMap[promptId];
 
-            for (const promptId of allPromptIds) {
-                const serverPrompt = serverPromptsMap[promptId];
-                const localPrompt = localPromptsMap[promptId];
-
-                // 仅服务器有：检查是"服务器新增"还是"本地删除"
-                if (serverPrompt && !localPrompt) {
-                    const serverPromptTime = new Date(serverPrompt.updated_at || serverPrompt.created_at || 0);
-
-                    // 如果服务器提示词的时间戳 > 本地数据的 last_modified
-                    // 说明是服务器新增的，保留
-                    if (serverPromptTime > localLastModified) {
+                    // 仅服务器有：直接添加（服务器新增的提示词）
+                    if (serverPrompt && !localPrompt) {
                         mergedCategory.prompts.push(serverPrompt);
+                        continue;
                     }
-                    // 否则：是本地删除的提示词，不添加
-                    continue;
-                }
 
-                // 仅本地有：检查是"本地新增"还是"服务器删除"
-                if (!serverPrompt && localPrompt) {
-                    const localPromptTime = new Date(localPrompt.updated_at || localPrompt.created_at || 0);
-                    const serverLastModified = new Date(serverData.last_modified || 0);
-
-                    // 如果本地提示词的时间戳 > 服务器的 last_modified
-                    // 说明是本地新增的（在服务器最后更新之后创建），保留
-                    if (localPromptTime > serverLastModified) {
-                        logger.info(`[SmartMerge] 保留本地新增提示词: ${localPrompt.alias || localPrompt.prompt} (${localPromptTime.toISOString()} > ${serverLastModified.toISOString()})`);
+                    // 仅本地有：直接添加（本地新增的提示词）
+                    if (!serverPrompt && localPrompt) {
                         mergedCategory.prompts.push(localPrompt);
-                    } else {
-                        logger.info(`[SmartMerge] 检测到服务器删除提示词: ${localPrompt.alias || localPrompt.prompt} (${localPromptTime.toISOString()} <= ${serverLastModified.toISOString()})`);
+                        continue;
                     }
-                    // 否则：是服务器删除的提示词（服务器在这个提示词之后有更新），不添加
-                    continue;
+
+                    // 两边都有：比较时间戳，使用较新的
+                    const serverTime = new Date(serverPrompt.updated_at || serverPrompt.created_at || 0);
+                    const localTime = new Date(localPrompt.updated_at || localPrompt.created_at || 0);
+
+                    if (serverTime >= localTime) {
+                        mergedCategory.prompts.push(serverPrompt);
+                    } else {
+                        mergedCategory.prompts.push(localPrompt);
+                    }
                 }
 
-                // 两边都有：比较时间戳
-                const serverTime = new Date(serverPrompt.updated_at || serverPrompt.created_at || 0);
-                const localTime = new Date(localPrompt.updated_at || localPrompt.created_at || 0);
-
-                if (serverTime >= localTime) {
-                    mergedCategory.prompts.push(serverPrompt);
-                } else {
-                    mergedCategory.prompts.push(localPrompt);
-                }
+                merged.categories.push(mergedCategory);
             }
-
-            merged.categories.push(mergedCategory);
         }
 
-        logger.info(`✓ 智能合并完成: ${merged.categories.length} 个分类`);
+        // 第二步：处理仅本地有的分类
+        for (const localCat of localData.categories || []) {
+            if (!processedLocalCategories.has(localCat)) {
+                // 情况2：仅本地有（本地新建的分类）
+                logger.info(`[SmartMerge] 检测到本地新增分类: "${localCat.name}" (ID: ${localCat.id || 'none'})`);
+                merged.categories.push(localCat);
+            }
+        }
+
+        logger.info(`[SmartMerge] ✓ 合并完成: ${merged.categories.length} 个分类 (本地: ${localData.categories.length}, 服务器: ${serverData.categories.length})`);
+
+        // 输出分类对比，方便调试
+        const localCatNames = localData.categories.map(c => c.name);
+        const serverCatNames = serverData.categories.map(c => c.name);
+        const mergedCatNames = merged.categories.map(c => c.name);
+        logger.info(`[SmartMerge] 本地分类: [${localCatNames.join(', ')}]`);
+        logger.info(`[SmartMerge] 服务器分类: [${serverCatNames.join(', ')}]`);
+        logger.info(`[SmartMerge] 合并后分类: [${mergedCatNames.join(', ')}]`);
+
         return merged;
     }
 
@@ -449,6 +487,88 @@ class PromptDataSyncManager {
 // 提示词选择器节点
 app.registerExtension({
     name: "Comfy.PromptSelector",
+
+    // ============================================================================
+    // 全局事件监听器设置 - 确保所有节点实例都能接收同步事件
+    // ============================================================================
+    async setup(app) {
+        logger.info("[PromptSelector] 注册全局ps-data-synced监听器");
+
+        // 全局监听器: 监听所有 ps-data-synced 事件,更新所有 PromptSelector 节点
+        document.addEventListener('ps-data-synced', (event) => {
+            const freshData = event.detail.data;
+            const sourceNodeId = event.detail.sourceNodeId;  // 获取源节点ID
+
+            // 查找所有 PromptSelector 节点实例
+            if (!app.graph || !app.graph._nodes) return;
+
+            const promptSelectorNodes = app.graph._nodes.filter(
+                node => node.type === "PromptSelector"
+            );
+
+            logger.info(`[PromptSelector] 全局同步事件触发,更新 ${promptSelectorNodes.length} 个节点 (源节点ID: ${sourceNodeId || 'none'})`);
+
+            // 更新每个节点的数据
+            promptSelectorNodes.forEach(node => {
+                // 更新节点的 promptData
+                node.promptData = freshData;
+
+                // 更新 syncManager 的时间戳
+                if (node.syncManager) {
+                    node.syncManager.lastModified = freshData.last_modified;
+                }
+
+                // ⚠️ 核心修复：跳过源节点的 selectedCategory 检查
+                // 源节点已经在操作方法（如 deleteCategory）中正确处理了 selectedCategory
+                // 只需要检查和更新其他节点
+                const isSourceNode = sourceNodeId && node.id === sourceNodeId;
+
+                if (isSourceNode) {
+                    logger.info(`[PromptSelector] ✓ 跳过源节点 ${node.id} 的分类检查（selectedCategory="${node.selectedCategory}"）`);
+                } else {
+                    // 检查当前选中的分类是否仍然存在
+                    const categoryExists = freshData.categories.some(c => c.name === node.selectedCategory);
+
+                    logger.info(`[PromptSelector] 节点 ${node.id} 分类检查: selectedCategory="${node.selectedCategory}", exists=${categoryExists}, 可用分类数=${freshData.categories.length}`);
+
+                    // 只有当分类确实不存在时才重置
+                    if (!categoryExists && freshData.categories.length > 0 && node.selectedCategory) {
+                        const oldCategory = node.selectedCategory;
+                        node.selectedCategory = freshData.categories[0].name;
+                        node.properties.selectedCategory = node.selectedCategory;
+                        logger.warn(`[PromptSelector] ⚠️ 节点 ${node.id} 分类重置: "${oldCategory}" -> "${node.selectedCategory}"`);
+                        logger.warn(`[PromptSelector] 可用分类: ${freshData.categories.map(c => c.name).join(', ')}`);
+                    } else if (!node.selectedCategory && freshData.categories.length > 0) {
+                        // 如果selectedCategory为空，设置为第一个分类
+                        node.selectedCategory = freshData.categories[0].name;
+                        node.properties.selectedCategory = node.selectedCategory;
+                        logger.info(`[PromptSelector] 节点 ${node.id} 初始化分类: "${node.selectedCategory}"`);
+                    }
+                }
+
+                // 如果节点有打开的词库弹窗,刷新弹窗UI
+                if (node.refreshLibraryModal) {
+                    node.refreshLibraryModal(freshData);
+                }
+
+                // ⚠️ 关键修复：只更新数据，不调用UI更新方法
+                // 避免全局事件导致其他节点的selectedCategory被意外修改
+                // UI更新由各节点自己在需要时调用
+                // if (node.updateCategoryDropdown) {
+                //     node.updateCategoryDropdown();
+                // }
+                // if (node.renderContent) {
+                //     node.renderContent();
+                // }
+                // if (node.updateOutput) {
+                //     node.updateOutput();
+                // }
+            });
+        });
+
+        logger.info("[PromptSelector] 全局监听器注册完成");
+    },
+
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name === "PromptSelector") {
 
@@ -1031,6 +1151,13 @@ app.registerExtension({
                             });
                         }
                     }
+
+                    // ✅ 修复: 同步更新widget值,确保节点UI与selectedCategory保持一致
+                    // 这样可以防止分类管理操作(重命名/添加分类)后选中状态重置的问题
+                    const widget = this.widgets.find(w => w.name === "prompt_selector");
+                    if (widget) {
+                        widget.value = this.selectedCategory;
+                    }
                 };
 
                 this.renderContent = () => {
@@ -1539,6 +1666,14 @@ app.registerExtension({
                                     logger.info("✓ 数据保存成功（含智能合并）");
                                 }
                                 this.isSaving = false;
+
+                                // 触发数据同步事件，通知主界面更新UI（包括分类按钮显示）
+                                document.dispatchEvent(new CustomEvent('ps-data-synced', {
+                                    detail: {
+                                        data: this.promptData,
+                                        sourceNodeId: this.id
+                                    }
+                                }));
 
                                 // 恢复自动同步
                                 if (this.syncManager) {
@@ -2107,9 +2242,71 @@ app.registerExtension({
                     }
                 };
 
-                this.showLibraryModal = () => {
+                this.showLibraryModal = async () => {
                     // 防止重复创建
                     if (document.querySelector(".ps-library-modal")) return;
+
+                    // --- 阶段二: 弹窗打开时主动检查服务器数据更新 ---
+                    logger.info("[PromptSelector] 词库弹窗打开,检查服务器数据是否有更新");
+
+                    try {
+                        // 快速检查服务器元数据 (仅时间戳, 不拉取完整数据)
+                        const metadataResponse = await api.fetchApi("/prompt_selector/metadata", {
+                            method: "GET",
+                            cache: "no-cache"
+                        });
+
+                        if (metadataResponse.ok) {
+                            const metadata = await metadataResponse.json();
+                            const serverLastModified = metadata.last_modified;
+                            const localLastModified = this.syncManager ? this.syncManager.lastModified : null;
+
+                            logger.info(`[PromptSelector] 服务器时间戳: ${serverLastModified}, 本地时间戳: ${localLastModified}`);
+
+                            // 如果服务器数据更新了,重新拉取完整数据
+                            if (serverLastModified !== localLastModified) {
+                                logger.info("[PromptSelector] 检测到服务器数据更新,重新拉取完整数据");
+
+                                const dataResponse = await api.fetchApi("/prompt_selector/data");
+                                const freshData = await dataResponse.json();
+
+                                // 更新本地数据
+                                this.promptData = freshData;
+
+                                // 更新同步管理器时间戳
+                                if (this.syncManager) {
+                                    this.syncManager.lastModified = freshData.last_modified;
+                                }
+
+                                // 检查当前选中的分类是否仍然存在
+                                const categoryExists = freshData.categories.some(c => c.name === this.selectedCategory);
+                                if (!categoryExists && freshData.categories.length > 0) {
+                                    this.selectedCategory = freshData.categories[0].name;
+                                    this.properties.selectedCategory = this.selectedCategory;
+                                }
+
+                                // 刷新节点UI
+                                if (this.updateCategoryDropdown) {
+                                    this.updateCategoryDropdown();
+                                }
+                                if (this.renderContent) {
+                                    this.renderContent();
+                                }
+                                if (this.updateOutput) {
+                                    this.updateOutput();
+                                }
+
+                                logger.info("[PromptSelector] 数据同步完成,使用最新数据渲染弹窗");
+                            } else {
+                                logger.info("[PromptSelector] 本地数据已是最新,直接使用");
+                            }
+                        } else {
+                            logger.warn("[PromptSelector] 元数据请求失败,降级使用本地数据");
+                        }
+                    } catch (error) {
+                        logger.error("[PromptSelector] 检查服务器数据失败,降级使用本地数据:", error);
+                        // 降级策略: 使用本地数据继续打开弹窗
+                    }
 
                     const modal = document.createElement("div");
                     modal.className = "ps-library-modal";
@@ -2268,11 +2465,14 @@ app.registerExtension({
                     favoritesButton.className = 'ps-btn ps-favorites-btn';
                     favoritesButton.innerHTML = `<span>${t('favorites_category')}</span>`;
                     favoritesButton.addEventListener('click', (e) => {
-                        this.selectedCategory = "__favorites__";
+                        // ⚠️ 核心修复：在词库弹窗中浏览收藏夹时，不修改节点的 selectedCategory
+                        // this.selectedCategory = "__favorites__";  // ← 删除这行！
                         this.renderPromptList("__favorites__");
                         // Handle selection state
                         modal.querySelectorAll('.ps-tree-item.selected').forEach(el => el.classList.remove('selected'));
                         favoritesButton.classList.add('selected');
+                        // 存储词库弹窗当前浏览的分类（收藏夹）
+                        modal.dataset.currentBrowsingCategory = "__favorites__";
                     });
 
                     favoritesContainer.appendChild(favoritesButton);
@@ -2281,18 +2481,37 @@ app.registerExtension({
                     leftPanel.insertBefore(favoritesContainer, categoryHeader);
 
 
-                    // 默认渲染第一个分类的提示词
-                    // Select first non-favorite category by default
+                    // 默认渲染当前选中的分类
+                    // ⚠️ 修复：不应该强制修改selectedCategory，应该保持原有选中状态
                     if (this.promptData.categories.length > 0) {
-                        const firstItem = categoryTreeContainer.querySelector('.ps-tree-item'); // 获取树中的第一个项目
-                        if (firstItem) {
-                            this.selectedCategory = firstItem.closest('li').dataset.fullName; // 从元素中获取正确的分类名
+                        // ⚠️ 关键修复：data-full-name 在 li 元素上，不在 .ps-tree-item 上
+                        const li = categoryTreeContainer.querySelector(`li[data-full-name="${this.selectedCategory}"]`);
+                        const selectedItem = li ? li.querySelector('.ps-tree-item') : null;
 
-                            // 清除所有已选项并选中第一个
+                        if (selectedItem) {
+                            // 如果当前选中的分类存在，标记为selected
                             modal.querySelectorAll('.ps-tree-item.selected, .ps-favorites-btn.selected').forEach(el => el.classList.remove('selected'));
-                            firstItem.classList.add('selected');
-
+                            selectedItem.classList.add('selected');
+                            // 展开父级分类
+                            let parentLi = selectedItem.closest('li.parent');
+                            while (parentLi) {
+                                parentLi.classList.add('open');
+                                parentLi = parentLi.parentElement.closest('li.parent');
+                            }
                             this.renderPromptList(this.selectedCategory);
+                        } else {
+                            // ⚠️ 核心修复：即使找不到当前分类的DOM，也不修改 selectedCategory
+                            // 可能是分类被删除了，或者DOM还没渲染完成，仅在弹窗内显示第一个分类
+                            const firstLi = categoryTreeContainer.querySelector('li[data-full-name]');
+                            const firstItem = firstLi ? firstLi.querySelector('.ps-tree-item') : null;
+                            if (firstItem && firstLi) {
+                                const firstCategoryName = firstLi.dataset.fullName;
+                                modal.querySelectorAll('.ps-tree-item.selected, .ps-favorites-btn.selected').forEach(el => el.classList.remove('selected'));
+                                firstItem.classList.add('selected');
+                                // 在弹窗中显示第一个分类的内容，但不修改节点的 selectedCategory
+                                this.renderPromptList(firstCategoryName);
+                                modal.dataset.currentBrowsingCategory = firstCategoryName;
+                            }
                         }
                     } else {
                         this.renderPromptList(null); // 没有分类时清空列表
@@ -2357,6 +2576,19 @@ app.registerExtension({
                             const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
                             categoryTreeContainer.innerHTML = '';
                             categoryTreeContainer.appendChild(treeElement);
+
+                            // 恢复选中状态
+                            modal.querySelectorAll('.ps-tree-item.selected, .ps-favorites-btn.selected').forEach(el => el.classList.remove('selected'));
+                            const selectedItem = categoryTreeContainer.querySelector(`.ps-tree-item[data-full-name="${this.selectedCategory}"]`);
+                            if (selectedItem) {
+                                selectedItem.classList.add('selected');
+                                let parentLi = selectedItem.closest('li.parent');
+                                while (parentLi) {
+                                    parentLi.classList.add('open');
+                                    parentLi = parentLi.parentElement.closest('li.parent');
+                                }
+                            }
+                            this.renderPromptList(this.selectedCategory);
                         });
                     });
 
@@ -2440,7 +2672,10 @@ app.registerExtension({
 
                                     // 触发数据同步事件，通知其他UI组件（如library modal）刷新
                                     document.dispatchEvent(new CustomEvent('ps-data-synced', {
-                                        detail: { data: freshData }
+                                        detail: {
+                                            data: freshData,
+                                            sourceNodeId: this.id
+                                        }
                                     }));
 
                                     this.selectedForBatch.clear();
@@ -2497,7 +2732,10 @@ app.registerExtension({
 
                                             // 触发数据同步事件，通知其他UI组件（如library modal）刷新
                                             document.dispatchEvent(new CustomEvent('ps-data-synced', {
-                                                detail: { data: refreshedData }
+                                                detail: {
+                                                    data: refreshedData,
+                                                    sourceNodeId: this.id
+                                                }
                                             }));
 
                                             this.selectedForBatch.clear();
@@ -2584,7 +2822,10 @@ app.registerExtension({
 
                             // 触发数据同步事件，通知其他UI组件（如library modal）刷新
                             document.dispatchEvent(new CustomEvent('ps-data-synced', {
-                                detail: { data: freshData }
+                                detail: {
+                                    data: freshData,
+                                    sourceNodeId: this.id
+                                }
                             }));
 
                             this.renderPromptList(categoryName, '', true);
@@ -2703,6 +2944,88 @@ app.registerExtension({
                     });
                 };
 
+                // --- refreshLibraryModal 方法: 供全局监听器调用,刷新已打开的词库弹窗 ---
+                // ⚠️ 重要：此方法只负责UI刷新，不应修改 selectedCategory
+                // selectedCategory 的修改完全由操作方法（如 deleteCategory）和全局监听器负责
+                this.refreshLibraryModal = (newData) => {
+                    logger.info(`[PromptSelector] refreshLibraryModal 被调用 (节点ID: ${this.id}, 当前分类: "${this.selectedCategory}")`);
+
+                    // 检查词库弹窗是否已打开
+                    const modal = document.querySelector('.ps-library-modal');
+                    if (!modal) {
+                        logger.info("[PromptSelector] 词库弹窗未打开,跳过UI刷新");
+                        return;
+                    }
+
+                    logger.info("[PromptSelector] 词库弹窗已打开,开始刷新UI");
+
+                    // 获取弹窗中的关键DOM元素
+                    const categoryTreeContainer = modal.querySelector('.ps-category-tree');
+                    if (!categoryTreeContainer) {
+                        logger.warn("[PromptSelector] 找不到分类树容器,刷新中止");
+                        return;
+                    }
+
+                    // 刷新分类树DOM
+                    const categoryTree = this.buildCategoryTree(newData.categories);
+                    const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
+                    categoryTreeContainer.innerHTML = '';
+                    categoryTreeContainer.appendChild(treeElement);
+
+                    logger.info("[PromptSelector] 分类树DOM已刷新");
+
+                    // ⚠️ 核心修复：只更新UI选中状态，不修改 this.selectedCategory
+                    // this.selectedCategory 已经由 deleteCategory 或全局监听器正确设置
+
+                    // 检查当前选中的分类是否仍然存在（仅用于UI处理）
+                    const categoryExists = newData.categories.some(c => c.name === this.selectedCategory);
+
+                    logger.info(`[PromptSelector] UI刷新: selectedCategory="${this.selectedCategory}", exists=${categoryExists}`);
+
+                    if (categoryExists) {
+                        // 分类存在，在DOM中恢复选中状态
+                        // ⚠️ 修复：data-full-name 在 li 元素上，而不是 .ps-tree-item 上
+                        const li = categoryTreeContainer.querySelector(`li[data-full-name="${this.selectedCategory}"]`);
+                        const selectedItem = li ? li.querySelector('.ps-tree-item') : null;
+
+                        if (selectedItem) {
+                            // 清除所有选中状态
+                            modal.querySelectorAll('.ps-tree-item.selected, .ps-favorites-btn.selected').forEach(el => el.classList.remove('selected'));
+                            // 标记当前选中
+                            selectedItem.classList.add('selected');
+                            logger.info(`[PromptSelector] ✓ UI已更新: 标记分类 "${this.selectedCategory}" 为选中`);
+                        } else {
+                            logger.warn(`[PromptSelector] ⚠️ UI警告: 无法在DOM中找到分类 "${this.selectedCategory}" 的元素`);
+                            logger.warn(`[PromptSelector] 可用分类: ${newData.categories.map(c => c.name).join(', ')}`);
+                        }
+
+                        // 刷新提示词列表
+                        this.renderPromptList(this.selectedCategory);
+                        logger.info(`[PromptSelector] 提示词列表已刷新: ${this.selectedCategory}`);
+                    } else {
+                        // 分类不存在（已被删除）
+                        logger.warn(`[PromptSelector] 警告: 当前分类 "${this.selectedCategory}" 已不存在`);
+                        logger.warn(`[PromptSelector] 注意: selectedCategory 应该已经被 deleteCategory 或全局监听器更新`);
+
+                        // 清除所有选中状态
+                        modal.querySelectorAll('.ps-tree-item.selected, .ps-favorites-btn.selected').forEach(el => el.classList.remove('selected'));
+
+                        // 如果 selectedCategory 仍然有值，尝试在DOM中找到并选中
+                        if (this.selectedCategory) {
+                            const li = categoryTreeContainer.querySelector(`li[data-full-name="${this.selectedCategory}"]`);
+                            const selectedItem = li ? li.querySelector('.ps-tree-item') : null;
+                            if (selectedItem) {
+                                selectedItem.classList.add('selected');
+                                logger.info(`[PromptSelector] UI已更新: 标记新分类 "${this.selectedCategory}" 为选中`);
+                            }
+                        }
+
+                        // 刷新提示词列表（可能为空）
+                        this.renderPromptList(this.selectedCategory);
+                        logger.info(`[PromptSelector] 提示词列表已刷新`);
+                    }
+                };
+
                 // --- 新增的管理功能方法 ---
 
                 this.findPromptAndCategory = (promptId) => {
@@ -2750,7 +3073,10 @@ app.registerExtension({
 
                             // 触发数据同步事件，通知其他UI组件（如library modal）刷新
                             document.dispatchEvent(new CustomEvent('ps-data-synced', {
-                                detail: { data: freshData }
+                                detail: {
+                                    data: freshData,
+                                    sourceNodeId: this.id
+                                }
                             }));
 
                             // 重新渲染列表
@@ -2803,7 +3129,10 @@ app.registerExtension({
 
                             // 触发数据同步事件，通知其他UI组件（如library modal）刷新
                             document.dispatchEvent(new CustomEvent('ps-data-synced', {
-                                detail: { data: freshData }
+                                detail: {
+                                    data: freshData,
+                                    sourceNodeId: this.id
+                                }
                             }));
 
                             // 重新渲染列表
@@ -2856,7 +3185,10 @@ app.registerExtension({
 
                         // 触发数据同步事件，通知其他UI组件（如library modal）刷新
                         document.dispatchEvent(new CustomEvent('ps-data-synced', {
-                            detail: { data: freshData }
+                            detail: {
+                                data: freshData,
+                                sourceNodeId: this.id
+                            }
                         }));
                     } catch (error) {
                         logger.error("更新排序失败:", error);
@@ -2910,6 +3242,19 @@ app.registerExtension({
                                 const treeElement = this.renderCategoryTree(categoryTree, categoryTreeContainer);
                                 categoryTreeContainer.innerHTML = '';
                                 categoryTreeContainer.appendChild(treeElement);
+
+                                // 恢复选中状态
+                                modal.querySelectorAll('.ps-tree-item.selected, .ps-favorites-btn.selected').forEach(el => el.classList.remove('selected'));
+                                const selectedItem = categoryTreeContainer.querySelector(`.ps-tree-item[data-full-name="${this.selectedCategory}"]`);
+                                if (selectedItem) {
+                                    selectedItem.classList.add('selected');
+                                    let parentLi = selectedItem.closest('li.parent');
+                                    while (parentLi) {
+                                        parentLi.classList.add('open');
+                                        parentLi = parentLi.parentElement.closest('li.parent');
+                                    }
+                                }
+                                this.renderPromptList(this.selectedCategory);
                             }
                         });
                     });
@@ -2982,18 +3327,20 @@ app.registerExtension({
                             }
                             this.selectedPrompts = newSelectedPrompts;
 
-                            // saveData() 会自动从服务器获取最新的时间戳，无需手动更新
+                            // ⚠️ 关键修复：先更新selectedCategory，再保存数据
+                            // 这样saveData()触发ps-data-synced事件时，selectedCategory已经是新名称了
+                            if (this.selectedCategory === oldName || this.selectedCategory.startsWith(oldName + '/')) {
+                                const restOfPath = this.selectedCategory.substring(oldName.length);
+                                const newCategoryName = newFullName + restOfPath;
+                                this.selectedCategory = newCategoryName;
+                                this.saveLastCategory(this.selectedCategory);
+                            }
 
+                            // saveData() 会自动从服务器获取最新的时间戳，无需手动更新
                             // 使用 await 等待保存完成
                             await this.saveData();
 
                             this.showToast(t('update_prompt_success'));
-
-                            if (this.selectedCategory === oldName || this.selectedCategory.startsWith(oldName + '/')) {
-                                const restOfPath = this.selectedCategory.substring(oldName.length);
-                                this.selectedCategory = newFullName + restOfPath;
-                                this.saveLastCategory(this.selectedCategory);
-                            }
 
                             const modal = document.querySelector('.ps-library-modal');
                             if (modal) {
@@ -3033,6 +3380,16 @@ app.registerExtension({
                         this.hideActivePromptsPreview();
 
                         try {
+                            // ⚠️ 核心修复：在调用API之前，先计算哪些分类会被删除
+                            // 因为调用API后，服务器返回的数据中已经不包含被删除的分类了
+                            const categoriesToDelete = this.promptData.categories
+                                .filter(c => c.name === categoryName || c.name.startsWith(categoryName + '/'))
+                                .map(c => c.name);
+
+                            // 检查当前选中的分类是否在被删除的分类列表中
+                            const deletedCurrentSelection = categoriesToDelete.includes(this.selectedCategory);
+
+                            // 调用后端API删除
                             const response = await api.fetchApi("/prompt_selector/category/delete", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
@@ -3041,7 +3398,6 @@ app.registerExtension({
 
                             if (!response.ok) {
                                 const error = await response.json();
-                                // logger.error("[DEBUG] API deletion failed:", error);
                                 throw new Error(error.error || "删除失败");
                             }
 
@@ -3049,25 +3405,40 @@ app.registerExtension({
                             const updatedData = await api.fetchApi("/prompt_selector/data").then(r => r.json());
                             this.promptData = updatedData;
 
+                            // Update sync manager timestamp
+                            if (this.syncManager) {
+                                this.syncManager.lastModified = updatedData.last_modified;
+                            }
+
                             // Clean up selections for deleted categories
-                            const categoriesToDelete = this.promptData.categories
-                                .filter(c => c.name === categoryName || c.name.startsWith(categoryName + '/'))
-                                .map(c => c.name);
                             categoriesToDelete.forEach(catName => {
                                 delete this.selectedPrompts[catName];
                             });
 
-                            // Determine the next valid selected category
-                            const currentSelectionStillValid = this.promptData.categories.some(c => c.name === this.selectedCategory);
-                            if (!currentSelectionStillValid) {
+                            // ⚠️ 关键修复：只有当删除的分类是当前选中的分类时，才需要切换
+                            if (deletedCurrentSelection) {
+                                // 当前选中的分类被删除了，需要选择一个新的分类
+                                logger.warn(`[deleteCategory] ⚠️ 当前选中的分类 "${this.selectedCategory}" 被删除，需要切换`);
                                 if (this.promptData.categories.length > 0) {
                                     this.promptData.categories.sort((a, b) => a.name.localeCompare(b.name));
+                                    const oldCategory = this.selectedCategory;
                                     this.selectedCategory = this.promptData.categories[0].name;
+                                    logger.warn(`[deleteCategory] 分类切换: "${oldCategory}" -> "${this.selectedCategory}"`);
                                 } else {
                                     this.selectedCategory = ""; // No categories left
+                                    logger.warn(`[deleteCategory] 无可用分类，清空选择`);
                                 }
+                                this.saveLastCategory(this.selectedCategory);
                             }
-                            this.saveLastCategory(this.selectedCategory);
+
+                            // Trigger global sync event to notify other nodes
+                            // 传递源节点ID，避免全局监听器重复处理当前节点
+                            document.dispatchEvent(new CustomEvent('ps-data-synced', {
+                                detail: {
+                                    data: updatedData,
+                                    sourceNodeId: this.id  // 添加源节点ID
+                                }
+                            }));
 
                             // Refresh UI
                             const modal = document.querySelector('.ps-library-modal');
@@ -3079,7 +3450,9 @@ app.registerExtension({
                                 if (treeElement) categoryTreeContainer.appendChild(treeElement);
 
                                 modal.querySelectorAll('.ps-tree-item.selected').forEach(el => el.classList.remove('selected'));
-                                const selectedItem = categoryTreeContainer.querySelector(`.ps-tree-item[data-full-name="${this.selectedCategory}"]`);
+                                // ⚠️ 修复：data-full-name 在 li 元素上
+                                const li = categoryTreeContainer.querySelector(`li[data-full-name="${this.selectedCategory}"]`);
+                                const selectedItem = li ? li.querySelector('.ps-tree-item') : null;
                                 if (selectedItem) {
                                     selectedItem.classList.add('selected');
                                 }
@@ -3138,7 +3511,10 @@ app.registerExtension({
 
                                 // 触发数据同步事件，通知其他UI组件（如library modal）刷新
                                 document.dispatchEvent(new CustomEvent('ps-data-synced', {
-                                    detail: { data: freshData }
+                                    detail: {
+                                        data: freshData,
+                                        sourceNodeId: this.id
+                                    }
                                 }));
 
                                 this.showToast(t('clear_category_success'));
@@ -3315,17 +3691,26 @@ app.registerExtension({
                             // Library modal logic: combined click for the whole item
                             itemDiv.addEventListener('click', (e) => {
                                 e.stopPropagation();
+                                // ⚠️ 关键修复：只处理左键点击，避免右键点击时修改selectedCategory
+                                if (e.button !== 0) return; // 0 = 左键，2 = 右键
+
                                 const modal = document.querySelector('.ps-library-modal');
                                 if (!modal) return;
 
                                 if (li.classList.contains('parent')) {
                                     li.classList.toggle('open');
                                 }
-                                this.selectedCategory = node.fullName;
-                                this.renderPromptList(this.selectedCategory);
+
+                                // ⚠️ 核心修复：在词库弹窗中浏览分类时，不修改节点的 selectedCategory
+                                // 只更新弹窗内的UI状态，不影响节点主界面的分类选择
+                                // this.selectedCategory = node.fullName;  // ← 删除这行！
+                                this.renderPromptList(node.fullName);  // 使用 node.fullName 而不是 this.selectedCategory
                                 modal.querySelectorAll('.ps-tree-item.selected').forEach(el => el.classList.remove('selected'));
                                 modal.querySelector('.ps-favorites-btn')?.classList.remove('selected');
                                 itemDiv.classList.add('selected');
+
+                                // 存储词库弹窗当前浏览的分类（用于UI显示，不影响节点）
+                                modal.dataset.currentBrowsingCategory = node.fullName;
                             });
 
                             // Context menu for library items
