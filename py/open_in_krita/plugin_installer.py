@@ -85,6 +85,96 @@ class KritaPluginInstaller:
 
         return pykrita
 
+    def _get_kritarc_path(self) -> Optional[Path]:
+        """
+        获取Krita配置文件kritarc的路径
+
+        Windows: %APPDATA%\\krita\\kritarc
+        Linux: ~/.config/kritarc
+        macOS: ~/Library/Preferences/kritarc
+        """
+        if sys.platform == "win32":
+            appdata = os.getenv('APPDATA')
+            if appdata:
+                return Path(appdata) / 'krita' / 'kritarc'
+            return None
+        elif sys.platform == "darwin":
+            return Path.home() / 'Library' / 'Preferences' / 'kritarc'
+        else:
+            return Path.home() / '.config' / 'kritarc'
+
+    def _enable_plugin_in_kritarc(self) -> bool:
+        """
+        在kritarc配置文件中启用插件
+
+        Returns:
+            bool: 成功返回True
+        """
+        try:
+            kritarc_path = self._get_kritarc_path()
+            if not kritarc_path:
+                logger.warning("Cannot determine kritarc path")
+                return False
+
+            # 读取现有配置（如果存在）
+            lines = []
+            if kritarc_path.exists():
+                with open(kritarc_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+
+            # 查找 [python] 部分并设置 enable_open_in_krita=true
+            python_section_found = False
+            plugin_line_found = False
+            new_lines = []
+            in_python_section = False
+
+            for line in lines:
+                stripped = line.strip()
+
+                # 检查是否进入新的section
+                if stripped.startswith('[') and stripped.endswith(']'):
+                    # 如果之前在python section但没找到插件配置，现在要离开了，先添加
+                    if in_python_section and not plugin_line_found:
+                        new_lines.append('enable_open_in_krita=true\n')
+                        plugin_line_found = True
+
+                    in_python_section = (stripped.lower() == '[python]')
+                    if in_python_section:
+                        python_section_found = True
+
+                # 如果在python section中，检查是否有插件配置
+                if in_python_section and stripped.lower().startswith('enable_open_in_krita'):
+                    # 替换为启用状态
+                    new_lines.append('enable_open_in_krita=true\n')
+                    plugin_line_found = True
+                    continue
+
+                new_lines.append(line)
+
+            # 如果文件末尾还在python section且没找到插件配置
+            if in_python_section and not plugin_line_found:
+                new_lines.append('enable_open_in_krita=true\n')
+                plugin_line_found = True
+
+            # 如果没有找到[python] section，添加一个
+            if not python_section_found:
+                new_lines.append('\n[python]\n')
+                new_lines.append('enable_open_in_krita=true\n')
+
+            # 写回文件
+            kritarc_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(kritarc_path, 'w', encoding='utf-8') as f:
+                f.writelines(new_lines)
+
+            logger.info(f"Updated kritarc: {kritarc_path}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to update kritarc: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return False
+
     def check_plugin_installed(self) -> bool:
         """
         检查插件是否已安装
@@ -197,8 +287,13 @@ class KritaPluginInstaller:
                 return False
 
             logger.info(f"Plugin v{self.source_version} installed successfully")
-            logger.info("Please restart Krita and enable the plugin in:")
-            logger.info("  Settings → Configure Krita → Python Plugin Manager")
+
+            # 自动在 kritarc 中启用插件
+            if self._enable_plugin_in_kritarc():
+                logger.info("Plugin auto-enabled in kritarc")
+            else:
+                logger.info("Please restart Krita and enable the plugin in:")
+                logger.info("  Settings → Configure Krita → Python Plugin Manager")
 
             return True
 
