@@ -20,6 +20,12 @@ from ..utils.logger import get_logger
 # 初始化logger
 logger = get_logger(__name__)
 
+# 插件启用提示信息
+PLUGIN_ENABLE_HINT = """如果插件未生效，请检查：
+1. 打开 Krita → Settings → Configure Krita
+2. 进入 Python Plugin Manager
+3. 勾选启用 "Open In Krita" 插件
+4. 重启 Krita"""
 
 # 存储节点等待接收的数据
 _pending_data = {}
@@ -284,10 +290,10 @@ class FetchFromKrita:
                 if success:
                     logger.info(f"✓ Plugin updated to v{source_version}")
 
-                    # Toast提示：更新成功（插件自动启用，无需额外操作）
+                    # Toast提示：更新成功（包含启用说明）
                     PromptServer.instance.send_sync("open-in-krita-notification", {
                         "node_id": unique_id,
-                        "message": f"✓ Krita插件已更新到 v{source_version}\n请再次执行工作流",
+                        "message": f"✓ Krita插件已更新到 v{source_version}\n请重启 Krita 后再次执行工作流\n\n{PLUGIN_ENABLE_HINT}",
                         "type": "success"
                     })
 
@@ -330,10 +336,10 @@ class FetchFromKrita:
                 
                 if success:
                     logger.info(f"✓ Plugin installed successfully: v{installer.source_version}")
-                    # Toast提示：安装成功
+                    # Toast提示：安装成功（包含启用说明）
                     PromptServer.instance.send_sync("open-in-krita-notification", {
                         "node_id": unique_id,
-                        "message": f"✓ Krita插件已安装 v{installer.source_version}",
+                        "message": f"✓ Krita插件已安装 v{installer.source_version}\n\n{PLUGIN_ENABLE_HINT}",
                         "type": "success"
                     })
                 else:
@@ -413,8 +419,8 @@ class FetchFromKrita:
                 pass
             PromptServer.instance.send_sync("open-in-krita-notification", {
                 "node_id": unique_id,
-                "message": "ℹ️ Krita响应超时，使用默认图像",
-                "type": "info"
+                "message": f"⚠️ Krita响应超时，使用默认图像\n\n{PLUGIN_ENABLE_HINT}",
+                "type": "warning"
             })
             final_mask = self._get_final_mask(None, mask, (image.shape[0], image.shape[1], image.shape[2]))
             return (image, final_mask)

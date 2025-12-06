@@ -45,6 +45,55 @@ class KritaPluginInstaller:
             logger.error(f"Error reading source version: {e}")
         return "unknown"
 
+    def _get_source_mtime(self) -> float:
+        """
+        获取源插件目录的最新修改时间
+
+        Returns:
+            float: 最新文件的修改时间戳，如果目录不存在返回0.0
+        """
+        try:
+            source_dir = self.plugin_source_dir / "open_in_krita"
+            if not source_dir.exists():
+                return 0.0
+
+            latest_mtime = 0.0
+            for file in source_dir.rglob("*"):
+                if file.is_file():
+                    mtime = file.stat().st_mtime
+                    if mtime > latest_mtime:
+                        latest_mtime = mtime
+            return latest_mtime
+        except Exception as e:
+            logger.debug(f"Error getting source mtime: {e}")
+            return 0.0
+
+    def _get_installed_mtime(self) -> float:
+        """
+        获取已安装插件目录的最新修改时间
+
+        Returns:
+            float: 最新文件的修改时间戳，如果目录不存在返回0.0
+        """
+        try:
+            if not self.pykrita_dir:
+                return 0.0
+
+            installed_dir = self.pykrita_dir / "open_in_krita"
+            if not installed_dir.exists():
+                return 0.0
+
+            latest_mtime = 0.0
+            for file in installed_dir.rglob("*"):
+                if file.is_file():
+                    mtime = file.stat().st_mtime
+                    if mtime > latest_mtime:
+                        latest_mtime = mtime
+            return latest_mtime
+        except Exception as e:
+            logger.debug(f"Error getting installed mtime: {e}")
+            return 0.0
+
     def _get_plugin_source_dir(self) -> Path:
         """获取插件源文件目录（krita_files）"""
         # 当前文件位于 py/open_in_krita/plugin_installer.py
@@ -193,18 +242,36 @@ class KritaPluginInstaller:
     def needs_update(self) -> bool:
         """
         检查插件是否需要更新
+        优先使用文件修改时间判断，其次使用版本号
 
         Returns:
-            bool: 如果源码版本比已安装版本新，返回True
+            bool: 如果源码比已安装版本新，返回True
         """
         if not self.check_plugin_installed():
             return True  # 未安装，需要安装
 
+        # 优先比较修改时间
+        source_mtime = self._get_source_mtime()
+        installed_mtime = self._get_installed_mtime()
+
+        if source_mtime > 0 and installed_mtime > 0:
+            if source_mtime > installed_mtime:
+                logger.debug(f"Source files are newer (source: {source_mtime}, installed: {installed_mtime})")
+                return True
+            # 如果已安装版本更新或相同，不需要更新
+            logger.debug(f"Installed files are up to date (source: {source_mtime}, installed: {installed_mtime})")
+            return False
+
+        # 如果无法获取修改时间，回退到版本号比较
         installed_version = self.get_installed_version()
         if installed_version is None:
             return True  # 无法获取版本，需要重新安装
 
-        return installed_version != self.source_version
+        if installed_version != self.source_version:
+            logger.debug(f"Version mismatch (source: {self.source_version}, installed: {installed_version})")
+            return True
+
+        return False
 
     def get_installed_version(self) -> Optional[str]:
         """
