@@ -428,6 +428,7 @@ export class FloatingNavigator {
         // 获取组颜色
         const groupColor = this.getGroupColor(group.groupName);
 
+        const zoomScale = group.zoomScale ?? 100;
         item.innerHTML = `
             <div class="qgn-group-color" style="background-color: ${groupColor}"></div>
             <div class="qgn-group-info">
@@ -438,6 +439,13 @@ export class FloatingNavigator {
             </div>
             <div class="qgn-group-actions">
                 <button class="qgn-set-shortcut-button" title="设置快捷键" ${locked ? 'disabled' : ''}>⚡</button>
+                <div class="qgn-zoom-control" title="跳转后缩放幅度">
+                    <button class="qgn-zoom-btn qgn-zoom-minus" ${locked ? 'disabled' : ''}>−</button>
+                    <input type="number" class="qgn-zoom-input" value="${zoomScale}"
+                           min="10" max="500" step="10" ${locked ? 'disabled' : ''}>
+                    <span class="qgn-zoom-unit">%</span>
+                    <button class="qgn-zoom-btn qgn-zoom-plus" ${locked ? 'disabled' : ''}>+</button>
+                </div>
                 <button class="qgn-navigate-button" title="导航到此组">➤</button>
                 ${!locked ? '<button class="qgn-remove-group-button" title="移除">×</button>' : ''}
             </div>
@@ -447,6 +455,29 @@ export class FloatingNavigator {
         const setShortcutButton = item.querySelector('.qgn-set-shortcut-button');
         const navigateButton = item.querySelector('.qgn-navigate-button');
         const removeButton = item.querySelector('.qgn-remove-group-button');
+
+        // 缩放控件事件
+        const zoomInput = item.querySelector('.qgn-zoom-input');
+        const zoomMinus = item.querySelector('.qgn-zoom-minus');
+        const zoomPlus = item.querySelector('.qgn-zoom-plus');
+
+        const updateZoom = (value) => {
+            const newValue = Math.max(10, Math.min(500, value));
+            zoomInput.value = newValue;
+            this.manager.updateGroupZoomScale(group.id, newValue);
+        };
+
+        zoomInput?.addEventListener('change', (e) => {
+            updateZoom(parseInt(e.target.value) || 100);
+        });
+
+        zoomMinus?.addEventListener('click', () => {
+            updateZoom((parseInt(zoomInput.value) || 100) - 10);
+        });
+
+        zoomPlus?.addEventListener('click', () => {
+            updateZoom((parseInt(zoomInput.value) || 100) + 10);
+        });
 
         setShortcutButton?.addEventListener('click', () => {
             this.showShortcutRecorder(group);

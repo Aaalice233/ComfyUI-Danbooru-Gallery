@@ -253,6 +253,75 @@
     transform: none;
 }
 
+/* ========== 缩放幅度控件 ========== */
+.qgn-zoom-control {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: rgba(102, 126, 234, 0.2);
+    border-radius: 6px;
+    padding: 2px;
+}
+
+.qgn-zoom-btn {
+    width: 20px;
+    height: 24px;
+    border: none;
+    background: rgba(102, 126, 234, 0.3);
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+}
+
+.qgn-zoom-btn:hover:not(:disabled) {
+    background: rgba(102, 126, 234, 0.5);
+}
+
+.qgn-zoom-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.qgn-zoom-input {
+    width: 40px;
+    height: 24px;
+    border: none;
+    background: rgba(0, 0, 0, 0.3);
+    color: white;
+    text-align: center;
+    font-size: 12px;
+    border-radius: 4px;
+    -moz-appearance: textfield;
+}
+
+.qgn-zoom-input::-webkit-outer-spin-button,
+.qgn-zoom-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.qgn-zoom-input:focus {
+    outline: none;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.qgn-zoom-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.qgn-zoom-unit {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+    margin-right: 2px;
+}
+
 /* ========== 空状态 ========== */
 .qgn-empty-state {
     display: flex;

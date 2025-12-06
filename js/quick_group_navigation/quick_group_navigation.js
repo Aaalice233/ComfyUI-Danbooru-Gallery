@@ -190,6 +190,7 @@ class QuickGroupNavigationManager {
             id: this.generateId(),
             groupName: groupName,
             shortcutKey: this.suggestNextKey(),  // 自动分配数字快捷键
+            zoomScale: 100,  // 跳转缩放幅度百分比（默认100%为适应组大小）
             order: this.navigationGroups.length
         };
 
@@ -261,6 +262,28 @@ class QuickGroupNavigationManager {
     }
 
     /**
+     * 更新组的缩放幅度
+     * @param {string} groupId - 组ID
+     * @param {number} zoomScale - 缩放百分比（10-500）
+     */
+    updateGroupZoomScale(groupId, zoomScale) {
+        const group = this.navigationGroups.find(g => g.id === groupId);
+        if (!group) {
+            logger.warn('[QGN] 组不存在:', groupId);
+            return false;
+        }
+
+        // 限制范围 10-500%
+        group.zoomScale = Math.max(10, Math.min(500, zoomScale));
+
+        // 保存到工作流
+        this.saveToWorkflow();
+
+        logger.info('[QGN] 设置缩放幅度:', group.groupName, '->', group.zoomScale + '%');
+        return true;
+    }
+
+    /**
      * 检查快捷键冲突
      * @returns {string|null} 冲突的组名，如果没有冲突则返回null
      */
@@ -322,8 +345,13 @@ class QuickGroupNavigationManager {
         // 选择能完整显示组的缩放级别（取zoomX和zoomY的较小值）
         const fitZoom = Math.min(zoomX, zoomY);
 
-        // 如果fitZoom太小（小于0.1），限制最小缩放
-        const targetZoom = Math.max(fitZoom, 0.1);
+        // 获取导航组的缩放幅度设置（默认100%）
+        const navGroup = this.navigationGroups.find(g => g.groupName === groupName);
+        const zoomScale = navGroup?.zoomScale ?? 100;
+
+        // 应用缩放幅度：fitZoom * (zoomScale / 100)
+        // 最小缩放限制为0.1
+        const targetZoom = Math.max(fitZoom * (zoomScale / 100), 0.1);
 
         // 设置缩放
         canvas.setZoom(targetZoom, [
@@ -334,7 +362,7 @@ class QuickGroupNavigationManager {
         // 刷新画布
         canvas.setDirty(true, true);
 
-        logger.info('[QGN] 跳转到组:', groupName, '缩放比例:', targetZoom.toFixed(2));
+        logger.info('[QGN] 跳转到组:', groupName, '缩放比例:', targetZoom.toFixed(2), '缩放幅度:', zoomScale + '%');
         return true;
     }
 
