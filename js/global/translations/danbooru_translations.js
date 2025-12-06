@@ -128,6 +128,13 @@ export const danbooruTranslations = {
         filterActive: "筛选已生效",
         currentPage: "当前页",
         totalPages: "总页数",
+
+        // 多选模式
+        selectionModeSettings: "选择模式设置",
+        selectionModeDescription: "启用多选模式后，可以同时选中多张图片",
+        multiSelectEnable: "启用多选模式",
+        clearAllSelection: "清除选择",
+        selectedCount: "已选择 {count} 张",
     },
     en: {
         // 搜索和控制
@@ -253,6 +260,13 @@ export const danbooruTranslations = {
         filterActive: "Filter is active",
         currentPage: "Current Page",
         totalPages: "Total Pages",
+
+        // Multi-select mode
+        selectionModeSettings: "Selection Mode Settings",
+        selectionModeDescription: "When multi-select mode is enabled, you can select multiple images",
+        multiSelectEnable: "Enable Multi-Select",
+        clearAllSelection: "Clear Selection",
+        selectedCount: "{count} selected",
     }
 };
 

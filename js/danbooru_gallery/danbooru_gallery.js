@@ -1206,6 +1206,17 @@ app.registerExtension({
                     tooltipSection.appendChild(tooltipDesc);
                     tooltipSection.appendChild(tooltipEnableDiv);
 
+                    // 多选模式设置
+                    const selectionModeSection = $el("div.danbooru-settings-section", { style: { marginBottom: "20px", padding: "16px", border: "1px solid var(--input-border-color)", borderRadius: "8px", backgroundColor: "var(--comfy-input-bg)" } });
+                    const selectionModeTitle = $el("h3", { textContent: t('selectionModeSettings'), style: { margin: "0 0 8px 0", color: "var(--comfy-input-text)", fontSize: "1.1em", fontWeight: "500" } });
+                    const selectionModeDesc = $el("p", { textContent: t('selectionModeDescription'), style: { margin: "0 0 12px 0", color: "#888", fontSize: "0.9em" } });
+                    const multiSelectCheckbox = $el("input", { type: "checkbox", id: "multiSelectCheckbox", checked: initialState.multiSelectEnabled ?? uiSettings.multi_select_enabled ?? false, style: { width: "16px", height: "16px" } });
+                    multiSelectCheckbox.onchange = (e) => { /* 用户界面中的临时状态，无需处理 */ };
+                    const multiSelectLabel = $el("label", { htmlFor: "multiSelectCheckbox", textContent: t('multiSelectEnable'), style: { cursor: "pointer", color: "var(--comfy-input-text)", fontSize: "1em", fontWeight: "500" } });
+                    const multiSelectDiv = $el("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [multiSelectCheckbox, multiSelectLabel]);
+                    selectionModeSection.appendChild(selectionModeTitle);
+                    selectionModeSection.appendChild(selectionModeDesc);
+                    selectionModeSection.appendChild(multiSelectDiv);
 
                     // 创建侧边栏按钮和内容区域的映射
                     const sections = {
@@ -1213,7 +1224,7 @@ app.registerExtension({
                         'user': { title: t('userSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>', elements: [authSection] },
                         'content': { title: t('contentSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18l-1.5 14H4.5L3 6z"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>', elements: [blacklistSection] },
                         'prompt': { title: t('promptSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>', elements: [filterSection] },
-                        'ui': { title: t('uiSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>', elements: [autocompleteSection, tooltipSection] },
+                        'ui': { title: t('uiSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>', elements: [autocompleteSection, tooltipSection, selectionModeSection] },
                     };
 
                     const setActiveSection = (key) => {
@@ -1416,6 +1427,7 @@ app.registerExtension({
                             const newTooltipEnabled = tooltipEnableCheckbox.checked;
                             const newAutocompleteMaxResults = parseInt(autocompleteMaxResultsInput.value, 10);
                             const newSelectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
+                            const newMultiSelectEnabled = multiSelectCheckbox.checked;
 
                             // 保存所有设置
                             const [blacklistSuccess, filterSuccess, uiSettingsSuccess] = await Promise.all([
@@ -1425,7 +1437,8 @@ app.registerExtension({
                                     autocomplete_enabled: newAutocompleteEnabled,
                                     tooltip_enabled: newTooltipEnabled,
                                     autocomplete_max_results: newAutocompleteMaxResults,
-                                    selected_categories: newSelectedCategories
+                                    selected_categories: newSelectedCategories,
+                                    multi_select_enabled: newMultiSelectEnabled
                                 })
                             ]);
 
@@ -1438,6 +1451,7 @@ app.registerExtension({
                                 uiSettings.tooltip_enabled = newTooltipEnabled;
                                 uiSettings.autocomplete_max_results = newAutocompleteMaxResults;
                                 uiSettings.selected_categories = newSelectedCategories;
+                                uiSettings.multi_select_enabled = newMultiSelectEnabled;
 
                                 dialog.remove();
                                 showToast(t('saveSuccess'), 'success');
@@ -1815,6 +1829,7 @@ app.registerExtension({
                     tooltip_enabled: true,
                     autocomplete_max_results: 20,
                     selected_categories: ["copyright", "character", "general"],
+                    multi_select_enabled: false,
                     formatting: {
                         escapeBrackets: true,
                         replaceUnderscores: true,
@@ -1831,6 +1846,7 @@ app.registerExtension({
                                 tooltip_enabled: data.settings.tooltip_enabled,
                                 autocomplete_max_results: data.settings.autocomplete_max_results || 20,
                                 selected_categories: data.settings.selected_categories || ["copyright", "character", "general"],
+                                multi_select_enabled: data.settings.multi_select_enabled || false,
                                 formatting: data.settings.formatting || { escapeBrackets: true, replaceUnderscores: true }
                             };
                         }
@@ -2804,6 +2820,103 @@ app.registerExtension({
                     }
                 };
 
+                // 辅助函数：为单个帖子构建提示词
+                const buildPromptForPost = (postData) => {
+                    const selectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
+                    const postToUse = temporaryTagEdits[postData.id] || postData;
+
+                    let output_tags = [];
+                    selectedCategories.forEach(category => {
+                        const tags = postToUse[`tag_string_${category}`];
+                        if (tags) {
+                            output_tags.push(...tags.split(' '));
+                        }
+                    });
+
+                    let tagsToProcess = (output_tags.length > 0) ? output_tags : (postToUse.tag_string || '').split(' ');
+
+                    // 应用提示词过滤
+                    if (filterEnabled && currentFilterTags.length > 0) {
+                        const filterTagsLower = currentFilterTags.map(tag => tag.toLowerCase().trim());
+                        tagsToProcess = tagsToProcess.filter(tag => {
+                            const tagLower = tag.toLowerCase().trim();
+                            return !filterTagsLower.includes(tagLower);
+                        });
+                    }
+
+                    const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]').checked;
+                    const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]').checked;
+
+                    // 格式化处理
+                    const processedTags = tagsToProcess.map(tag => {
+                        let processedTag = tag;
+                        if (replaceUnderscores) {
+                            processedTag = processedTag.replace(/_/g, ' ');
+                        }
+                        if (escapeBrackets) {
+                            processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
+                        }
+                        return processedTag;
+                    });
+
+                    return processedTags.join(', ');
+                };
+
+                // 辅助函数：收集所有选中图片的数据并更新 widget
+                const updateSelectionData = () => {
+                    const selectedWrappers = imageGrid.querySelectorAll('.danbooru-image-wrapper.selected');
+                    const selections = [];
+
+                    selectedWrappers.forEach(wrapper => {
+                        const postId = wrapper.dataset.postId;
+                        const postData = posts.find(p => p.id == postId) || temporaryTagEdits[postId];
+                        if (postData) {
+                            const imageUrl = postData.file_url || postData.large_file_url;
+                            const prompt = buildPromptForPost(postData);
+                            selections.push({
+                                post_id: postId,
+                                prompt: prompt,
+                                image_url: imageUrl
+                            });
+                        }
+                    });
+
+                    const selectionData = { selections: selections };
+
+                    // 更新 widget
+                    if (nodeInstance && nodeInstance.widgets) {
+                        const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
+                        if (selectionWidget) {
+                            selectionWidget.value = JSON.stringify(selectionData);
+                            selectionWidget.callback();
+                        }
+                    }
+
+                    // 更新选中计数显示
+                    updateSelectionCount(selections.length);
+                };
+
+                // 辅助函数：更新选中计数显示
+                const updateSelectionCount = (count) => {
+                    const countBadge = document.querySelector('.danbooru-selection-count');
+                    if (countBadge) {
+                        if (count > 0 && uiSettings.multi_select_enabled) {
+                            countBadge.textContent = t('selectedCount').replace('{count}', count);
+                            countBadge.style.display = 'inline-block';
+                        } else {
+                            countBadge.style.display = 'none';
+                        }
+                    }
+                };
+
+                // 辅助函数：清除所有选中
+                const clearAllSelections = () => {
+                    imageGrid.querySelectorAll('.danbooru-image-wrapper.selected').forEach(w => {
+                        w.classList.remove('selected');
+                    });
+                    updateSelectionData();
+                };
+
                 const createPostElement = (post) => {
                     if (!post.id || !post.preview_file_url) return null;
 
@@ -2826,92 +2939,26 @@ app.registerExtension({
                         onclick: async (e) => {
                             e.stopPropagation(); // Prevent event from bubbling up and potentially causing issues
                             const isSelected = wrapper.classList.contains('selected');
+                            const isMultiSelectMode = uiSettings.multi_select_enabled;
 
-                            // fetchAndRender(true); // 移除不必要的调用
+                            // 单选模式下，先清除所有其他图像的选中状态
+                            if (!isMultiSelectMode) {
+                                imageGrid.querySelectorAll('.danbooru-image-wrapper').forEach(w => {
+                                    if (w !== wrapper) {
+                                        w.classList.remove('selected');
+                                    }
+                                });
+                            }
 
-                            // 首先，清除所有其他图像的选中状态
-                            imageGrid.querySelectorAll('.danbooru-image-wrapper').forEach(w => {
-                                if (w !== wrapper) {
-                                    w.classList.remove('selected');
-
-                                }
-                            });
-
-                            // 然后，根据当前图像的选中状态进行切换
+                            // 切换当前图像的选中状态
                             if (!isSelected) {
                                 wrapper.classList.add('selected');
-
-
-                                const imageUrl = post.file_url || post.large_file_url;
-
-                                const selectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
-
-                                // 动态获取最新的编辑数据
-                                const currentPostId = post.id;
-                                const postToUse = temporaryTagEdits[currentPostId] || post;
-
-                                let output_tags = [];
-                                selectedCategories.forEach(category => {
-                                    const tags = postToUse[`tag_string_${category}`];
-                                    if (tags) {
-                                        output_tags.push(...tags.split(' '));
-                                    }
-                                });
-
-                                let tagsToProcess = (output_tags.length > 0) ? output_tags : (postToUse.tag_string || '').split(' ');
-
-                                // 先应用提示词过滤（在格式化之前）
-                                if (filterEnabled && currentFilterTags.length > 0) {
-                                    const filterTagsLower = currentFilterTags.map(tag => tag.toLowerCase().trim());
-                                    tagsToProcess = tagsToProcess.filter(tag => {
-                                        const tagLower = tag.toLowerCase().trim();
-                                        return !filterTagsLower.includes(tagLower);
-                                    });
-                                }
-
-                                const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]').checked;
-                                const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]').checked;
-
-                                // 然后进行格式化处理（括号转义和下划线替换）
-                                const processedTags = tagsToProcess.map(tag => {
-                                    let processedTag = tag;
-                                    if (replaceUnderscores) {
-                                        processedTag = processedTag.replace(/_/g, ' ');
-                                    }
-                                    if (escapeBrackets) {
-                                        processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
-                                    }
-                                    return processedTag;
-                                });
-
-                                const prompt = processedTags.join(', ');
-
-                                const selection = {
-                                    prompt: prompt,
-                                    image_url: imageUrl,
-                                };
-
-                                // 查找隐藏的 selection_data widget 并更新其值 - 使用保存的节点实例引用
-                                if (nodeInstance && nodeInstance.widgets) {
-                                    const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
-                                    if (selectionWidget) {
-                                        selectionWidget.value = JSON.stringify(selection);
-                                        selectionWidget.callback(); // 触发回调，通知ComfyUI值已更新
-
-                                    }
-                                }
                             } else {
                                 wrapper.classList.remove('selected');
-
-                                if (nodeInstance && nodeInstance.widgets) {
-                                    const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
-                                    if (selectionWidget) {
-                                        selectionWidget.value = JSON.stringify({});
-                                        selectionWidget.callback();
-
-                                    }
-                                }
                             }
+
+                            // 收集所有选中图片的数据并更新 widget
+                            updateSelectionData();
                         },
                     });
 
@@ -3369,8 +3416,41 @@ app.registerExtension({
                 searchContainer.appendChild(searchInput);
                 searchContainer.appendChild(clearButton);
 
+                // 选中计数徽章（多选模式时显示，移至底部状态栏）
+                const selectionCountBadge = $el("span.danbooru-selection-count", {
+                    style: {
+                        display: 'none',
+                        padding: '4px 8px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                        color: 'white',
+                        fontSize: '12px',
+                        borderRadius: '4px',
+                        backdropFilter: 'blur(5px)',
+                        whiteSpace: 'nowrap'
+                    }
+                });
+
+                // 清除全选按钮（多选模式时显示）
+                const clearSelectionButton = $el("button.danbooru-clear-selection", {
+                    textContent: t('clearAllSelection'),
+                    title: t('clearAllSelection'),
+                    style: {
+                        display: uiSettings.multi_select_enabled ? 'inline-block' : 'none',
+                        padding: '5px 10px',
+                        borderRadius: '4px',
+                        backgroundColor: 'var(--comfy-input-bg)',
+                        border: '1px solid var(--input-border-color)',
+                        color: 'var(--comfy-input-text)',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                    },
+                    onclick: () => {
+                        clearAllSelections();
+                    }
+                });
+
                 // 将包含搜索框和建议面板的容器添加到总控件中
-                container.appendChild($el("div.danbooru-controls", [searchContainer, rankingButton, favoritesButton, ratingSelect, categoryDropdown, formattingDropdown, filterButton, settingsButton, refreshButton]));
+                container.appendChild($el("div.danbooru-controls", [searchContainer, rankingButton, favoritesButton, ratingSelect, categoryDropdown, formattingDropdown, filterButton, clearSelectionButton, settingsButton, refreshButton]));
 
                 // 🔧 重要：在 searchInput 被添加到 DOM 之后才创建智能补全实例
                 // 这样 AutocompleteUI 才能正确获取父元素并将建议容器添加到 DOM
@@ -3397,6 +3477,19 @@ app.registerExtension({
                 });
                 container.appendChild(imageGrid);
 
+                // 创建底部状态栏容器
+                const bottomStatusBar = $el("div.danbooru-bottom-status", {
+                    style: {
+                        position: 'absolute',
+                        bottom: '10px',
+                        left: '10px',
+                        zIndex: '20',
+                        display: 'flex',
+                        gap: '8px',
+                        alignItems: 'center'
+                    }
+                });
+
                 // 添加页码指示器
                 const pageIndicator = $el("div.danbooru-page-indicator", {
                     style: {
@@ -3406,14 +3499,14 @@ app.registerExtension({
                         color: 'white',
                         fontSize: '12px',
                         borderRadius: '4px',
-                        position: 'absolute',
-                        bottom: '10px',
-                        left: '10px',
-                        zIndex: '20',
                         backdropFilter: 'blur(5px)'
                     }
                 });
-                container.appendChild(pageIndicator);
+
+                // 将页码指示器和选择计数器添加到底部状态栏
+                bottomStatusBar.appendChild(pageIndicator);
+                bottomStatusBar.appendChild(selectionCountBadge);
+                container.appendChild(bottomStatusBar);
 
                 const insertNewPost = (post) => {
                     const newElement = createPostElement(post);

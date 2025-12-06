@@ -105,7 +105,10 @@ const translations = {
         description: "参数说明",
         descriptionPlaceholder: "输入参数说明（支持Markdown格式）",
         descriptionLockedHint: "锁定模式下无法修改说明",
-        multiline: "多行文本"
+        multiline: "多行文本",
+        taglist: "标签列表",
+        taglistEmpty: "暂无标签，输入后回车添加",
+        taglistPlaceholder: "输入标签后回车添加（支持逗号分隔批量添加）"
     },
     en: {
         title: "Parameter Control Panel",
@@ -165,7 +168,10 @@ const translations = {
         description: "Description",
         descriptionPlaceholder: "Enter description (Markdown supported)",
         descriptionLockedHint: "Cannot modify description in locked mode",
-        multiline: "Multiline"
+        multiline: "Multiline",
+        taglist: "Tag List",
+        taglistEmpty: "No tags, press Enter to add",
+        taglistPlaceholder: "Enter tag and press Enter (comma-separated for batch)"
     }
 };
 
@@ -1287,6 +1293,140 @@ app.registerExtension({
                     max-height: 100%;
                     display: block;
                     border-radius: 4px;
+                }
+
+                /* TagList 标签列表样式 */
+                .pcp-taglist-container {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                    flex: 1;
+                    min-width: 0;
+                }
+
+                .pcp-taglist-wrapper {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 4px;
+                    min-height: 28px;
+                    padding: 4px;
+                    background: rgba(0, 0, 0, 0.2);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 6px;
+                }
+
+                .pcp-taglist-empty {
+                    color: #666;
+                    font-size: 11px;
+                    font-style: italic;
+                    padding: 2px 6px;
+                }
+
+                .pcp-taglist-tag {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    padding: 2px 8px;
+                    border-radius: 4px;
+                    font-size: 11px;
+                    border: 1px solid;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    user-select: none;
+                    position: relative;
+                }
+
+                .pcp-taglist-tag:hover {
+                    transform: translateY(-1px);
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+                }
+
+                .pcp-taglist-tag.disabled {
+                    opacity: 0.6;
+                    text-decoration: line-through;
+                    background: rgba(128, 128, 128, 0.2) !important;
+                    border-color: #666 !important;
+                    color: #888 !important;
+                }
+
+                .pcp-taglist-tag-text {
+                    max-width: 150px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+
+                .pcp-taglist-tag-delete {
+                    cursor: pointer;
+                    font-size: 14px;
+                    font-weight: bold;
+                    opacity: 0.6;
+                    transition: opacity 0.2s ease;
+                    line-height: 1;
+                }
+
+                .pcp-taglist-tag-delete:hover {
+                    opacity: 1;
+                    color: #ff6b6b;
+                }
+
+                .pcp-taglist-input {
+                    flex: 1;
+                    background: rgba(0, 0, 0, 0.3);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    color: #E0E0E0;
+                    font-size: 11px;
+                }
+
+                .pcp-taglist-input:focus {
+                    outline: none;
+                    border-color: #743795;
+                    background: rgba(0, 0, 0, 0.4);
+                }
+
+                .pcp-taglist-input::placeholder {
+                    color: #666;
+                }
+
+                /* Tag 拖拽排序样式 */
+                .pcp-taglist-tag[draggable="true"] {
+                    cursor: grab;
+                }
+
+                .pcp-taglist-tag[draggable="true"]:active {
+                    cursor: grabbing;
+                }
+
+                .pcp-taglist-tag.pcp-tag-dragging {
+                    opacity: 0.4;
+                    transform: scale(0.95);
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+                }
+
+                .pcp-taglist-tag.pcp-tag-drag-over-left::before {
+                    content: '';
+                    position: absolute;
+                    left: -3px;
+                    top: 2px;
+                    bottom: 2px;
+                    width: 3px;
+                    background-color: #743795;
+                    border-radius: 2px;
+                    box-shadow: 0 0 6px #743795;
+                }
+
+                .pcp-taglist-tag.pcp-tag-drag-over-right::after {
+                    content: '';
+                    position: absolute;
+                    right: -3px;
+                    top: 2px;
+                    bottom: 2px;
+                    width: 3px;
+                    background-color: #743795;
+                    border-radius: 2px;
+                    box-shadow: 0 0 6px #743795;
                 }
 
                 /* 底部按钮 */
@@ -2461,6 +2601,9 @@ app.registerExtension({
                 case 'image':
                     control.appendChild(this.createImage(param));
                     break;
+                case 'taglist':
+                    control.appendChild(this.createTagList(param));
+                    break;
             }
 
             // 编辑按钮（SVG图标）
@@ -2548,7 +2691,7 @@ app.registerExtension({
             if (description && description.trim()) {
                 let isTooltipVisible = false;
 
-                const controlSelector = '.pcp-slider-container, .pcp-switch, .pcp-dropdown-container, .pcp-string-input, .pcp-string-textarea, .pcp-image-container, .pcp-parameter-edit, .pcp-parameter-delete';
+                const controlSelector = '.pcp-slider-container, .pcp-switch, .pcp-dropdown-container, .pcp-string-input, .pcp-string-textarea, .pcp-image-container, .pcp-taglist-container, .pcp-parameter-edit, .pcp-parameter-delete';
 
                 item.addEventListener('mousemove', (e) => {
                     const isInControl = e.target.closest(controlSelector);
@@ -3167,6 +3310,216 @@ app.registerExtension({
             return container;
         };
 
+        // 创建标签列表UI
+        nodeType.prototype.createTagList = function (param) {
+            const container = document.createElement('div');
+            container.className = 'pcp-taglist-container';
+
+            const tagsWrapper = document.createElement('div');
+            tagsWrapper.className = 'pcp-taglist-wrapper';
+
+            // 6色循环
+            const tagColors = [
+                { bg: 'rgba(139, 195, 74, 0.3)', border: '#8BC34A', text: '#E0E0E0' },   // 浅绿色
+                { bg: 'rgba(3, 169, 244, 0.3)', border: '#03A9F4', text: '#E0E0E0' },    // 浅蓝色
+                { bg: 'rgba(255, 152, 0, 0.3)', border: '#FF9800', text: '#E0E0E0' },    // 橙色
+                { bg: 'rgba(156, 39, 176, 0.3)', border: '#9C27B0', text: '#E0E0E0' },   // 紫色
+                { bg: 'rgba(233, 30, 99, 0.3)', border: '#E91E63', text: '#E0E0E0' },    // 粉色
+                { bg: 'rgba(0, 150, 136, 0.3)', border: '#009688', text: '#E0E0E0' },    // 青绿色
+            ];
+            let colorIndex = 0;
+
+            // 初始化 value 为数组
+            if (!param.value || !Array.isArray(param.value)) {
+                param.value = [];
+            }
+
+            // 渲染所有标签
+            const renderTags = () => {
+                tagsWrapper.innerHTML = '';
+                colorIndex = 0;
+
+                if (param.value.length === 0) {
+                    const emptyHint = document.createElement('span');
+                    emptyHint.className = 'pcp-taglist-empty';
+                    emptyHint.textContent = t('taglistEmpty');
+                    tagsWrapper.appendChild(emptyHint);
+                    return;
+                }
+
+                param.value.forEach((tag, index) => {
+                    const tagEl = document.createElement('span');
+                    tagEl.className = 'pcp-taglist-tag' + (tag.enabled ? '' : ' disabled');
+
+                    const color = tagColors[colorIndex % tagColors.length];
+                    colorIndex++;
+
+                    if (tag.enabled) {
+                        tagEl.style.background = color.bg;
+                        tagEl.style.borderColor = color.border;
+                        tagEl.style.color = color.text;
+                    }
+
+                    // 标签文本
+                    const textSpan = document.createElement('span');
+                    textSpan.className = 'pcp-taglist-tag-text';
+                    textSpan.textContent = tag.text;
+                    tagEl.appendChild(textSpan);
+
+                    // 删除按钮
+                    const deleteBtn = document.createElement('span');
+                    deleteBtn.className = 'pcp-taglist-tag-delete';
+                    deleteBtn.innerHTML = '&times;';
+                    deleteBtn.title = '删除标签';
+                    tagEl.appendChild(deleteBtn);
+
+                    // 双击切换启用/禁用
+                    tagEl.addEventListener('dblclick', (e) => {
+                        e.stopPropagation();
+                        tag.enabled = !tag.enabled;
+                        this.syncConfig();
+                        renderTags();
+                    });
+
+                    // 删除按钮点击
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        param.value.splice(index, 1);
+                        this.syncConfig();
+                        renderTags();
+                    });
+
+                    // ========== 拖拽排序功能 ==========
+                    tagEl.draggable = true;
+                    tagEl.dataset.index = index;
+
+                    // 拖拽开始
+                    tagEl.addEventListener('dragstart', (e) => {
+                        e.stopPropagation();
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', index.toString());
+                        tagEl.classList.add('pcp-tag-dragging');
+                        tagsWrapper._dragSourceIndex = index;
+                    });
+
+                    // 拖拽结束
+                    tagEl.addEventListener('dragend', (e) => {
+                        e.stopPropagation();
+                        tagEl.classList.remove('pcp-tag-dragging');
+                        tagsWrapper.querySelectorAll('.pcp-taglist-tag').forEach(el => {
+                            el.classList.remove('pcp-tag-drag-over-left', 'pcp-tag-drag-over-right');
+                        });
+                        tagsWrapper._dragSourceIndex = null;
+                    });
+
+                    // 拖拽经过 - 根据鼠标 X 坐标判断放置在左侧还是右侧
+                    tagEl.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = 'move';
+
+                        const rect = tagEl.getBoundingClientRect();
+                        const midX = rect.left + rect.width / 2;
+
+                        if (e.clientX < midX) {
+                            tagEl.classList.remove('pcp-tag-drag-over-right');
+                            tagEl.classList.add('pcp-tag-drag-over-left');
+                        } else {
+                            tagEl.classList.remove('pcp-tag-drag-over-left');
+                            tagEl.classList.add('pcp-tag-drag-over-right');
+                        }
+                    });
+
+                    // 拖拽离开
+                    tagEl.addEventListener('dragleave', (e) => {
+                        e.stopPropagation();
+                        tagEl.classList.remove('pcp-tag-drag-over-left', 'pcp-tag-drag-over-right');
+                    });
+
+                    // 放置
+                    tagEl.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        tagEl.classList.remove('pcp-tag-drag-over-left', 'pcp-tag-drag-over-right');
+
+                        const fromIndex = tagsWrapper._dragSourceIndex;
+                        if (fromIndex === null || fromIndex === undefined || fromIndex === index) {
+                            return;
+                        }
+
+                        const rect = tagEl.getBoundingClientRect();
+                        const midX = rect.left + rect.width / 2;
+                        let toIndex = index;
+
+                        if (e.clientX > midX) {
+                            toIndex++;
+                        }
+
+                        if (fromIndex < toIndex) {
+                            toIndex--;
+                        }
+
+                        if (fromIndex === toIndex) {
+                            return;
+                        }
+
+                        // 执行数组重排序
+                        const [movedItem] = param.value.splice(fromIndex, 1);
+                        param.value.splice(toIndex, 0, movedItem);
+
+                        this.syncConfig();
+                        renderTags();
+                    });
+
+                    // 阻止拖拽冒泡到父元素
+                    tagEl.addEventListener('mousedown', (e) => e.stopPropagation());
+
+                    tagsWrapper.appendChild(tagEl);
+                });
+            };
+
+            // 添加标签输入框
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'pcp-taglist-input';
+            input.placeholder = t('taglistPlaceholder');
+
+            // 回车添加标签
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const text = input.value.trim();
+                    if (text) {
+                        // 支持逗号分隔批量添加
+                        const newTags = text.split(',').map(t => t.trim()).filter(t => t);
+                        newTags.forEach(tagText => {
+                            // 检查是否已存在
+                            const exists = param.value.some(t => t.text === tagText);
+                            if (!exists) {
+                                param.value.push({ text: tagText, enabled: true });
+                            }
+                        });
+                        input.value = '';
+                        this.syncConfig();
+                        renderTags();
+                    }
+                }
+            });
+
+            // 阻止输入框触发拖拽
+            input.addEventListener('mousedown', (e) => e.stopPropagation());
+
+            // 组装容器
+            container.appendChild(tagsWrapper);
+            container.appendChild(input);
+
+            // 初始渲染
+            renderTags();
+
+            return container;
+        };
+
         // ==================== 辅助方法 ====================
 
         // 加载数据源
@@ -3397,6 +3750,7 @@ app.registerExtension({
                             <option value="string" ${param?.type === 'string' ? 'selected' : ''}>${t('string')}</option>
                             <option value="image" ${param?.type === 'image' ? 'selected' : ''}>${t('image')}</option>
                             <option value="separator" ${param?.type === 'separator' ? 'selected' : ''}>${t('separator')}</option>
+                            <option value="taglist" ${param?.type === 'taglist' ? 'selected' : ''}>${t('taglist')}</option>
                         </select>
                     </div>
 
@@ -3742,6 +4096,24 @@ app.registerExtension({
                             </div>
                         `;
                         break;
+
+                    case 'taglist':
+                        const taglistConfig = param?.config || {};
+                        const taglistDescription = taglistConfig.description || '';
+                        configPanel.innerHTML = `
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">${t('description')}</label>
+                                <textarea class="pcp-dialog-textarea pcp-param-description" id="pcp-param-description"
+                                          placeholder="${t('descriptionPlaceholder')}"
+                                          rows="3">${taglistDescription}</textarea>
+                            </div>
+                            <div class="pcp-dialog-field">
+                                <p style="color: #999; font-size: 12px; margin: 0;">
+                                    💡 标签列表：双击标签切换启用/禁用状态，禁用的标签不会出现在输出中
+                                </p>
+                            </div>
+                        `;
+                        break;
                 }
             };
 
@@ -3905,6 +4277,11 @@ app.registerExtension({
                     case 'image':
                         // 图像类型：默认值为空字符串（未上传图像）
                         defaultValue = '';
+                        break;
+
+                    case 'taglist':
+                        // 标签列表类型：默认值为空数组
+                        defaultValue = [];
                         break;
                 }
 
@@ -4641,6 +5018,13 @@ app.registerExtension({
                     return param.value ? 'True' : 'False';
                 case 'dropdown':
                     return param.value;
+                case 'taglist':
+                    // 只显示启用的标签，用逗号分隔
+                    if (Array.isArray(param.value)) {
+                        const enabledTags = param.value.filter(t => t.enabled).map(t => t.text);
+                        return enabledTags.length > 0 ? enabledTags.join(', ') : '(无)';
+                    }
+                    return '(无)';
                 default:
                     return String(param.value);
             }

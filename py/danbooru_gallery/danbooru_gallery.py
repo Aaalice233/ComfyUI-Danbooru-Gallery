@@ -189,7 +189,8 @@ def load_ui_settings():
         "autocomplete_enabled": settings.get("autocomplete_enabled", True),
         "tooltip_enabled": settings.get("tooltip_enabled", True),
         "autocomplete_max_results": settings.get("autocomplete_max_results", 20),
-        "selected_categories": settings.get("selected_categories", ["copyright", "character", "general"])
+        "selected_categories": settings.get("selected_categories", ["copyright", "character", "general"]),
+        "multi_select_enabled": settings.get("multi_select_enabled", False)
     }
 
 def save_ui_settings(ui_settings):
@@ -199,6 +200,7 @@ def save_ui_settings(ui_settings):
     settings["tooltip_enabled"] = ui_settings.get("tooltip_enabled", True)
     settings["autocomplete_max_results"] = ui_settings.get("autocomplete_max_results", 20)
     settings["selected_categories"] = ui_settings.get("selected_categories", ["copyright", "character", "general"])
+    settings["multi_select_enabled"] = ui_settings.get("multi_select_enabled", False)
     return save_settings(settings)
 
 # ================================
@@ -902,7 +904,8 @@ async def save_ui_settings_route(request):
             "autocomplete_enabled": data.get("autocomplete_enabled", True),
             "tooltip_enabled": data.get("tooltip_enabled", True),
             "autocomplete_max_results": data.get("autocomplete_max_results", 20),
-            "selected_categories": data.get("selected_categories", ["copyright", "character", "general"])
+            "selected_categories": data.get("selected_categories", ["copyright", "character", "general"]),
+            "multi_select_enabled": data.get("multi_select_enabled", False)
         }
         success = save_ui_settings(ui_settings)
         return web.json_response({"success": success})
@@ -1110,7 +1113,8 @@ class DanbooruGalleryNode:
         }
 
     RETURN_TYPES = ("IMAGE", "STRING")
-    RETURN_NAMES = ("image", "prompt")
+    RETURN_NAMES = ("images", "prompts")
+    OUTPUT_IS_LIST = (True, True)
     FUNCTION = "get_selected_data"
     CATEGORY = "danbooru"
     OUTPUT_NODE = True
@@ -1120,31 +1124,47 @@ class DanbooruGalleryNode:
         return selection_data
 
     def get_selected_data(self, selection_data="{}", **kwargs):
+        """处理选中的图片数据，支持单选和多选模式"""
         if not selection_data or selection_data == "{}":
-            return (torch.zeros(1, 1, 1, 3), "")
+            return ([torch.zeros(1, 1, 1, 3)], [""])
 
-        tensor = torch.zeros(1, 1, 1, 3)
-        prompt = ""
+        images = []
+        prompts = []
 
         try:
-            # Always try to parse the prompt first
             data = json.loads(selection_data)
-            prompt = data.get("prompt", "")
-            image_url = data.get("image_url")
+            selections = data.get("selections", [])
 
-            if image_url:
-                with urllib.request.urlopen(image_url) as response:
-                    img_data = response.read()
-                
-                img = Image.open(io.BytesIO(img_data)).convert("RGB")
-                img_array = np.array(img).astype(np.float32) / 255.0
-                tensor = torch.from_numpy(img_array)[None,]
+            if not selections:
+                return ([torch.zeros(1, 1, 1, 3)], [""])
+
+            for sel in selections:
+                prompt = sel.get("prompt", "")
+                image_url = sel.get("image_url")
+                prompts.append(prompt)
+
+                if image_url:
+                    try:
+                        with urllib.request.urlopen(image_url) as response:
+                            img_data = response.read()
+                        img = Image.open(io.BytesIO(img_data)).convert("RGB")
+                        img_array = np.array(img).astype(np.float32) / 255.0
+                        tensor = torch.from_numpy(img_array)[None,]
+                        images.append(tensor)
+                    except Exception as e:
+                        logger.error(f"加载图片失败 {image_url}: {e}")
+                        images.append(torch.zeros(1, 1, 1, 3))
+                else:
+                    images.append(torch.zeros(1, 1, 1, 3))
+
+            if not images:
+                return ([torch.zeros(1, 1, 1, 3)], [""])
 
         except Exception as e:
-            # Log the error, but proceed to return the prompt if it was parsed
             logger.error(f"Error processing selection in DanbooruGalleryNode: {e}")
+            return ([torch.zeros(1, 1, 1, 3)], [""])
 
-        return (tensor, prompt)
+        return (images, prompts)
     
     @staticmethod
     def get_posts_internal(tags: str, limit: int = 100, page: int = 1, rating: str = None):

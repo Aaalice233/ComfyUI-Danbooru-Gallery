@@ -143,6 +143,8 @@ def get_output_type(param_type: str, config: Dict = None) -> str:
         return "STRING"
     elif param_type == "image":
         return "IMAGE"
+    elif param_type == "taglist":
+        return "STRING"
     return "*"  # 未知类型返回通配符
 
 
@@ -353,6 +355,14 @@ class ParameterControlPanel:
                     else:
                         # 如果没有图像文件，创建1024x1024黑色占位图
                         value = torch.zeros((1, 1024, 1024, 3), dtype=torch.float32)
+                elif param_type == "taglist":
+                    # 处理标签列表参数：仅保留启用的标签，用逗号连接
+                    output_type = "STRING"
+                    if isinstance(value, list):
+                        enabled_tags = [tag.get("text", "") for tag in value if tag.get("enabled", True)]
+                        value = ", ".join(enabled_tags)
+                    else:
+                        value = str(value) if value else ""
                 else:
                     output_type = "*"
 
