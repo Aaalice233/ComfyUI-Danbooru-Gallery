@@ -5,6 +5,7 @@ Multi Character Editor - Main Node File
 
 import json
 import os
+import re
 import time
 from server import PromptServer
 from aiohttp import web
@@ -148,8 +149,9 @@ class PromptGenerator:
             weight = mask.get('weight', 1.0)
             mask_params = f"{x1:.2f} {x2:.2f}, {y1:.2f} {y2:.2f}, {weight:.2f}"
             
-            # 确保MASK和提示词之间有空格
-            mask_str = f"COUPLE MASK({mask_params}) {mask['prompt']}"
+            # 使用 COUPLE(maskparams) 简写语法，等价于 COUPLE MASK(maskparams)
+            # 这种格式在 prompt control 解析时更可靠
+            mask_str = f"COUPLE({mask_params}) {mask['prompt']}"
             
             # 🔧 如果该角色开启了FILL，在该角色提示词后添加FILL()
             if mask.get('use_fill', False):
@@ -482,47 +484,48 @@ async def validate_prompt(request):
         if syntax_mode == "attention_couple":
             # 检查COUPLE语法
             if "COUPLE" in prompt:
-                import re
-                # 更新正则表达式，确保能正确匹配COUPLE MASK语法
-                couple_matches = re.findall(r'COUPLE\s+MASK\([^)]+\)\s+[^\s]+', prompt)
+                # 支持两种语法：COUPLE(...) 简写形式和 COUPLE MASK(...) 完整形式
+                # COUPLE(...) 是官方推荐的简写形式
+                couple_matches = re.findall(r'COUPLE\s*\([^)]+\)\s+[^\s]+', prompt)
                 if not couple_matches:
                     errors.append("发现COUPLE关键字但缺少有效的MASK语法或提示词")
-                
-                # 检查MASK参数
+
+                # 检查COUPLE参数（简写形式中参数直接在COUPLE括号内）
                 for match in couple_matches:
-                    mask_params = re.search(r'MASK\(([^)]+)\)', match)
-                    if mask_params:
+                    # 匹配 COUPLE(...) 中的参数
+                    couple_params = re.search(r'COUPLE\s*\(([^)]+)\)', match)
+                    if couple_params:
                         # 处理逗号分隔的参数
-                        param_str = mask_params.group(1)
+                        param_str = couple_params.group(1)
                         # 分割x1 x2, y1 y2格式
                         xy_parts = param_str.split(',')
                         if len(xy_parts) < 2:
-                            errors.append(f"MASK参数格式错误，需要x1 x2, y1 y2格式: {match}")
+                            errors.append(f"COUPLE参数格式错误，需要x1 x2, y1 y2格式: {match}")
                             continue
-                        
+
                         # 处理x部分
                         x_params = xy_parts[0].strip().split()
                         # 处理y部分
                         y_params = xy_parts[1].strip().split()
-                        
+
                         # 合并所有参数
                         params = x_params + y_params
-                        
+
                         # 如果有逗号后的额外参数，添加到params中
                         if len(xy_parts) > 2:
                             for part in xy_parts[2:]:
                                 params.extend(part.strip().split())
-                        
-                        # 使用完整的MASK格式，至少需要4个参数（x1, x2, y1, y2）
+
+                        # 使用完整的COUPLE格式，至少需要4个参数（x1, x2, y1, y2）
                         if len(params) < 4:
-                            errors.append(f"MASK参数不完整: {match}")
+                            errors.append(f"COUPLE参数不完整: {match}")
                         else:
                             try:
                                 x1, x2, y1, y2 = map(float, params[:4])
                                 if x1 < 0 or x2 > 1 or y1 < 0 or y2 > 1:
-                                    warnings.append(f"MASK坐标可能超出范围: {match}")
+                                    warnings.append(f"COUPLE坐标可能超出范围: {match}")
                                 if x1 >= x2 or y1 >= y2:
-                                    errors.append(f"MASK坐标无效: {match}")
+                                    errors.append(f"COUPLE坐标无效: {match}")
                                 # 检查权重参数（如果有）
                                 if len(params) >= 5:
                                     try:
@@ -532,12 +535,11 @@ async def validate_prompt(request):
                                     except ValueError:
                                         errors.append(f"权重格式错误: {match}")
                             except ValueError:
-                                errors.append(f"MASK坐标格式错误: {match}")
+                                errors.append(f"COUPLE坐标格式错误: {match}")
         
         elif syntax_mode == "regional_prompts":
             # 检查AND语法
             if "AND" in prompt:
-                import re
                 mask_matches = re.findall(r'MASK\([^)]+\)', prompt)
                 if not mask_matches:
                     errors.append("发现AND关键字但缺少有效的MASK语法")
@@ -589,7 +591,6 @@ async def validate_prompt(request):
                                 errors.append(f"MASK坐标格式错误: {match}")
         
         # 检查FEATHER语法
-        import re
         feather_matches = re.findall(r'FEATHER\([^)]*\)', prompt)
         for match in feather_matches:
             feather_params = re.search(r'FEATHER\(([^)]*)\)', match)

@@ -1301,6 +1301,13 @@ class WorkflowChannelSynchronizer {
             }
         }
 
+        // 提前扫描通道，如果工作流中没有文本缓存节点，直接跳过同步
+        const localChannels = this.scanWorkflowChannels();
+        if (localChannels.length === 0) {
+            // 工作流中没有文本缓存节点，静默跳过同步
+            return;
+        }
+
         this.isSyncing = true;
         this.lastSyncTime = now;
         this.lastWorkflowHash = currentWorkflowHash;
@@ -1310,7 +1317,6 @@ class WorkflowChannelSynchronizer {
 
             // 获取工作流数据
             const workflowData = this.getWorkflowData();
-            const localChannels = this.scanWorkflowChannels();
             const localChannelNames = localChannels.map(item => item.channelName);
 
             // 调用后端同步API
@@ -1347,10 +1353,9 @@ class WorkflowChannelSynchronizer {
             }
 
         } catch (error) {
-            this.throttledErrorLog("[WorkflowSynchronizer] ❌ 工作流通道同步异常:", error);
-            if (showToast) {
-                showToast(`❌ 工作流同步异常: ${error.message}`, 'error', 4000);
-            }
+            // 使用 info 级别日志，因为这个错误不影响主流程
+            logger.info("[WorkflowSynchronizer] ⚠️ 工作流通道同步跳过:", error.message || error);
+            // 移除 toast 提示，避免打扰用户
         } finally {
             this.isSyncing = false;
         }

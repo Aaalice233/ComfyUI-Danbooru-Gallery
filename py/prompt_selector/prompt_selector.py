@@ -239,7 +239,13 @@ async def get_metadata(request):
     }
     """
     if not os.path.exists(DATA_FILE):
-        return web.json_response({"error": "Data file not found"}, status=404)
+        # 返回空的元数据而非 404 错误，避免前端同步检查失败
+        return web.json_response({
+            "last_modified": None,
+            "version": "1.6",
+            "categories_count": 0,
+            "total_prompts": 0
+        })
     try:
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)

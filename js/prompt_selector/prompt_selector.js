@@ -202,11 +202,12 @@ class PromptDataSyncManager {
             this.syncErrorCount = 0; // 重置错误计数
         } catch (error) {
             this.syncErrorCount++;
-            logger.error(`同步检查失败 (${this.syncErrorCount}/${this.maxSyncErrors}):`, error);
+            // 使用 info 级别日志，因为这个错误不影响主流程（如 data.json 不存在）
+            logger.info(`同步检查跳过 (${this.syncErrorCount}/${this.maxSyncErrors}):`, error.message || error);
 
             // 如果连续错误过多，暂停同步并通知
             if (this.syncErrorCount >= this.maxSyncErrors) {
-                logger.error("连续同步错误过多，暂停自动同步");
+                logger.info("连续同步检查失败，暂停自动同步");
                 this.pause();
                 if (this.onErrorCallback) {
                     this.onErrorCallback(new Error("连续同步失败，已暂停自动同步"));
