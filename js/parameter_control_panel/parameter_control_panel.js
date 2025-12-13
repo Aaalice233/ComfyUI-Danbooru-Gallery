@@ -1113,9 +1113,20 @@ app.registerExtension({
                     padding: 3px 6px;
                     color: #E0E0E0;
                     font-size: 11px;
-                    width: 50px;
+                    min-width: 50px;
+                    width: auto;
                     text-align: center;
                     flex-shrink: 0;
+                    -moz-appearance: textfield;
+                }
+
+                .pcp-slider-value::-webkit-outer-spin-button,
+                .pcp-slider-value::-webkit-inner-spin-button {
+                    -webkit-appearance: none;
+                    display: none;
+                    margin: 0;
+                    width: 0;
+                    height: 0;
                 }
 
                 .pcp-slider-value:focus {
