@@ -145,6 +145,8 @@ def get_output_type(param_type: str, config: Dict = None) -> str:
         return "IMAGE"
     elif param_type == "taglist":
         return "STRING"
+    elif param_type == "enum":
+        return "STRING"
     return "*"  # 未知类型返回通配符
 
 
@@ -363,6 +365,10 @@ class ParameterControlPanel:
                         value = ", ".join(enabled_tags)
                     else:
                         value = str(value) if value else ""
+                elif param_type == "enum":
+                    # 处理枚举参数：输出选中的枚举值字符串
+                    output_type = "STRING"
+                    value = str(value) if value else ""
                 else:
                     output_type = "*"
 
@@ -378,6 +384,12 @@ class ParameterControlPanel:
                 if param_type == "dropdown":
                     meta_data["config"] = param_config
                     meta_data["locked_value"] = value  # 存储工作流保存的选中值
+
+                # 为枚举参数添加配置和选项信息
+                if param_type == "enum":
+                    meta_data["config"] = param_config
+                    meta_data["options"] = param_config.get("options", [])
+                    meta_data["value"] = value
 
                 params_pack["_meta"].append(meta_data)
 
@@ -955,6 +967,39 @@ try:
             logger.error(f"更新参数值错误: {e}")
             import traceback
             logger.debug(traceback.format_exc())
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+    @routes.post('/danbooru_gallery/pcp/notify_enum_change')
+    async def notify_enum_change(request):
+        """通知枚举参数值变更（用于 EnumSwitch 节点联动）"""
+        try:
+            data = await request.json()
+            source_node_id = data.get('source_node_id')
+            param_name = data.get('param_name')
+            options = data.get('options', [])
+            selected_value = data.get('selected_value', '')
+
+            if not source_node_id or not param_name:
+                return web.json_response({
+                    "status": "error",
+                    "message": "缺少 source_node_id 或 param_name"
+                }, status=400)
+
+            logger.debug(f"[PCP] 枚举变更通知: {param_name} = {selected_value} (来源: {source_node_id})")
+
+            # 可以在这里通过 WebSocket 广播事件，但目前前端通过自定义事件处理
+            # 保留此 API 用于未来可能的服务端状态管理
+
+            return web.json_response({
+                "status": "success",
+                "message": f"枚举变更已记录: {param_name}"
+            })
+
+        except Exception as e:
+            logger.error(f"枚举变更通知错误: {e}")
             return web.json_response({
                 "status": "error",
                 "message": str(e)

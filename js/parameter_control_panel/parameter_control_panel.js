@@ -108,7 +108,12 @@ const translations = {
         multiline: "多行文本",
         taglist: "标签列表",
         taglistEmpty: "暂无标签，输入后回车添加",
-        taglistPlaceholder: "输入标签后回车添加（支持逗号分隔批量添加）"
+        taglistPlaceholder: "输入标签后回车添加（支持逗号分隔批量添加）",
+        enum: "枚举",
+        enumOptions: "枚举选项",
+        enumOptionsPlaceholder: "每行一个选项（将作为枚举值）",
+        enumDataSource: "数据源",
+        enumHint: "枚举参数可与枚举切换节点联动，实现值的动态选择"
     },
     en: {
         title: "Parameter Control Panel",
@@ -171,7 +176,12 @@ const translations = {
         multiline: "Multiline",
         taglist: "Tag List",
         taglistEmpty: "No tags, press Enter to add",
-        taglistPlaceholder: "Enter tag and press Enter (comma-separated for batch)"
+        taglistPlaceholder: "Enter tag and press Enter (comma-separated for batch)",
+        enum: "Enum",
+        enumOptions: "Enum Options",
+        enumOptionsPlaceholder: "One option per line (as enum values)",
+        enumDataSource: "Data Source",
+        enumHint: "Enum parameters can be linked with Enum Switch nodes for dynamic value selection"
     }
 };
 
@@ -2615,6 +2625,9 @@ app.registerExtension({
                 case 'taglist':
                     control.appendChild(this.createTagList(param));
                     break;
+                case 'enum':
+                    control.appendChild(this.createEnum(param));
+                    break;
             }
 
             // 编辑按钮（SVG图标）
@@ -3026,6 +3039,161 @@ app.registerExtension({
             container.appendChild(select);
 
             return container;
+        };
+
+        // 创建枚举UI
+        nodeType.prototype.createEnum = function (param) {
+            const container = document.createElement('div');
+            container.className = 'pcp-enum-container';
+            container.style.display = 'flex';
+            container.style.alignItems = 'center';
+            container.style.gap = '8px';
+            container.style.flex = '1';
+            container.style.minWidth = '0';
+            container.style.overflow = 'hidden';
+
+            const select = document.createElement('select');
+            select.className = 'pcp-enum-select';
+            select.dataset.paramName = param.name;
+            select.dataset.paramId = param.id;
+
+            const config = param.config || {};
+            const dataSource = config.data_source || 'custom';
+
+            // 添加数据源状态指示器
+            const indicator = document.createElement('span');
+            indicator.className = 'pcp-enum-indicator';
+            indicator.style.fontSize = '14px';
+            indicator.style.opacity = '0.7';
+            indicator.style.flexShrink = '0';
+
+            if (dataSource === 'custom') {
+                indicator.textContent = '🔢';
+                indicator.title = '自定义枚举选项';
+            } else {
+                indicator.textContent = '📁';
+                indicator.title = '从' + dataSource + '获取选项';
+            }
+
+            // 阻止下拉菜单触发拖拽
+            select.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+            });
+            select.addEventListener('dragstart', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            select.draggable = false;
+
+            // 加载选项
+            const loadOptions = (options) => {
+                select.innerHTML = '';
+                options.forEach(opt => {
+                    const option = document.createElement('option');
+                    option.value = opt;
+                    option.textContent = opt;
+                    if (param.value === opt) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                });
+            };
+
+            if (dataSource === 'custom') {
+                const options = config.options || [];
+                loadOptions(options);
+            } else {
+                // 动态数据源
+                this.loadDataSource(dataSource).then(options => {
+                    loadOptions(options);
+                    // 更新 config.options 以便后续使用
+                    if (!param.config) param.config = {};
+                    param.config.options = options;
+                });
+            }
+
+            // 选择事件 - 同步值并通知关联的 EnumSwitch 节点
+            select.addEventListener('change', (e) => {
+                param.value = e.target.value;
+                this.syncConfig();
+
+                // 发送枚举变更事件到关联的 EnumSwitch 节点
+                this.notifyEnumSwitchNodes(param);
+            });
+
+            // 组装container
+            container.appendChild(indicator);
+            container.appendChild(select);
+
+            return container;
+        };
+
+        // 通知关联的 EnumSwitch 节点
+        nodeType.prototype.notifyEnumSwitchNodes = function(param) {
+            const options = param.config?.options || [];
+            const selectedValue = param.value || '';
+
+            // 通过自定义事件广播
+            if (this.graph) {
+                // 遍历所有节点，找到连接到此 PCP 的 EnumSwitch 节点
+                for (const node of this.graph._nodes) {
+                    if (node.type === 'EnumSwitch') {
+                        // 检查是否连接到此 PCP（直接连接或通过 ParameterBreak）
+                        const enumInput = node.inputs && node.inputs[0];
+                        if (enumInput && enumInput.link != null) {
+                            const link = this.graph.links[enumInput.link];
+                            if (link) {
+                                let originNodeId = link.origin_id;
+                                let shouldNotify = false;
+
+                                // 检查是否直接连接到此 PCP
+                                if (originNodeId === this.id) {
+                                    shouldNotify = true;
+                                } else {
+                                    // 检查是否通过 ParameterBreak 连接
+                                    const originNode = this.graph.getNodeById(originNodeId);
+                                    if (originNode && originNode.type === 'ParameterBreak') {
+                                        // 检查 ParameterBreak 是否连接到此 PCP
+                                        const pbInput = originNode.inputs && originNode.inputs[0];
+                                        if (pbInput && pbInput.link != null) {
+                                            const pbLink = this.graph.links[pbInput.link];
+                                            if (pbLink && pbLink.origin_id === this.id) {
+                                                shouldNotify = true;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (shouldNotify) {
+                                    window.dispatchEvent(new CustomEvent('enum-switch-update', {
+                                        detail: {
+                                            targetNodeId: node.id,
+                                            options: options,
+                                            selectedValue: selectedValue,
+                                            panelNodeId: this.id,
+                                            paramName: param.name
+                                        }
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 也通过后端 API 发送通知（用于刷新后恢复）
+            fetch('/danbooru_gallery/pcp/notify_enum_change', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source_node_id: this.id,
+                    param_name: param.name,
+                    options: options,
+                    selected_value: selectedValue
+                })
+            }).catch(error => {
+                logger.warn('[PCP] 通知枚举变更失败:', error);
+            });
         };
 
         // 创建字符串UI
@@ -3758,6 +3926,7 @@ app.registerExtension({
                             <option value="slider" ${param?.type === 'slider' ? 'selected' : ''}>${t('slider')}</option>
                             <option value="switch" ${param?.type === 'switch' ? 'selected' : ''}>${t('switch')}</option>
                             <option value="dropdown" ${param?.type === 'dropdown' ? 'selected' : ''}>${t('dropdown')}</option>
+                            <option value="enum" ${param?.type === 'enum' ? 'selected' : ''}>${t('enum')}</option>
                             <option value="string" ${param?.type === 'string' ? 'selected' : ''}>${t('string')}</option>
                             <option value="image" ${param?.type === 'image' ? 'selected' : ''}>${t('image')}</option>
                             <option value="separator" ${param?.type === 'separator' ? 'selected' : ''}>${t('separator')}</option>
@@ -4125,6 +4294,68 @@ app.registerExtension({
                             </div>
                         `;
                         break;
+
+                    case 'enum':
+                        const enumConfig = param?.config || {};
+                        const enumDataSource = enumConfig.data_source || 'custom';
+                        const enumDescription = enumConfig.description || '';
+                        const enumOptionsText = Array.isArray(enumConfig.options)
+                            ? enumConfig.options.join('\n')
+                            : '';
+
+                        configPanel.innerHTML = `
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">${t('description')}</label>
+                                <textarea class="pcp-dialog-textarea pcp-param-description" id="pcp-param-description"
+                                          placeholder="${t('descriptionPlaceholder')}"
+                                          rows="3">${enumDescription}</textarea>
+                            </div>
+                            <div class="pcp-dialog-field">
+                                <label class="pcp-dialog-label">${t('enumDataSource')}</label>
+                                <select class="pcp-dialog-select" id="pcp-enum-source">
+                                    <option value="custom" ${enumDataSource === 'custom' ? 'selected' : ''}>${t('custom')}</option>
+                                    <option value="checkpoint" ${enumDataSource === 'checkpoint' ? 'selected' : ''}>${t('checkpoint')}</option>
+                                    <option value="lora" ${enumDataSource === 'lora' ? 'selected' : ''}>${t('lora')}</option>
+                                    <option value="sampler" ${enumDataSource === 'sampler' ? 'selected' : ''}>${t('sampler')}</option>
+                                    <option value="scheduler" ${enumDataSource === 'scheduler' ? 'selected' : ''}>${t('scheduler')}</option>
+                                </select>
+                            </div>
+                            <div class="pcp-dialog-field" id="pcp-enum-options-field">
+                                <label class="pcp-dialog-label">${t('enumOptions')}</label>
+                                <textarea class="pcp-dialog-textarea" id="pcp-enum-options"
+                                          placeholder="${t('enumOptionsPlaceholder')}">${enumOptionsText}</textarea>
+                            </div>
+                            <div class="pcp-dialog-field">
+                                <p style="color: #999; font-size: 12px; margin: 0; padding: 8px; background: rgba(116, 55, 149, 0.1); border-radius: 4px;">
+                                    💡 ${t('enumHint')}
+                                </p>
+                            </div>
+                        `;
+
+                        // 根据数据源显示/隐藏选项输入框
+                        const enumSourceSelect = configPanel.querySelector('#pcp-enum-source');
+                        const enumOptionsField = configPanel.querySelector('#pcp-enum-options-field');
+
+                        const updateEnumOptionsField = () => {
+                            const source = enumSourceSelect.value;
+                            if (source === 'custom') {
+                                enumOptionsField.style.display = 'block';
+                            } else {
+                                enumOptionsField.style.display = 'none';
+                            }
+                        };
+
+                        enumSourceSelect.addEventListener('change', updateEnumOptionsField);
+                        updateEnumOptionsField();
+
+                        // 锁定模式下禁用数据源选择器
+                        if (isEdit && this.properties.locked) {
+                            enumSourceSelect.disabled = true;
+                            enumSourceSelect.style.opacity = '0.6';
+                            enumSourceSelect.style.cursor = 'not-allowed';
+                            enumSourceSelect.title = '锁定模式下无法修改数据源';
+                        }
+                        break;
                 }
             };
 
@@ -4293,6 +4524,31 @@ app.registerExtension({
                     case 'taglist':
                         // 标签列表类型：默认值为空数组
                         defaultValue = [];
+                        break;
+
+                    case 'enum':
+                        const enumSourceSelect = configPanel.querySelector('#pcp-enum-source');
+                        const enumOptionsTextarea = configPanel.querySelector('#pcp-enum-options');
+
+                        config.data_source = enumSourceSelect.value;
+
+                        if (config.data_source === 'custom') {
+                            const enumOptionsText = enumOptionsTextarea.value.trim();
+                            config.options = enumOptionsText.split('\n').map(s => s.trim()).filter(s => s);
+
+                            if (config.options.length === 0) {
+                                this.showToast(t('invalidInput') + ': ' + t('enumOptions'), 'error');
+                                return;
+                            }
+
+                            defaultValue = config.options[0];
+                        } else {
+                            // 动态数据源：延迟加载选项
+                            if (param?.config?.options) {
+                                config.options = param.config.options;
+                            }
+                            defaultValue = '';
+                        }
                         break;
                 }
 

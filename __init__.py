@@ -48,6 +48,9 @@ from .py.save_image_plus import NODE_CLASS_MAPPINGS as sip_mappings, NODE_DISPLA
 from .py.simple_value_switch import NODE_CLASS_MAPPINGS as svs_mappings, NODE_DISPLAY_NAME_MAPPINGS as svs_display_mappings
 from .py.model_name_extractor import NODE_CLASS_MAPPINGS as mne_mappings, NODE_DISPLAY_NAME_MAPPINGS as mne_display_mappings
 
+# 导入枚举切换节点
+from .py.enum_switch import NODE_CLASS_MAPPINGS as enum_switch_mappings, NODE_DISPLAY_NAME_MAPPINGS as enum_switch_display_mappings
+
 # 导入优化执行系统
 from .py.group_executor_manager import NODE_CLASS_MAPPINGS as group_manager_mappings
 from .py.group_executor_manager import NODE_DISPLAY_NAME_MAPPINGS as group_manager_display_mappings
@@ -107,6 +110,7 @@ NODE_CLASS_MAPPINGS = {
     **sip_mappings,
     **svs_mappings,
     **mne_mappings,
+    **enum_switch_mappings,
     **opt_mappings,
     **workflow_description_mappings,
     **text_cache_viewer_mappings,
@@ -135,6 +139,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **sip_display_mappings,
     **svs_display_mappings,
     **mne_display_mappings,
+    **enum_switch_display_mappings,
     **opt_display_mappings,
     **workflow_description_display_mappings,
     **text_cache_viewer_display_mappings,
@@ -144,7 +149,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 
 # 统计节点加载情况
 _node_load_stats["total_nodes"] = len(NODE_CLASS_MAPPINGS)
-_node_load_stats["loaded_modules"] = 24  # 成功导入的模块数(根据上面的import语句统计)
+_node_load_stats["loaded_modules"] = 25  # 成功导入的模块数(根据上面的import语句统计)
 
 # 控制台输出
 print("=" * 70, file=sys.stderr)

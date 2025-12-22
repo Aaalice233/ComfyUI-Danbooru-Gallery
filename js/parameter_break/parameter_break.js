@@ -90,9 +90,9 @@ app.registerExtension({
                         const paramName = paramMeta.name;
                         const paramType = paramMeta.param_type;
 
-                        // 如果是下拉菜单类型，清空选项
-                        if (paramType === 'dropdown') {
-                            logger.info(`[PB] 清空下拉菜单 '${paramName}' 的选项`);
+                        // 如果是下拉菜单或枚举类型，清空选项
+                        if (paramType === 'dropdown' || paramType === 'enum') {
+                            logger.info(`[PB] 清空下拉菜单/枚举 '${paramName}' 的选项`);
                             this.syncOptionsToPanel(paramName, []);
                         }
                     }
@@ -122,9 +122,9 @@ app.registerExtension({
                 const paramName = paramMeta.name;
                 const paramType = paramMeta.param_type;
 
-                // 只处理下拉菜单类型的参数
-                if (paramType !== 'dropdown') {
-                    logger.info(`[PB] 参数 '${paramName}' 不是下拉菜单类型，跳过`);
+                // 只处理下拉菜单和枚举类型的参数
+                if (paramType !== 'dropdown' && paramType !== 'enum') {
+                    logger.info(`[PB] 参数 '${paramName}' 不是下拉菜单或枚举类型，跳过`);
                     return;
                 }
 
