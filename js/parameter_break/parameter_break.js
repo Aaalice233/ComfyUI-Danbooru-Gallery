@@ -377,16 +377,25 @@ app.registerExtension({
                                 outputType = "*";
                             }
 
+                            // 获取枚举/下拉菜单的选项
+                            let options = [];
+                            let value = param.value || '';
+                            if (param.type === 'enum' || param.type === 'dropdown') {
+                                options = param.options || param.config?.options || [];
+                            }
+
                             paramMeta.push({
                                 name: param.name,
                                 type: outputType,
                                 order: order,
                                 param_type: param.type,
                                 param_id: param.id,  // 添加参数ID用于追踪连接
-                                output_index: order  // 添加输出索引，用于 ParameterControlPanel 查找
+                                output_index: order,  // 添加输出索引，用于 ParameterControlPanel 查找
+                                options: options,  // 枚举/下拉菜单的选项列表
+                                value: value  // 当前选中的值
                             });
 
-                            logger.info(`[PB] 创建参数元数据: ${param.name}, type: ${param.type}, output_index: ${order}, param_id: ${param.id}`);
+                            logger.info(`[PB] 创建参数元数据: ${param.name}, type: ${param.type}, output_index: ${order}, param_id: ${param.id}, options: ${options.length}个`);
 
                             order++;
                         }

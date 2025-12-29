@@ -1180,45 +1180,111 @@ app.registerExtension({
                     left: 28px;
                 }
 
-                /* 下拉菜单样式 */
-                .pcp-dropdown {
+                /* 下拉菜单样式 - 增强版 */
+                .pcp-dropdown,
+                .pcp-enum-select {
                     flex: 1;
-                    background: rgba(0, 0, 0, 0.3);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    border-radius: 6px;
-                    padding: 4px 8px;
-                    color: #E0E0E0;
-                    font-size: 12px;
-                    min-width: 80px;
-                    max-width: 100%; /* 限制最大宽度 */
-                    transition: all 0.2s ease;
+                    background: linear-gradient(135deg, rgba(0, 0, 0, 0.35) 0%, rgba(20, 20, 30, 0.4) 100%);
+                    border: 1px solid rgba(255, 255, 255, 0.12);
+                    border-radius: 8px;
+                    padding: 8px 32px 8px 12px;
+                    color: #E8E8E8;
+                    font-size: 13px;
+                    min-width: 100px;
+                    max-width: 100%;
+                    height: 36px;
+                    transition: all 0.25s ease;
                     cursor: pointer;
-                    /* 文本溢出处理 */
                     overflow: hidden;
                     text-overflow: ellipsis;
                     white-space: nowrap;
+                    /* 自定义下拉箭头 */
+                    appearance: none;
+                    -webkit-appearance: none;
+                    -moz-appearance: none;
+                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23B0B0B0' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+                    background-repeat: no-repeat;
+                    background-position: right 10px center;
+                    background-size: 14px;
                 }
 
-                .pcp-dropdown:focus {
+                /* Hover 状态 */
+                .pcp-dropdown:hover,
+                .pcp-enum-select:hover {
+                    border-color: rgba(116, 55, 149, 0.5);
+                    background-color: rgba(0, 0, 0, 0.45);
+                    box-shadow: 0 2px 8px rgba(116, 55, 149, 0.15);
+                }
+
+                /* Focus 状态 */
+                .pcp-dropdown:focus,
+                .pcp-enum-select:focus {
                     outline: none;
                     border-color: #743795;
-                    background: rgba(0, 0, 0, 0.4);
+                    background-color: rgba(0, 0, 0, 0.5);
+                    box-shadow: 0 0 0 3px rgba(116, 55, 149, 0.2), 0 4px 12px rgba(116, 55, 149, 0.25);
                 }
 
-                /* 下拉菜单选项样式 */
-                .pcp-dropdown option {
-                    background: #3d2951; /* 深紫色背景 */
-                    color: #E0E0E0; /* 白色文字 */
-                    padding: 6px 8px;
+                /* 下拉选项样式 */
+                .pcp-dropdown option,
+                .pcp-enum-select option {
+                    background: #2a2a3a;
+                    color: #E8E8E8;
+                    padding: 10px 12px;
+                    font-size: 13px;
                 }
 
-                .pcp-dropdown option:hover {
-                    background: #4d3561; /* 悬停时稍亮的紫色 */
+                .pcp-dropdown option:hover,
+                .pcp-enum-select option:hover {
+                    background: linear-gradient(135deg, #3d2951 0%, #4d3561 100%);
                 }
 
-                .pcp-dropdown option:checked {
-                    background: #5d4171; /* 选中时更亮的紫色 */
+                .pcp-dropdown option:checked,
+                .pcp-enum-select option:checked {
+                    background: linear-gradient(135deg, #743795 0%, #8b4ba8 100%);
+                    color: #fff;
                     font-weight: 500;
+                }
+
+                /* 禁用状态 */
+                .pcp-dropdown:disabled,
+                .pcp-enum-select:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+
+                /* 枚举/下拉容器样式 */
+                .pcp-enum-container,
+                .pcp-dropdown-container {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    flex: 1;
+                    min-width: 0;
+                    overflow: hidden;
+                    padding: 2px 0;
+                }
+
+                /* 枚举/下拉指示器图标 */
+                .pcp-enum-indicator,
+                .pcp-dropdown-indicator {
+                    font-size: 16px;
+                    opacity: 0.8;
+                    flex-shrink: 0;
+                    width: 28px;
+                    height: 28px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: rgba(116, 55, 149, 0.15);
+                    border-radius: 6px;
+                    transition: all 0.2s ease;
+                }
+
+                .pcp-enum-container:hover .pcp-enum-indicator,
+                .pcp-dropdown-container:hover .pcp-dropdown-indicator {
+                    background: rgba(116, 55, 149, 0.25);
+                    transform: scale(1.05);
                 }
 
                 /* 图像参数样式 */
@@ -2957,12 +3023,6 @@ app.registerExtension({
         nodeType.prototype.createDropdown = function (param) {
             const container = document.createElement('div');
             container.className = 'pcp-dropdown-container';
-            container.style.display = 'flex';
-            container.style.alignItems = 'center';
-            container.style.gap = '8px';
-            container.style.flex = '1';
-            container.style.minWidth = '0'; // 允许被压缩，防止挤出按钮
-            container.style.overflow = 'hidden'; // 隐藏溢出内容
 
             const select = document.createElement('select');
             select.className = 'pcp-dropdown';
@@ -2975,9 +3035,6 @@ app.registerExtension({
             // 添加数据源状态指示器
             const indicator = document.createElement('span');
             indicator.className = 'pcp-dropdown-indicator';
-            indicator.style.fontSize = '14px';
-            indicator.style.opacity = '0.7';
-            indicator.style.flexShrink = '0';
 
             if (dataSource === 'from_connection') {
                 indicator.textContent = '🔗';
@@ -3045,12 +3102,6 @@ app.registerExtension({
         nodeType.prototype.createEnum = function (param) {
             const container = document.createElement('div');
             container.className = 'pcp-enum-container';
-            container.style.display = 'flex';
-            container.style.alignItems = 'center';
-            container.style.gap = '8px';
-            container.style.flex = '1';
-            container.style.minWidth = '0';
-            container.style.overflow = 'hidden';
 
             const select = document.createElement('select');
             select.className = 'pcp-enum-select';
@@ -3063,9 +3114,6 @@ app.registerExtension({
             // 添加数据源状态指示器
             const indicator = document.createElement('span');
             indicator.className = 'pcp-enum-indicator';
-            indicator.style.fontSize = '14px';
-            indicator.style.opacity = '0.7';
-            indicator.style.flexShrink = '0';
 
             if (dataSource === 'custom') {
                 indicator.textContent = '🔢';
