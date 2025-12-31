@@ -113,7 +113,15 @@ const translations = {
         enumOptions: "枚举选项",
         enumOptionsPlaceholder: "每行一个选项（将作为枚举值）",
         enumDataSource: "数据源",
-        enumHint: "枚举参数可与枚举切换节点联动，实现值的动态选择"
+        enumHint: "枚举参数可与枚举切换节点联动，实现值的动态选择",
+        copyParameter: "复制参数",
+        pasteParameter: "粘贴参数",
+        parameterCopied: "参数已复制到剪贴板",
+        parameterPasted: "参数已粘贴",
+        clipboardEmpty: "剪贴板为空",
+        clipboardInvalid: "剪贴板数据无效",
+        copyFailed: "复制失败",
+        lockedModeNoPaste: "锁定模式下无法粘贴"
     },
     en: {
         title: "Parameter Control Panel",
@@ -181,7 +189,15 @@ const translations = {
         enumOptions: "Enum Options",
         enumOptionsPlaceholder: "One option per line (as enum values)",
         enumDataSource: "Data Source",
-        enumHint: "Enum parameters can be linked with Enum Switch nodes for dynamic value selection"
+        enumHint: "Enum parameters can be linked with Enum Switch nodes for dynamic value selection",
+        copyParameter: "Copy Parameter",
+        pasteParameter: "Paste Parameter",
+        parameterCopied: "Parameter copied to clipboard",
+        parameterPasted: "Parameter pasted",
+        clipboardEmpty: "Clipboard is empty",
+        clipboardInvalid: "Invalid clipboard data",
+        copyFailed: "Copy failed",
+        lockedModeNoPaste: "Cannot paste in locked mode"
     }
 };
 
@@ -1950,6 +1966,57 @@ app.registerExtension({
                         transform: translateX(-30px);
                     }
                 }
+
+                /* 参数条目右键菜单 */
+                .pcp-context-menu {
+                    position: fixed;
+                    min-width: 160px;
+                    background: #2a2a3a;
+                    border: 1px solid rgba(116, 55, 149, 0.4);
+                    border-radius: 8px;
+                    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+                    z-index: 9999999999;
+                    opacity: 0;
+                    transform: scale(0.95);
+                    transition: opacity 0.15s ease, transform 0.15s ease;
+                    overflow: hidden;
+                }
+
+                .pcp-context-menu-visible {
+                    opacity: 1;
+                    transform: scale(1);
+                }
+
+                .pcp-context-menu-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 10px 14px;
+                    cursor: pointer;
+                    transition: background 0.15s ease;
+                    font-size: 13px;
+                    color: #E0E0E0;
+                    user-select: none;
+                }
+
+                .pcp-context-menu-item:hover {
+                    background: rgba(116, 55, 149, 0.3);
+                }
+
+                .pcp-context-menu-item.disabled {
+                    opacity: 0.4;
+                    cursor: not-allowed;
+                    pointer-events: none;
+                }
+
+                .pcp-context-menu-icon {
+                    font-size: 14px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 18px;
+                    height: 18px;
+                }
             `;
             document.head.appendChild(style);
         };
@@ -2616,6 +2683,13 @@ app.registerExtension({
                     });
                 }
 
+                // 右键菜单事件
+                item.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.showParameterContextMenu(e.clientX, e.clientY, param.id);
+                });
+
                 return item;
             }
 
@@ -2800,6 +2874,13 @@ app.registerExtension({
                     isTooltipVisible = false;
                 });
             }
+
+            // 右键菜单事件
+            item.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.showParameterContextMenu(e.clientX, e.clientY, param.id);
+            });
 
             return item;
         };
@@ -3945,6 +4026,224 @@ app.registerExtension({
             } catch (error) {
                 logger.error('[PCP] Toast显示失败:', error);
             }
+        };
+
+        // ==================== 右键菜单系统 ====================
+
+        // 显示参数条目右键菜单
+        nodeType.prototype.showParameterContextMenu = function (x, y, paramId) {
+            // 删除已存在的菜单
+            this.removeParameterContextMenu();
+
+            const param = this.getParameterById(paramId);
+            if (!param) return;
+
+            // 检查剪贴板是否有数据
+            const clipboardData = localStorage.getItem('pcp_clipboard_parameter');
+            const hasClipboardData = !!clipboardData;
+
+            // 锁定模式下粘贴不可用
+            const canPaste = hasClipboardData && !this.properties.locked;
+
+            // 创建菜单DOM
+            const menu = document.createElement('div');
+            menu.className = 'pcp-context-menu';
+            menu.innerHTML = `
+                <div class="pcp-context-menu-item" data-action="copy">
+                    <span class="pcp-context-menu-icon">📋</span>
+                    <span>${t('copyParameter')}</span>
+                </div>
+                <div class="pcp-context-menu-item ${canPaste ? '' : 'disabled'}" data-action="paste">
+                    <span class="pcp-context-menu-icon">📥</span>
+                    <span>${t('pasteParameter')}</span>
+                </div>
+            `;
+
+            // 计算菜单位置（边界检测）
+            const menuWidth = 160;
+            const menuHeight = 80;
+            const padding = 10;
+
+            let menuX = x;
+            let menuY = y;
+
+            // 右侧边界检测
+            if (menuX + menuWidth > window.innerWidth - padding) {
+                menuX = window.innerWidth - menuWidth - padding;
+            }
+
+            // 底部边界检测
+            if (menuY + menuHeight > window.innerHeight - padding) {
+                menuY = window.innerHeight - menuHeight - padding;
+            }
+
+            menu.style.left = `${menuX}px`;
+            menu.style.top = `${menuY}px`;
+
+            // 添加到页面
+            document.body.appendChild(menu);
+            this._contextMenuElement = menu;
+            this._contextMenuParamId = paramId;
+
+            // 显示动画
+            requestAnimationFrame(() => {
+                menu.classList.add('pcp-context-menu-visible');
+            });
+
+            // 绑定菜单项事件
+            const copyItem = menu.querySelector('[data-action="copy"]');
+            const pasteItem = menu.querySelector('[data-action="paste"]');
+
+            copyItem.addEventListener('click', () => {
+                this.copyParameter(paramId);
+                this.removeParameterContextMenu();
+            });
+
+            if (canPaste) {
+                pasteItem.addEventListener('click', () => {
+                    this.pasteParameterAfter(paramId);
+                    this.removeParameterContextMenu();
+                });
+            }
+
+            // 点击外部关闭菜单
+            const closeMenu = (e) => {
+                if (!menu.contains(e.target)) {
+                    this.removeParameterContextMenu();
+                }
+            };
+            // 延迟添加，避免当前右键点击立即触发关闭
+            setTimeout(() => {
+                document.addEventListener('click', closeMenu);
+            }, 100);
+            this._contextMenuCloseHandler = closeMenu;
+
+            // ESC键关闭
+            const escHandler = (e) => {
+                if (e.key === 'Escape') {
+                    this.removeParameterContextMenu();
+                }
+            };
+            document.addEventListener('keydown', escHandler);
+            this._contextMenuEscHandler = escHandler;
+
+            logger.info('[PCP] 右键菜单已显示');
+        };
+
+        // 移除右键菜单
+        nodeType.prototype.removeParameterContextMenu = function () {
+            if (this._contextMenuElement) {
+                this._contextMenuElement.remove();
+                this._contextMenuElement = null;
+                this._contextMenuParamId = null;
+            }
+            // 清理事件监听器
+            if (this._contextMenuCloseHandler) {
+                document.removeEventListener('click', this._contextMenuCloseHandler);
+                this._contextMenuCloseHandler = null;
+            }
+            if (this._contextMenuEscHandler) {
+                document.removeEventListener('keydown', this._contextMenuEscHandler);
+                this._contextMenuEscHandler = null;
+            }
+        };
+
+        // 复制参数到剪贴板
+        nodeType.prototype.copyParameter = function (paramId) {
+            const param = this.getParameterById(paramId);
+            if (!param) {
+                this.showToast(t('error'), 'error');
+                return;
+            }
+
+            // 深拷贝参数数据（排除 ID，因为粘贴时会生成新 ID）
+            const paramData = JSON.parse(JSON.stringify(param));
+            delete paramData.id;
+
+            // 添加复制时间戳和来源标识
+            const clipboardData = {
+                version: 1,
+                timestamp: Date.now(),
+                source: 'pcp',
+                parameter: paramData
+            };
+
+            // 存储到 localStorage
+            try {
+                localStorage.setItem('pcp_clipboard_parameter', JSON.stringify(clipboardData));
+                this.showToast(t('parameterCopied'), 'success');
+                logger.info('[PCP] 参数已复制:', param.name);
+            } catch (error) {
+                logger.error('[PCP] 复制参数失败:', error);
+                this.showToast(t('copyFailed'), 'error');
+            }
+        };
+
+        // 在指定参数后粘贴
+        nodeType.prototype.pasteParameterAfter = function (afterParamId) {
+            // 锁定模式下禁止粘贴
+            if (this.properties.locked) {
+                this.showToast(t('lockedModeNoPaste'), 'error');
+                return;
+            }
+
+            // 从 localStorage 读取剪贴板数据
+            const clipboardStr = localStorage.getItem('pcp_clipboard_parameter');
+            if (!clipboardStr) {
+                this.showToast(t('clipboardEmpty'), 'warning');
+                return;
+            }
+
+            let clipboardData;
+            try {
+                clipboardData = JSON.parse(clipboardStr);
+            } catch (error) {
+                logger.error('[PCP] 解析剪贴板数据失败:', error);
+                this.showToast(t('clipboardInvalid'), 'error');
+                return;
+            }
+
+            // 验证剪贴板数据格式
+            if (!clipboardData.parameter || clipboardData.source !== 'pcp') {
+                this.showToast(t('clipboardInvalid'), 'error');
+                return;
+            }
+
+            // 深拷贝参数数据
+            const newParam = JSON.parse(JSON.stringify(clipboardData.parameter));
+
+            // 生成新 ID
+            newParam.id = `param_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+            // 处理参数名称重复（非分隔符类型）
+            if (newParam.type !== 'separator') {
+                let baseName = newParam.name;
+                let counter = 1;
+                let newName = baseName;
+
+                while (this.checkParameterNameDuplicate(newName)) {
+                    newName = `${baseName}_${counter}`;
+                    counter++;
+                }
+                newParam.name = newName;
+            }
+
+            // 找到插入位置
+            const afterIndex = this.getParameterIndexById(afterParamId);
+            if (afterIndex === -1) {
+                // 如果找不到指定位置，添加到末尾
+                this.properties.parameters.push(newParam);
+            } else {
+                // 在指定位置后插入
+                this.properties.parameters.splice(afterIndex + 1, 0, newParam);
+            }
+
+            // 更新UI和同步配置
+            this.updateParametersList();
+            this.syncConfig();
+
+            this.showToast(t('parameterPasted'), 'success');
+            logger.info('[PCP] 参数已粘贴:', newParam.name);
         };
 
         // ==================== 对话框系统 ====================
@@ -5478,6 +5777,9 @@ app.registerExtension({
             if (onRemoved) {
                 onRemoved.apply(this, arguments);
             }
+
+            // 移除右键菜单（如果存在）
+            this.removeParameterContextMenu();
 
             // 移除参数值变化事件监听器
             if (this._pcpEventHandler) {
