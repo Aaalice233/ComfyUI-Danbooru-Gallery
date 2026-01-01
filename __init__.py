@@ -76,6 +76,11 @@ from .py.open_in_krita import NODE_DISPLAY_NAME_MAPPINGS as open_in_krita_displa
 from .py.quick_group_navigation import NODE_CLASS_MAPPINGS as quick_group_navigation_mappings
 from .py.quick_group_navigation import NODE_DISPLAY_NAME_MAPPINGS as quick_group_navigation_display_mappings
 
+# 导入组是否启用节点
+from .py.group_is_enabled import NODE_CLASS_MAPPINGS as gie_mappings
+from .py.group_is_enabled import NODE_DISPLAY_NAME_MAPPINGS as gie_display_mappings
+from .py.group_is_enabled.group_is_enabled import update_all_group_states as gie_update_states
+
 # 优化执行系统映射
 opt_mappings = {
     "GroupExecutorTrigger": GroupExecutorTrigger,
@@ -115,7 +120,8 @@ NODE_CLASS_MAPPINGS = {
     **workflow_description_mappings,
     **text_cache_viewer_mappings,
     **open_in_krita_mappings,
-    **quick_group_navigation_mappings
+    **quick_group_navigation_mappings,
+    **gie_mappings
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -144,12 +150,13 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **workflow_description_display_mappings,
     **text_cache_viewer_display_mappings,
     **open_in_krita_display_mappings,
-    **quick_group_navigation_display_mappings
+    **quick_group_navigation_display_mappings,
+    **gie_display_mappings
 }
 
 # 统计节点加载情况
 _node_load_stats["total_nodes"] = len(NODE_CLASS_MAPPINGS)
-_node_load_stats["loaded_modules"] = 25  # 成功导入的模块数(根据上面的import语句统计)
+_node_load_stats["loaded_modules"] = 26  # 成功导入的模块数(根据上面的import语句统计)
 
 # 控制台输出
 print("=" * 70, file=sys.stderr)
@@ -315,6 +322,44 @@ try:
             return web.json_response({"status": "success", "sampler_node_types": sampler_types})
         except Exception as e:
             return web.json_response({"status": "error", "error": str(e)}, status=500)
+
+    # 组是否启用节点 - 状态同步API
+    @PromptServer.instance.routes.post("/danbooru_gallery/group_is_enabled/sync_states")
+    async def sync_group_states(request):
+        """同步组状态到后端缓存"""
+        try:
+            data = await request.json()
+            states = data.get("states", {})
+
+            # 输入验证
+            if not isinstance(states, dict):
+                return web.json_response({
+                    "status": "error",
+                    "message": "states 必须是字典类型"
+                }, status=400)
+
+            # 验证值类型
+            for key, value in states.items():
+                if not isinstance(key, str) or not isinstance(value, bool):
+                    return web.json_response({
+                        "status": "error",
+                        "message": "states 格式无效: 键必须是字符串, 值必须是布尔值"
+                    }, status=400)
+
+            gie_update_states(states)
+
+            logger.debug(f"[GroupIsEnabled] 已同步 {len(states)} 个组状态")
+
+            return web.json_response({
+                "status": "success",
+                "count": len(states)
+            })
+        except Exception as e:
+            logger.error(f"[GroupIsEnabled] 同步状态失败: {e}")
+            return web.json_response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
 
     # 文本缓存相关API路由
     @PromptServer.instance.routes.post("/danbooru/text_cache/update")
