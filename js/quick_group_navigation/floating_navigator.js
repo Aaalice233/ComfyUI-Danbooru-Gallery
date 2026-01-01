@@ -14,6 +14,16 @@ import { createLogger } from '../global/logger_client.js';
 // 创建logger实例
 const logger = createLogger('floating_navigator');
 
+// 面板尺寸配置常量
+const PANEL_SIZE_CONFIG = {
+    DEFAULT_WIDTH: 420,
+    DEFAULT_HEIGHT: 600,
+    MIN_WIDTH: 300,
+    MIN_HEIGHT: 280,
+    MAX_WIDTH: 800,
+    MAX_HEIGHT_RATIO: 0.9
+};
+
 /**
  * 悬浮球导航器类
  * 负责悬浮球的创建、拖拽、面板展开等UI交互
@@ -26,6 +36,7 @@ export class FloatingNavigator {
         this.ballElement = null;
         this.panelElement = null;
         this.contextMenuElement = null;  // 右键菜单元素
+        this.tooltipElement = null;  // 快捷键预览 tooltip
 
         // 状态
         this.isExpanded = false;
@@ -39,6 +50,17 @@ export class FloatingNavigator {
         // 位置（默认右下角）
         this.position = this.loadPosition();
 
+        // 面板尺寸相关
+        this.panelSize = this.loadPanelSize();
+        this.isResizing = false;
+        this.resizeStartX = 0;
+        this.resizeStartY = 0;
+        this.resizeStartWidth = 0;
+        this.resizeStartHeight = 0;
+
+        // Tooltip 相关
+        this.tooltipTimeout = null;
+
         // 初始化
         this.init();
     }
@@ -49,6 +71,7 @@ export class FloatingNavigator {
     init() {
         this.createBall();
         this.createPanel();
+        this.createTooltip();
         this.setupEventListeners();
 
         // 每次进入工作流时，确保面板是折叠状态
@@ -106,6 +129,8 @@ export class FloatingNavigator {
             <div class="qgn-panel-footer">
                 <button class="qgn-add-group-button">+ 添加导航组</button>
             </div>
+
+            <div class="qgn-resize-handle" title="拖拽调整面板大小"></div>
         `;
 
         // 添加到body
@@ -117,6 +142,10 @@ export class FloatingNavigator {
         this.searchInput = this.panelElement.querySelector('.qgn-search-input');
         this.groupsList = this.panelElement.querySelector('.qgn-groups-list');
         this.addGroupButton = this.panelElement.querySelector('.qgn-add-group-button');
+        this.resizeHandle = this.panelElement.querySelector('.qgn-resize-handle');
+
+        // 应用保存的面板尺寸
+        this.applyPanelSize();
     }
 
     /**
@@ -140,6 +169,22 @@ export class FloatingNavigator {
         // 悬浮球拖拽
         this.ballElement.addEventListener('mousedown', (e) => {
             this.startDrag(e);
+        });
+
+        // 悬浮球 hover 显示快捷键预览 tooltip
+        this.ballElement.addEventListener('mouseenter', () => {
+            // 如果面板已展开，不显示 tooltip
+            if (this.isExpanded) return;
+
+            // 延迟 300ms 显示
+            this.tooltipTimeout = setTimeout(() => {
+                this.showTooltip();
+            }, 300);
+        });
+
+        this.ballElement.addEventListener('mouseleave', () => {
+            clearTimeout(this.tooltipTimeout);
+            this.hideTooltip();
         });
 
         // 关闭按钮
@@ -167,16 +212,27 @@ export class FloatingNavigator {
             this.showAddGroupDialog();
         });
 
+        // Resize handle 拖拽事件
+        this.resizeHandle.addEventListener('mousedown', (e) => {
+            this.startResize(e);
+        });
+
         // 全局拖拽事件
         document.addEventListener('mousemove', (e) => {
             if (this.isDragging) {
                 this.onDrag(e);
+            }
+            if (this.isResizing) {
+                this.onResize(e);
             }
         });
 
         document.addEventListener('mouseup', (e) => {
             if (this.isDragging) {
                 this.stopDrag(e);
+            }
+            if (this.isResizing) {
+                this.stopResize(e);
             }
         });
 
@@ -207,6 +263,9 @@ export class FloatingNavigator {
                     this.updatePanelPosition();
                 }
             }
+
+            // 约束面板尺寸
+            this.constrainPanelSize();
         });
     }
 
@@ -304,8 +363,12 @@ export class FloatingNavigator {
      */
     expandPanel() {
         this.isExpanded = true;
-        this.panelElement.style.display = 'block';
+        this.panelElement.style.display = 'flex';  // 使用 flex 而不是 block
         this.updatePanelPosition();
+
+        // 隐藏快捷键预览 tooltip
+        clearTimeout(this.tooltipTimeout);
+        this.hideTooltip();
 
         // 更新组列表
         this.renderGroupsList();
@@ -313,7 +376,30 @@ export class FloatingNavigator {
         // 动画效果
         requestAnimationFrame(() => {
             this.panelElement.classList.add('qgn-panel-visible');
+            // 强制更新列表容器高度
+            this.updateListContainerHeight();
         });
+    }
+
+    /**
+     * 更新列表容器高度（确保滚动条正常工作）
+     */
+    updateListContainerHeight() {
+        const listContainer = this.panelElement.querySelector('.qgn-groups-list-container');
+        if (!listContainer) return;
+
+        const panelHeight = this.panelElement.offsetHeight;
+        const header = this.panelElement.querySelector('.qgn-panel-header');
+        const search = this.panelElement.querySelector('.qgn-search-container');
+        const footer = this.panelElement.querySelector('.qgn-panel-footer');
+
+        const headerHeight = header ? header.offsetHeight : 0;
+        const searchHeight = search ? search.offsetHeight : 0;
+        const footerHeight = footer ? footer.offsetHeight : 0;
+
+        const availableHeight = panelHeight - headerHeight - searchHeight - footerHeight;
+        listContainer.style.height = `${Math.max(100, availableHeight)}px`;
+        listContainer.style.maxHeight = `${Math.max(100, availableHeight)}px`;
     }
 
     /**
@@ -340,8 +426,9 @@ export class FloatingNavigator {
      */
     updatePanelPosition() {
         const ballSize = 60;
-        const panelWidth = 360;
-        const panelMaxHeight = 500;  // 面板最大高度（与CSS中的max-height一致）
+        // 使用实际面板尺寸（动态获取或使用保存的值）
+        const panelWidth = this.panelSize?.width || PANEL_SIZE_CONFIG.DEFAULT_WIDTH;
+        const panelHeight = this.panelSize?.height || PANEL_SIZE_CONFIG.DEFAULT_HEIGHT;
         const gap = 10;
         const edgeMargin = 20;  // 距离屏幕边缘的最小间距
 
@@ -370,11 +457,11 @@ export class FloatingNavigator {
         let panelTop = this.position.y;
 
         // 检测面板是否会超出底部
-        const wouldExceedBottom = (this.position.y + panelMaxHeight) > (window.innerHeight - edgeMargin);
+        const wouldExceedBottom = (this.position.y + panelHeight) > (window.innerHeight - edgeMargin);
 
         if (wouldExceedBottom) {
             // 面板会超出底部，尝试向上对齐悬浮球底部
-            panelTop = this.position.y + ballSize - panelMaxHeight;
+            panelTop = this.position.y + ballSize - panelHeight;
 
             // 确保不超出顶部
             if (panelTop < edgeMargin) {
@@ -686,8 +773,17 @@ export class FloatingNavigator {
      * 获取所有工作流组
      */
     getAllWorkflowGroups() {
-        if (!app.graph || !app.graph._groups) return [];
-        return app.graph._groups.filter(g => g && g.title);
+        if (!app.graph) {
+            logger.warn('[QGN] app.graph 不存在');
+            return [];
+        }
+        if (!app.graph._groups) {
+            logger.warn('[QGN] app.graph._groups 不存在');
+            return [];
+        }
+        const groups = app.graph._groups.filter(g => g && g.title);
+        logger.info(`[QGN] 找到 ${groups.length} 个工作流组`);
+        return groups;
     }
 
     /**
@@ -890,13 +986,252 @@ export class FloatingNavigator {
         }
     }
 
+    // ==================== Resize 相关方法 ====================
+
+    /**
+     * 开始调整面板大小
+     */
+    startResize(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        this.isResizing = true;
+        this.resizeStartX = e.clientX;
+        this.resizeStartY = e.clientY;
+        this.resizeStartWidth = this.panelElement.offsetWidth;
+        this.resizeStartHeight = this.panelElement.offsetHeight;
+
+        this.panelElement.classList.add('qgn-resizing');
+        document.body.style.cursor = 'nwse-resize';
+        document.body.style.userSelect = 'none';
+    }
+
+    /**
+     * 调整面板大小中
+     */
+    onResize(e) {
+        if (!this.isResizing) return;
+
+        const dx = e.clientX - this.resizeStartX;
+        const dy = e.clientY - this.resizeStartY;
+
+        let newWidth = this.resizeStartWidth + dx;
+        let newHeight = this.resizeStartHeight + dy;
+
+        // 应用约束
+        const maxHeight = window.innerHeight * PANEL_SIZE_CONFIG.MAX_HEIGHT_RATIO;
+
+        newWidth = Math.max(PANEL_SIZE_CONFIG.MIN_WIDTH,
+                   Math.min(newWidth, PANEL_SIZE_CONFIG.MAX_WIDTH));
+        newHeight = Math.max(PANEL_SIZE_CONFIG.MIN_HEIGHT,
+                    Math.min(newHeight, maxHeight));
+
+        // 边界检查：确保面板不超出屏幕
+        const panelRect = this.panelElement.getBoundingClientRect();
+        const maxAllowedWidth = window.innerWidth - panelRect.left - 20;
+        const maxAllowedHeight = window.innerHeight - panelRect.top - 20;
+
+        newWidth = Math.min(newWidth, maxAllowedWidth);
+        newHeight = Math.min(newHeight, maxAllowedHeight);
+
+        // 应用尺寸
+        this.panelElement.style.width = `${newWidth}px`;
+        this.panelElement.style.height = `${newHeight}px`;
+
+        // 实时更新列表容器高度
+        this.updateListContainerHeight();
+    }
+
+    /**
+     * 停止调整面板大小
+     */
+    stopResize(e) {
+        if (!this.isResizing) return;
+
+        this.isResizing = false;
+        this.panelElement.classList.remove('qgn-resizing');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+
+        // 保存新尺寸
+        this.panelSize = {
+            width: this.panelElement.offsetWidth,
+            height: this.panelElement.offsetHeight
+        };
+        this.savePanelSize();
+
+        // 更新列表容器高度
+        this.updateListContainerHeight();
+
+        logger.info(`[QGN] 面板尺寸已调整为 ${this.panelSize.width}x${this.panelSize.height}`);
+    }
+
+    /**
+     * 应用面板尺寸
+     */
+    applyPanelSize() {
+        if (this.panelSize) {
+            this.panelElement.style.width = `${this.panelSize.width}px`;
+            this.panelElement.style.height = `${this.panelSize.height}px`;
+        }
+    }
+
+    /**
+     * 约束面板尺寸（窗口大小变化时）
+     */
+    constrainPanelSize() {
+        if (!this.panelSize) return;
+
+        const maxHeight = window.innerHeight * PANEL_SIZE_CONFIG.MAX_HEIGHT_RATIO;
+        let needsUpdate = false;
+
+        if (this.panelSize.width > PANEL_SIZE_CONFIG.MAX_WIDTH) {
+            this.panelSize.width = PANEL_SIZE_CONFIG.MAX_WIDTH;
+            needsUpdate = true;
+        }
+        if (this.panelSize.height > maxHeight) {
+            this.panelSize.height = Math.floor(maxHeight);
+            needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+            this.applyPanelSize();
+            this.savePanelSize();
+        }
+    }
+
+    /**
+     * 保存面板尺寸到 localStorage
+     */
+    savePanelSize() {
+        try {
+            localStorage.setItem('qgn_panel_size', JSON.stringify(this.panelSize));
+        } catch (e) {
+            logger.warn('[QGN] 保存面板尺寸失败:', e);
+        }
+    }
+
+    /**
+     * 从 localStorage 加载面板尺寸
+     */
+    loadPanelSize() {
+        try {
+            const saved = localStorage.getItem('qgn_panel_size');
+            if (saved) {
+                const size = JSON.parse(saved);
+                // 验证有效性
+                if (size.width >= PANEL_SIZE_CONFIG.MIN_WIDTH &&
+                    size.height >= PANEL_SIZE_CONFIG.MIN_HEIGHT) {
+                    return size;
+                }
+            }
+        } catch (e) {
+            logger.warn('[QGN] 加载面板尺寸失败:', e);
+        }
+
+        // 返回默认尺寸
+        return {
+            width: PANEL_SIZE_CONFIG.DEFAULT_WIDTH,
+            height: PANEL_SIZE_CONFIG.DEFAULT_HEIGHT
+        };
+    }
+
+    // ==================== Tooltip 相关方法 ====================
+
+    /**
+     * 创建快捷键预览 Tooltip
+     */
+    createTooltip() {
+        this.tooltipElement = document.createElement('div');
+        this.tooltipElement.className = 'qgn-shortcuts-tooltip';
+        document.body.appendChild(this.tooltipElement);
+    }
+
+    /**
+     * 显示快捷键预览 Tooltip
+     */
+    showTooltip() {
+        // 获取有快捷键的组
+        const groups = this.manager.getNavigationGroups()
+            .filter(g => g.shortcutKey);
+
+        // 渲染内容
+        if (groups.length === 0) {
+            this.tooltipElement.innerHTML = `
+                <div class="qgn-tooltip-title">快捷键一览</div>
+                <div class="qgn-tooltip-empty">暂无快捷键设置</div>
+                <div class="qgn-tooltip-hint">点击展开设置快捷键</div>
+            `;
+        } else {
+            this.tooltipElement.innerHTML = `
+                <div class="qgn-tooltip-title">快捷键一览</div>
+                ${groups.map(g => `
+                    <div class="qgn-tooltip-item">
+                        <span class="qgn-tooltip-key">${g.shortcutKey}</span>
+                        <span class="qgn-tooltip-name">${this.escapeHtml(g.groupName)}</span>
+                    </div>
+                `).join('')}
+                <div class="qgn-tooltip-hint">点击展开完整面板</div>
+            `;
+        }
+
+        // 计算位置（在悬浮球旁边）
+        this.updateTooltipPosition();
+
+        // 显示
+        this.tooltipElement.classList.add('qgn-tooltip-visible');
+    }
+
+    /**
+     * 隐藏快捷键预览 Tooltip
+     */
+    hideTooltip() {
+        if (this.tooltipElement) {
+            this.tooltipElement.classList.remove('qgn-tooltip-visible');
+        }
+    }
+
+    /**
+     * 更新 Tooltip 位置
+     */
+    updateTooltipPosition() {
+        const ballSize = 60;
+        const gap = 10;
+
+        // 先让 tooltip 可见但透明，以便获取其尺寸
+        this.tooltipElement.style.visibility = 'hidden';
+        this.tooltipElement.style.display = 'block';
+        const tooltipRect = this.tooltipElement.getBoundingClientRect();
+        this.tooltipElement.style.visibility = '';
+        this.tooltipElement.style.display = '';
+
+        // 默认显示在悬浮球右侧
+        let left = this.position.x + ballSize + gap;
+        let top = this.position.y;
+
+        // 右侧空间不足，显示在左侧
+        if (left + tooltipRect.width > window.innerWidth - 20) {
+            left = this.position.x - tooltipRect.width - gap;
+        }
+
+        // 底部空间不足，向上调整
+        if (top + tooltipRect.height > window.innerHeight - 20) {
+            top = window.innerHeight - tooltipRect.height - 20;
+        }
+
+        this.tooltipElement.style.left = `${Math.max(10, left)}px`;
+        this.tooltipElement.style.top = `${Math.max(10, top)}px`;
+    }
+
     /**
      * 销毁（清理）
      */
     destroy() {
         this.removeContextMenu();
+        clearTimeout(this.tooltipTimeout);
         this.ballElement?.remove();
         this.panelElement?.remove();
+        this.tooltipElement?.remove();
         logger.info('[QGN] 悬浮球导航器已销毁');
     }
 }
