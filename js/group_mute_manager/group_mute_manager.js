@@ -102,7 +102,11 @@ app.registerExtension({
                 groups: [],  // 组配置列表
                 selectedColorFilter: '',  // 选中的颜色过滤器
                 groupOrder: [],  // 组显示顺序（用于自定义拖拽排序）
-                groupStatesCache: {}  // 组状态缓存（用于检测手动静音）
+                groupStatesCache: {},  // 组状态缓存（用于检测手动静音）
+                // 模式相关
+                managerMode: 'color',  // 管理模式: 'color'(按颜色) | 'custom'(自定义)
+                customManagedGroups: [],  // 自定义模式下的受控组名列表
+                customGroupOrder: []  // 自定义模式下的组顺序
             };
 
             // 初始化组引用跟踪（用于组重命名检测）
@@ -159,12 +163,26 @@ app.registerExtension({
                     <div class="gmm-groups-header">
                         <span class="gmm-groups-title">组静音管理器</span>
                         <div class="gmm-header-controls">
+                            <div class="gmm-mode-container">
+                                <span class="gmm-filter-label">模式</span>
+                                <select class="gmm-mode-select" id="gmm-mode-select" title="选择管理模式">
+                                    <option value="color">按颜色</option>
+                                    <option value="custom">自定义</option>
+                                </select>
+                            </div>
                             <div class="gmm-color-filter-container" id="gmm-color-filter-container">
                                 <span class="gmm-filter-label">颜色过滤</span>
                                 <select class="gmm-color-filter-select" id="gmm-color-filter" title="按颜色过滤组">
                                     <option value="">所有颜色</option>
                                 </select>
                             </div>
+                            <button class="gmm-add-group-button" id="gmm-add-group" title="添加受控组" style="display: none;">
+                                <svg viewBox="0 0 24 24" fill="none">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                                添加组
+                            </button>
                             <button class="gmm-refresh-button" id="gmm-refresh" title="刷新">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <polyline points="23 4 23 10 17 10"></polyline>
@@ -313,6 +331,59 @@ app.registerExtension({
 
                 .gmm-refresh-button svg {
                     stroke: #B0B0B0;
+                }
+
+                /* 模式选择器 */
+                .gmm-mode-container {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+
+                .gmm-mode-select {
+                    background: rgba(0, 0, 0, 0.2);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 6px;
+                    padding: 4px 8px;
+                    color: #E0E0E0;
+                    font-size: 12px;
+                    min-width: 80px;
+                    transition: all 0.2s ease;
+                    cursor: pointer;
+                }
+
+                .gmm-mode-select:focus {
+                    outline: none;
+                    border-color: #743795;
+                    background: rgba(0, 0, 0, 0.3);
+                }
+
+                /* 添加组按钮 */
+                .gmm-add-group-button {
+                    background: linear-gradient(135deg, #2a7c4f 0%, #34965e 100%);
+                    border: 1px solid rgba(52, 150, 94, 0.5);
+                    border-radius: 6px;
+                    padding: 4px 10px;
+                    color: white;
+                    font-size: 12px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                }
+
+                .gmm-add-group-button:hover {
+                    background: linear-gradient(135deg, #34965e 0%, #3da86a 100%);
+                    transform: translateY(-1px);
+                    box-shadow: 0 2px 8px rgba(52, 150, 94, 0.3);
+                }
+
+                .gmm-add-group-button svg {
+                    width: 12px;
+                    height: 12px;
+                    stroke: white;
+                    stroke-width: 2.5;
                 }
 
                 .gmm-groups-list {
@@ -805,6 +876,22 @@ app.registerExtension({
         nodeType.prototype.bindUIEvents = function () {
             const container = this.customUI;
 
+            // 模式选择器
+            const modeSelect = container.querySelector('#gmm-mode-select');
+            if (modeSelect) {
+                modeSelect.addEventListener('change', (e) => {
+                    this.switchManagerMode(e.target.value);
+                });
+            }
+
+            // 添加受控组按钮
+            const addGroupBtn = container.querySelector('#gmm-add-group');
+            if (addGroupBtn) {
+                addGroupBtn.addEventListener('click', (e) => {
+                    this.showAddGroupMenu(e);
+                });
+            }
+
             // 刷新按钮
             const refreshButton = container.querySelector('#gmm-refresh');
             if (refreshButton) {
@@ -821,6 +908,147 @@ app.registerExtension({
                     this.updateGroupsList();
                 });
             }
+        };
+
+        // ============================================================
+        // 模式管理方法
+        // ============================================================
+
+        // 切换管理模式
+        nodeType.prototype.switchManagerMode = function (mode) {
+            logger.info('[GMM] 切换管理模式:', mode);
+
+            this.properties.managerMode = mode;
+
+            const colorContainer = this.customUI.querySelector('#gmm-color-filter-container');
+            const addGroupBtn = this.customUI.querySelector('#gmm-add-group');
+
+            if (mode === 'color') {
+                // 按颜色模式：显示颜色过滤器，隐藏添加按钮
+                if (colorContainer) colorContainer.style.display = 'flex';
+                if (addGroupBtn) addGroupBtn.style.display = 'none';
+            } else {
+                // 自定义模式：隐藏颜色过滤器，显示添加按钮
+                if (colorContainer) colorContainer.style.display = 'none';
+                if (addGroupBtn) addGroupBtn.style.display = 'flex';
+            }
+
+            // 更新组列表显示
+            this.updateGroupsList();
+        };
+
+        // 显示添加组菜单
+        nodeType.prototype.showAddGroupMenu = function (e) {
+            const allGroups = this.getWorkflowGroups();
+            const managedNames = new Set(this.properties.customManagedGroups || []);
+
+            // 过滤出未添加的组
+            const availableGroups = allGroups
+                .filter(g => !managedNames.has(g.title))
+                .sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
+
+            if (availableGroups.length === 0) {
+                logger.info('[GMM] 所有组都已添加');
+                // 可选：显示提示
+                return;
+            }
+
+            // 构建菜单选项
+            const options = availableGroups.map(group => ({
+                content: group.title,
+                callback: () => {
+                    this.addCustomManagedGroup(group.title);
+                }
+            }));
+
+            // 使用 LiteGraph 原生菜单
+            new LiteGraph.ContextMenu(options, {
+                event: e,
+                title: '添加受控组',
+                node: this
+            });
+        };
+
+        // 添加自定义受控组
+        nodeType.prototype.addCustomManagedGroup = function (groupName) {
+            if (!this.properties.customManagedGroups) {
+                this.properties.customManagedGroups = [];
+            }
+            if (!this.properties.customGroupOrder) {
+                this.properties.customGroupOrder = [];
+            }
+
+            // 避免重复添加
+            if (this.properties.customManagedGroups.includes(groupName)) {
+                logger.warn('[GMM] 组已存在:', groupName);
+                return;
+            }
+
+            this.properties.customManagedGroups.push(groupName);
+            this.properties.customGroupOrder.push(groupName);
+
+            logger.info('[GMM] 添加自定义受控组:', groupName);
+
+            // 刷新UI
+            this.updateGroupsList();
+        };
+
+        // 移除自定义受控组
+        nodeType.prototype.removeCustomManagedGroup = function (groupName) {
+            // 从自定义组列表中移除
+            const idx = this.properties.customManagedGroups?.indexOf(groupName);
+            if (idx > -1) {
+                this.properties.customManagedGroups.splice(idx, 1);
+            }
+
+            // 从自定义顺序中移除
+            const orderIdx = this.properties.customGroupOrder?.indexOf(groupName);
+            if (orderIdx > -1) {
+                this.properties.customGroupOrder.splice(orderIdx, 1);
+            }
+
+            logger.info('[GMM] 移除自定义受控组:', groupName);
+
+            // 刷新UI
+            this.updateGroupsList();
+        };
+
+        // 显示组项右键菜单（用于自定义模式下移除组）
+        nodeType.prototype.showGroupItemContextMenu = function (e, groupName) {
+            const options = [{
+                content: '🗑️ 从管理器移除',
+                callback: () => {
+                    this.removeCustomManagedGroup(groupName);
+                }
+            }];
+
+            new LiteGraph.ContextMenu(options, {
+                event: e,
+                title: groupName,
+                node: this
+            });
+        };
+
+        // 按自定义顺序排序组
+        nodeType.prototype.sortGroupsByCustomOrder = function (groups) {
+            const order = this.properties.customGroupOrder || [];
+
+            if (order.length === 0) {
+                // 没有自定义顺序，按名称排序
+                return groups.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
+            }
+
+            const orderMap = new Map(order.map((name, idx) => [name, idx]));
+
+            return groups.slice().sort((a, b) => {
+                const idxA = orderMap.has(a.title) ? orderMap.get(a.title) : Infinity;
+                const idxB = orderMap.has(b.title) ? orderMap.get(b.title) : Infinity;
+
+                if (idxA === idxB) {
+                    return a.title.localeCompare(b.title, 'zh-CN');
+                }
+                return idxA - idxB;
+            });
         };
 
         // 更新组列表显示
@@ -840,54 +1068,86 @@ app.registerExtension({
             logger.info('[GMM-UI] 工作流中的组总数:', allWorkflowGroups.length);
             logger.info('[GMM-UI] 所有组名称:', allWorkflowGroups.map(g => g.title));
 
-            // 应用排序（默认按名称排序，或使用自定义顺序）
-            const sortedGroups = this.sortGroupsByOrder(allWorkflowGroups);
-            logger.info('[GMM-UI] 排序后的组顺序:', sortedGroups.map(g => g.title));
+            let displayGroups = [];
 
-            // 应用颜色过滤用于显示 (rgthree-comfy approach)
-            let displayGroups = sortedGroups;
-            logger.info('[GMM-UI] 当前颜色过滤器:', this.properties.selectedColorFilter || '无');
-            if (this.properties.selectedColorFilter) {
-                let filterColor = this.properties.selectedColorFilter.trim().toLowerCase();
+            // 根据模式决定显示哪些组
+            if (this.properties.managerMode === 'custom') {
+                // ============ 自定义模式 ============
+                logger.info('[GMM-UI] 当前模式: 自定义');
+                const managedNames = this.properties.customManagedGroups || [];
 
-                // Convert color name to groupcolor hex
-                if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
-                    if (LGraphCanvas.node_colors[filterColor]) {
-                        filterColor = LGraphCanvas.node_colors[filterColor].groupcolor;
-                    } else {
-                        // Fallback: 尝试用下划线替换空格（处理 'pale blue' -> 'pale_blue' 的情况）
-                        const underscoreColor = filterColor.replace(/\s+/g, '_');
-                        if (LGraphCanvas.node_colors[underscoreColor]) {
-                            filterColor = LGraphCanvas.node_colors[underscoreColor].groupcolor;
+                // 清理已被删除的组（画布上不存在的组）
+                const validNames = managedNames.filter(name =>
+                    allWorkflowGroups.some(g => g.title === name)
+                );
+
+                // 如果有变化，更新存储
+                if (validNames.length !== managedNames.length) {
+                    logger.info('[GMM-UI] 清理已删除的组，从', managedNames.length, '减少到', validNames.length);
+                    this.properties.customManagedGroups = validNames;
+                    // 同步更新顺序列表
+                    this.properties.customGroupOrder = (this.properties.customGroupOrder || [])
+                        .filter(name => validNames.includes(name));
+                }
+
+                // 按自定义顺序获取组对象
+                displayGroups = this.sortGroupsByCustomOrder(
+                    allWorkflowGroups.filter(g => validNames.includes(g.title))
+                );
+                logger.info('[GMM-UI] 自定义模式显示组数量:', displayGroups.length);
+            } else {
+                // ============ 按颜色模式 ============
+                logger.info('[GMM-UI] 当前模式: 按颜色');
+
+                // 应用排序（默认按名称排序，或使用自定义顺序）
+                const sortedGroups = this.sortGroupsByOrder(allWorkflowGroups);
+                logger.info('[GMM-UI] 排序后的组顺序:', sortedGroups.map(g => g.title));
+
+                // 应用颜色过滤用于显示 (rgthree-comfy approach)
+                displayGroups = sortedGroups;
+                logger.info('[GMM-UI] 当前颜色过滤器:', this.properties.selectedColorFilter || '无');
+                if (this.properties.selectedColorFilter) {
+                    let filterColor = this.properties.selectedColorFilter.trim().toLowerCase();
+
+                    // Convert color name to groupcolor hex
+                    if (typeof LGraphCanvas !== 'undefined' && LGraphCanvas.node_colors) {
+                        if (LGraphCanvas.node_colors[filterColor]) {
+                            filterColor = LGraphCanvas.node_colors[filterColor].groupcolor;
                         } else {
-                            // 第二次fallback: 尝试去掉空格
-                            const spacelessColor = filterColor.replace(/\s+/g, '');
-                            if (LGraphCanvas.node_colors[spacelessColor]) {
-                                filterColor = LGraphCanvas.node_colors[spacelessColor].groupcolor;
+                            // Fallback: 尝试用下划线替换空格（处理 'pale blue' -> 'pale_blue' 的情况）
+                            const underscoreColor = filterColor.replace(/\s+/g, '_');
+                            if (LGraphCanvas.node_colors[underscoreColor]) {
+                                filterColor = LGraphCanvas.node_colors[underscoreColor].groupcolor;
+                            } else {
+                                // 第二次fallback: 尝试去掉空格
+                                const spacelessColor = filterColor.replace(/\s+/g, '');
+                                if (LGraphCanvas.node_colors[spacelessColor]) {
+                                    filterColor = LGraphCanvas.node_colors[spacelessColor].groupcolor;
+                                }
                             }
                         }
                     }
-                }
 
-                // Normalize to 6-digit lowercase hex
-                filterColor = filterColor.replace("#", "").toLowerCase();
-                if (filterColor.length === 3) {
-                    filterColor = filterColor.replace(/(.)(.)(.)/, "$1$1$2$2$3$3");
-                }
-                filterColor = `#${filterColor}`;
-
-                // Filter groups (使用已排序的组列表，保持排序顺序)
-                displayGroups = sortedGroups.filter(group => {
-                    if (!group.color) return false;
-                    let groupColor = group.color.replace("#", "").trim().toLowerCase();
-                    if (groupColor.length === 3) {
-                        groupColor = groupColor.replace(/(.)(.)(.)/, "$1$1$2$2$3$3");
+                    // Normalize to 6-digit lowercase hex
+                    filterColor = filterColor.replace("#", "").toLowerCase();
+                    if (filterColor.length === 3) {
+                        filterColor = filterColor.replace(/(.)(.)(.)/, "$1$1$2$2$3$3");
                     }
-                    groupColor = `#${groupColor}`;
-                    return groupColor === filterColor;
-                });
-                logger.info('[GMM-UI] 颜色过滤后的组数量:', displayGroups.length);
-                logger.info('[GMM-UI] 过滤后的组名称:', displayGroups.map(g => g.title));
+                    filterColor = `#${filterColor}`;
+
+                    // Filter groups (使用已排序的组列表，保持排序顺序)
+                    displayGroups = sortedGroups.filter(group => {
+                        if (!group.color) return false;
+                        let groupColor = group.color.replace("#", "").trim().toLowerCase();
+                        if (groupColor.length === 3) {
+                            groupColor = groupColor.replace(/(.)(.)(.)/, "$1$1$2$2$3$3");
+                        }
+                        groupColor = `#${groupColor}`;
+                        return groupColor === filterColor;
+                    });
+                    logger.info('[GMM-UI] 颜色过滤后的组数量:', displayGroups.length);
+                    logger.info('[GMM-UI] 过滤后的组名称:', displayGroups.map(g => g.title));
+                }
             }
 
             logger.info('[GMM-UI] 最终显示的组数量:', displayGroups.length);
@@ -1083,10 +1343,20 @@ app.registerExtension({
                         config.group_name = group.title;
                     }
 
-                    // 更新组顺序中的组名
+                    // 更新组顺序中的组名（按颜色模式）
                     const orderIndex = this.properties.groupOrder.indexOf(cachedName);
                     if (orderIndex !== -1) {
                         this.properties.groupOrder[orderIndex] = group.title;
+                    }
+
+                    // 更新自定义模式相关的数据
+                    const customIndex = (this.properties.customManagedGroups || []).indexOf(cachedName);
+                    if (customIndex !== -1) {
+                        this.properties.customManagedGroups[customIndex] = group.title;
+                    }
+                    const customOrderIndex = (this.properties.customGroupOrder || []).indexOf(cachedName);
+                    if (customOrderIndex !== -1) {
+                        this.properties.customGroupOrder[customOrderIndex] = group.title;
                     }
 
                     // 更新状态缓存中的组名
@@ -1274,6 +1544,15 @@ app.registerExtension({
             item.addEventListener('dragenter', (e) => this.onDragEnter(e));
             item.addEventListener('dragleave', (e) => this.onDragLeave(e));
 
+            // 自定义模式下添加右键菜单（用于移除组）
+            if (this.properties.managerMode === 'custom') {
+                item.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.showGroupItemContextMenu(e, groupConfig.group_name);
+                });
+            }
+
             return item;
         };
 
@@ -1362,14 +1641,27 @@ app.registerExtension({
             logger.info('[GMM-Drag] === 开始更新组顺序 ===');
             logger.info('[GMM-Drag] 被拖拽的组:', draggedGroupName);
             logger.info('[GMM-Drag] 目标位置组:', targetGroupName);
+            logger.info('[GMM-Drag] 当前模式:', this.properties.managerMode);
+
+            // 根据模式决定使用哪个顺序属性和排序方法
+            const isCustomMode = this.properties.managerMode === 'custom';
+            const orderKey = isCustomMode ? 'customGroupOrder' : 'groupOrder';
 
             // 获取当前排序后的组列表
             const allGroups = this.getWorkflowGroups();
             logger.info('[GMM-Drag] 工作流中所有组:', allGroups.map(g => g.title));
 
-            const sortedGroups = this.sortGroupsByOrder(allGroups);
+            let sortedGroups;
+            if (isCustomMode) {
+                // 自定义模式：只使用已添加的组
+                const managedNames = this.properties.customManagedGroups || [];
+                const filteredGroups = allGroups.filter(g => managedNames.includes(g.title));
+                sortedGroups = this.sortGroupsByCustomOrder(filteredGroups);
+            } else {
+                sortedGroups = this.sortGroupsByOrder(allGroups);
+            }
 
-            // 构建新的 groupOrder
+            // 构建新的顺序
             const newOrder = sortedGroups.map(g => g.title);
             logger.info('[GMM-Drag] 拖拽前的顺序:', newOrder);
 
@@ -1396,9 +1688,9 @@ app.registerExtension({
 
             logger.info('[GMM-Drag] 拖拽后的新顺序:', newOrder);
 
-            // 更新 properties
-            this.properties.groupOrder = newOrder;
-            logger.info('[GMM-Drag] 已保存新顺序到 properties.groupOrder');
+            // 更新 properties（根据模式选择对应的属性）
+            this.properties[orderKey] = newOrder;
+            logger.info('[GMM-Drag] 已保存新顺序到 properties.' + orderKey);
             logger.info('[GMM-Drag] === 组顺序更新完成 ===');
         };
 
@@ -1841,12 +2133,6 @@ app.registerExtension({
             });
         };
 
-        // 截断文本辅助函数
-        nodeType.prototype.truncateText = function (text, maxLength = 30) {
-            if (!text || text.length <= maxLength) return text;
-            return text.substring(0, maxLength) + '...';
-        };
-
         // 创建规则项
         nodeType.prototype.createRuleItem = function (dialog, config, type, rule, index) {
             const item = document.createElement('div');
@@ -2040,8 +2326,15 @@ app.registerExtension({
             info.selectedColorFilter = this.properties.selectedColorFilter || '';
             info.groupOrder = this.properties.groupOrder || [];
 
+            // 保存模式相关数据
+            info.managerMode = this.properties.managerMode || 'color';
+            info.customManagedGroups = this.properties.customManagedGroups || [];
+            info.customGroupOrder = this.properties.customGroupOrder || [];
+
             logger.info('[GMM-Serialize] 保存组配置:', info.groups.length, '个组');
             logger.info('[GMM-Serialize] 保存组顺序:', info.groupOrder.length, '个组');
+            logger.info('[GMM-Serialize] 保存管理模式:', info.managerMode);
+            logger.info('[GMM-Serialize] 保存自定义组:', info.customManagedGroups.length, '个');
 
             return data;
         };
@@ -2072,11 +2365,26 @@ app.registerExtension({
                 this.properties.groupOrder = [];
             }
 
+            // 恢复模式相关数据
+            this.properties.managerMode = info.managerMode || 'color';
+            this.properties.customManagedGroups = info.customManagedGroups || [];
+            this.properties.customGroupOrder = info.customGroupOrder || [];
+            logger.info('[GMM-Configure] 恢复管理模式:', this.properties.managerMode);
+            logger.info('[GMM-Configure] 恢复自定义组:', this.properties.customManagedGroups.length, '个');
+
             // 等待UI准备就绪后更新界面
             if (this.customUI) {
                 setTimeout(() => {
+                    // 恢复模式选择器
+                    const modeSelect = this.customUI.querySelector('#gmm-mode-select');
+                    if (modeSelect) {
+                        modeSelect.value = this.properties.managerMode;
+                    }
+
+                    // 切换到正确的模式UI
+                    this.switchManagerMode(this.properties.managerMode);
+
                     this.refreshColorFilter();
-                    this.updateGroupsList();
 
                     // 恢复颜色过滤器选择
                     const colorFilter = this.customUI.querySelector('#gmm-color-filter');
