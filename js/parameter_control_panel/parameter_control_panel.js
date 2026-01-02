@@ -13,6 +13,64 @@ import { createLogger } from '../global/logger_client.js';
 // 创建logger实例
 const logger = createLogger('parameter_control_panel');
 
+// ====== 性能优化：节流和防抖工具函数 ======
+/**
+ * 节流函数 - 限制函数在指定时间内最多执行一次（带尾调用支持）
+ * @param {Function} func 需要节流的函数
+ * @param {number} delay 节流延迟（毫秒）
+ */
+function throttle(func, delay) {
+    let lastCall = 0;
+    let trailingTimeout = null;
+    let lastArgs = null;
+    let lastThis = null;
+
+    const throttled = function (...args) {
+        const now = Date.now();
+        const remaining = delay - (now - lastCall);
+        lastArgs = args;
+        lastThis = this;
+
+        if (remaining <= 0 || remaining > delay) {
+            if (trailingTimeout) {
+                clearTimeout(trailingTimeout);
+                trailingTimeout = null;
+            }
+            lastCall = now;
+            func.apply(this, args);
+        } else if (!trailingTimeout) {
+            // 添加尾调用，确保最后一次调用不会丢失
+            trailingTimeout = setTimeout(() => {
+                lastCall = Date.now();
+                trailingTimeout = null;
+                func.apply(lastThis, lastArgs);
+            }, remaining);
+        }
+    };
+
+    throttled.cancel = () => {
+        clearTimeout(trailingTimeout);
+        trailingTimeout = null;
+        lastArgs = null;
+        lastThis = null;
+    };
+
+    return throttled;
+}
+
+/**
+ * 防抖函数 - 延迟执行函数，直到停止调用指定时间后才执行
+ * @param {Function} func 需要防抖的函数
+ * @param {number} delay 防抖延迟（毫秒）
+ */
+function debounce(func, delay) {
+    let timeout;
+    return function (...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), delay);
+    };
+}
+
 // 工具函数：加载Marked.js库（与workflow_description一致）
 let markedLoaded = false;
 let markedLoadPromise = null;
@@ -570,20 +628,14 @@ app.registerExtension({
 
             // 监听来自GMM的参数值变化事件
             this._pcpEventHandler = (e) => {
-                logger.info('[PCP-DEBUG] 收到事件:', e.type, e.detail);
-                logger.info('[PCP-DEBUG] 当前节点ID:', this.id, '类型:', typeof this.id);
-                logger.info('[PCP-DEBUG] 事件nodeId:', e.detail?.nodeId, '类型:', typeof e.detail?.nodeId);
-
                 // 宽松比较：支持字符串和数字的比较
                 if (e.detail && String(e.detail.nodeId) === String(this.id)) {
-                    logger.info('[PCP] 收到GMM的参数值变化通知:', e.detail);
+                    logger.debug('[PCP] 收到GMM的参数值变化通知:', e.detail);
                     this.refreshParameterUI(e.detail.paramName, e.detail.newValue);
-                } else {
-                    logger.info('[PCP-DEBUG] 事件不是给当前节点的, nodeId不匹配', String(e.detail?.nodeId), '!=', String(this.id));
                 }
             };
             window.addEventListener('pcp-param-value-changed', this._pcpEventHandler);
-            logger.info('[PCP] 已注册参数值变化事件监听器, 节点ID:', this.id, '类型:', typeof this.id);
+            logger.debug('[PCP] 已注册参数值变化事件监听器, 节点ID:', this.id);
 
             return result;
         };
@@ -697,7 +749,10 @@ app.registerExtension({
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                     font-size: 13px;
                     color: #E0E0E0;
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+                    /* 性能优化：启用 GPU 加速和 CSS Containment */
+                    will-change: transform;
+                    contain: layout style paint;
+                    transform: translateZ(0);
                 }
 
                 .pcp-content {
@@ -723,7 +778,7 @@ app.registerExtension({
                     border-radius: 6px;
                     padding: 4px 8px;
                     cursor: pointer;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                     font-size: 14px;
                     min-width: 32px;
                     opacity: 0.5;
@@ -762,7 +817,7 @@ app.registerExtension({
                     color: #E0E0E0;
                     font-size: 12px;
                     cursor: pointer;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                 }
 
                 .pcp-preset-search:focus {
@@ -853,7 +908,7 @@ app.registerExtension({
                     border-radius: 4px;
                     padding: 4px 8px;
                     cursor: pointer;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                     font-size: 14px;
                     display: flex;
                     align-items: center;
@@ -912,28 +967,23 @@ app.registerExtension({
                     border-radius: 6px;
                     padding: 8px 10px;
                     margin-bottom: 6px;
-                    transition: all 0.2s ease;
                     cursor: move;
+                    /* 性能优化：CSS Containment 隔离重排影响 */
+                    contain: layout style;
                 }
 
                 .pcp-parameter-item:hover {
                     border-color: rgba(116, 55, 149, 0.5);
-                    box-shadow: 0 2px 8px rgba(116, 55, 149, 0.2);
-                    transform: translateY(-1px);
                 }
 
                 /* 参数项警告样式 - 当锁定值不存在时 */
                 .pcp-parameter-item-warning {
                     border: 2px solid #ff4444 !important;
-                    box-shadow: 0 0 12px rgba(255, 68, 68, 0.4) !important;
                     background: linear-gradient(135deg, rgba(255, 68, 68, 0.08) 0%, rgba(255, 68, 68, 0.05) 100%) !important;
-                    transition: all 0.3s ease !important;
                 }
 
                 .pcp-parameter-item-warning:hover {
                     border-color: #ff6666 !important;
-                    box-shadow: 0 0 16px rgba(255, 68, 68, 0.5) !important;
-                    transform: translateY(-1px) !important;
                 }
 
                 .pcp-parameter-item.dragging {
@@ -958,7 +1008,7 @@ app.registerExtension({
                     position: relative;
                     padding-left: 18px;
                     user-select: none;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                 }
 
                 /* 拖拽手柄图标 */
@@ -971,7 +1021,7 @@ app.registerExtension({
                     font-size: 14px;
                     color: #666;
                     opacity: 0.5;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                     letter-spacing: -2px;
                 }
 
@@ -990,7 +1040,7 @@ app.registerExtension({
                     border-radius: 4px;
                     padding: 4px 6px;
                     cursor: pointer;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -1012,7 +1062,7 @@ app.registerExtension({
                     border-radius: 4px;
                     padding: 4px 6px;
                     cursor: pointer;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -1035,14 +1085,12 @@ app.registerExtension({
                     border-radius: 8px;
                     padding: 10px 12px;
                     cursor: move;
-                    box-shadow: 0 2px 8px rgba(116, 55, 149, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-                    transition: all 0.3s ease;
+                    /* 性能优化：CSS Containment */
+                    contain: layout style;
                 }
 
                 .pcp-separator:hover {
                     border-color: rgba(147, 112, 219, 0.5);
-                    box-shadow: 0 4px 12px rgba(116, 55, 149, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-                    transform: translateY(-1px);
                     background: linear-gradient(135deg, rgba(116, 55, 149, 0.2) 0%, rgba(147, 112, 219, 0.15) 100%);
                 }
 
@@ -1169,7 +1217,7 @@ app.registerExtension({
                     background: rgba(0, 0, 0, 0.3);
                     border-radius: 12px;
                     cursor: pointer;
-                    transition: all 0.3s ease;
+                    transition: background-color 0.3s ease, border-color 0.3s ease;
                     border: 1px solid rgba(255, 255, 255, 0.1);
                     flex-shrink: 0;
                     margin-left: auto;
@@ -1188,7 +1236,7 @@ app.registerExtension({
                     height: 18px;
                     background: #fff;
                     border-radius: 50%;
-                    transition: all 0.3s ease;
+                    transition: background-color 0.3s ease, border-color 0.3s ease;
                     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
                 }
 
@@ -1209,7 +1257,7 @@ app.registerExtension({
                     min-width: 100px;
                     max-width: 100%;
                     height: 36px;
-                    transition: all 0.25s ease;
+                    transition: background-color 0.25s ease, border-color 0.25s ease;
                     cursor: pointer;
                     overflow: hidden;
                     text-overflow: ellipsis;
@@ -1294,7 +1342,7 @@ app.registerExtension({
                     justify-content: center;
                     background: rgba(116, 55, 149, 0.15);
                     border-radius: 6px;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                 }
 
                 .pcp-enum-container:hover .pcp-enum-indicator,
@@ -1324,7 +1372,7 @@ app.registerExtension({
                     text-overflow: ellipsis;
                     white-space: nowrap;
                     cursor: pointer;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                 }
 
                 .pcp-image-filename:hover {
@@ -1340,7 +1388,7 @@ app.registerExtension({
                     cursor: pointer;
                     font-size: 14px;
                     flex-shrink: 0;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                 }
 
                 .pcp-image-clear-button:hover {
@@ -1357,7 +1405,7 @@ app.registerExtension({
                     cursor: pointer;
                     font-size: 14px;
                     flex-shrink: 0;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                 }
 
                 .pcp-image-upload-button:hover {
@@ -1434,7 +1482,7 @@ app.registerExtension({
                     font-size: 11px;
                     border: 1px solid;
                     cursor: pointer;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                     user-select: none;
                     position: relative;
                 }
@@ -1550,7 +1598,7 @@ app.registerExtension({
                     cursor: pointer;
                     font-size: 13px;
                     font-weight: 500;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -1592,7 +1640,7 @@ app.registerExtension({
                     padding: 24px;
                     min-width: 600px;
                     max-width: 800px;
-                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+                    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.8);
                 }
 
                 .pcp-dialog h3 {
@@ -1663,7 +1711,7 @@ app.registerExtension({
                     cursor: pointer;
                     font-size: 13px;
                     font-weight: 500;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                 }
 
                 .pcp-dialog-button-primary {
@@ -1697,7 +1745,7 @@ app.registerExtension({
                     border: 2px solid #555;
                     border-radius: 6px;
                     cursor: pointer;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                 }
 
                 .pcp-color-picker:hover {
@@ -1729,7 +1777,7 @@ app.registerExtension({
                     border: 2px solid #555;
                     border-radius: 6px;
                     cursor: pointer;
-                    transition: all 0.2s ease;
+                    transition: background-color 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
                     position: relative;
                 }
 
@@ -2142,50 +2190,73 @@ app.registerExtension({
 
         // 更新参数列表显示
         nodeType.prototype.updateParametersList = function () {
-            const listContainer = this.customUI.querySelector('#pcp-parameters-list');
-
-            // 保存所有textarea的当前高度（修复锁定时高度重置问题）
-            const textareaHeights = new Map();
-            const existingItems = Array.from(listContainer.children);
-            existingItems.forEach((item, index) => {
-                const textarea = item.querySelector('.pcp-string-textarea');
-                if (textarea) {
-                    // 使用参数索引作为key，保存实际渲染高度
-                    textareaHeights.set(index, textarea.style.height || `${textarea.offsetHeight}px`);
+            try {
+                // 检查 customUI 是否存在
+                if (!this.customUI) {
+                    logger.warn('[PCP] customUI 不存在，跳过参数列表更新');
+                    return;
                 }
-            });
 
-            listContainer.innerHTML = '';
-
-            // 确保所有参数都有ID（兼容旧数据）
-            this.properties.parameters.forEach(param => {
-                if (!param.id) {
-                    param.id = `param_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                    logger.info(`[PCP] 为参数 '${param.name}' 补充ID:`, param.id);
+                const listContainer = this.customUI.querySelector('#pcp-parameters-list');
+                if (!listContainer) {
+                    logger.warn('[PCP] 参数列表容器不存在');
+                    return;
                 }
-            });
 
-            this.properties.parameters.forEach((param, index) => {
-                const paramItem = this.createParameterItem(param, index);
-                listContainer.appendChild(paramItem);
+                // 确保 parameters 数组存在
+                if (!this.properties.parameters) {
+                    this.properties.parameters = [];
+                }
 
-                // 恢复textarea高度
-                if (textareaHeights.has(index)) {
-                    const textarea = paramItem.querySelector('.pcp-string-textarea');
-                    if (textarea) {
-                        textarea.style.height = textareaHeights.get(index);
+                // 保存所有textarea的当前高度（使用 param.id 作为 key）
+                const textareaHeights = new Map();
+                const existingItems = Array.from(listContainer.children);
+                existingItems.forEach((item) => {
+                    const paramId = item.dataset.paramId;
+                    const textarea = item.querySelector('.pcp-string-textarea');
+                    if (textarea && paramId) {
+                        textareaHeights.set(paramId, textarea.style.height || `${textarea.offsetHeight}px`);
                     }
-                }
-            });
+                });
 
-            // 更新节点输出
-            this.updateOutputs();
+                // 确保所有参数都有ID（兼容旧数据）
+                this.properties.parameters.forEach(param => {
+                    if (!param.id) {
+                        param.id = `param_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        logger.info(`[PCP] 为参数 '${param.name}' 补充ID:`, param.id);
+                    }
+                });
 
-            // 通知连接的 ParameterBreak 节点更新
-            this.notifyConnectedBreakNodes();
+                // ====== 性能优化：使用 DocumentFragment 批量插入 DOM ======
+                const fragment = document.createDocumentFragment();
+                this.properties.parameters.forEach((param, index) => {
+                    const paramItem = this.createParameterItem(param, index);
+                    fragment.appendChild(paramItem);
 
-            // 检查并修复from_connection类型的dropdown缺失options问题
-            this.recheckFromConnectionDropdowns();
+                    // 恢复textarea高度（使用 param.id 作为 key）
+                    if (textareaHeights.has(param.id)) {
+                        const textarea = paramItem.querySelector('.pcp-string-textarea');
+                        if (textarea) {
+                            textarea.style.height = textareaHeights.get(param.id);
+                        }
+                    }
+                });
+
+                // 一次性清空并添加所有元素
+                listContainer.innerHTML = '';
+                listContainer.appendChild(fragment);
+
+                // 更新节点输出
+                this.updateOutputs();
+
+                // 通知连接的 ParameterBreak 节点更新
+                this.notifyConnectedBreakNodes();
+
+                // 检查并修复from_connection类型的dropdown缺失options问题
+                this.recheckFromConnectionDropdowns();
+            } catch (error) {
+                logger.error('[PCP] 更新参数列表失败:', error);
+            }
         };
 
         // 恢复所有需要显示的左上角提示
@@ -3027,11 +3098,13 @@ app.registerExtension({
             valueInput.draggable = false;
 
             // 同步滑条和输入框
+            // ====== 性能优化：使用节流减少 syncConfig 调用频率 ======
+            const throttledSyncConfig = throttle(() => this.syncConfig(), 100);
             slider.addEventListener('input', (e) => {
                 const newValue = parseFloat(e.target.value);
                 valueInput.value = newValue;
                 param.value = newValue;
-                this.syncConfig();
+                throttledSyncConfig();
             });
 
             valueInput.addEventListener('change', (e) => {
@@ -3368,22 +3441,30 @@ app.registerExtension({
             }
 
             // 输入事件
+            // ====== 性能优化：使用防抖减少 syncConfig 调用频率 ======
+            const debouncedSyncConfig = debounce(() => this.syncConfig(), 300);
             input.addEventListener('input', (e) => {
                 param.value = e.target.value;
-                this.syncConfig();
+                debouncedSyncConfig();
             });
 
             // 监听textarea高度变化并持久化保存
             if (isMultiline) {
+                // ====== 性能优化：使用防抖减少 ResizeObserver 回调频率 ======
+                const debouncedResizeSyncConfig = debounce(() => this.syncConfig(), 500);
                 const resizeObserver = new ResizeObserver(() => {
                     const currentHeight = input.style.height || `${input.offsetHeight}px`;
                     if (!param.config) param.config = {};
                     if (param.config.textareaHeight !== currentHeight) {
                         param.config.textareaHeight = currentHeight;
-                        this.syncConfig();
+                        debouncedResizeSyncConfig();
                     }
                 });
                 resizeObserver.observe(input);
+
+                // 存储 ResizeObserver 引用以便在节点移除时清理
+                if (!this._resizeObservers) this._resizeObservers = [];
+                this._resizeObservers.push(resizeObserver);
             }
 
             // 聚焦样式
@@ -5259,10 +5340,8 @@ app.registerExtension({
 
             // 如果是switch类型，更新switch的状态
             if (param.type === 'switch') {
-                logger.info('[PCP-DEBUG] 查找switch元素，param.id:', param.id);
                 // 正确的选择器：.pcp-switch 而不是 .pcp-switch-container
                 const switchElement = container.querySelector(`[data-param-id="${param.id}"] .pcp-switch`);
-                logger.info('[PCP-DEBUG] switchElement 找到:', !!switchElement);
 
                 if (switchElement) {
                     // 直接操作 .pcp-switch 的 active class
@@ -5271,7 +5350,7 @@ app.registerExtension({
                     } else {
                         switchElement.classList.remove('active');
                     }
-                    logger.info('[PCP] Switch UI已更新:', paramName, newValue);
+                    logger.debug('[PCP] Switch UI已更新:', paramName, newValue);
 
                     // 如果启用了左上角提示，显示/隐藏提示
                     if (param.config?.show_top_left_notice) {
@@ -5287,7 +5366,7 @@ app.registerExtension({
                         }
                     }
                 } else {
-                    logger.warn('[PCP-DEBUG] switchElement 未找到，selector:', `[data-param-id="${param.id}"] .pcp-switch`);
+                    logger.debug('[PCP] switchElement 未找到，param.id:', param.id);
                 }
             }
 
@@ -5744,7 +5823,13 @@ app.registerExtension({
 
             // 延迟更新UI，确保DOM已加载
             setTimeout(() => {
-                logger.info('[PCP] 🔄 onConfigure: 开始处理工作流配置');
+                // 检查节点是否仍然有效
+                if (!this.graph) {
+                    logger.warn('[PCP] 节点已被移除，跳过配置处理');
+                    return;
+                }
+
+                logger.debug('[PCP] onConfigure: 开始处理工作流配置');
                 if (this.customUI) {
                     this.updateParametersList();
                     this.loadPresetsList();
@@ -5754,10 +5839,10 @@ app.registerExtension({
                     this.restoreTopLeftNotices();
 
                     // 刷新下拉菜单选项列表（工作流初始化时）
-                    logger.info('[PCP] 🔄 onConfigure: 触发下拉菜单选项刷新');
+                    logger.debug('[PCP] onConfigure: 触发下拉菜单选项刷新');
                     this.refreshAllDropdownsOnWorkflowLoad();
                 } else {
-                    logger.warn('[PCP] ⚠️ onConfigure: customUI 不存在，跳过UI更新');
+                    logger.warn('[PCP] onConfigure: customUI 不存在，跳过UI更新');
                 }
 
                 // 将工作流数据同步到后端内存
@@ -5766,7 +5851,7 @@ app.registerExtension({
                 }
             }, 100);
 
-            logger.info('[PCP] 反序列化:', this.properties.parameters?.length || 0, '个参数, 锁定状态:', this.properties.locked);
+            logger.debug('[PCP] 反序列化:', this.properties.parameters?.length || 0, '个参数, 锁定状态:', this.properties.locked);
         };
 
         // ==================== 节点生命周期钩子 ====================
@@ -5786,6 +5871,13 @@ app.registerExtension({
                 window.removeEventListener('pcp-param-value-changed', this._pcpEventHandler);
                 this._pcpEventHandler = null;
                 logger.info('[PCP] 已移除参数值变化事件监听器');
+            }
+
+            // 清理 ResizeObserver 实例
+            if (this._resizeObservers) {
+                this._resizeObservers.forEach(observer => observer.disconnect());
+                this._resizeObservers = null;
+                logger.info('[PCP] 已清理 ResizeObserver 实例');
             }
 
             // 移除全局样式（如果是最后一个节点）

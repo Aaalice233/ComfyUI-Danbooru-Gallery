@@ -343,8 +343,8 @@ export class FloatingNavigator {
      * 更新悬浮球位置
      */
     updateBallPosition() {
-        this.ballElement.style.left = `${this.position.x}px`;
-        this.ballElement.style.top = `${this.position.y}px`;
+        // 使用 transform 代替 top/left 以获得更好的性能
+        this.ballElement.style.transform = `translate(${this.position.x}px, ${this.position.y}px)`;
     }
 
     /**
@@ -981,7 +981,7 @@ export class FloatingNavigator {
                 throw new Error(`HTTP错误: ${response.status}`);
             }
         } catch (error) {
-            logger.error('[QGN] ❤ 保存配置失败:', error);
+            logger.error('[QGN] 保存配置失败:', error);
             this.showNotification('保存配置失败，请稍后重试', 'error');
         }
     }
