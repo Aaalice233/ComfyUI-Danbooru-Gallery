@@ -106,6 +106,11 @@ class EnumSwitch:
         last_update = config.get("last_update", 0)
         return f"{enum_value}_{last_update}"
 
+    @classmethod
+    def VALIDATE_INPUTS(cls, **kwargs):
+        """跳过 ComfyUI 的严格输入验证，允许动态输入"""
+        return True
+
     def check_lazy_status(self, enum_value, unique_id=None, **kwargs):
         """
         Lazy evaluation 检查：只请求当前选中的输入
