@@ -6,6 +6,7 @@
  * - 输入引脚数量根据枚举选项动态调整
  * - 输出类型根据连接的下游节点自动推断
  * - 支持与 ParameterControlPanel 的枚举参数联动
+ * - 采用 stabilize 模式确保工作流加载时连接不丢失
  */
 
 import { app } from "/scripts/app.js";
@@ -13,8 +14,64 @@ import { createLogger } from '../global/logger_client.js';
 
 const logger = createLogger('enum_switch');
 
-// 最大支持的输入数量（需要与后端一致）
-const MAX_INPUTS = 20;
+// ==================== 工具函数 ====================
+
+/**
+ * 从节点末尾移除未使用的输入引脚
+ * 参考 rgthree 的实现
+ * @param {LGraphNode} node - 目标节点
+ * @param {number} minNumber - 保留的最小输入数量（不包括 enum_value）
+ * @param {RegExp} nameMatch - 输入名称匹配正则
+ */
+function removeUnusedInputsFromEnd(node, minNumber = 1, nameMatch = /^input_\d+$/) {
+    if (node.removed) return;
+    if (!node.inputs) return;
+    
+    // 找到第一个 input_* 的位置（跳过 enum_value）
+    let firstInputIndex = 0;
+    for (let i = 0; i < node.inputs.length; i++) {
+        if (node.inputs[i].name.startsWith('input_')) {
+            firstInputIndex = i;
+            break;
+        }
+    }
+    
+    // 计算 input_* 的数量
+    const inputCount = node.inputs.filter(i => i.name.startsWith('input_')).length;
+    
+    // 从末尾开始移除未连接的输入
+    for (let i = node.inputs.length - 1; i >= firstInputIndex + minNumber; i--) {
+        const input = node.inputs[i];
+        if (!input) continue;
+        
+        // 如果输入有连接，停止移除
+        if (input.link != null) {
+            break;
+        }
+        
+        // 匹配名称模式
+        if (nameMatch && nameMatch.test(input.name)) {
+            node.removeInput(i);
+        }
+    }
+}
+
+/**
+ * 防抖函数
+ */
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func.apply(this, args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// ==================== 节点扩展 ====================
 
 app.registerExtension({
     name: "Comfy.EnumSwitch",
@@ -51,10 +108,13 @@ app.registerExtension({
 
             // 标志位：是否已从工作流加载
             this._loadedFromWorkflow = false;
+            
+            // 标志位：是否正在进行稳定化
+            this._stabilizing = false;
 
-            // 注意：不在这里调用 initializeInputs()
-            // 从工作流加载时，引脚已经存在，不应该清除
-            // 只有在真正需要重置时才调用 initializeInputs()
+            // 绑定稳定化函数
+            this.stabilizeBound = this.stabilize.bind(this);
+            this.debouncedStabilize = debounce(this.stabilizeBound, 64);
 
             // 设置节点尺寸
             this.size = [200, 80];
@@ -64,19 +124,120 @@ app.registerExtension({
             return result;
         };
 
-        // 初始化输入引脚
-        nodeType.prototype.initializeInputs = function() {
-            // 移除所有 input_* 输入，只保留 enum_value
-            if (this.inputs) {
-                for (let i = this.inputs.length - 1; i >= 0; i--) {
-                    if (this.inputs[i].name.startsWith('input_')) {
-                        this.removeInput(i);
+        /**
+         * 稳定化函数 - 核心机制
+         * 确保输入引脚与枚举选项同步，同时保留已有连接
+         */
+        nodeType.prototype.stabilize = function() {
+            if (this._stabilizing || this.removed) return;
+            this._stabilizing = true;
+            
+            try {
+                const options = this.properties.enumOptions || [];
+                const outputType = this.properties.outputType || "*";
+                
+                // 1. 确保有足够的输入引脚
+                this.ensureInputsForOptions(options, outputType);
+                
+                // 2. 从末尾移除多余的未连接输入（保留至少与选项数量相等的输入）
+                const minInputs = Math.max(options.length, 1);
+                removeUnusedInputsFromEnd(this, minInputs);
+                
+                // 3. 更新所有输入的类型
+                if (this.inputs) {
+                    for (const input of this.inputs) {
+                        if (input.name.startsWith('input_')) {
+                            input.type = outputType;
+                        }
                     }
+                }
+                
+                // 4. 更新输出类型
+                if (this.outputs && this.outputs[0]) {
+                    this.outputs[0].type = outputType;
+                }
+                
+                // 5. 调整节点大小
+                this.adjustNodeSize();
+                
+                // 6. 触发图形更新
+                if (this.graph && this.graph.setDirtyCanvas) {
+                    this.graph.setDirtyCanvas(true, true);
+                }
+                
+            } finally {
+                this._stabilizing = false;
+            }
+        };
+
+        /**
+         * 确保有足够的输入引脚
+         */
+        nodeType.prototype.ensureInputsForOptions = function(options, inputType) {
+            if (!this.inputs) return;
+            
+            // 获取当前的 input_* 引脚
+            const currentInputs = this.inputs.filter(i => i.name.startsWith('input_'));
+            const currentCount = currentInputs.length;
+            const targetCount = options.length;
+            
+            // 如果数量已经匹配，只需更新标签
+            if (currentCount === targetCount) {
+                for (let i = 0; i < currentCount; i++) {
+                    const inputIndex = this.inputs.findIndex(inp => inp.name === `input_${i}`);
+                    if (inputIndex >= 0 && options[i]) {
+                        this.inputs[inputIndex].label = options[i];
+                    }
+                }
+                return;
+            }
+            
+            // 需要添加或调整引脚
+            if (currentCount < targetCount) {
+                // 添加缺少的引脚
+                for (let i = currentCount; i < targetCount; i++) {
+                    this.addInput(`input_${i}`, inputType);
+                    const newIndex = this.inputs.length - 1;
+                    if (this.inputs[newIndex] && options[i]) {
+                        this.inputs[newIndex].label = options[i];
+                    }
+                }
+            }
+            
+            // 更新所有标签
+            for (let i = 0; i < Math.min(targetCount, this.inputs.length); i++) {
+                const inputIndex = this.inputs.findIndex(inp => inp.name === `input_${i}`);
+                if (inputIndex >= 0 && options[i]) {
+                    this.inputs[inputIndex].label = options[i];
                 }
             }
         };
 
-        // 更新枚举选项
+        /**
+         * 调整节点大小
+         */
+        nodeType.prototype.adjustNodeSize = function() {
+            const inputCount = this.inputs ? this.inputs.filter(i => i.name.startsWith('input_')).length : 0;
+            const baseHeight = 80;
+            const inputHeight = 26;
+            const newHeight = baseHeight + inputCount * inputHeight;
+            this.size = [Math.max(200, this.size[0]), Math.max(newHeight, 80)];
+        };
+
+        /**
+         * 调度稳定化（带防抖）
+         */
+        nodeType.prototype.scheduleStabilize = function(ms = 64) {
+            if (this.debouncedStabilize) {
+                this.debouncedStabilize();
+            } else {
+                setTimeout(() => this.stabilize(), ms);
+            }
+        };
+
+        /**
+         * 更新枚举选项
+         */
         nodeType.prototype.updateEnumOptions = function(options, panelNodeId, paramName, selectedValue) {
             logger.info(`[ES] 更新枚举选项: ${options.length} 个选项`);
 
@@ -92,89 +253,18 @@ app.registerExtension({
                 this.properties.selectedValue = selectedValue;
             }
 
-            // 只有选项真正变化时才更新输入引脚
+            // 触发稳定化
             if (optionsChanged) {
-                this.updateInputsFromOptions(options);
-            } else {
-                logger.debug('[ES] 选项未变化，跳过引脚更新');
+                this.scheduleStabilize();
             }
 
             // 同步配置到后端
             this.syncConfigToBackend();
         };
 
-        // 根据选项更新输入引脚
-        nodeType.prototype.updateInputsFromOptions = function(options) {
-            // 保存现有连接信息（需要保存完整的链接信息，而不只是 link ID）
-            const existingLinks = new Map();
-            if (this.inputs && this.graph) {
-                for (let i = 0; i < this.inputs.length; i++) {
-                    const input = this.inputs[i];
-                    if (input && input.name.startsWith('input_') && input.link != null) {
-                        const linkInfo = this.graph.links[input.link];
-                        if (linkInfo) {
-                            // 保存源节点 ID、源插槽、以及 input 的 label（用于匹配）
-                            existingLinks.set(input.label || input.name, {
-                                origin_id: linkInfo.origin_id,
-                                origin_slot: linkInfo.origin_slot
-                            });
-                            logger.debug(`[ES] 保存连接: ${input.label || input.name} <- node ${linkInfo.origin_id} slot ${linkInfo.origin_slot}`);
-                        }
-                    }
-                }
-            }
-
-            // 移除所有动态输入（保留 enum_value）
-            if (this.inputs) {
-                for (let i = this.inputs.length - 1; i >= 0; i--) {
-                    if (this.inputs[i].name.startsWith('input_')) {
-                        this.removeInput(i);
-                    }
-                }
-            }
-
-            // 根据选项添加新输入
-            const inputType = this.properties.outputType || "*";
-            options.forEach((option, index) => {
-                const inputName = `input_${index}`;
-                this.addInput(inputName, inputType);
-
-                // 设置输入的显示标签为枚举选项名
-                const newInputIndex = this.inputs.length - 1;
-                if (this.inputs[newInputIndex]) {
-                    this.inputs[newInputIndex].label = option;
-                }
-
-                // 尝试恢复之前的连接（通过 label 匹配）
-                if (existingLinks.has(option) && this.graph) {
-                    const linkInfo = existingLinks.get(option);
-                    const originNode = this.graph.getNodeById(linkInfo.origin_id);
-                    if (originNode) {
-                        try {
-                            originNode.connect(linkInfo.origin_slot, this, newInputIndex);
-                            logger.debug(`[ES] 恢复连接: ${option} <- node ${linkInfo.origin_id}`);
-                        } catch (e) {
-                            logger.warn(`[ES] 恢复连接失败: ${option}`, e);
-                        }
-                    }
-                }
-            });
-
-            // 调整节点大小
-            const baseHeight = 80;
-            const inputHeight = 26;
-            const newHeight = baseHeight + options.length * inputHeight;
-            this.size = [Math.max(200, this.size[0]), Math.max(newHeight, 80)];
-
-            // 触发图形更新
-            if (this.graph && this.graph.setDirtyCanvas) {
-                this.graph.setDirtyCanvas(true, true);
-            }
-
-            logger.info(`[ES] 输入引脚已更新: ${options.length} 个动态输入, 恢复了 ${existingLinks.size} 个连接`);
-        };
-
-        // 同步配置到后端
+        /**
+         * 同步配置到后端
+         */
         nodeType.prototype.syncConfigToBackend = async function() {
             try {
                 const response = await fetch('/danbooru_gallery/enum_switch/update_config', {
@@ -200,7 +290,9 @@ app.registerExtension({
             }
         };
 
-        // 监听连接变化
+        /**
+         * 监听连接变化
+         */
         const onConnectionsChange = nodeType.prototype.onConnectionsChange;
         nodeType.prototype.onConnectionsChange = function(type, slotIndex, isConnected, link, ioSlot) {
             const result = onConnectionsChange?.apply(this, arguments);
@@ -215,9 +307,6 @@ app.registerExtension({
                         setTimeout(() => {
                             this.detectPanelConnection();
                         }, 100);
-                    } else {
-                        logger.info('[ES] enum_value 输入已断开');
-                        // 可选：清空关联信息
                     }
                 }
             }
@@ -232,10 +321,15 @@ app.registerExtension({
                 }
             }
 
+            // 触发稳定化
+            this.scheduleStabilize();
+
             return result;
         };
 
-        // 检测 PCP 连接
+        /**
+         * 检测 PCP 连接
+         */
         nodeType.prototype.detectPanelConnection = function() {
             try {
                 // 获取 enum_value 输入的连接
@@ -270,13 +364,15 @@ app.registerExtension({
             }
         };
 
-        // 从 ParameterBreak 同步配置
+        /**
+         * 从 ParameterBreak 同步配置
+         */
         nodeType.prototype.syncFromParameterBreak = function(breakNode, outputSlot) {
             try {
                 const paramStructure = breakNode.properties?.paramStructure || [];
 
                 if (outputSlot >= paramStructure.length) {
-                    logger.warn('[ES] 输出槽索引超出参数结构范围, outputSlot:', outputSlot, ', paramStructure.length:', paramStructure.length);
+                    logger.warn('[ES] 输出槽索引超出参数结构范围');
                     return;
                 }
 
@@ -314,8 +410,6 @@ app.registerExtension({
 
                     if (options.length > 0) {
                         this.updateEnumOptions(options, panelNodeId, param.name, selectedValue);
-                    } else {
-                        logger.warn('[ES] 未能获取到枚举选项');
                     }
                 } else {
                     logger.info(`[ES] 参数 ${param.name} 不是枚举类型，是 ${param.param_type}`);
@@ -326,7 +420,9 @@ app.registerExtension({
             }
         };
 
-        // 查找与 ParameterBreak 连接的 PCP 节点
+        /**
+         * 查找与 ParameterBreak 连接的 PCP 节点
+         */
         nodeType.prototype.findLinkedPCPNode = function(breakNode) {
             try {
                 if (!breakNode.inputs || !breakNode.inputs[0] || breakNode.inputs[0].link == null) {
@@ -344,7 +440,9 @@ app.registerExtension({
             }
         };
 
-        // 在 PCP 中查找指定名称的参数
+        /**
+         * 在 PCP 中查找指定名称的参数
+         */
         nodeType.prototype.findParamInPCP = function(pcpNode, paramName) {
             try {
                 const parameters = pcpNode.properties?.parameters || [];
@@ -354,7 +452,9 @@ app.registerExtension({
             }
         };
 
-        // 从 ParameterControlPanel 同步配置
+        /**
+         * 从 ParameterControlPanel 同步配置
+         */
         nodeType.prototype.syncFromParameterPanel = function(panelNode) {
             try {
                 const parameters = panelNode.properties?.parameters || [];
@@ -380,7 +480,9 @@ app.registerExtension({
             }
         };
 
-        // 推断输出类型
+        /**
+         * 推断输出类型
+         */
         nodeType.prototype.inferOutputType = function(linkInfo) {
             try {
                 const linkId = typeof linkInfo === 'object' ? linkInfo.id : linkInfo;
@@ -398,24 +500,8 @@ app.registerExtension({
                 if (inferredType && inferredType !== "*") {
                     this.properties.outputType = inferredType;
 
-                    // 更新输出类型
-                    if (this.outputs && this.outputs[0]) {
-                        this.outputs[0].type = inferredType;
-                    }
-
-                    // 更新所有输入类型（保持类型一致性）
-                    if (this.inputs) {
-                        for (let i = 0; i < this.inputs.length; i++) {
-                            if (this.inputs[i] && this.inputs[i].name.startsWith('input_')) {
-                                this.inputs[i].type = inferredType;
-                            }
-                        }
-                    }
-
-                    // 触发图形更新以反映类型变化
-                    if (this.graph && this.graph.setDirtyCanvas) {
-                        this.graph.setDirtyCanvas(true, true);
-                    }
+                    // 触发稳定化来更新类型
+                    this.scheduleStabilize();
 
                     logger.info(`[ES] 推断输出类型: ${inferredType}`);
                 }
@@ -424,7 +510,9 @@ app.registerExtension({
             }
         };
 
-        // 序列化
+        /**
+         * 序列化
+         */
         const onSerialize = nodeType.prototype.onSerialize;
         nodeType.prototype.onSerialize = function(info) {
             if (onSerialize) {
@@ -440,7 +528,9 @@ app.registerExtension({
             logger.debug('[ES] 序列化:', info.enumOptions?.length || 0, '个选项');
         };
 
-        // 反序列化
+        /**
+         * 反序列化 - 关键改进：不再强制重建输入引脚
+         */
         const onConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function(info) {
             if (onConfigure) {
@@ -449,6 +539,7 @@ app.registerExtension({
 
             this._loadedFromWorkflow = true;
 
+            // 恢复属性
             if (info.enumOptions) {
                 this.properties.enumOptions = info.enumOptions;
             }
@@ -465,38 +556,55 @@ app.registerExtension({
                 this.properties.selectedValue = info.selectedValue;
             }
 
-            // 延迟恢复输入引脚（需要检查是否已有正确的引脚）
+            // 关键改进：延迟执行，让 LiteGraph 先恢复连接
+            // 不再调用 updateInputsFromOptions，而是使用 stabilize
             setTimeout(() => {
-                // 检查当前是否已有正确的动态输入引脚
-                const currentInputCount = this.inputs ? 
-                    this.inputs.filter(i => i.name.startsWith('input_')).length : 0;
-                const savedOptionsCount = this.properties.enumOptions?.length || 0;
-
-                // 只有当引脚数量不匹配时才重建
-                // 这样可以保留 LiteGraph 已恢复的连接
-                if (savedOptionsCount > 0 && currentInputCount !== savedOptionsCount) {
-                    logger.info(`[ES] 引脚数量不匹配 (当前: ${currentInputCount}, 保存: ${savedOptionsCount})，重建引脚`);
-                    this.updateInputsFromOptions(this.properties.enumOptions);
-                } else if (savedOptionsCount > 0) {
-                    logger.info('[ES] 引脚已存在且数量正确，保留现有连接');
+                // 只更新标签，不重建引脚（保留 LiteGraph 已恢复的连接）
+                const options = this.properties.enumOptions || [];
+                if (this.inputs) {
+                    for (let i = 0; i < options.length; i++) {
+                        const inputIndex = this.inputs.findIndex(inp => inp.name === `input_${i}`);
+                        if (inputIndex >= 0) {
+                            this.inputs[inputIndex].label = options[i];
+                        }
+                    }
                 }
-
-                // 无论是否有保存的选项，都尝试从上游节点同步
-                // 使用更长的延迟确保 PB 已完成同步（PB 在 350ms 后扫描连接）
+                
+                // 更新类型
+                const outputType = this.properties.outputType || "*";
+                if (this.inputs) {
+                    for (const input of this.inputs) {
+                        if (input.name.startsWith('input_')) {
+                            input.type = outputType;
+                        }
+                    }
+                }
+                if (this.outputs && this.outputs[0]) {
+                    this.outputs[0].type = outputType;
+                }
+                
+                // 调整大小
+                this.adjustNodeSize();
+                
+                // 同步到后端
+                this.syncConfigToBackend();
+                
+                // 延迟尝试从上游节点同步
                 setTimeout(() => {
                     if (this.inputs && this.inputs[0] && this.inputs[0].link != null) {
                         logger.info('[ES] 主动从上游节点同步枚举选项...');
                         this.detectPanelConnection();
                     }
                 }, 300);
-
-                this.syncConfigToBackend();
-            }, 150);
+                
+            }, 100);
 
             logger.info('[ES] 反序列化:', this.properties.enumOptions?.length || 0, '个选项');
         };
 
-        // 节点移除时清理
+        /**
+         * 节点移除时清理
+         */
         const onRemoved = nodeType.prototype.onRemoved;
         nodeType.prototype.onRemoved = function() {
             // 清理后端配置
@@ -515,7 +623,9 @@ app.registerExtension({
             logger.info('[ES] 节点已移除:', this.id);
         };
 
-        // 添加右键菜单
+        /**
+         * 添加右键菜单
+         */
         const getExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
         nodeType.prototype.getExtraMenuOptions = function(_, options) {
             if (getExtraMenuOptions) {
@@ -537,6 +647,13 @@ app.registerExtension({
                         ? `枚举选项 (${opts.length}):\n${opts.join('\n')}`
                         : '暂无枚举选项';
                     alert(msg);
+                }
+            });
+            
+            options.push({
+                content: "🔧 强制稳定化",
+                callback: () => {
+                    this.stabilize();
                 }
             });
         };
