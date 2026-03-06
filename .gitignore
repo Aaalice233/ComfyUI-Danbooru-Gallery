@@ -116,3 +116,4 @@ comfyui-tooling-nodes-main/
 .spec-workflow/
 nul
 CLAUDE.md
+.auto-claude/

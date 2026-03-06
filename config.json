@@ -3,12 +3,8 @@
     "level": "INFO",
     "console_output": false,
     "components": {
-      "group_executor_manager": "DEBUG",
-      "group_executor_trigger": "DEBUG",
       "image_cache_save": "DEBUG",
       "image_cache_get": "DEBUG",
-      "execution_engine": "DEBUG",
-      "cache_control_events": "DEBUG",
       "text_cache_manager": "DEBUG",
       "parameter_control_panel": "INFO",
       "workflow_description": "INFO",

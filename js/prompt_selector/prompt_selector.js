@@ -107,6 +107,7 @@ class PromptDataSyncManager {
         this.maxSyncErrors = 5; // 最大连续错误数
         this.onSyncCallback = null; // 同步完成回调
         this.onErrorCallback = null; // 错误回调
+        this.hasSuccessfulSyncCheck = false; // 是否至少成功连通过一次后端
     }
 
     /**
@@ -182,6 +183,7 @@ class PromptDataSyncManager {
 
             const metadata = await response.json();
             const serverLastModified = metadata.last_modified;
+            this.hasSuccessfulSyncCheck = true;
 
             // 如果是首次检查，记录时间戳
             if (this.lastModified === null) {
@@ -201,9 +203,17 @@ class PromptDataSyncManager {
 
             this.syncErrorCount = 0; // 重置错误计数
         } catch (error) {
+            const errorMessage = error?.message || String(error || "");
+
+            // 启动期容错：后端尚未就绪/临时断连时不计入致命错误，避免刷屏
+            if (!this.hasSuccessfulSyncCheck && errorMessage.includes("Failed to fetch")) {
+                logger.info("同步检查等待后端就绪，跳过本次失败");
+                return;
+            }
+
             this.syncErrorCount++;
             // 使用 info 级别日志，因为这个错误不影响主流程（如 data.json 不存在）
-            logger.info(`同步检查跳过 (${this.syncErrorCount}/${this.maxSyncErrors}):`, error.message || error);
+            logger.info(`同步检查跳过 (${this.syncErrorCount}/${this.maxSyncErrors}): ${errorMessage}`);
 
             // 如果连续错误过多，暂停同步并通知
             if (this.syncErrorCount >= this.maxSyncErrors) {
@@ -860,9 +870,13 @@ app.registerExtension({
 
                         // 设置错误回调
                         this.syncManager.onError((error) => {
-                            logger.error("同步错误:", error);
+                            const errorMessage =
+                                (error && typeof error === "object" && "message" in error && error.message)
+                                    ? error.message
+                                    : (typeof error === "string" ? error : "未知同步错误");
+                            logger.warn(`同步错误: ${errorMessage}`);
                             this.syncStatus = 'error';
-                            this.showToast('数据同步失败，已暂停自动同步', 'error');
+                            this.showToast(`数据同步失败：${errorMessage}`, 'error');
                         });
 
                         // 启动自动同步

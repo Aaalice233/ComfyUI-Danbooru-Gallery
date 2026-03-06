@@ -1,6 +1,6 @@
 /**
  * 组是否启用节点 - Group Is Enabled
- * 检测组静音管理器中被管理组的启用状态
+ * 检测组静音/组忽略管理器中被管理组的启用状态
  */
 
 import { app } from "/scripts/app.js";
@@ -46,7 +46,7 @@ function hasNodeMatching(nodeOrNodes, checkFn) {
 // ============================================================
 
 /**
- * 获取所有被组静音管理器管理的组名列表
+ * 获取所有被组静音/组忽略管理器管理的组名列表
  * @returns {string[]} 组名数组（去重并排序）
  */
 function getManagedGroups() {
@@ -56,9 +56,10 @@ function getManagedGroups() {
         return [];
     }
 
-    // 遍历所有节点，查找 GroupMuteManager 类型的节点
+    // 遍历所有节点，查找 GroupMuteManager / GroupIgnoreManager 类型的节点
     for (const node of app.graph._nodes) {
-        if (node.type === "GroupMuteManager" && node.properties && node.properties.groups) {
+        if ((node.type === "GroupMuteManager" || node.type === "GroupIgnoreManager")
+            && node.properties && node.properties.groups) {
             // 从 properties.groups 中提取组名
             for (const groupConfig of node.properties.groups) {
                 if (groupConfig.group_name) {

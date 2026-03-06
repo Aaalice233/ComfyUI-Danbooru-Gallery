@@ -51,14 +51,12 @@ from .py.model_name_extractor import NODE_CLASS_MAPPINGS as mne_mappings, NODE_D
 # 导入枚举切换节点
 from .py.enum_switch import NODE_CLASS_MAPPINGS as enum_switch_mappings, NODE_DISPLAY_NAME_MAPPINGS as enum_switch_display_mappings
 
-# 导入优化执行系统
-from .py.group_executor_manager import NODE_CLASS_MAPPINGS as group_manager_mappings
-from .py.group_executor_manager import NODE_DISPLAY_NAME_MAPPINGS as group_manager_display_mappings
-from .py.group_executor_trigger import GroupExecutorTrigger
-
 # 导入组静音管理器
 from .py.group_mute_manager import NODE_CLASS_MAPPINGS as group_mute_mappings
 from .py.group_mute_manager import NODE_DISPLAY_NAME_MAPPINGS as group_mute_display_mappings
+# 导入组忽略管理器
+from .py.group_ignore_manager import NODE_CLASS_MAPPINGS as group_ignore_mappings
+from .py.group_ignore_manager import NODE_DISPLAY_NAME_MAPPINGS as group_ignore_display_mappings
 
 # 导入工作流说明节点
 from .py.workflow_description import NODE_CLASS_MAPPINGS as workflow_description_mappings
@@ -83,14 +81,12 @@ from .py.group_is_enabled.group_is_enabled import update_all_group_states as gie
 
 # 优化执行系统映射
 opt_mappings = {
-    "GroupExecutorTrigger": GroupExecutorTrigger,
-    **group_manager_mappings,
-    **group_mute_mappings
+    **group_mute_mappings,
+    **group_ignore_mappings
 }
 opt_display_mappings = {
-    "GroupExecutorTrigger": "组执行触发器 (Group Executor Trigger)",
-    **group_manager_display_mappings,
-    **group_mute_display_mappings
+    **group_mute_display_mappings,
+    **group_ignore_display_mappings
 }
 
 # 合并所有节点映射
@@ -156,7 +152,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 
 # 统计节点加载情况
 _node_load_stats["total_nodes"] = len(NODE_CLASS_MAPPINGS)
-_node_load_stats["loaded_modules"] = 26  # 成功导入的模块数(根据上面的import语句统计)
+_node_load_stats["loaded_modules"] = 25  # 成功导入的模块数(根据上面的import语句统计)
 
 # 控制台输出
 print("=" * 70, file=sys.stderr)
