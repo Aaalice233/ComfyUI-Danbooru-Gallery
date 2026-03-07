@@ -11,38 +11,6 @@ import { createLogger } from '../global/logger_client.js';
 // 创建logger实例
 const logger = createLogger('fetch_from_krita');
 
-// 添加按钮样式
-const style = document.createElement('style');
-style.textContent = `
-    .fetch-from-krita-button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 6px;
-        padding: 8px 16px;
-        margin: 4px 0;
-        cursor: pointer;
-        font-size: 13px;
-        font-weight: 500;
-        transition: all 0.3s ease;
-        box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
-        width: 100%;
-        text-align: center;
-    }
-
-    .fetch-from-krita-button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
-    }
-
-    .fetch-from-krita-button:active {
-        transform: translateY(0);
-        box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
-    }
-`;
-document.head.appendChild(style);
-
 app.registerExtension({
     name: "fetch_from_krita",
 
@@ -87,17 +55,9 @@ app.registerExtension({
                     onNodeCreated.apply(this, arguments);
                 }
 
-                // 创建"重新安装插件"按钮
-                const reinstallButton = document.createElement('button');
-                reinstallButton.textContent = '🔄 重新安装Krita插件';
-                reinstallButton.className = 'fetch-from-krita-button';
-                reinstallButton.onclick = async () => {
+                // 使用ComfyUI内置按钮样式
+                this.addWidget("button", "重新安装Krita插件", null, async () => {
                     await reinstallPlugin(this);
-                };
-
-                // 添加按钮到节点
-                this.addDOMWidget("reinstall_plugin_btn", "button", reinstallButton, {
-                    serialize: false
                 });
 
                 logger.info(`[FetchFromKrita] Button added to node ${this.id}`);
