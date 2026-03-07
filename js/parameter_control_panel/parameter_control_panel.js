@@ -3081,21 +3081,22 @@ app.registerExtension({
                 e.preventDefault();
                 e.stopPropagation();
             };
+            const bindInteractionGuards = (el) => {
+                el.addEventListener('pointerdown', preventDrag);
+                el.addEventListener('mousedown', preventDrag);
+                el.addEventListener('touchstart', preventDrag, { passive: true });
+                el.addEventListener('dragstart', preventDragStart);
+                el.draggable = false;
+            };
 
             // 容器级别阻止
-            container.addEventListener('mousedown', preventDrag);
-            container.addEventListener('dragstart', preventDragStart);
-            container.draggable = false;
+            bindInteractionGuards(container);
 
             // 滑条元素级别阻止
-            slider.addEventListener('mousedown', preventDrag);
-            slider.addEventListener('dragstart', preventDragStart);
-            slider.draggable = false;
+            bindInteractionGuards(slider);
 
             // 数值输入框级别阻止
-            valueInput.addEventListener('mousedown', preventDrag);
-            valueInput.addEventListener('dragstart', preventDragStart);
-            valueInput.draggable = false;
+            bindInteractionGuards(valueInput);
 
             // 同步滑条和输入框
             // ====== 性能优化：使用节流减少 syncConfig 调用频率 ======
