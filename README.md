@@ -1,6 +1,6 @@
 # ComfyUI-Danbooru-Gallery
 
-**中文** | [English](README_EN.md)
+本节点专为 [ShiQi_Workflow](https://github.com/Aaalice233/ShiQi_Workflow) 工作流打造，聚焦中文用户的实际使用场景与体验。
 
 面向 ComfyUI 的实用节点集合，重点覆盖 Danbooru 图像检索、提示词编辑/清洗、缓存管理、Krita 联动与工作流辅助工具。
 
