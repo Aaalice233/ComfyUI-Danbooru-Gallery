@@ -138,7 +138,7 @@ def migrate_file(file_path: Path) -> bool:
 def main():
     if len(sys.argv) < 2:
         print("用法: python migrate_print.py <文件路径>")
-        print("示例: python migrate_print.py py/text_cache_manager/text_cache_manager.py")
+        print("示例: python migrate_print.py py/workflow_description/workflow_description.py")
         sys.exit(1)
 
     file_path = Path(sys.argv[1])

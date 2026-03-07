@@ -213,8 +213,8 @@ python main.py
     "level": "INFO",
     "console_output": true,
     "components": {
-      "group_executor_manager": "DEBUG",
-      "text_cache_manager": "WARNING"
+      "parameter_control_panel": "DEBUG",
+      "workflow_description": "INFO"
     }
   }
 }
@@ -260,7 +260,7 @@ python main.py
    🎯 已注册节点: 56 个
 ======================================================================
 [2025-11-09 14:30:16] [INFO] [execution_engine] [JS/Chrome] 执行引擎已初始化
-[2025-11-09 14:30:17] [WARNING] [image_cache_save] ⚠️ CUDA 不可用
+[2025-11-09 14:30:17] [WARNING] [workflow_description] ⚠️ 配置文件不存在，使用默认值
 [2025-11-09 14:30:18] [ERROR] [parameter_control_panel] ❌ 加载配置失败: file not found
 ```
 
@@ -270,7 +270,7 @@ python main.py
 
 ```
 [2025-11-09 14:30:16] [INFO] [execution_engine] [JS/Chrome] 执行引擎已初始化
-[2025-11-09 14:30:17] [ERROR] [image_cache_save] [JS/Firefox] 上传失败
+[2025-11-09 14:30:17] [ERROR] [parameter_control_panel] [JS/Firefox] 配置同步失败
 ```
 
 ## 性能优化说明

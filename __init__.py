@@ -31,10 +31,6 @@ from .py.danbooru_gallery import NODE_CLASS_MAPPINGS as danbooru_mappings, NODE_
 from .py.character_feature_swap import NODE_CLASS_MAPPINGS as swap_mappings, NODE_DISPLAY_NAME_MAPPINGS as swap_display_mappings
 from .py.prompt_selector import NODE_CLASS_MAPPINGS as ps_mappings, NODE_DISPLAY_NAME_MAPPINGS as ps_display_mappings
 from .py.multi_character_editor import NODE_CLASS_MAPPINGS as mce_mappings, NODE_DISPLAY_NAME_MAPPINGS as mce_display_mappings
-from .py.image_cache_save import NODE_CLASS_MAPPINGS as cache_save_mappings, NODE_DISPLAY_NAME_MAPPINGS as cache_save_display_mappings
-from .py.image_cache_get import NODE_CLASS_MAPPINGS as cache_get_mappings, NODE_DISPLAY_NAME_MAPPINGS as cache_get_display_mappings
-from .py.global_text_cache_save import NODE_CLASS_MAPPINGS as text_cache_save_mappings, NODE_DISPLAY_NAME_MAPPINGS as text_cache_save_display_mappings
-from .py.global_text_cache_get import NODE_CLASS_MAPPINGS as text_cache_get_mappings, NODE_DISPLAY_NAME_MAPPINGS as text_cache_get_display_mappings
 from .py.resolution_master_simplify import NODE_CLASS_MAPPINGS as rms_mappings, NODE_DISPLAY_NAME_MAPPINGS as rms_display_mappings
 from .py.prompt_cleaning_maid import NODE_CLASS_MAPPINGS as pcm_mappings, NODE_DISPLAY_NAME_MAPPINGS as pcm_display_mappings
 from .py.simple_image_compare import NODE_CLASS_MAPPINGS as sic_mappings, NODE_DISPLAY_NAME_MAPPINGS as sic_display_mappings
@@ -61,10 +57,6 @@ from .py.group_ignore_manager import NODE_DISPLAY_NAME_MAPPINGS as group_ignore_
 # 导入工作流说明节点
 from .py.workflow_description import NODE_CLASS_MAPPINGS as workflow_description_mappings
 from .py.workflow_description import NODE_DISPLAY_NAME_MAPPINGS as workflow_description_display_mappings
-
-# 导入文本缓存查看器节点
-from .py.text_cache_viewer import NODE_CLASS_MAPPINGS as text_cache_viewer_mappings
-from .py.text_cache_viewer import NODE_DISPLAY_NAME_MAPPINGS as text_cache_viewer_display_mappings
 
 # 导入Open In Krita节点
 from .py.open_in_krita import NODE_CLASS_MAPPINGS as open_in_krita_mappings
@@ -95,10 +87,6 @@ NODE_CLASS_MAPPINGS = {
     **swap_mappings,
     **ps_mappings,
     **mce_mappings,
-    **cache_save_mappings,
-    **cache_get_mappings,
-    **text_cache_save_mappings,
-    **text_cache_get_mappings,
     **rms_mappings,
     **pcm_mappings,
     **sic_mappings,
@@ -114,7 +102,6 @@ NODE_CLASS_MAPPINGS = {
     **enum_switch_mappings,
     **opt_mappings,
     **workflow_description_mappings,
-    **text_cache_viewer_mappings,
     **open_in_krita_mappings,
     **quick_group_navigation_mappings,
     **gie_mappings
@@ -125,10 +112,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **swap_display_mappings,
     **ps_display_mappings,
     **mce_display_mappings,
-    **cache_save_display_mappings,
-    **cache_get_display_mappings,
-    **text_cache_save_display_mappings,
-    **text_cache_get_display_mappings,
     **rms_display_mappings,
     **pcm_display_mappings,
     **sic_display_mappings,
@@ -144,7 +127,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **enum_switch_display_mappings,
     **opt_display_mappings,
     **workflow_description_display_mappings,
-    **text_cache_viewer_display_mappings,
     **open_in_krita_display_mappings,
     **quick_group_navigation_display_mappings,
     **gie_display_mappings
@@ -152,7 +134,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 
 # 统计节点加载情况
 _node_load_stats["total_nodes"] = len(NODE_CLASS_MAPPINGS)
-_node_load_stats["loaded_modules"] = 25  # 成功导入的模块数(根据上面的import语句统计)
+_node_load_stats["loaded_modules"] = 20  # 成功导入的模块数(根据上面的import语句统计)
 
 # 控制台输出
 print("=" * 70, file=sys.stderr)
@@ -183,8 +165,6 @@ WEB_DIRECTORY = "./js"
 try:
     from server import PromptServer
     from aiohttp import web
-    from .py.image_cache_manager.image_cache_manager import cache_manager
-    from .py.text_cache_manager.text_cache_manager import text_cache_manager
     from .py.utils import debug_config
     from .py.utils import config
     import time
@@ -197,14 +177,6 @@ try:
         # Tag sync API 依赖 cache 模块，如果 cache 不可用则此功能不可用
         # 这不影响其他核心功能（如 SaveImagePlus）
         tag_sync_api = None
-
-    # 导入并设置文本缓存管理器API（增强版，支持工作流扫描）
-    try:
-        from .py.text_cache_manager.api import setup_text_cache_api
-        setup_text_cache_api()
-        logger.info("✓ 文本缓存管理器API已注册（支持工作流扫描）")
-    except Exception as e:
-        logger.warning(f" 文本缓存管理器API注册失败: {e}")
 
     # 导入并注册 checkpoint 预览图 API
     try:
@@ -266,26 +238,6 @@ try:
                 "success": False,
                 "error": str(e)
             }, status=500)
-
-    @PromptServer.instance.routes.post("/danbooru_gallery/clear_cache")
-    async def clear_image_cache(request):
-        """清空图像缓存的API端点"""
-        try:
-            cache_manager.clear_cache()
-            return web.json_response({"success": True, "message": "缓存已清空"})
-        except Exception as e:
-            return web.json_response({"success": False, "error": str(e)}, status=500)
-
-    @PromptServer.instance.routes.post("/danbooru_gallery/set_current_group")
-    async def set_current_group(request):
-        """设置当前执行组名的API端点"""
-        try:
-            data = await request.json()
-            group_name = data.get("group_name")
-            cache_manager.set_current_group(group_name)
-            return web.json_response({"success": True, "group_name": group_name})
-        except Exception as e:
-            return web.json_response({"success": False, "error": str(e)}, status=500)
 
     @PromptServer.instance.routes.get("/danbooru_gallery/get_debug_config")
     async def get_debug_config(request):
@@ -356,288 +308,6 @@ try:
                 "status": "error",
                 "message": str(e)
             }, status=500)
-
-    # 文本缓存相关API路由
-    @PromptServer.instance.routes.post("/danbooru/text_cache/update")
-    async def update_text_cache(request):
-        """实时更新文本缓存的API端点（由JavaScript调用）"""
-        try:
-            data = await request.json()
-            text = data.get("text", "")
-            channel_name = data.get("channel_name", "default")
-            triggered_by = data.get("triggered_by", "")
-
-            # 确保text是字符串
-            if not isinstance(text, str):
-                text = str(text)
-
-            # 限制triggered_by长度，防止过大日志
-            if len(triggered_by) > 200:
-                triggered_by = triggered_by[:200] + "..."
-
-            # ✅ 内容变化检测：获取旧内容进行比较
-            old_text = ""
-            if text_cache_manager.channel_exists(channel_name):
-                old_text = text_cache_manager.get_cached_text(channel_name)
-
-            content_changed = (old_text != text)
-
-            # 只有内容变化时才更新缓存
-            if content_changed:
-                # 更新缓存（使用skip_websocket=True，由API端点统一发送WebSocket）
-                metadata = {
-                    "triggered_by": triggered_by,
-                    "timestamp": time.time(),
-                    "auto_update": True
-                }
-                text_cache_manager.cache_text(text, channel_name, metadata, skip_websocket=True)
-
-                # 统一在API端点发送WebSocket事件（错误不应阻塞响应）
-                try:
-                    PromptServer.instance.send_sync("text-cache-channel-updated", {
-                        "channel": channel_name,
-                        "timestamp": time.time(),
-                        "text_length": len(text),
-                        "triggered_by": triggered_by[:50] if triggered_by else ""  # 限制长度
-                    })
-                except Exception as ws_error:
-                    logger.warning(f"[TextCache] WebSocket发送失败: {ws_error}")
-                    # 不阻塞API响应
-            else:
-                logger.warning(f"[TextCache] ⏭️ 内容未变化，跳过缓存更新: 通道={channel_name}, 长度={len(text)}")
-
-            return web.json_response({
-                "status": "success",
-                "channel": channel_name,
-                "text_length": len(text),
-                "content_changed": content_changed  # ✅ 返回内容是否变化的标志
-            })
-        except Exception as e:
-            import traceback
-            logger.warning(f"[TextCache] API异常: {e}")
-            logger.debug(traceback.format_exc())
-            return web.json_response({"status": "error", "error": str(e)}, status=500)
-
-    @PromptServer.instance.routes.get("/danbooru/text_cache/channels")
-    async def get_text_cache_channels(request):
-        """获取所有文本缓存通道列表的API端点"""
-        try:
-            channels = text_cache_manager.get_all_channels()
-            return web.json_response({
-                "status": "success",
-                "channels": channels,
-                "count": len(channels)
-            })
-        except Exception as e:
-            return web.json_response({"status": "error", "error": str(e)}, status=500)
-
-    @PromptServer.instance.routes.get("/danbooru/text_cache/get_all_details")
-    async def get_all_text_cache_details(request):
-        """获取所有文本缓存通道的详细信息（包括内容、长度、时间戳等）"""
-        try:
-            all_channels = text_cache_manager.get_all_channels()
-            channel_details = []
-
-            current_time = time.time()
-
-            for channel_name in all_channels:
-                if text_cache_manager.channel_exists(channel_name):
-                    # 获取通道数据
-                    channel_info = text_cache_manager.get_cache_channel(channel_name)
-                    text = channel_info.get("text", "")
-                    timestamp = channel_info.get("timestamp", 0)
-
-                    # 计算更新时间差
-                    time_diff = current_time - timestamp
-                    if time_diff < 60:
-                        time_str = "刚刚"
-                    elif time_diff < 3600:
-                        time_str = f"{int(time_diff / 60)}分钟前"
-                    elif time_diff < 86400:
-                        time_str = f"{int(time_diff / 3600)}小时前"
-                    else:
-                        time_str = f"{int(time_diff / 86400)}天前"
-
-                    # 内容预览（完整内容，由CSS控制显示行数）
-                    preview = text
-
-                    channel_details.append({
-                        "name": channel_name,
-                        "length": len(text),
-                        "time": time_str,
-                        "preview": preview,
-                        "timestamp": timestamp
-                    })
-
-            # 按时间戳排序（最新的在前）
-            channel_details.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-
-            return web.json_response({
-                "status": "success",
-                "channels": channel_details,
-                "count": len(channel_details)
-            })
-        except Exception as e:
-            import traceback
-            logger.warning(f"[TextCache] 获取所有通道详情失败: {e}")
-            logger.debug(traceback.format_exc())
-            return web.json_response({"status": "error", "error": str(e)}, status=500)
-
-    @PromptServer.instance.routes.post("/danbooru/text_cache/ensure_channel")
-    async def ensure_text_cache_channel(request):
-        """确保文本缓存通道存在的API端点（用于前端预注册通道）"""
-        try:
-            data = await request.json()
-            channel_name = data.get("channel_name", "default")
-
-            # 调用TextCacheManager的ensure_channel_exists方法
-            success = text_cache_manager.ensure_channel_exists(channel_name)
-
-            if success:
-                # 发送WebSocket事件通知所有客户端通道列表已更新
-                PromptServer.instance.send_sync("text-cache-channel-updated", {
-                    "channel": channel_name,
-                    "timestamp": time.time(),
-                    "text_length": 0,
-                    "triggered_by": "ensure_channel"
-                })
-
-                return web.json_response({
-                    "status": "success",
-                    "channel": channel_name,
-                    "message": "通道已确保存在"
-                })
-            else:
-                return web.json_response({
-                    "status": "error",
-                    "error": "创建通道失败"
-                }, status=500)
-        except Exception as e:
-            return web.json_response({"status": "error", "error": str(e)}, status=500)
-
-    @PromptServer.instance.routes.post("/danbooru/text_cache/rename_channel")
-    async def rename_text_cache_channel(request):
-        """重命名文本缓存通道的API端点"""
-        try:
-            data = await request.json()
-            old_name = data.get("old_name", "")
-            new_name = data.get("new_name", "")
-
-            if not old_name or not new_name:
-                return web.json_response({
-                    "status": "error",
-                    "error": "缺少old_name或new_name参数"
-                }, status=400)
-
-            # 调用TextCacheManager的rename_channel方法
-            success = text_cache_manager.rename_channel(old_name, new_name)
-
-            if success:
-                # 发送WebSocket事件通知所有客户端通道已重命名
-                PromptServer.instance.send_sync("text-cache-channel-renamed", {
-                    "old_name": old_name,
-                    "new_name": new_name,
-                    "timestamp": time.time()
-                })
-
-                return web.json_response({
-                    "status": "success",
-                    "old_name": old_name,
-                    "new_name": new_name,
-                    "message": f"通道已重命名: '{old_name}' -> '{new_name}'"
-                })
-            else:
-                return web.json_response({
-                    "status": "error",
-                    "error": f"重命名通道失败: '{old_name}' -> '{new_name}'"
-                }, status=500)
-        except Exception as e:
-            return web.json_response({"status": "error", "error": str(e)}, status=500)
-
-    # 图像缓存相关API路由
-    @PromptServer.instance.routes.get("/danbooru/image_cache/channels")
-    async def get_image_cache_channels(request):
-        """获取所有图像缓存通道列表的API端点"""
-        try:
-            channels = cache_manager.get_all_channels()
-            return web.json_response({
-                "status": "success",
-                "channels": channels,
-                "count": len(channels)
-            })
-        except Exception as e:
-            return web.json_response({"status": "error", "error": str(e)}, status=500)
-
-    @PromptServer.instance.routes.post("/danbooru/image_cache/ensure_channel")
-    async def ensure_image_cache_channel(request):
-        """确保图像缓存通道存在的API端点（用于前端预注册通道）"""
-        try:
-            data = await request.json()
-            channel_name = data.get("channel_name", "default")
-
-            # 调用ImageCacheManager的ensure_channel_exists方法
-            success = cache_manager.ensure_channel_exists(channel_name)
-
-            if success:
-                # 发送WebSocket事件通知所有客户端通道列表已更新
-                PromptServer.instance.send_sync("image-cache-channel-updated", {
-                    "channel": channel_name,
-                    "timestamp": time.time(),
-                    "image_count": 0,
-                    "triggered_by": "ensure_channel"
-                })
-
-                return web.json_response({
-                    "status": "success",
-                    "channel": channel_name,
-                    "message": "通道已确保存在"
-                })
-            else:
-                return web.json_response({
-                    "status": "error",
-                    "error": "创建通道失败"
-                }, status=500)
-        except Exception as e:
-            return web.json_response({"status": "error", "error": str(e)}, status=500)
-
-    @PromptServer.instance.routes.post("/danbooru/image_cache/rename_channel")
-    async def rename_image_cache_channel(request):
-        """重命名图像缓存通道的API端点"""
-        try:
-            data = await request.json()
-            old_name = data.get("old_name", "")
-            new_name = data.get("new_name", "")
-
-            if not old_name or not new_name:
-                return web.json_response({
-                    "status": "error",
-                    "error": "缺少old_name或new_name参数"
-                }, status=400)
-
-            # 调用ImageCacheManager的rename_channel方法
-            success = cache_manager.rename_channel(old_name, new_name)
-
-            if success:
-                # 发送WebSocket事件通知所有客户端通道已重命名
-                PromptServer.instance.send_sync("image-cache-channel-renamed", {
-                    "old_name": old_name,
-                    "new_name": new_name,
-                    "timestamp": time.time()
-                })
-
-                return web.json_response({
-                    "status": "success",
-                    "old_name": old_name,
-                    "new_name": new_name,
-                    "message": f"通道已重命名: '{old_name}' -> '{new_name}'"
-                })
-            else:
-                return web.json_response({
-                    "status": "error",
-                    "error": f"重命名通道失败: '{old_name}' -> '{new_name}'"
-                }, status=500)
-        except Exception as e:
-            return web.json_response({"status": "error", "error": str(e)}, status=500)
 
     # 工作流说明节点相关API路由
     import os

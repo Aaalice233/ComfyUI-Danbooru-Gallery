@@ -6,9 +6,9 @@
 
 ## 📌 当前状态
 
-- ✅ 当前注册节点数：`28`
+- ✅ 当前注册节点数：`23`
 - 🧩 前端扩展：包含若干 JS 面板与交互增强（如快速组导航）
-- 🗂️ 已移除的旧节点不再列出（例如 `Group Executor Manager`）
+- 🗂️ 已移除的旧节点不再列出
 
 ## 🚀 安装
 
@@ -47,14 +47,6 @@ pip install -r requirements.txt
 - `PromptCleaningMaid`：提示词清洁女仆 (Prompt Cleaning Maid)
 - `CharacterFeatureSwapNode`：角色特征交换 (Character Feature Swap)
 - `MultiCharacterEditorNode`：多角色编辑器 (Multi Character Editor)
-
-### 💾 缓存与资源
-
-- `ImageCacheSave`：图像缓存保存 (Image Cache Save)
-- `ImageCacheGet`：图像缓存获取 (Image Cache Get)
-- `GlobalTextCacheSave`：全局文本缓存保存 (Global Text Cache Save)
-- `GlobalTextCacheGet`：全局文本缓存获取 (Global Text Cache Get)
-- `TextCacheViewer`：文本缓存查看器 (Text Cache Viewer)
 
 ### 📂 图像输入输出与文件
 

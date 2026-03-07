@@ -13,10 +13,6 @@ const logger = createLogger('debug_config');
 class DebugConfig {
     constructor() {
         this.config = {
-            group_executor_manager: false,
-            group_executor_trigger: false,
-            image_cache_save: false,
-            image_cache_get: false,
             execution_engine: false,
             cache_control_events: false
         };

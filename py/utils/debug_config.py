@@ -31,10 +31,6 @@ def load_config() -> Dict[str, Any]:
         else:
             # 如果配置文件不存在，使用默认配置（全部关闭）
             _debug_config = {
-                "group_executor_manager": False,
-                "group_executor_trigger": False,
-                "image_cache_save": False,
-                "image_cache_get": False,
                 "execution_engine": False,
                 "cache_control_events": False
             }
@@ -79,7 +75,7 @@ def should_debug(component: str) -> bool:
     检查指定组件是否应该打印debug日志
 
     Args:
-        component: 组件名称，如 'group_executor_manager'
+        component: 组件名称，如 'workflow_description'
 
     Returns:
         bool: True表示应该打印日志，False表示不打印

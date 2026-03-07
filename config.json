@@ -3,9 +3,6 @@
     "level": "INFO",
     "console_output": false,
     "components": {
-      "image_cache_save": "DEBUG",
-      "image_cache_get": "DEBUG",
-      "text_cache_manager": "DEBUG",
       "parameter_control_panel": "INFO",
       "workflow_description": "INFO",
       "tag_sync": "INFO"
