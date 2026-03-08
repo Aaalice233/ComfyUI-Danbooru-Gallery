@@ -512,17 +512,18 @@ try:
     @PromptServer.instance.routes.get("/open_in_krita/browse_path")
     async def browse_krita_path(request):
         """打开文件选择对话框，让用户选择Krita可执行文件"""
-        try:
+        import subprocess
+        import shutil
+        import sys
+
+        def _browse_with_tkinter():
             import tkinter as tk
             from tkinter import filedialog
-            import sys
 
-            # 创建隐藏的Tkinter根窗口
             root = tk.Tk()
-            root.withdraw()  # 隐藏主窗口
-            root.attributes('-topmost', True)  # 文件对话框置顶
+            root.withdraw()
+            root.attributes('-topmost', True)
 
-            # 根据平台设置文件类型过滤器
             if sys.platform == "win32":
                 filetypes = [
                     ("可执行文件", "*.exe"),
@@ -535,46 +536,103 @@ try:
                     ("所有文件", "*.*")
                 ]
                 title = "选择Krita应用程序"
-            else:  # Linux
+            else:
                 filetypes = [
                     ("所有文件", "*.*")
                 ]
                 title = "选择Krita可执行文件"
 
-            # 打开文件选择对话框
-            file_path = filedialog.askopenfilename(
-                title=title,
-                filetypes=filetypes
-            )
+            try:
+                return filedialog.askopenfilename(
+                    title=title,
+                    filetypes=filetypes
+                )
+            finally:
+                root.destroy()
 
-            # 销毁Tkinter窗口
-            root.destroy()
+        def _run_dialog_command(cmd):
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                output = (result.stdout or "").strip()
+                if output:
+                    return output, None
+                if result.returncode in (0, 1):
+                    return "", None  # 0/1都可能是用户取消
+                error = (result.stderr or "").strip() or f"exit code {result.returncode}"
+                return None, error
+            except Exception as e:
+                return None, str(e)
 
-            if file_path:
+        def _browse_with_system_dialog():
+            if sys.platform == "win32":
+                ps_script = (
+                    "Add-Type -AssemblyName System.Windows.Forms; "
+                    "$dialog = New-Object System.Windows.Forms.OpenFileDialog; "
+                    "$dialog.Filter = 'Executable (*.exe)|*.exe|All files (*.*)|*.*'; "
+                    "$dialog.Title = '选择Krita可执行文件 (krita.exe)'; "
+                    "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) "
+                    "{ Write-Output $dialog.FileName }"
+                )
+                last_error = "未找到可用的PowerShell可执行文件"
+                for ps_cmd in ("powershell", "powershell.exe", "pwsh", "pwsh.exe"):
+                    if shutil.which(ps_cmd):
+                        path, err = _run_dialog_command(
+                            [ps_cmd, "-NoProfile", "-Command", ps_script]
+                        )
+                        if path is not None:
+                            return path, None
+                        last_error = err
+                return None, f"系统对话框不可用: {last_error}"
+
+            if sys.platform == "darwin":
+                script = (
+                    "set selectedFile to choose file with prompt \"选择Krita应用程序\" "
+                    "of type {\"app\"}\n"
+                    "POSIX path of selectedFile"
+                )
+                path, err = _run_dialog_command(["osascript", "-e", script])
+                return path, err
+
+            if shutil.which("zenity"):
+                path, err = _run_dialog_command(
+                    ["zenity", "--file-selection", "--title=选择Krita可执行文件"]
+                )
+                return path, err
+
+            if shutil.which("kdialog"):
+                path, err = _run_dialog_command(
+                    ["kdialog", "--getopenfilename", "", "All files (*)", "选择Krita可执行文件"]
+                )
+                return path, err
+
+            return None, "找不到系统文件对话框程序（zenity/kdialog）"
+
+        try:
+            file_path = _browse_with_tkinter()
+        except Exception as tk_error:
+            logger.warning(f"[OpenInKrita] Tkinter对话框不可用，尝试系统对话框: {tk_error}")
+            file_path, fallback_error = _browse_with_system_dialog()
+            if file_path is None:
                 return web.json_response({
-                    "status": "success",
-                    "path": file_path
-                })
-            else:
-                # 用户取消选择
-                return web.json_response({
-                    "status": "cancelled",
-                    "message": "用户取消选择"
-                })
+                    "status": "error",
+                    "message": f"文件选择不可用。tkinter错误: {tk_error}; 系统对话框错误: {fallback_error}"
+                }, status=500)
 
-        except ImportError:
+        if file_path:
             return web.json_response({
-                "status": "error",
-                "message": "tkinter不可用，请手动输入路径"
-            }, status=500)
-        except Exception as e:
-            import traceback
-            logger.error(f"[OpenInKrita] 文件选择对话框失败: {e}")
-            logger.debug(traceback.format_exc())
-            return web.json_response({
-                "status": "error",
-                "message": str(e)
-            }, status=500)
+                "status": "success",
+                "path": file_path
+            })
+
+        return web.json_response({
+            "status": "cancelled",
+            "message": "用户取消选择"
+        })
 
     @PromptServer.instance.routes.post("/open_in_krita/set_path")
     async def set_krita_path(request):

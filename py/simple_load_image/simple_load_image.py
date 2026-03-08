@@ -78,6 +78,23 @@ class SimpleLoadImage:
         pass
 
     @classmethod
+    def _normalize_image_input(cls, image) -> str:
+        """
+        归一化图像输入值（兼容带标记路径，如 `xxx.png [input]`）
+        """
+        if not isinstance(image, str) or not image.strip():
+            return BLACK_IMAGE_FILENAME
+        return image.strip()
+
+    @classmethod
+    def _is_black_placeholder(cls, image: str) -> bool:
+        """
+        判断是否为默认黑色占位图（兼容带标记路径）
+        """
+        raw_name = image.split(" [", 1)[0].strip()
+        return os.path.basename(raw_name) == BLACK_IMAGE_FILENAME
+
+    @classmethod
     def INPUT_TYPES(cls):
         if not folder_paths:
             return {
@@ -129,12 +146,39 @@ class SimpleLoadImage:
         if not folder_paths:
             return True  # folder_paths不可用时跳过验证
 
+        image = cls._normalize_image_input(image)
+        if cls._is_black_placeholder(image):
+            create_black_image_file()
+            return True
+
         # 使用ComfyUI的exists_annotated_filepath来验证文件
         # 这个函数会正确处理带标记的文件名，如 'clipspace/xxx.png [input]'
         if not folder_paths.exists_annotated_filepath(image):
             return f"Invalid image file: {image}"
 
         return True
+
+    @classmethod
+    def IS_CHANGED(cls, image):
+        """
+        基于文件修改时间标记变化，避免切换占位图后状态偶发不更新。
+        """
+        if not folder_paths:
+            return float("nan")
+
+        image = cls._normalize_image_input(image)
+
+        if cls._is_black_placeholder(image):
+            create_black_image_file()
+
+        try:
+            image_path = folder_paths.get_annotated_filepath(image)
+            if os.path.exists(image_path):
+                return os.path.getmtime(image_path)
+        except Exception as e:
+            logger.debug(f"IS_CHANGED解析图像路径失败: {e}")
+
+        return float("nan")
 
     def load_image(self, image: str) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -148,8 +192,10 @@ class SimpleLoadImage:
                 IMAGE形状为 (batch, height, width, channels)
                 MASK形状为 (batch, height, width)
         """
+        image = self._normalize_image_input(image)
+
         # 如果要加载默认黑色图像，确保文件存在（用户可能误删）
-        if image == BLACK_IMAGE_FILENAME:
+        if self._is_black_placeholder(image):
             create_black_image_file()
 
         # 检查folder_paths和node_helpers是否可用

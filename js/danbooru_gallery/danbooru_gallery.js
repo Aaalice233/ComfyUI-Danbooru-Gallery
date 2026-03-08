@@ -463,19 +463,15 @@ app.registerExtension({
                     const ratingButton = ratingSelect.querySelector('.danbooru-category-button');
                     if (ratingButton) {
                         ratingButton.title = t('ratingTooltip');
-                        // 更新当前显示的分级文本
-                        const currentValue = ratingButton.dataset.value || "";
-                        const ratingTexts = { "": "all", "general": "general", "sensitive": "sensitive", "questionable": "questionable", "explicit": "explicit" };
-                        const textKey = ratingTexts[currentValue] || "all";
-                        ratingButton.innerHTML = `${t(textKey)} <svg class="arrow-down" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
+                        updateRatingButtonLabel();
                     }
 
                     // 更新分级选项
-                    const ratingItems = ratingSelect.querySelectorAll('.danbooru-category-item');
-                    const ratingKeys = ['all', 'general', 'sensitive', 'questionable', 'explicit'];
-                    ratingItems.forEach((item, index) => {
-                        if (ratingKeys[index]) {
-                            item.textContent = t(ratingKeys[index]);
+                    const ratingLabels = ratingSelect.querySelectorAll('.danbooru-category-item label');
+                    ratingLabels.forEach((label) => {
+                        const key = label.dataset.ratingKey;
+                        if (key) {
+                            label.textContent = t(key);
                         }
                     });
 
@@ -534,37 +530,52 @@ app.registerExtension({
                 };
 
                 const searchInput = $el("input.danbooru-search-input", { type: "text", placeholder: t('searchPlaceholder'), title: t('searchPlaceholder') });
+                const RATING_VALUES = ["general", "sensitive", "questionable", "explicit"];
+                const normalizePostRating = (rating) => {
+                    const map = { g: "general", s: "sensitive", q: "questionable", e: "explicit" };
+                    return map[rating] || rating;
+                };
                 const createRatingDropdown = () => {
-                    const options = [
-                        { value: "", text: t('all') },
-                        { value: "general", text: t('general') },
-                        { value: "sensitive", text: t('sensitive') },
-                        { value: "questionable", text: t('questionable') },
-                        { value: "explicit", text: t('explicit') }
-                    ];
+                    const createRatingCheckbox = (name, checked = false) => {
+                        const id = `danbooru-rating-${name}`;
+                        const checkbox = $el("input", {
+                            type: "checkbox",
+                            id,
+                            name,
+                            checked,
+                            className: "danbooru-category-checkbox danbooru-rating-checkbox"
+                        });
 
-                    const listItems = options.map(opt =>
-                        $el("div.danbooru-category-item", {
-                            textContent: opt.text,
-                            dataset: { value: opt.value },
-                            onclick: (e) => {
-                                const button = e.target.closest('.danbooru-rating-dropdown').querySelector('.danbooru-category-button');
-                                const list = e.target.closest('.danbooru-category-list');
-                                button.dataset.value = opt.value;
-                                button.innerHTML = `${opt.text} <svg class="arrow-down" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
-                                list.classList.remove('show');
-                                button.classList.remove('open');
-                                const ratingValue = opt.value;
-                                saveToLocalStorage('ratingValue', ratingValue);
-                                ratingSelect.dispatchEvent(new Event('change'));
-                            }
-                        })
-                    );
+                        return $el("div.danbooru-category-item", [
+                            checkbox,
+                            $el("label", { htmlFor: id, textContent: t(name), dataset: { ratingKey: name } })
+                        ]);
+                    };
+
+                    const allId = "danbooru-rating-all";
+                    const allCheckbox = $el("input", {
+                        type: "checkbox",
+                        id: allId,
+                        name: "__all__",
+                        checked: true,
+                        className: "danbooru-category-checkbox danbooru-rating-checkbox danbooru-rating-all-checkbox"
+                    });
+                    const allItem = $el("div.danbooru-category-item", [
+                        allCheckbox,
+                        $el("label", { htmlFor: allId, textContent: t('all'), dataset: { ratingKey: 'all' } })
+                    ]);
+
+                    const listItems = [
+                        allItem,
+                        createRatingCheckbox("general"),
+                        createRatingCheckbox("sensitive"),
+                        createRatingCheckbox("questionable"),
+                        createRatingCheckbox("explicit")
+                    ];
 
                     const dropdown = $el("div.danbooru-rating-dropdown.danbooru-category-dropdown", [
                         $el("button.danbooru-category-button", {
                             innerHTML: `${t('all')} <svg class="arrow-down" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`,
-                            dataset: { value: "" },
                             title: t('ratingTooltip')
                         }),
                         $el("div.danbooru-category-list", {}, listItems)
@@ -574,6 +585,69 @@ app.registerExtension({
                 };
 
                 const ratingSelect = createRatingDropdown();
+                const getSelectedRatings = () => {
+                    return Array.from(ratingSelect.querySelectorAll(".danbooru-rating-checkbox:checked"))
+                        .map(i => i.name)
+                        .filter(name => name !== "__all__");
+                };
+                const updateRatingButtonLabel = () => {
+                    const ratingButton = ratingSelect.querySelector('.danbooru-category-button');
+                    if (!ratingButton) return;
+
+                    const selectedRatings = getSelectedRatings();
+                    let buttonText = t('all');
+                    if (selectedRatings.length === 1) {
+                        buttonText = t(selectedRatings[0]);
+                    } else if (selectedRatings.length > 1 && selectedRatings.length < RATING_VALUES.length) {
+                        buttonText = selectedRatings.map(r => t(r)).join(" / ");
+                    }
+
+                    ratingButton.dataset.values = JSON.stringify(selectedRatings);
+                    ratingButton.innerHTML = `${buttonText} <svg class="arrow-down" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
+                };
+                const applySelectedRatings = (selectedRatings = RATING_VALUES) => {
+                    const targetRatings = (Array.isArray(selectedRatings) && selectedRatings.length > 0)
+                        ? selectedRatings.filter(v => RATING_VALUES.includes(v))
+                        : [...RATING_VALUES];
+
+                    const allCheckbox = ratingSelect.querySelector('.danbooru-rating-all-checkbox');
+                    const ratingCheckboxes = ratingSelect.querySelectorAll('.danbooru-rating-checkbox:not(.danbooru-rating-all-checkbox)');
+                    ratingCheckboxes.forEach((checkbox) => {
+                        checkbox.checked = targetRatings.includes(checkbox.name);
+                    });
+                    if (allCheckbox) {
+                        allCheckbox.checked = targetRatings.length === RATING_VALUES.length;
+                    }
+                    updateRatingButtonLabel();
+                };
+                const bindRatingDropdownEvents = () => {
+                    const allCheckbox = ratingSelect.querySelector('.danbooru-rating-all-checkbox');
+                    const ratingCheckboxes = ratingSelect.querySelectorAll('.danbooru-rating-checkbox:not(.danbooru-rating-all-checkbox)');
+
+                    if (allCheckbox) {
+                        allCheckbox.addEventListener('change', () => {
+                            const checked = allCheckbox.checked;
+                            ratingCheckboxes.forEach(cb => { cb.checked = checked; });
+                            updateRatingButtonLabel();
+                            saveToLocalStorage('ratingValues', checked ? [...RATING_VALUES] : []);
+                            ratingSelect.dispatchEvent(new Event('change'));
+                        });
+                    }
+
+                    ratingCheckboxes.forEach((checkbox) => {
+                        checkbox.addEventListener('change', () => {
+                            const selectedRatings = getSelectedRatings();
+                            if (allCheckbox) {
+                                allCheckbox.checked = selectedRatings.length === RATING_VALUES.length;
+                            }
+                            updateRatingButtonLabel();
+                            saveToLocalStorage('ratingValues', selectedRatings);
+                            ratingSelect.dispatchEvent(new Event('change'));
+                        });
+                    });
+                };
+                bindRatingDropdownEvents();
+                applySelectedRatings(RATING_VALUES);
 
                 const createCategoryCheckbox = (name, checked = false) => { // Default to false, will be set later
                     const id = `danbooru-category-${name}`;
@@ -2093,9 +2167,11 @@ app.registerExtension({
                             apiFormattedTags += ` date:${start}..${end}`;
                         }
 
+                        const selectedRatings = getSelectedRatings();
+                        const ratingForServer = selectedRatings.length === 1 ? selectedRatings[0] : "";
                         const params = new URLSearchParams({
                             "search[tags]": apiFormattedTags.trim(),
-                            "search[rating]": ratingSelect.querySelector('.danbooru-category-button').dataset.value,
+                            "search[rating]": ratingForServer,
                             limit: "100",
                             page: currentPage,
                         });
@@ -2105,8 +2181,14 @@ app.registerExtension({
 
                         if (!Array.isArray(newPosts)) throw new Error("API did not return a valid list of posts.");
 
-                        // 应用文件类型和黑名单过滤
-                        const filteredPosts = newPosts.filter(post => !isPostFiltered(post));
+                        // 应用评分过滤（多选）+ 文件类型和黑名单过滤
+                        const filteredPosts = newPosts.filter(post => {
+                            const normalizedRating = normalizePostRating(post.rating);
+                            const passRating = selectedRatings.length === 0 || selectedRatings.length === RATING_VALUES.length
+                                ? true
+                                : selectedRatings.includes(normalizedRating);
+                            return passRating && !isPostFiltered(post);
+                        });
 
                         const filteredCount = newPosts.length - filteredPosts.length;
 
@@ -3623,14 +3705,16 @@ app.registerExtension({
                             searchInput.value = savedSearch;
                         }
 
-                        const savedRating = loadFromLocalStorage('ratingValue', null);
-                        if (savedRating !== null) {
-                            const ratingButton = ratingSelect.querySelector('.danbooru-category-button');
-                            const ratingItem = ratingSelect.querySelector(`.danbooru-category-item[data-value="${savedRating}"]`);
-                            if (ratingButton && ratingItem) {
-                                ratingButton.dataset.value = savedRating;
-                                const ratingText = ratingItem.textContent;
-                                ratingButton.innerHTML = `${ratingText} <svg class="arrow-down" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
+                        const savedRatingValues = loadFromLocalStorage('ratingValues', null);
+                        if (Array.isArray(savedRatingValues) && savedRatingValues.length > 0) {
+                            applySelectedRatings(savedRatingValues);
+                        } else {
+                            const savedRating = loadFromLocalStorage('ratingValue', null);
+                            if (savedRating && RATING_VALUES.includes(savedRating)) {
+                                applySelectedRatings([savedRating]);
+                                saveToLocalStorage('ratingValues', [savedRating]);
+                            } else {
+                                applySelectedRatings(RATING_VALUES);
                             }
                         }
 

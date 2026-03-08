@@ -76,11 +76,10 @@ async function openImageInKrita(node) {
     try {
         logger.info("[SimpleLoadImage] Opening image in Krita...");
 
-        // 获取节点的输入值（图像文件名）
-        const imageWidget = node.widgets?.find(w => w.name === "image");
-        const imagePath = imageWidget?.value;
+        // 获取节点当前图像值（优先widget值，兜底widgets_values）
+        const imagePath = getCurrentImagePath(node);
 
-        if (!imagePath || imagePath === "simple_none.png") {
+        if (!imagePath || isSimpleNoneImage(imagePath)) {
             globalToastManager.showToast(
                 "请先选择要打开的图像\n（当前为黑色占位图）",
                 "warning",
@@ -210,3 +209,27 @@ async function setKritaPath(node) {
 }
 
 logger.info("[SimpleLoadImage] Frontend extension loaded");
+
+function getCurrentImagePath(node) {
+    if (!node || !Array.isArray(node.widgets)) {
+        return "";
+    }
+
+    const imageWidgetIndex = node.widgets.findIndex(w => w?.name === "image");
+    const imageWidget = imageWidgetIndex >= 0 ? node.widgets[imageWidgetIndex] : null;
+
+    let value = imageWidget?.value;
+    if ((!value || typeof value !== "string") && Array.isArray(node.widgets_values) && imageWidgetIndex >= 0) {
+        value = node.widgets_values[imageWidgetIndex];
+    }
+
+    return typeof value === "string" ? value.trim() : "";
+}
+
+function isSimpleNoneImage(path) {
+    if (typeof path !== "string") {
+        return false;
+    }
+    // 兼容 "simple_none.png [input]" 这样的标记路径
+    return path.trim().startsWith("simple_none.png");
+}
