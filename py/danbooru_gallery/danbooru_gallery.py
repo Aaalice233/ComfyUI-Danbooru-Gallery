@@ -36,6 +36,14 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Danbooru API的基础URL
 BASE_URL = "https://danbooru.donmai.us"
 
+# Cloudflare 从 2026-04-23 起会把默认的 python-requests UA 判定为 bot 并返回 403 challenge。
+# 实测 Chrome/Firefox UA 也会被挡（TLS 指纹和浏览器不匹配），但 curl UA 能通过 ——
+# CF 对 UA + TLS 指纹做了一致性判断，curl UA 对应 CLI 工具的指纹，与 requests 更接近。
+# 等 Danbooru/Cloudflare 侧修复后可以移除。
+DANBOORU_HEADERS = {
+    "User-Agent": "curl/8.4.0"
+}
+
 # 获取插件目录路径
 # 获取当前文件所在目录
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -471,7 +479,7 @@ def check_network_connection():
     try:
         # 使用一个简单的公开API端点来检测连接
         test_url = f"{BASE_URL}/posts.json?limit=1"
-        response = requests.get(test_url, timeout=10)
+        response = requests.get(test_url, headers=DANBOORU_HEADERS, timeout=10)
         return response.status_code == 200, False
     except requests.exceptions.Timeout:
         logger.error("网络连接超时")
@@ -489,7 +497,7 @@ def verify_danbooru_auth(username, api_key):
         return False, False
     try:
         test_url = f"{BASE_URL}/profile.json"
-        response = requests.get(test_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
+        response = requests.get(test_url, headers=DANBOORU_HEADERS, auth=HTTPBasicAuth(username, api_key), timeout=15)
         is_valid = response.status_code == 200
         return is_valid, False
     except Exception as e:
@@ -500,7 +508,7 @@ def get_user_favorites(username, api_key):
     """获取用户的收藏列表"""
     try:
         favorites_url = f"{BASE_URL}/favorites.json"
-        response = requests.get(favorites_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
+        response = requests.get(favorites_url, headers=DANBOORU_HEADERS, auth=HTTPBasicAuth(username, api_key), timeout=15)
         if response.status_code == 200:
             return response.json()
         return []
@@ -535,6 +543,7 @@ async def add_favorite(request):
             favorite_url = f"{BASE_URL}/favorites.json"
             response = requests.post(
                 favorite_url,
+                headers=DANBOORU_HEADERS,
                 auth=HTTPBasicAuth(username, api_key),
                 data={"post_id": post_id},
                 timeout=15
@@ -615,7 +624,7 @@ async def remove_favorite(request):
         try:
             # 直接使用帖子ID删除收藏
             delete_url = f"{BASE_URL}/favorites/{post_id}.json"
-            delete_response = requests.delete(delete_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
+            delete_response = requests.delete(delete_url, headers=DANBOORU_HEADERS, auth=HTTPBasicAuth(username, api_key), timeout=15)
 
 
             if delete_response.status_code in [200, 204]:
@@ -808,7 +817,7 @@ async def get_autocomplete(request):
                 auth = HTTPBasicAuth(username, api_key) if username and api_key else None
 
                 logger.debug(f"[Autocomplete] 调用远程API: '{query}' (超时: {timeout}s)")
-                response = requests.get(tags_url, params=params, auth=auth, timeout=timeout)
+                response = requests.get(tags_url, params=params, headers=DANBOORU_HEADERS, auth=auth, timeout=timeout)
                 response.raise_for_status()
 
                 result = response.json()
@@ -1068,7 +1077,7 @@ async def get_autocomplete_with_translation(request):
                 auth = HTTPBasicAuth(username, api_key) if username and api_key else None
 
                 logger.debug(f"[AutocompleteTranslation] 调用远程API: '{query}' (超时: {timeout}s)")
-                response = requests.get(tags_url, params=params, auth=auth, timeout=timeout)
+                response = requests.get(tags_url, params=params, headers=DANBOORU_HEADERS, auth=auth, timeout=timeout)
                 response.raise_for_status()
 
                 result = response.json()
@@ -1224,7 +1233,7 @@ class DanbooruGalleryNode:
         }
         
         try:
-            response = requests.get(posts_url, params=params, auth=auth, timeout=15)
+            response = requests.get(posts_url, params=params, headers=DANBOORU_HEADERS, auth=auth, timeout=15)
             response.raise_for_status()
             
             result_text = response.text
