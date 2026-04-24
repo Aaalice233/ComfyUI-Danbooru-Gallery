@@ -2227,6 +2227,36 @@ app.registerExtension({
                     });
                 }
 
+                // Pre-reserve grid space from post dimensions so rate-limited async loads
+                // don't cause the waterfall to jump every time an image arrives.
+                let cachedColumnWidth = 0;
+                const getColumnWidth = () => {
+                    if (cachedColumnWidth > 0) return cachedColumnWidth;
+                    const cols = window.getComputedStyle(imageGrid).gridTemplateColumns.split(' ');
+                    const px = parseFloat(cols[0]);
+                    if (px > 0) cachedColumnWidth = px;
+                    return cachedColumnWidth;
+                };
+                const computeSpanFromDims = (imgW, imgH) => {
+                    const colW = getColumnWidth();
+                    if (!colW || !imgW || !imgH) return 0;
+                    const cs = window.getComputedStyle(imageGrid);
+                    const rowGap = parseInt(cs.gridRowGap) || parseInt(cs.rowGap) || 5;
+                    const rowHeight = parseInt(cs.gridAutoRows) || 1;
+                    const renderedH = colW * (imgH / imgW);
+                    return Math.ceil((renderedH + rowGap) / (rowHeight + rowGap));
+                };
+                // Coalesce rapid onload calls (rate-limited loads fire 200ms apart; batching
+                // to one reflow per frame avoids N² layout work as the page fills in).
+                let resizeGridTimer = null;
+                const scheduleResizeGrid = () => {
+                    if (resizeGridTimer) return;
+                    resizeGridTimer = requestAnimationFrame(() => {
+                        resizeGridTimer = null;
+                        resizeGrid();
+                    });
+                };
+
                 const showEditPanel = (post) => {
                     // 在打开编辑面板时，检查当前图像是否被选中
                     // 强制将当前编辑的图像设置为选中状态，并更新 selectionWidget
@@ -3005,6 +3035,13 @@ app.registerExtension({
                     const wrapper = $el("div.danbooru-image-wrapper");
                     wrapper.dataset.postId = post.id; // 显式设置 data-post-id
 
+                    // Reserve grid space up-front from the post's real dimensions so the
+                    // waterfall is stable before thumbnails finish loading.
+                    if (post.image_width && post.image_height) {
+                        const spans = computeSpanFromDims(post.image_width, post.image_height);
+                        if (spans > 0) wrapper.style.gridRowEnd = `span ${spans}`;
+                    }
+
                     // 首次创建post元素时，将原始post数据添加到 originalPostCache
                     if (!originalPostCache[post.id]) {
                         originalPostCache[post.id] = JSON.parse(JSON.stringify(post));
@@ -3014,9 +3051,9 @@ app.registerExtension({
                     updateEditedStatus(wrapper, post.id);
 
                     const img = $el("img", {
-                        src: `${post.preview_file_url}?v=${post.md5}`,
+                        src: `/danbooru_gallery/image_proxy?url=${encodeURIComponent(post.preview_file_url + '?v=' + post.md5)}`,
                         loading: "lazy",
-                        onload: resizeGrid,
+                        onload: scheduleResizeGrid,
                         onerror: () => { wrapper.style.display = 'none'; },
                         onclick: async (e) => {
                             e.stopPropagation(); // Prevent event from bubbling up and potentially causing issues
@@ -3333,7 +3370,10 @@ app.registerExtension({
                     }
                 };
 
-                const observer = new ResizeObserver(resizeGrid);
+                const observer = new ResizeObserver(() => {
+                    cachedColumnWidth = 0;
+                    resizeGrid();
+                });
                 observer.observe(imageGrid);
 
                 let scrollTimeout;
