@@ -184,7 +184,7 @@ app.registerExtension({
 
                 let globalTooltip, globalTooltipTimeout;
                 let currentTooltipId = 0; // 用于追踪当前活动的tooltip请求
-                let posts = [], currentPage = 1, isLoading = false;
+                let posts = [], currentPage = 1, isLoading = false, endOfResults = false;
                 let filterState = { startTime: null, endTime: null, startPage: null };
                 let userAuth = { username: "", api_key: "", has_auth: false }; // 用户认证信息
                 let userFavorites = []; // 用户收藏列表，确保字符串
@@ -2106,6 +2106,9 @@ app.registerExtension({
                     if (isLoading) {
                         return;
                     }
+                    if (endOfResults && !reset) {
+                        return;
+                    }
                     isLoading = true;
                     refreshButton.classList.add("loading");
                     refreshButton.disabled = true;
@@ -2118,6 +2121,7 @@ app.registerExtension({
                     if (reset) {
                         currentPage = filterState.startPage || 1;
                         posts = [];
+                        endOfResults = false;
                         imageGrid.innerHTML = "";
                         imageGrid.insertAdjacentHTML('beforeend', `<p class="danbooru-status danbooru-loading">${t('loading')}</p>`);
                     }
@@ -2172,7 +2176,7 @@ app.registerExtension({
                         const params = new URLSearchParams({
                             "search[tags]": apiFormattedTags.trim(),
                             "search[rating]": ratingForServer,
-                            limit: "100",
+                            limit: "40",
                             page: currentPage,
                         });
 
@@ -2192,6 +2196,17 @@ app.registerExtension({
 
                         const filteredCount = newPosts.length - filteredPosts.length;
 
+                        // API returned nothing → no more pages. Flag it so scroll events stop
+                        // triggering fetches; otherwise the bottom-proximity check would keep
+                        // firing and walk off the end of the result set indefinitely.
+                        if (newPosts.length === 0) {
+                            endOfResults = true;
+                            if (reset) {
+                                imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
+                            }
+                            return;
+                        }
+
                         if (filteredPosts.length === 0 && reset) {
                             imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
                             return;
@@ -2200,6 +2215,16 @@ app.registerExtension({
                         currentPage++;
                         posts.push(...filteredPosts);
                         filteredPosts.forEach(renderPost);
+
+                        // Filter-cascade guard: if the blacklist/rating filter dropped every
+                        // post on this page, the grid didn't grow — the user's scroll is still
+                        // within the 400px bottom threshold, so the scroll listener would
+                        // re-fire immediately. Hold isLoading for ~1.5s (still inside the try
+                        // block, before the finally clears it) to space out these "auto-skip"
+                        // fetches.
+                        if (filteredPosts.length === 0 && !reset) {
+                            await new Promise(r => setTimeout(r, 1500));
+                        }
 
                     } catch (e) {
                         imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
