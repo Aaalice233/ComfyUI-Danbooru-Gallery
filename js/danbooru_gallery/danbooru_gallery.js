@@ -3127,8 +3127,9 @@ app.registerExtension({
                                 const fileExt = post.file_ext || 'jpg';
                                 const fileName = `danbooru_${post.id}.${fileExt}`;
 
-                                // 创建下载链接
-                                const response = await fetch(imageUrl);
+                                // 通过后端代理下载，避免被 Cloudflare 按 cross-site referer 拦截
+                                const proxyUrl = `/danbooru_gallery/image_proxy?url=${encodeURIComponent(imageUrl)}`;
+                                const response = await fetch(proxyUrl);
                                 const blob = await response.blob();
                                 const url = window.URL.createObjectURL(blob);
 
@@ -3372,7 +3373,7 @@ app.registerExtension({
                             e.stopPropagation();
                             const imageUrl = post.large_file_url || post.file_url;
                             if (imageUrl) {
-                                window.open(imageUrl, '_blank');
+                                window.open(imageUrl, '_blank', 'noreferrer');
                             }
                         }
                     });
