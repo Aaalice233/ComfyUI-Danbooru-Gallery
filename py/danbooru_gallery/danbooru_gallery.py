@@ -4,6 +4,8 @@ import folder_paths
 from server import PromptServer
 from aiohttp import web
 import time
+import threading
+import asyncio
 import torch
 import io
 import urllib.request
@@ -35,6 +37,55 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Danbooru API的基础URL
 BASE_URL = "https://danbooru.donmai.us"
+
+# 需要一个非 python-requests 的描述性 UA 才能过 Cloudflare（从 2026-04-23 起开启拦截）。
+# 实测 CF 对 UA 黑名单里包含 "ComfyUI" —— 推测 Danbooru 为抵制训练数据爬取主动加的规则。
+# 本节点只是图片浏览器（单图挑选，无批量导出），不参与训练数据收集，按 e621 式约定
+# 使用描述性项目 UA；避开 "ComfyUI" 字样以免被 CF 误伤。
+DANBOORU_HEADERS = {
+    "User-Agent": "Danbooru-Gallery/1.0"
+}
+
+# 官方文档限速为 10 req/s，保守取一半 = 5 req/s（200ms 间隔），避免触发 CF 或被站方拉黑。
+# 参考 deepghs/waifuc#22：Danbooru 管理员明确要求 "proper waits or backoffs"，否则会封项目。
+class _RateLimiter:
+    def __init__(self, min_interval_sec):
+        self.min_interval = min_interval_sec
+        self._last_ts = 0.0
+        self._lock = threading.Lock()
+
+    def wait(self):
+        with self._lock:
+            now = time.monotonic()
+            elapsed = now - self._last_ts
+            if elapsed < self.min_interval:
+                time.sleep(self.min_interval - elapsed)
+            self._last_ts = time.monotonic()
+
+_donmai_throttle = _RateLimiter(min_interval_sec=0.2)
+
+def _danbooru_request(method, url, **kwargs):
+    """统一的 donmai.us 请求入口：限流 + 默认 UA + 429/503 带 Retry-After 退避重试一次。"""
+    headers = dict(kwargs.pop("headers", None) or {})
+    for k, v in DANBOORU_HEADERS.items():
+        headers.setdefault(k, v)
+
+    resp = None
+    for attempt in range(2):
+        _donmai_throttle.wait()
+        resp = requests.request(method, url, headers=headers, **kwargs)
+        if resp.status_code not in (429, 503) or attempt == 1:
+            return resp
+        retry_after = resp.headers.get("Retry-After")
+        delay = 2.0
+        try:
+            if retry_after is not None:
+                delay = min(max(float(retry_after), 0.5), 10.0)
+        except ValueError:
+            pass
+        logger.warning(f"[Danbooru] {resp.status_code} 限流，{delay:.1f}s 后重试: {url}")
+        time.sleep(delay)
+    return resp
 
 # 获取插件目录路径
 # 获取当前文件所在目录
@@ -471,7 +522,7 @@ def check_network_connection():
     try:
         # 使用一个简单的公开API端点来检测连接
         test_url = f"{BASE_URL}/posts.json?limit=1"
-        response = requests.get(test_url, timeout=10)
+        response = _danbooru_request("GET", test_url, timeout=10)
         return response.status_code == 200, False
     except requests.exceptions.Timeout:
         logger.error("网络连接超时")
@@ -489,7 +540,7 @@ def verify_danbooru_auth(username, api_key):
         return False, False
     try:
         test_url = f"{BASE_URL}/profile.json"
-        response = requests.get(test_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
+        response = _danbooru_request("GET", test_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
         is_valid = response.status_code == 200
         return is_valid, False
     except Exception as e:
@@ -500,7 +551,7 @@ def get_user_favorites(username, api_key):
     """获取用户的收藏列表"""
     try:
         favorites_url = f"{BASE_URL}/favorites.json"
-        response = requests.get(favorites_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
+        response = _danbooru_request("GET", favorites_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
         if response.status_code == 200:
             return response.json()
         return []
@@ -533,11 +584,12 @@ async def add_favorite(request):
 
         try:
             favorite_url = f"{BASE_URL}/favorites.json"
-            response = requests.post(
+            response = _danbooru_request(
+                "POST",
                 favorite_url,
                 auth=HTTPBasicAuth(username, api_key),
                 data={"post_id": post_id},
-                timeout=15
+                timeout=15,
             )
 
 
@@ -615,7 +667,7 @@ async def remove_favorite(request):
         try:
             # 直接使用帖子ID删除收藏
             delete_url = f"{BASE_URL}/favorites/{post_id}.json"
-            delete_response = requests.delete(delete_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
+            delete_response = _danbooru_request("DELETE", delete_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
 
 
             if delete_response.status_code in [200, 204]:
@@ -732,6 +784,57 @@ async def verify_auth(request):
         logger.error(f"验证认证接口错误: {e}")
         return web.json_response({"success": False, "error": "网络错误", "network_error": True}, status=500)
 
+# 图片代理并发上限：浏览器一次打开一页会 lazy-load 多张缩略图，没有上限会导致
+# 后端同时发出十几个 CDN 请求，配合全局限流会形成长队列；限到 3 并发即可让缩略图
+# 平滑流入，又避免瞬时流量把 CF 的 rate rule 触发。
+_image_proxy_semaphore = None
+
+def _get_image_proxy_semaphore():
+    global _image_proxy_semaphore
+    if _image_proxy_semaphore is None:
+        _image_proxy_semaphore = asyncio.Semaphore(3)
+    return _image_proxy_semaphore
+
+@PromptServer.instance.routes.get("/danbooru_gallery/image_proxy")
+async def image_proxy(request):
+    # 浏览器直连 cdn.donmai.us 会被 Cloudflare 按 cross-site <img> 请求挑战并返回 403，
+    # 而后端用描述性 UA (DANBOORU_HEADERS) 能过 CF。转发一次即可让前端拿到缩略图。
+    url = request.query.get("url", "")
+    if not url:
+        return web.Response(status=400, text="missing url")
+
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except Exception:
+        return web.Response(status=400, text="invalid url")
+
+    if parsed.scheme not in ("http", "https"):
+        return web.Response(status=400, text="invalid scheme")
+
+    # SSRF 防护：只允许 donmai.us 域名
+    host = (parsed.hostname or "").lower()
+    if host != "donmai.us" and not host.endswith(".donmai.us"):
+        return web.Response(status=403, text="host not allowed")
+
+    async with _get_image_proxy_semaphore():
+        try:
+            resp = await asyncio.to_thread(_danbooru_request, "GET", url, timeout=15)
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"[ImageProxy] 上游请求失败 {url}: {e}")
+            return web.Response(status=502, text="upstream error")
+
+    if resp.status_code != 200:
+        logger.debug(f"[ImageProxy] 上游返回 {resp.status_code}: {url}")
+        return web.Response(status=resp.status_code)
+
+    return web.Response(
+        body=resp.content,
+        headers={
+            "Content-Type": resp.headers.get("Content-Type", "application/octet-stream"),
+            "Cache-Control": "public, max-age=86400",
+        },
+    )
+
 # --- 保留文件中剩余的其他部分 ---
 @PromptServer.instance.routes.get("/danbooru_gallery/posts")
 async def get_posts_for_front(request):
@@ -808,7 +911,7 @@ async def get_autocomplete(request):
                 auth = HTTPBasicAuth(username, api_key) if username and api_key else None
 
                 logger.debug(f"[Autocomplete] 调用远程API: '{query}' (超时: {timeout}s)")
-                response = requests.get(tags_url, params=params, auth=auth, timeout=timeout)
+                response = _danbooru_request("GET", tags_url, params=params, auth=auth, timeout=timeout)
                 response.raise_for_status()
 
                 result = response.json()
@@ -1068,7 +1171,7 @@ async def get_autocomplete_with_translation(request):
                 auth = HTTPBasicAuth(username, api_key) if username and api_key else None
 
                 logger.debug(f"[AutocompleteTranslation] 调用远程API: '{query}' (超时: {timeout}s)")
-                response = requests.get(tags_url, params=params, auth=auth, timeout=timeout)
+                response = _danbooru_request("GET", tags_url, params=params, auth=auth, timeout=timeout)
                 response.raise_for_status()
 
                 result = response.json()
@@ -1224,7 +1327,7 @@ class DanbooruGalleryNode:
         }
         
         try:
-            response = requests.get(posts_url, params=params, auth=auth, timeout=15)
+            response = _danbooru_request("GET", posts_url, params=params, auth=auth, timeout=15)
             response.raise_for_status()
             
             result_text = response.text

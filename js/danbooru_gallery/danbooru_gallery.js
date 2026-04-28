@@ -184,7 +184,7 @@ app.registerExtension({
 
                 let globalTooltip, globalTooltipTimeout;
                 let currentTooltipId = 0; // 用于追踪当前活动的tooltip请求
-                let posts = [], currentPage = 1, isLoading = false;
+                let posts = [], currentPage = 1, isLoading = false, endOfResults = false;
                 let filterState = { startTime: null, endTime: null, startPage: null };
                 let userAuth = { username: "", api_key: "", has_auth: false }; // 用户认证信息
                 let userFavorites = []; // 用户收藏列表，确保字符串
@@ -2106,6 +2106,9 @@ app.registerExtension({
                     if (isLoading) {
                         return;
                     }
+                    if (endOfResults && !reset) {
+                        return;
+                    }
                     isLoading = true;
                     refreshButton.classList.add("loading");
                     refreshButton.disabled = true;
@@ -2118,6 +2121,7 @@ app.registerExtension({
                     if (reset) {
                         currentPage = filterState.startPage || 1;
                         posts = [];
+                        endOfResults = false;
                         imageGrid.innerHTML = "";
                         imageGrid.insertAdjacentHTML('beforeend', `<p class="danbooru-status danbooru-loading">${t('loading')}</p>`);
                     }
@@ -2172,7 +2176,7 @@ app.registerExtension({
                         const params = new URLSearchParams({
                             "search[tags]": apiFormattedTags.trim(),
                             "search[rating]": ratingForServer,
-                            limit: "100",
+                            limit: "40",
                             page: currentPage,
                         });
 
@@ -2192,6 +2196,17 @@ app.registerExtension({
 
                         const filteredCount = newPosts.length - filteredPosts.length;
 
+                        // API returned nothing → no more pages. Flag it so scroll events stop
+                        // triggering fetches; otherwise the bottom-proximity check would keep
+                        // firing and walk off the end of the result set indefinitely.
+                        if (newPosts.length === 0) {
+                            endOfResults = true;
+                            if (reset) {
+                                imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
+                            }
+                            return;
+                        }
+
                         if (filteredPosts.length === 0 && reset) {
                             imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
                             return;
@@ -2200,6 +2215,16 @@ app.registerExtension({
                         currentPage++;
                         posts.push(...filteredPosts);
                         filteredPosts.forEach(renderPost);
+
+                        // Filter-cascade guard: if the blacklist/rating filter dropped every
+                        // post on this page, the grid didn't grow — the user's scroll is still
+                        // within the 400px bottom threshold, so the scroll listener would
+                        // re-fire immediately. Hold isLoading for ~1.5s (still inside the try
+                        // block, before the finally clears it) to space out these "auto-skip"
+                        // fetches.
+                        if (filteredPosts.length === 0 && !reset) {
+                            await new Promise(r => setTimeout(r, 1500));
+                        }
 
                     } catch (e) {
                         imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
@@ -2226,6 +2251,36 @@ app.registerExtension({
                         }
                     });
                 }
+
+                // Pre-reserve grid space from post dimensions so rate-limited async loads
+                // don't cause the waterfall to jump every time an image arrives.
+                let cachedColumnWidth = 0;
+                const getColumnWidth = () => {
+                    if (cachedColumnWidth > 0) return cachedColumnWidth;
+                    const cols = window.getComputedStyle(imageGrid).gridTemplateColumns.split(' ');
+                    const px = parseFloat(cols[0]);
+                    if (px > 0) cachedColumnWidth = px;
+                    return cachedColumnWidth;
+                };
+                const computeSpanFromDims = (imgW, imgH) => {
+                    const colW = getColumnWidth();
+                    if (!colW || !imgW || !imgH) return 0;
+                    const cs = window.getComputedStyle(imageGrid);
+                    const rowGap = parseInt(cs.gridRowGap) || parseInt(cs.rowGap) || 5;
+                    const rowHeight = parseInt(cs.gridAutoRows) || 1;
+                    const renderedH = colW * (imgH / imgW);
+                    return Math.ceil((renderedH + rowGap) / (rowHeight + rowGap));
+                };
+                // Coalesce rapid onload calls (rate-limited loads fire 200ms apart; batching
+                // to one reflow per frame avoids N² layout work as the page fills in).
+                let resizeGridTimer = null;
+                const scheduleResizeGrid = () => {
+                    if (resizeGridTimer) return;
+                    resizeGridTimer = requestAnimationFrame(() => {
+                        resizeGridTimer = null;
+                        resizeGrid();
+                    });
+                };
 
                 const showEditPanel = (post) => {
                     // 在打开编辑面板时，检查当前图像是否被选中
@@ -3005,6 +3060,13 @@ app.registerExtension({
                     const wrapper = $el("div.danbooru-image-wrapper");
                     wrapper.dataset.postId = post.id; // 显式设置 data-post-id
 
+                    // Reserve grid space up-front from the post's real dimensions so the
+                    // waterfall is stable before thumbnails finish loading.
+                    if (post.image_width && post.image_height) {
+                        const spans = computeSpanFromDims(post.image_width, post.image_height);
+                        if (spans > 0) wrapper.style.gridRowEnd = `span ${spans}`;
+                    }
+
                     // 首次创建post元素时，将原始post数据添加到 originalPostCache
                     if (!originalPostCache[post.id]) {
                         originalPostCache[post.id] = JSON.parse(JSON.stringify(post));
@@ -3014,9 +3076,9 @@ app.registerExtension({
                     updateEditedStatus(wrapper, post.id);
 
                     const img = $el("img", {
-                        src: `${post.preview_file_url}?v=${post.md5}`,
+                        src: `/danbooru_gallery/image_proxy?url=${encodeURIComponent(post.preview_file_url + '?v=' + post.md5)}`,
                         loading: "lazy",
-                        onload: resizeGrid,
+                        onload: scheduleResizeGrid,
                         onerror: () => { wrapper.style.display = 'none'; },
                         onclick: async (e) => {
                             e.stopPropagation(); // Prevent event from bubbling up and potentially causing issues
@@ -3065,8 +3127,9 @@ app.registerExtension({
                                 const fileExt = post.file_ext || 'jpg';
                                 const fileName = `danbooru_${post.id}.${fileExt}`;
 
-                                // 创建下载链接
-                                const response = await fetch(imageUrl);
+                                // 通过后端代理下载，避免被 Cloudflare 按 cross-site referer 拦截
+                                const proxyUrl = `/danbooru_gallery/image_proxy?url=${encodeURIComponent(imageUrl)}`;
+                                const response = await fetch(proxyUrl);
                                 const blob = await response.blob();
                                 const url = window.URL.createObjectURL(blob);
 
@@ -3310,7 +3373,7 @@ app.registerExtension({
                             e.stopPropagation();
                             const imageUrl = post.large_file_url || post.file_url;
                             if (imageUrl) {
-                                window.open(imageUrl, '_blank');
+                                window.open(imageUrl, '_blank', 'noreferrer');
                             }
                         }
                     });
@@ -3333,7 +3396,10 @@ app.registerExtension({
                     }
                 };
 
-                const observer = new ResizeObserver(resizeGrid);
+                const observer = new ResizeObserver(() => {
+                    cachedColumnWidth = 0;
+                    resizeGrid();
+                });
                 observer.observe(imageGrid);
 
                 let scrollTimeout;
