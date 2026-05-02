@@ -2172,7 +2172,8 @@ app.registerExtension({
                         }
 
                         const selectedRatings = getSelectedRatings();
-                        const ratingForServer = selectedRatings.length === 1 ? selectedRatings[0] : "";
+                        const sendAll = selectedRatings.length === 0 || selectedRatings.length === RATING_VALUES.length;
+                        const ratingForServer = sendAll ? "" : selectedRatings.join(",");
                         const params = new URLSearchParams({
                             "search[tags]": apiFormattedTags.trim(),
                             "search[rating]": ratingForServer,
@@ -2185,14 +2186,8 @@ app.registerExtension({
 
                         if (!Array.isArray(newPosts)) throw new Error("API did not return a valid list of posts.");
 
-                        // 应用评分过滤（多选）+ 文件类型和黑名单过滤
-                        const filteredPosts = newPosts.filter(post => {
-                            const normalizedRating = normalizePostRating(post.rating);
-                            const passRating = selectedRatings.length === 0 || selectedRatings.length === RATING_VALUES.length
-                                ? true
-                                : selectedRatings.includes(normalizedRating);
-                            return passRating && !isPostFiltered(post);
-                        });
+                        // 评分过滤已交给服务端，本地只做文件类型/黑名单过滤
+                        const filteredPosts = newPosts.filter(post => !isPostFiltered(post));
 
                         const filteredCount = newPosts.length - filteredPosts.length;
 

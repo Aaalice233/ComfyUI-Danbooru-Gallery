@@ -1282,8 +1282,9 @@ class DanbooruGalleryNode:
         cache_enabled = settings.get("cache_enabled", True)
         max_cache_age = settings.get("max_cache_age", 3600)
 
-        # 创建缓存键
-        cache_key = f"{tags}:{limit}:{page}:{rating}"
+        # 创建缓存键（rating 归一化排序，避免 "e,q" 与 "q,e" 命中两条缓存）
+        rating_key = ','.join(sorted(r.strip().lower() for r in (rating or '').split(',') if r.strip()))
+        cache_key = f"{tags}:{limit}:{page}:{rating_key}"
 
         # 如果启用了缓存，则检查缓存
         if cache_enabled:
@@ -1313,7 +1314,14 @@ class DanbooruGalleryNode:
             final_tags = f"{final_tags} {date_tag}".strip()
 
         if rating and rating.lower() != 'all':
-            final_tags = f"{final_tags} rating:{rating}".strip()
+            allowed = {'general', 'sensitive', 'questionable', 'explicit', 'g', 's', 'q', 'e'}
+            rating_values = [r.strip().lower() for r in rating.split(',') if r.strip()]
+            rating_values = [r for r in rating_values if r in allowed]
+            if len(rating_values) == 1:
+                final_tags = f"{final_tags} rating:{rating_values[0]}".strip()
+            elif len(rating_values) > 1:
+                or_tags = ' '.join(f"~rating:{r}" for r in rating_values)
+                final_tags = f"{final_tags} {or_tags}".strip()
         
         tags = final_tags
         
