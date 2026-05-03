@@ -2319,7 +2319,7 @@ app.registerExtension({
         // 序列化节点数据
         const onSerialize = nodeType.prototype.onSerialize;
         nodeType.prototype.onSerialize = function (info) {
-            const data = onSerialize?.apply?.(this, arguments);
+            onSerialize?.apply?.(this, arguments);
 
             // 保存组配置到工作流 JSON
             info.groups = this.properties.groups || [];
@@ -2335,8 +2335,6 @@ app.registerExtension({
             logger.info('[GMM-Serialize] 保存组顺序:', info.groupOrder.length, '个组');
             logger.info('[GMM-Serialize] 保存管理模式:', info.managerMode);
             logger.info('[GMM-Serialize] 保存自定义组:', info.customManagedGroups.length, '个');
-
-            return data;
         };
 
         // 反序列化节点数据

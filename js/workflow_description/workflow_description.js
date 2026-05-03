@@ -953,14 +953,12 @@ app.registerExtension({
         // 序列化节点数据
         const onSerialize = nodeType.prototype.onSerialize;
         nodeType.prototype.onSerialize = function (info) {
-            const data = onSerialize?.apply?.(this, arguments);
+            onSerialize?.apply?.(this, arguments);
 
             // 保存节点属性到工作流 JSON
             info.properties = this.properties || {};
 
             logger.info('[WorkflowDescription-Serialize] 保存节点属性:', info.properties);
-
-            return data;
         };
 
         // 反序列化节点数据
