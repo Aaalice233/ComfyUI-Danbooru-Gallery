@@ -437,7 +437,7 @@ class SaveImagePlus:
             else:
                 # 搜索 checkpoint 文件（依次查 checkpoints / diffusion_models / unet）
                 checkpoint_file = None
-                base_name = os.path.splitext(os.path.basename(checkpoint_name))[0]
+                base_name = os.path.splitext(os.path.basename(checkpoint_name))[0].lower()
 
                 for folder_type in ("checkpoints", "diffusion_models", "unet"):
                     try:
@@ -445,7 +445,7 @@ class SaveImagePlus:
                     except Exception:
                         continue
                     for path in paths:
-                        if os.path.splitext(os.path.basename(path))[0] == base_name:
+                        if os.path.splitext(os.path.basename(path))[0].lower() == base_name:
                             checkpoint_file = folder_paths.get_full_path(folder_type, path)
                             break
                     if checkpoint_file:
