@@ -446,7 +446,7 @@ app.registerExtension({
             // 序列化处理
             const onSerialize = nodeType.prototype.onSerialize;
             nodeType.prototype.onSerialize = function (serialised) {
-                const r = onSerialize ? onSerialize.apply(this, arguments) : undefined;
+                onSerialize?.apply(this, arguments);
 
                 for (let [index, widget] of (this.widgets || []).entries()) {
                     if (widget instanceof SimpleImageCompare) {
@@ -456,8 +456,6 @@ app.registerExtension({
                         serialised.widgets_values[index] = widget.serializeValue();
                     }
                 }
-
-                return r;
             };
         }
     },

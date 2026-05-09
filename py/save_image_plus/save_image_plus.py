@@ -435,11 +435,11 @@ class SaveImagePlus:
             if os.path.isabs(checkpoint_name) and os.path.exists(checkpoint_name):
                 checkpoint_file = checkpoint_name
             else:
+                # 搜索 checkpoint 文件（依次查 checkpoints / diffusion_models / unet）
                 checkpoint_file = None
                 base_name = os.path.splitext(os.path.basename(checkpoint_name))[0].lower()
 
-                # 先搜 checkpoints，再 fallback 到 unet / diffusion_models
-                for folder_type in ("checkpoints", "unet", "diffusion_models"):
+                for folder_type in ("checkpoints", "diffusion_models", "unet"):
                     try:
                         paths = folder_paths.get_filename_list(folder_type)
                     except Exception:
