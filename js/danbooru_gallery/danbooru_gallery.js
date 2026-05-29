@@ -91,6 +91,8 @@ app.registerExtension({
                 }
 
                 const container = $el("div.danbooru-gallery");
+                container.style.boxSizing = "border-box";
+                container.style.width = "100%";
 
                 // 添加错误显示区域
                 const errorDisplay = $el("div.danbooru-error-display", {
@@ -3862,10 +3864,20 @@ app.registerExtension({
 
                 this.onResize = (size) => {
                     const [width, height] = size;
+                    const contentWidth = Math.max(150, width - 24);
+                    container.style.width = `${contentWidth}px`;
+                    container.style.maxWidth = `${contentWidth}px`;
+                    imageGrid.style.width = "100%";
+                    imageGrid.style.maxWidth = "100%";
+                    imageGrid.style.boxSizing = "border-box";
+
                     const controlsHeight = container.querySelector('.danbooru-controls')?.offsetHeight || 0;
                     if (controlsHeight > 0) {
-                        imageGrid.style.height = `${height - controlsHeight - 10}px`;
+                        imageGrid.style.height = `${Math.max(120, height - controlsHeight - 10)}px`;
                     }
+
+                    cachedColumnWidth = 0;
+                    scheduleResizeGrid();
                 }
             };
 
