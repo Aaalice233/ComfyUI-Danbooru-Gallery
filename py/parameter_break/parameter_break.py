@@ -25,6 +25,17 @@ class AnyType(str):
 # 创建通配符类型实例
 any_typ = AnyType("*")
 
+# ==================== 输出数量上限 ====================
+
+# ParameterBreak 的最大输出槽数量。
+# 之前固定为 20，但带双 ControlNet 的参数面板（每个 ControlNet 需要
+# 模型/控制类型/多个预处理器/强度/权重/结束百分比等约 10+ 个参数）很容易
+# 超过 20：超出的参数会被静默丢弃为 None，下游节点拿到 None 后报错
+# （例如 ControlNet 的 percent_to_sigma 抛 "'<=' not supported between
+# instances of 'NoneType' and 'float'"，或读取越界输出槽抛 tuple index
+# out of range）。提高到 32 以容纳多 ControlNet 面板。
+MAX_OUTPUTS = 32
+
 # ==================== 全局存储 ====================
 
 # 存储每个节点的参数结构配置 {node_id: {"meta": [...], "last_update": timestamp}}
@@ -69,10 +80,10 @@ class ParameterBreak:
         }
 
     # 固定最大输出数量以支持动态参数
-    # 定义最多20个输出槽，未使用的返回None
+    # 定义最多 MAX_OUTPUTS 个输出槽，未使用的返回None
     # 使用AnyType实例作为通配符类型，可连接到任何输入
-    RETURN_TYPES = tuple([any_typ] * 20)
-    RETURN_NAMES = tuple([f"output_{i+1}" for i in range(20)])
+    RETURN_TYPES = tuple([any_typ] * MAX_OUTPUTS)
+    RETURN_NAMES = tuple([f"output_{i+1}" for i in range(MAX_OUTPUTS)])
     FUNCTION = "break_parameters"
     CATEGORY = "danbooru"
     OUTPUT_NODE = False
@@ -99,8 +110,8 @@ class ParameterBreak:
         Returns:
             参数值的元组（固定20个输出，未使用的为None）
         """
-        # 初始化20个None输出
-        outputs = [None] * 20
+        # 初始化 MAX_OUTPUTS 个None输出
+        outputs = [None] * MAX_OUTPUTS
 
         if not parameters or not isinstance(parameters, dict):
             logger.info(f" 节点 {unique_id} 接收到无效的参数包")
@@ -119,8 +130,8 @@ class ParameterBreak:
 
         # 按照元数据顺序填充输出（最多20个）
         for i, param_meta in enumerate(meta):
-            if i >= 20:
-                logger.info(f" 警告: 参数数量超过20个，后续参数将被忽略")
+            if i >= MAX_OUTPUTS:
+                logger.info(f" 警告: 参数数量超过{MAX_OUTPUTS}个，后续参数将被忽略")
                 break
 
             name = param_meta.get("name")
