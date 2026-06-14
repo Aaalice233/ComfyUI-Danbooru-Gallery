@@ -71,6 +71,10 @@ from .py.group_is_enabled import NODE_CLASS_MAPPINGS as gie_mappings
 from .py.group_is_enabled import NODE_DISPLAY_NAME_MAPPINGS as gie_display_mappings
 from .py.group_is_enabled.group_is_enabled import update_all_group_states as gie_update_states
 
+# 导入 VAE 图像批次修复
+from .py.vae_fix import NODE_CLASS_MAPPINGS as vae_fix_mappings
+from .py.vae_fix import NODE_DISPLAY_NAME_MAPPINGS as vae_fix_display_mappings
+
 # 优化执行系统映射
 opt_mappings = {
     **group_mute_mappings,
@@ -104,7 +108,8 @@ NODE_CLASS_MAPPINGS = {
     **workflow_description_mappings,
     **open_in_krita_mappings,
     **quick_group_navigation_mappings,
-    **gie_mappings
+    **gie_mappings,
+    **vae_fix_mappings
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -129,12 +134,13 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **workflow_description_display_mappings,
     **open_in_krita_display_mappings,
     **quick_group_navigation_display_mappings,
-    **gie_display_mappings
+    **gie_display_mappings,
+    **vae_fix_display_mappings
 }
 
 # 统计节点加载情况
 _node_load_stats["total_nodes"] = len(NODE_CLASS_MAPPINGS)
-_node_load_stats["loaded_modules"] = 20  # 成功导入的模块数(根据上面的import语句统计)
+_node_load_stats["loaded_modules"] = 21  # 成功导入的模块数(根据上面的import语句统计)
 
 # 控制台输出
 print("=" * 70, file=sys.stderr)
