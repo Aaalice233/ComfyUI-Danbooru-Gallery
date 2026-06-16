@@ -539,7 +539,7 @@ def verify_danbooru_auth(username, api_key):
     if not username or not api_key:
         return False, False
     try:
-        test_url = f"{BASE_URL}/profile.json"
+        test_url = f"{BASE_URL}/profile.json?login={username}&api_key={api_key}"
         response = _danbooru_request("GET", test_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
         is_valid = response.status_code == 200
         return is_valid, False
@@ -550,7 +550,7 @@ def verify_danbooru_auth(username, api_key):
 def get_user_favorites(username, api_key):
     """获取用户的收藏列表"""
     try:
-        favorites_url = f"{BASE_URL}/favorites.json"
+        favorites_url = f"{BASE_URL}/favorites.json?login={username}&api_key={api_key}"
         response = _danbooru_request("GET", favorites_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
         if response.status_code == 200:
             return response.json()
@@ -583,7 +583,7 @@ async def add_favorite(request):
             return web.json_response({"success": False, "error": "认证无效，请检查用户名和API Key"})
 
         try:
-            favorite_url = f"{BASE_URL}/favorites.json"
+            favorite_url = f"{BASE_URL}/favorites.json?login={username}&api_key={api_key}"
             response = _danbooru_request(
                 "POST",
                 favorite_url,
@@ -666,7 +666,7 @@ async def remove_favorite(request):
         
         try:
             # 直接使用帖子ID删除收藏
-            delete_url = f"{BASE_URL}/favorites/{post_id}.json"
+            delete_url = f"{BASE_URL}/favorites/{post_id}.json?login={username}&api_key={api_key}"
             delete_response = _danbooru_request("DELETE", delete_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
 
 
