@@ -1286,8 +1286,11 @@ class DanbooruGalleryNode:
         rating_key = ','.join(sorted(r.strip().lower() for r in (rating or '').split(',') if r.strip()))
         cache_key = f"{tags}:{limit}:{page}:{rating_key}"
 
+        # 判断是否获取收藏列表，如果是清除缓存以避免相同的请求前端列表不更新
+        match = re.search(r'\bordfav:([^\s]+)', tags)
+
         # 如果启用了缓存，则检查缓存
-        if cache_enabled:
+        if cache_enabled and not match:
             if cache_key in DanbooruGalleryNode._post_cache:
                 cached_data, timestamp = DanbooruGalleryNode._post_cache[cache_key]
                 if time.time() - timestamp < max_cache_age:
