@@ -551,10 +551,21 @@ def preload_translation_data():
 # 在模块加载时预加载翻译数据
 preload_translation_data()
 
-def check_network_connection():
-    """检测与Danbooru的网络连接状态"""
+def check_network_connection(source="danbooru"):
+    """Check network connectivity for the selected gallery source."""
+    adapter = get_site_adapter(source)
     try:
         # 使用一个简单的公开API端点来检测连接
+        if adapter.key == "gelbooru":
+            ui_settings = load_ui_settings()
+            session = _get_gelbooru_session(ui_settings.get("gelbooru_display_all_site_content", False))
+            response = session.get(
+                adapter.posts_url,
+                params=adapter.build_public_posts_params("", 1, 1, None),
+                timeout=(8, 10),
+            )
+            return response.status_code == 200, False
+
         test_url = f"{BASE_URL}/posts.json?limit=1"
         response = _danbooru_request("GET", test_url, timeout=10)
         return response.status_code == 200, False
@@ -595,15 +606,127 @@ def get_user_favorites(username, api_key):
 
 # --- 省略其他不相关的路由和函数以保持简洁 ---
 
+def get_gelbooru_favorites(user_id, api_key, limit=1000):
+    """Fetch Gelbooru favorite post IDs for the configured user."""
+    if not user_id or not api_key:
+        return []
+    if not str(user_id).isdigit():
+        raise ValueError("Gelbooru User ID must be numeric")
+
+    adapter = get_site_adapter("gelbooru")
+    credentials = {"user_id": user_id, "api_key": api_key}
+
+    # Gelbooru's documented favorite DAPI may return an empty list for valid API
+    # credentials, while the site's own favorites link uses the fav:<user_id> tag.
+    favorite_posts = []
+    page = 1
+    per_page = min(max(int(limit), 1), 100)
+    while len(favorite_posts) < limit:
+        params = adapter.build_posts_params(f"fav:{user_id}", per_page, page, None)
+        params = adapter.apply_auth_params(params, credentials)
+        response = _danbooru_request("GET", adapter.posts_url, params=params, timeout=15)
+        response.raise_for_status()
+        posts = adapter.normalize_posts_response(response.json())
+        if not posts:
+            break
+        favorite_posts.extend(str(post.get("id")) for post in posts if post.get("id"))
+        if len(posts) < per_page:
+            break
+        page += 1
+
+    if favorite_posts:
+        return favorite_posts[:limit]
+
+    all_ids = []
+    page = 1
+
+    while len(all_ids) < limit:
+        params = adapter.build_favorites_params(user_id, per_page, page)
+        params = adapter.apply_auth_params(params, credentials)
+        response = _danbooru_request("GET", adapter.posts_url, params=params, timeout=15)
+        if response.status_code == 401:
+            raise requests.exceptions.HTTPError("Gelbooru favorite API authentication failed", response=response)
+        response.raise_for_status()
+        page_ids = adapter.normalize_favorites_response(response.json())
+        if not page_ids:
+            break
+        all_ids.extend(page_ids)
+        if len(page_ids) < per_page:
+            break
+        page += 1
+
+    return all_ids[:limit]
+
+def add_gelbooru_favorite(post_id, user_id, api_key):
+    """Add a Gelbooru favorite via the site's favorite endpoint."""
+    if not user_id or not api_key:
+        return False, "请先在设置中配置 Gelbooru User ID 和 API Key"
+
+    session = _get_gelbooru_session(load_ui_settings().get("gelbooru_display_all_site_content", False))
+    response = session.get(
+        "https://gelbooru.com/public/addfav.php",
+        params={"id": str(post_id), "user_id": user_id, "api_key": api_key},
+        headers=_gelbooru_browser_headers("*/*"),
+        timeout=(8, 15),
+    )
+    response.raise_for_status()
+    body = (response.text or "").strip()
+    if body == "1":
+        return True, "已收藏，无需重复操作"
+    if body == "2":
+        return False, "Gelbooru 返回未登录；该站点的添加收藏接口可能不接受 API-only 认证"
+    return True, "收藏成功"
+
+def remove_gelbooru_favorite(post_id, user_id, api_key):
+    """Remove a Gelbooru favorite via the site's favorite page endpoint."""
+    if not user_id or not api_key:
+        return False, "请先在设置中配置 Gelbooru User ID 和 API Key"
+
+    session = _get_gelbooru_session(load_ui_settings().get("gelbooru_display_all_site_content", False))
+    response = session.get(
+        "https://gelbooru.com/index.php",
+        params={
+            "page": "favorites",
+            "s": "delete",
+            "id": str(post_id),
+            "user_id": user_id,
+            "api_key": api_key,
+        },
+        headers=_gelbooru_browser_headers("text/html,*/*"),
+        allow_redirects=False,
+        timeout=(8, 15),
+    )
+    if response.status_code in (200, 302, 303):
+        location = response.headers.get("Location", "")
+        if "account" in location and "login" in location:
+            return False, "Gelbooru 返回登录页；该站点的取消收藏接口可能不接受 API-only 认证"
+        return True, "取消收藏成功"
+    response.raise_for_status()
+    return True, "取消收藏成功"
+
 @PromptServer.instance.routes.post("/danbooru_gallery/favorites/add")
 async def add_favorite(request):
     """添加收藏"""
     try:
         data = await request.json()
         post_id = data.get("post_id")
+        source = data.get("source", "danbooru")
+        adapter = get_site_adapter(source)
 
         if not post_id:
             return web.json_response({"success": False, "error": "缺少post_id"})
+
+        if adapter.key == "gelbooru":
+            user_id, gelbooru_api_key = load_gelbooru_auth()
+            try:
+                ok, message = add_gelbooru_favorite(post_id, user_id, gelbooru_api_key)
+                return web.json_response({"success": ok, "message": message, "error": None if ok else message})
+            except requests.exceptions.Timeout:
+                logger.error("[Gelbooru] 添加收藏请求超时")
+                return web.json_response({"success": False, "error": "Gelbooru 收藏请求超时，请稍后重试"})
+            except requests.exceptions.RequestException as e:
+                logger.error(f"[Gelbooru] 添加收藏请求失败: {type(e).__name__}")
+                return web.json_response({"success": False, "error": "Gelbooru 收藏请求失败，请检查网络或稍后重试"})
 
         username, api_key = load_user_auth()
         if not username or not api_key:
@@ -683,9 +806,23 @@ async def remove_favorite(request):
     try:
         data = await request.json()
         post_id = data.get("post_id")
+        source = data.get("source", "danbooru")
+        adapter = get_site_adapter(source)
 
         if not post_id:
             return web.json_response({"success": False, "error": "缺少post_id"})
+
+        if adapter.key == "gelbooru":
+            user_id, gelbooru_api_key = load_gelbooru_auth()
+            try:
+                ok, message = remove_gelbooru_favorite(post_id, user_id, gelbooru_api_key)
+                return web.json_response({"success": ok, "message": message, "error": None if ok else message})
+            except requests.exceptions.Timeout:
+                logger.error("[Gelbooru] 取消收藏请求超时")
+                return web.json_response({"success": False, "error": "Gelbooru 取消收藏请求超时，请稍后重试"})
+            except requests.exceptions.RequestException as e:
+                logger.error(f"[Gelbooru] 取消收藏请求失败: {type(e).__name__}")
+                return web.json_response({"success": False, "error": "Gelbooru 取消收藏请求失败，请检查网络或稍后重试"})
         
         username, api_key = load_user_auth()
         if not username or not api_key:
@@ -779,8 +916,56 @@ async def get_user_auth_route(request):
 async def get_favorites_route(request):
     """获取收藏列表"""
     try:
+        source = request.query.get("source") or load_ui_settings().get("source_site", "danbooru")
+        adapter = get_site_adapter(source)
+        if adapter.key == "gelbooru":
+            user_id, gelbooru_api_key = load_gelbooru_auth()
+            if not user_id or not gelbooru_api_key:
+                return web.json_response({
+                    "success": False,
+                    "favorites": [],
+                    "source": adapter.key,
+                    "error": "请先在设置中配置 Gelbooru User ID 和 API Key"
+                })
+            try:
+                favorites = get_gelbooru_favorites(user_id, gelbooru_api_key)
+                return web.json_response({"success": True, "favorites": favorites, "source": adapter.key})
+            except requests.exceptions.Timeout:
+                logger.error("[Gelbooru] 获取收藏列表超时")
+                return web.json_response({
+                    "success": False,
+                    "favorites": [],
+                    "source": adapter.key,
+                    "error": "Gelbooru 收藏列表读取超时，请稍后重试"
+                })
+            except requests.exceptions.HTTPError as e:
+                status_code = e.response.status_code if e.response is not None else "unknown"
+                logger.error(f"[Gelbooru] 获取收藏列表失败: HTTP {status_code}")
+                return web.json_response({
+                    "success": False,
+                    "favorites": [],
+                    "source": adapter.key,
+                    "error": "Gelbooru 收藏列表读取失败，请检查 User ID/API Key 是否有效"
+                })
+            except ValueError as e:
+                logger.error(f"[Gelbooru] 收藏列表配置无效: {e}")
+                return web.json_response({
+                    "success": False,
+                    "favorites": [],
+                    "source": adapter.key,
+                    "error": "Gelbooru User ID 必须是数字 ID，不是用户名"
+                })
+            except requests.exceptions.RequestException as e:
+                logger.error(f"[Gelbooru] 获取收藏列表请求失败: {type(e).__name__}")
+                return web.json_response({
+                    "success": False,
+                    "favorites": [],
+                    "source": adapter.key,
+                    "error": "Gelbooru 收藏列表请求失败，请检查网络或稍后重试"
+                })
+
         favorites = load_favorites()
-        return web.json_response({"success": True, "favorites": favorites})
+        return web.json_response({"success": True, "favorites": favorites, "source": adapter.key})
     except Exception as e:
         logger.error(f"获取收藏列表接口错误: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=500)
@@ -806,8 +991,15 @@ async def save_user_auth_route(request):
 async def check_network(request):
     """检测网络连接状态"""
     try:
-        is_connected, is_network_error = check_network_connection()
-        return web.json_response({"success": True, "connected": is_connected, "network_error": is_network_error})
+        source = request.query.get("source") or load_ui_settings().get("source_site", "danbooru")
+        adapter = get_site_adapter(source)
+        is_connected, is_network_error = check_network_connection(adapter.key)
+        return web.json_response({
+            "success": True,
+            "connected": is_connected,
+            "network_error": is_network_error,
+            "source": adapter.key
+        })
     except Exception as e:
         logger.error(f"网络检测接口错误: {e}")
         return web.json_response({"success": False, "error": "网络检测失败", "network_error": True}, status=500)
@@ -975,6 +1167,39 @@ def _image_proxy_headers_for_host(host):
     if host == "gelbooru.com" or host.endswith(".gelbooru.com"):
         return _gelbooru_browser_headers("image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
     return {}
+
+def _fetch_supported_media(url):
+    """Fetch image/video bytes using the same site-aware request path as the preview proxy."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("invalid media url scheme")
+
+    host = (parsed.hostname or "").lower()
+    allowed_suffixes = ("donmai.us", "gelbooru.com")
+    if not any(host == suffix or host.endswith(f".{suffix}") for suffix in allowed_suffixes):
+        raise ValueError(f"unsupported media host: {host}")
+
+    if host == "gelbooru.com" or host.endswith(".gelbooru.com"):
+        display_all_site_content = load_ui_settings().get("gelbooru_display_all_site_content", False)
+        session = _get_gelbooru_session(display_all_site_content)
+        response = session.get(
+            url,
+            headers=_image_proxy_headers_for_host(host),
+            timeout=(8, 30),
+        )
+    else:
+        response = _danbooru_request(
+            "GET",
+            url,
+            headers=_image_proxy_headers_for_host(host),
+            timeout=30,
+        )
+
+    response.raise_for_status()
+    content_type = response.headers.get("Content-Type", "application/octet-stream").lower()
+    if content_type and not content_type.startswith(("image/", "application/octet-stream")):
+        raise ValueError(f"upstream returned non-image content: {content_type}")
+    return response.content
 
 def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, display_all_site_content=False):
     """Fetch Gelbooru posts from public HTML pages when DAPI credentials are unavailable."""
@@ -1544,8 +1769,7 @@ class DanbooruGalleryNode:
 
                 if image_url:
                     try:
-                        with urllib.request.urlopen(image_url) as response:
-                            img_data = response.read()
+                        img_data = _fetch_supported_media(image_url)
                         img = Image.open(io.BytesIO(img_data)).convert("RGB")
                         img_array = np.array(img).astype(np.float32) / 255.0
                         tensor = torch.from_numpy(img_array)[None,]
@@ -1619,7 +1843,7 @@ class DanbooruGalleryNode:
             rating_query = rating
         
         tags = final_tags
-        
+
         username, api_key = load_user_auth()
         auth = HTTPBasicAuth(username, api_key) if adapter.requires_auth and username and api_key else None
         credentials = get_site_credentials(adapter)

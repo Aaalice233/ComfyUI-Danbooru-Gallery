@@ -82,6 +82,7 @@ class DanbooruAdapter(GallerySiteAdapter):
 class GelbooruAdapter(GallerySiteAdapter):
     key = "gelbooru"
     base_url = "https://gelbooru.com"
+    supports_favorites = True
 
     @property
     def posts_url(self) -> str:
@@ -127,6 +128,28 @@ class GelbooruAdapter(GallerySiteAdapter):
             "s": "view",
             "id": str(post_id),
         }
+
+    def build_favorites_params(self, user_id: str, limit: int, page: int) -> Dict[str, Any]:
+        return {
+            "page": "dapi",
+            "s": "favorite",
+            "q": "index",
+            "json": "1",
+            "id": str(user_id),
+            "limit": limit,
+            "pid": max(page - 1, 0),
+        }
+
+    def normalize_favorites_response(self, payload: Any) -> List[str]:
+        favorites = self._extract_list(payload)
+        ids = []
+        for item in favorites:
+            if not isinstance(item, dict):
+                continue
+            post_id = item.get("favorite") or item.get("post_id") or item.get("id")
+            if post_id:
+                ids.append(str(post_id))
+        return ids
 
     def build_autocomplete_params(self, query: str, limit: int) -> Dict[str, Any]:
         return {
@@ -226,8 +249,6 @@ class GelbooruAdapter(GallerySiteAdapter):
 
             refs.append({
                 "id": post_id,
-                "file_url": self._absolute_url(preview_url),
-                "large_file_url": self._absolute_url(preview_url),
                 "preview_file_url": self._absolute_url(preview_url),
                 "tag_string": tag_string,
                 "tag_string_artist": "",
@@ -240,6 +261,7 @@ class GelbooruAdapter(GallerySiteAdapter):
                 "md5": post_id,
                 "rating": self._rating_from_tags(tag_string.split()),
                 "source_site": self.key,
+                "_gelbooru_preview_only": True,
             })
             seen.add(post_id)
             if len(refs) >= limit:
@@ -256,7 +278,7 @@ class GelbooruAdapter(GallerySiteAdapter):
             all_tags.extend(tag_groups.get(category, []))
 
         tag_string = " ".join(all_tags) or fallback.get("tag_string", "")
-        file_url = self._extract_public_file_url(html_text) or fallback.get("file_url") or fallback.get("large_file_url")
+        file_url = self._extract_public_file_url(html_text)
         preview_url = fallback.get("preview_file_url") or file_url
         image_width, image_height = self._extract_image_dimensions(html_text)
 
@@ -278,12 +300,11 @@ class GelbooruAdapter(GallerySiteAdapter):
             "source_site": self.key,
         }
 
-        if not normalized["file_url"]:
-            normalized["file_url"] = preview_url
-            normalized["large_file_url"] = preview_url
-
         if normalized["file_url"]:
             normalized["file_ext"] = normalized["file_url"].rsplit(".", 1)[-1].split("?", 1)[0].lower()
+            normalized["_gelbooru_preview_only"] = False
+        else:
+            normalized["_gelbooru_preview_only"] = True
 
         return normalized
 
@@ -300,12 +321,12 @@ class GelbooruAdapter(GallerySiteAdapter):
             "large_file_url": sample_url,
             "preview_file_url": preview_url,
             "tag_string": tags,
-            # Gelbooru does not split tags into Danbooru categories in the post API.
-            # Keep all tags in general so existing Gallery rendering remains compatible.
+            # Gelbooru DAPI does not split tags into Danbooru categories.
+            # The frontend hydrates public detail pages when categorized output is needed.
             "tag_string_artist": post.get("tag_string_artist", ""),
             "tag_string_copyright": post.get("tag_string_copyright", ""),
             "tag_string_character": post.get("tag_string_character", ""),
-            "tag_string_general": post.get("tag_string_general") or tags,
+            "tag_string_general": post.get("tag_string_general", ""),
             "tag_string_meta": post.get("tag_string_meta", ""),
             "image_width": int(post.get("width") or post.get("image_width") or 0),
             "image_height": int(post.get("height") or post.get("image_height") or 0),
@@ -414,30 +435,28 @@ class GelbooruAdapter(GallerySiteAdapter):
         text = self._decode_html(text)
         return re.sub(r"\s+", " ", text).strip()
 
-    def _extract_public_file_url(self, html_text: str) -> str:
-        og_match = re.search(
-            r"<meta\b[^>]*(?:property|name)=(?P<quote>['\"])og:image(?P=quote)[^>]*>",
-            html_text or "",
-            re.IGNORECASE,
-        )
-        if og_match:
-            content = self._extract_attr(og_match.group(0), "content")
-            if content:
-                return self._absolute_url(content)
+    def _is_public_preview_url(self, value: str) -> bool:
+        value = (value or "").lower()
+        return "/thumbnails/" in value or "/thumbnail/" in value
 
+    def _extract_public_file_url(self, html_text: str) -> str:
         image_tag = re.search(
             r"<img\b(?=[^>]*id=(?P<quote>['\"])image(?P=quote))[^>]*>",
             html_text or "",
             re.IGNORECASE,
         )
         if image_tag:
-            src = self._extract_attr(image_tag.group(0), "src")
-            if src:
-                return self._absolute_url(src)
+            for attr in ("data-full-url", "data-original", "data-src", "src"):
+                src = self._extract_attr(image_tag.group(0), attr)
+                url = self._absolute_url(src)
+                if url and not self._is_public_preview_url(url):
+                    return url
 
         source_tag = re.search(r"<source\b[^>]*src=(?P<quote>['\"])(?P<src>[^'\"]+)(?P=quote)", html_text or "", re.IGNORECASE)
         if source_tag:
-            return self._absolute_url(self._decode_html(source_tag.group("src")))
+            url = self._absolute_url(self._decode_html(source_tag.group("src")))
+            if url and not self._is_public_preview_url(url):
+                return url
 
         url_match = re.search(
             r"(?P<url>(?:https?:)?//[^'\"\s<>]*gelbooru\.com/(?:images|samples)/[^'\"\s<>]+"
@@ -445,7 +464,22 @@ class GelbooruAdapter(GallerySiteAdapter):
             html_text or "",
             re.IGNORECASE,
         )
-        return self._absolute_url(self._decode_html(url_match.group("url"))) if url_match else ""
+        if url_match:
+            url = self._absolute_url(self._decode_html(url_match.group("url")))
+            if url and not self._is_public_preview_url(url):
+                return url
+
+        og_match = re.search(
+            r"<meta\b[^>]*(?:property|name)=(?P<quote>['\"])og:image(?P=quote)[^>]*>",
+            html_text or "",
+            re.IGNORECASE,
+        )
+        if og_match:
+            url = self._absolute_url(self._extract_attr(og_match.group(0), "content"))
+            if url and not self._is_public_preview_url(url):
+                return url
+
+        return ""
 
     def _extract_image_dimensions(self, html_text: str) -> tuple[int, int]:
         image_tag = re.search(
