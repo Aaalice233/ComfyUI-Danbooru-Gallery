@@ -187,7 +187,7 @@ app.registerExtension({
                 let currentTooltipId = 0; // 用于追踪当前活动的tooltip请求
                 let posts = [], currentPage = 1, isLoading = false, endOfResults = false;
                 let filterState = { startTime: null, endTime: null, startPage: null };
-                let userAuth = { username: "", api_key: "", has_auth: false }; // 用户认证信息
+                let userAuth = { username: "", api_key: "", has_auth: false, gelbooru_user_id: "", gelbooru_api_key: "", gelbooru_has_auth: false }; // 用户认证信息
                 let userFavorites = []; // 用户收藏列表，确保字符串
                 let networkStatus = { connected: true, lastChecked: 0 }; // 网络状态跟踪
                 let previousSearchValue = ""; // 跟踪搜索框之前的值，用于检测清空操作
@@ -202,23 +202,30 @@ app.registerExtension({
                         return data;
                     } catch (e) {
                         logger.warn("加载用户认证信息失败:", e);
-                        userAuth = { username: "", api_key: "", has_auth: false };
+                        userAuth = { username: "", api_key: "", has_auth: false, gelbooru_user_id: "", gelbooru_api_key: "", gelbooru_has_auth: false };
                         return userAuth;
                     }
                 };
 
-                const saveUserAuth = async (username, api_key) => {
+                const saveUserAuth = async (username, api_key, gelbooru_user_id = "", gelbooru_api_key = "") => {
                     try {
                         const response = await fetch('/danbooru_gallery/user_auth', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                             },
-                            body: JSON.stringify({ username: username, api_key: api_key })
+                            body: JSON.stringify({ username: username, api_key: api_key, gelbooru_user_id, gelbooru_api_key })
                         });
                         const data = await response.json();
                         if (data.success) {
-                            userAuth = { username, api_key, has_auth: true };
+                            userAuth = {
+                                username,
+                                api_key,
+                                has_auth: Boolean(username && api_key),
+                                gelbooru_user_id,
+                                gelbooru_api_key,
+                                gelbooru_has_auth: Boolean(gelbooru_user_id && gelbooru_api_key)
+                            };
                         }
                         return data;
                     } catch (e) {
@@ -531,6 +538,36 @@ app.registerExtension({
                 };
 
                 const searchInput = $el("input.danbooru-search-input", { type: "text", placeholder: t('searchPlaceholder'), title: t('searchPlaceholder') });
+                const SOURCE_SITES = [
+                    { value: "danbooru", label: "Danbooru" },
+                    { value: "gelbooru", label: "Gelbooru" },
+                ];
+                const sourceSelect = $el("select.danbooru-source-select", {
+                    title: t('sourceTooltip')
+                }, SOURCE_SITES.map(site => $el("option", {
+                    value: site.value,
+                    textContent: site.label
+                })));
+                const displayAllSiteContentToggle = $el("label.danbooru-gelbooru-display-all-toggle", {
+                    title: t('displayAllSiteContentTooltip'),
+                    style: { display: "none" }
+                }, [
+                    $el("input", { type: "checkbox" }),
+                    $el("span", { textContent: t('displayAllSiteContent') })
+                ]);
+                const updateSourceState = () => {
+                    const selectedSource = uiSettings.source_site || "danbooru";
+                    sourceSelect.value = selectedSource;
+                    const favoritesDisabled = selectedSource !== "danbooru";
+                    favoritesButton.disabled = favoritesDisabled;
+                    favoritesButton.style.opacity = favoritesDisabled ? "0.45" : "";
+                    favoritesButton.title = favoritesDisabled ? t('sourceFavoritesUnsupported') : t('favorites');
+                    displayAllSiteContentToggle.style.display = selectedSource === "gelbooru" ? "inline-flex" : "none";
+                    const displayAllInput = displayAllSiteContentToggle.querySelector("input");
+                    if (displayAllInput) {
+                        displayAllInput.checked = Boolean(uiSettings.gelbooru_display_all_site_content);
+                    }
+                };
                 const RATING_VALUES = ["general", "sensitive", "questionable", "explicit"];
                 const normalizePostRating = (rating) => {
                     const map = { g: "general", s: "sensitive", q: "questionable", e: "explicit" };
@@ -708,6 +745,32 @@ app.registerExtension({
                     ])
                 ]);
 
+                sourceSelect.addEventListener('change', async () => {
+                    uiSettings.source_site = sourceSelect.value;
+                    saveToLocalStorage('sourceSite', uiSettings.source_site);
+                    await saveUiSettings(uiSettings);
+                    updateSourceState();
+                    searchAutocomplete.source = uiSettings.source_site;
+                    posts = [];
+                    Object.keys(originalPostCache).forEach(key => delete originalPostCache[key]);
+                    temporaryTagEdits = {};
+                    updateSelectionData();
+                    fetchAndRender(true);
+                });
+
+                displayAllSiteContentToggle.querySelector("input").addEventListener('change', async (event) => {
+                    uiSettings.gelbooru_display_all_site_content = Boolean(event.target.checked);
+                    saveToLocalStorage('gelbooruDisplayAllSiteContent', uiSettings.gelbooru_display_all_site_content);
+                    await saveUiSettings(uiSettings);
+                    if ((uiSettings.source_site || "danbooru") === "gelbooru") {
+                        posts = [];
+                        Object.keys(originalPostCache).forEach(key => delete originalPostCache[key]);
+                        temporaryTagEdits = {};
+                        updateSelectionData();
+                        fetchAndRender(true);
+                    }
+                });
+
                 document.addEventListener("click", (e) => {
                     const dropdowns = [categoryDropdown, formattingDropdown, ratingSelect];
                     dropdowns.forEach(dropdown => {
@@ -768,6 +831,7 @@ app.registerExtension({
                         },
                         ui: {
                             ...uiSettings,
+                            source_site: uiSettings.source_site || "danbooru",
                             // Ensure formatting is included from the checkboxes directly
                             formatting: {
                                 escapeBrackets: formattingDropdown.querySelector('[name="escapeBrackets"]').checked,
@@ -1217,6 +1281,47 @@ app.registerExtension({
                         }
                     });
 
+                    const gelbooruAuthDescription = $el("p", {
+                        textContent: t('gelbooruAuthDescription'),
+                        style: {
+                            margin: "12px 0 8px 0",
+                            color: "#888",
+                            fontSize: "0.9em"
+                        }
+                    });
+
+                    const gelbooruUserIdInput = $el("input", {
+                        type: "text",
+                        placeholder: t('gelbooruUserIdPlaceholder'),
+                        value: (initialState.gelbooruUserId ?? userAuth.gelbooru_user_id) || "",
+                        style: {
+                            width: "100%",
+                            padding: "8px 12px",
+                            border: "1px solid var(--input-border-color)",
+                            borderRadius: "6px",
+                            backgroundColor: "var(--comfy-menu-bg)",
+                            color: "var(--comfy-input-text)",
+                            fontSize: "14px",
+                            marginBottom: "8px"
+                        }
+                    });
+
+                    const gelbooruApiKeyInput = $el("input", {
+                        type: "password",
+                        placeholder: t('gelbooruApiKeyPlaceholder'),
+                        value: (initialState.gelbooruApiKey ?? userAuth.gelbooru_api_key) || "",
+                        style: {
+                            width: "100%",
+                            padding: "8px 12px",
+                            border: "1px solid var(--input-border-color)",
+                            borderRadius: "6px",
+                            backgroundColor: "var(--comfy-menu-bg)",
+                            color: "var(--comfy-input-text)",
+                            fontSize: "14px",
+                            marginBottom: "8px"
+                        }
+                    });
+
                     const apiKeyHelpButton = $el("button", {
                         textContent: t('apiKeyHelp'),
                         title: t('apiKeyTooltip'),
@@ -1240,6 +1345,9 @@ app.registerExtension({
                     authSection.appendChild(authDescription);
                     authSection.appendChild(usernameInput);
                     authSection.appendChild(apiKeyInput);
+                    authSection.appendChild(gelbooruAuthDescription);
+                    authSection.appendChild(gelbooruUserIdInput);
+                    authSection.appendChild(gelbooruApiKeyInput);
                     authSection.appendChild(apiKeyHelpButton);
 
                     // 自动补全设置
@@ -1486,9 +1594,16 @@ app.registerExtension({
                             // 保存用户认证信息
                             const newUsername = usernameInput.value.trim();
                             const newApiKey = apiKeyInput.value.trim();
+                            const newGelbooruUserId = gelbooruUserIdInput.value.trim();
+                            const newGelbooruApiKey = gelbooruApiKeyInput.value.trim();
                             let authSuccess = true;
-                            if (newUsername !== userAuth.username || newApiKey !== userAuth.api_key) {
-                                const authResult = await saveUserAuth(newUsername, newApiKey);
+                            if (
+                                newUsername !== userAuth.username ||
+                                newApiKey !== userAuth.api_key ||
+                                newGelbooruUserId !== userAuth.gelbooru_user_id ||
+                                newGelbooruApiKey !== userAuth.gelbooru_api_key
+                            ) {
+                                const authResult = await saveUserAuth(newUsername, newApiKey, newGelbooruUserId, newGelbooruApiKey);
                                 authSuccess = authResult.success;
                                 if (authSuccess) {
                                     await loadFavorites(); // 登录成功后重新加载收藏夹
@@ -1513,7 +1628,9 @@ app.registerExtension({
                                     tooltip_enabled: newTooltipEnabled,
                                     autocomplete_max_results: newAutocompleteMaxResults,
                                     selected_categories: newSelectedCategories,
-                                    multi_select_enabled: newMultiSelectEnabled
+                                    multi_select_enabled: newMultiSelectEnabled,
+                                    source_site: uiSettings.source_site || "danbooru",
+                                    gelbooru_display_all_site_content: uiSettings.gelbooru_display_all_site_content || false
                                 })
                             ]);
 
@@ -1527,6 +1644,7 @@ app.registerExtension({
                                 uiSettings.autocomplete_max_results = newAutocompleteMaxResults;
                                 uiSettings.selected_categories = newSelectedCategories;
                                 uiSettings.multi_select_enabled = newMultiSelectEnabled;
+                                uiSettings.source_site = sourceSelect.value || uiSettings.source_site || "danbooru";
 
                                 dialog.remove();
                                 showToast(t('saveSuccess'), 'success');
@@ -1594,6 +1712,8 @@ app.registerExtension({
                                 filterEnabled: filterEnableCheckbox.checked,
                                 username: usernameInput.value,
                                 apiKey: apiKeyInput.value,
+                                gelbooruUserId: gelbooruUserIdInput.value,
+                                gelbooruApiKey: gelbooruApiKeyInput.value,
                                 autocompleteEnabled: autocompleteEnableCheckbox.checked,
                                 tooltipEnabled: tooltipEnableCheckbox.checked,
                                 autocompleteMaxResults: autocompleteMaxResultsInput.value,
@@ -1905,6 +2025,8 @@ app.registerExtension({
                     autocomplete_max_results: 20,
                     selected_categories: ["copyright", "character", "general"],
                     multi_select_enabled: false,
+                    source_site: "danbooru",
+                    gelbooru_display_all_site_content: false,
                     formatting: {
                         escapeBrackets: true,
                         replaceUnderscores: true,
@@ -1922,6 +2044,8 @@ app.registerExtension({
                                 autocomplete_max_results: data.settings.autocomplete_max_results || 20,
                                 selected_categories: data.settings.selected_categories || ["copyright", "character", "general"],
                                 multi_select_enabled: data.settings.multi_select_enabled || false,
+                                source_site: data.settings.source_site || "danbooru",
+                                gelbooru_display_all_site_content: data.settings.gelbooru_display_all_site_content || false,
                                 formatting: data.settings.formatting || { escapeBrackets: true, replaceUnderscores: true }
                             };
                         }
@@ -2068,7 +2192,17 @@ app.registerExtension({
                 // 获取单个帖子的原始数据
                 const fetchOriginalPost = async (postId) => {
                     try {
-                        const response = await fetch(`/danbooru_gallery/posts?search[id]=${postId}&limit=1`);
+                        const params = new URLSearchParams({
+                            source: uiSettings.source_site || "danbooru",
+                            "search[tags]": `id:${postId}`,
+                            limit: "1",
+                            page: "1",
+                        });
+                        params.set("gelbooru_display_all_site_content", uiSettings.gelbooru_display_all_site_content ? "1" : "0");
+                        if ((uiSettings.source_site || "danbooru") === "gelbooru") {
+                            params.set("force_public_detail", "1");
+                        }
+                        const response = await fetch(`/danbooru_gallery/posts?${params}`);
                         const data = await response.json();
                         if (data && data.length > 0) {
                             return data[0];
@@ -2081,6 +2215,36 @@ app.registerExtension({
                 };
 
                 // 反向转换函数：将显示格式的标签转换回Danbooru API格式
+                const hasCategorizedTags = (postData) => Boolean(
+                    postData?.tag_string_artist ||
+                    postData?.tag_string_copyright ||
+                    postData?.tag_string_character ||
+                    postData?.tag_string_meta
+                );
+
+                const hydrateGelbooruTooltipPost = async (postData) => {
+                    if (!postData || postData.source_site !== "gelbooru" || hasCategorizedTags(postData) || postData._gelbooru_tooltip_hydrated) {
+                        return postData;
+                    }
+
+                    if (originalPostCache[postData.id] && (hasCategorizedTags(originalPostCache[postData.id]) || originalPostCache[postData.id]._gelbooru_tooltip_hydrated)) {
+                        return originalPostCache[postData.id];
+                    }
+
+                    const hydratedPost = await fetchOriginalPost(postData.id);
+                    if (!hydratedPost) {
+                        return postData;
+                    }
+
+                    const mergedPost = { ...postData, ...hydratedPost, _gelbooru_tooltip_hydrated: true };
+                    const postIndex = posts.findIndex(p => p.id == postData.id);
+                    if (postIndex !== -1) {
+                        posts[postIndex] = mergedPost;
+                    }
+                    originalPostCache[postData.id] = JSON.parse(JSON.stringify(mergedPost));
+                    return mergedPost;
+                };
+
                 const convertTagsToApiFormat = (tagsString) => {
                     if (!tagsString) return "";
 
@@ -2176,6 +2340,8 @@ app.registerExtension({
                         const sendAll = selectedRatings.length === 0 || selectedRatings.length === RATING_VALUES.length;
                         const ratingForServer = sendAll ? "" : selectedRatings.join(",");
                         const params = new URLSearchParams({
+                            "source": uiSettings.source_site || "danbooru",
+                            "gelbooru_display_all_site_content": uiSettings.gelbooru_display_all_site_content ? "1" : "0",
                             "search[tags]": apiFormattedTags.trim(),
                             "search[rating]": ratingForServer,
                             limit: "40",
@@ -2294,49 +2460,7 @@ app.registerExtension({
                         // 更好的方式是直接更新 selectionWidget 的值
                         // targetWrapper.querySelector('img').click();
                         // 而是直接更新 selectionWidget
-                        const imageUrl = post.file_url || post.large_file_url;
-                        const selectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
-                        const postToUse = temporaryTagEdits[post.id] || post;
-                        let output_tags = [];
-                        selectedCategories.forEach(category => {
-                            const tags = postToUse[`tag_string_${category}`];
-                            if (tags) {
-                                output_tags.push(...tags.split(' '));
-                            }
-                        });
-                        let tagsToProcess = (output_tags.length > 0) ? output_tags : (postToUse.tag_string || '').split(' ');
-                        if (filterEnabled && currentFilterTags.length > 0) {
-                            const filterTagsLower = currentFilterTags.map(tag => tag.toLowerCase().trim());
-                            tagsToProcess = tagsToProcess.filter(tag => {
-                                const tagLower = tag.toLowerCase().trim();
-                                return !filterTagsLower.includes(tagLower);
-                            });
-                        }
-                        const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]').checked;
-                        const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]').checked;
-                        const processedTags = tagsToProcess.map(tag => {
-                            let processedTag = tag;
-                            if (replaceUnderscores) {
-                                processedTag = processedTag.replace(/_/g, ' ');
-                            }
-                            if (escapeBrackets) {
-                                processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
-                            }
-                            return processedTag;
-                        });
-                        const prompt = processedTags.join(', ');
-                        const selection = {
-                            prompt: prompt,
-                            image_url: imageUrl,
-                        };
-                        if (nodeInstance && nodeInstance.widgets) {
-                            const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
-                            if (selectionWidget) {
-                                selectionWidget.value = JSON.stringify(selection);
-                                selectionWidget.callback();
-
-                            }
-                        }
+                        updateSelectionData();
                     }
                     const isPostCurrentlySelected = true; // 因为我们已经强制选中了
 
@@ -2495,6 +2619,7 @@ app.registerExtension({
                                 newPostElement.classList.add('selected');
 
                             }
+                            updateSelectionData();
                         } else { // 如果打开面板时未选中，则清除所有选中的图像和提示词
 
                             imageGrid.querySelectorAll('.danbooru-image-wrapper.selected').forEach(w => {
@@ -2674,6 +2799,7 @@ app.registerExtension({
 
                                         }
                                     }
+                                    updateSelectionData();
                                 }
                                 showToast(t('resetTags') + '成功', 'success', resetTagsButton);
                             } else {
@@ -2873,6 +2999,7 @@ app.registerExtension({
                                     const tagAutocomplete = new AutocompleteUI({
                                         inputElement: input,
                                         language: globalMultiLanguageManager.getLanguage(),
+                                        source: uiSettings.source_site || "danbooru",
                                         maxSuggestions: uiSettings.autocomplete_max_results || 20,
                                         customClass: 'danbooru-tag-editor-autocomplete',
                                         formatTag: (tag) => {
@@ -2996,11 +3123,11 @@ app.registerExtension({
                 };
 
                 // 辅助函数：收集所有选中图片的数据并更新 widget
-                const updateSelectionData = () => {
+                const updateSelectionData = async () => {
                     const selectedWrappers = imageGrid.querySelectorAll('.danbooru-image-wrapper.selected');
                     const selections = [];
 
-                    selectedWrappers.forEach(wrapper => {
+                    for (const wrapper of selectedWrappers) {
                         const postId = wrapper.dataset.postId;
                         const postData = posts.find(p => p.id == postId) || temporaryTagEdits[postId];
                         if (postData) {
@@ -3012,7 +3139,7 @@ app.registerExtension({
                                 image_url: imageUrl
                             });
                         }
-                    });
+                    }
 
                     const selectionData = { selections: selections };
 
@@ -3071,8 +3198,12 @@ app.registerExtension({
                     // Check and apply edited status on creation
                     updateEditedStatus(wrapper, post.id);
 
+                    const previewUrl = (post.source_site === "gelbooru")
+                        ? post.preview_file_url
+                        : `${post.preview_file_url}?v=${post.md5}`;
+
                     const img = $el("img", {
-                        src: `/danbooru_gallery/image_proxy?url=${encodeURIComponent(post.preview_file_url + '?v=' + post.md5)}`,
+                        src: `/danbooru_gallery/image_proxy?url=${encodeURIComponent(previewUrl)}`,
                         loading: "lazy",
                         onload: scheduleResizeGrid,
                         onerror: () => { wrapper.style.display = 'none'; },
@@ -3171,17 +3302,21 @@ app.registerExtension({
 
                         const tagsContainer = globalTooltip.querySelector('.danbooru-tooltip-tags');
                         tagsContainer.innerHTML = '';
+                        const postForTooltip = await hydrateGelbooruTooltipPost(post);
+                        if (thisTooltipId !== currentTooltipId) {
+                            return;
+                        }
 
                         // Details Section
                         const detailsSection = $el("div.danbooru-tooltip-section");
                         detailsSection.appendChild($el("div.danbooru-tooltip-category-header", { textContent: t('details') }));
-                        if (post.created_at) {
-                            const date = new Date(post.created_at);
+                        if (postForTooltip.created_at) {
+                            const date = new Date(postForTooltip.created_at);
                             const formattedDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
                             detailsSection.appendChild($el("div", { textContent: `${t('uploaded')}: ${formattedDate}`, className: "danbooru-tooltip-upload-date" }));
                         }
-                        if (post.image_width && post.image_height) {
-                            detailsSection.appendChild($el("div", { textContent: `${t('resolution')}: ${post.image_width}×${post.image_height}`, className: "danbooru-tooltip-upload-date" }));
+                        if (postForTooltip.image_width && postForTooltip.image_height) {
+                            detailsSection.appendChild($el("div", { textContent: `${t('resolution')}: ${postForTooltip.image_width}×${postForTooltip.image_height}`, className: "danbooru-tooltip-upload-date" }));
                         }
                         tagsContainer.appendChild(detailsSection);
 
@@ -3195,15 +3330,15 @@ app.registerExtension({
                             meta: new Set()
                         };
 
-                        if (post.tag_string_artist) post.tag_string_artist.split(' ').forEach(t => categorizedTags.artist.add(t));
-                        if (post.tag_string_copyright) post.tag_string_copyright.split(' ').forEach(t => categorizedTags.copyright.add(t));
-                        if (post.tag_string_character) post.tag_string_character.split(' ').forEach(t => categorizedTags.character.add(t));
-                        if (post.tag_string_general) post.tag_string_general.split(' ').forEach(t => categorizedTags.general.add(t));
-                        if (post.tag_string_meta) post.tag_string_meta.split(' ').forEach(t => categorizedTags.meta.add(t));
+                        if (postForTooltip.tag_string_artist) postForTooltip.tag_string_artist.split(' ').forEach(t => categorizedTags.artist.add(t));
+                        if (postForTooltip.tag_string_copyright) postForTooltip.tag_string_copyright.split(' ').forEach(t => categorizedTags.copyright.add(t));
+                        if (postForTooltip.tag_string_character) postForTooltip.tag_string_character.split(' ').forEach(t => categorizedTags.character.add(t));
+                        if (postForTooltip.tag_string_general) postForTooltip.tag_string_general.split(' ').forEach(t => categorizedTags.general.add(t));
+                        if (postForTooltip.tag_string_meta) postForTooltip.tag_string_meta.split(' ').forEach(t => categorizedTags.meta.add(t));
 
                         // Fallback for older posts or different tag string formats
-                        if (Object.values(categorizedTags).every(s => s.size === 0) && post.tag_string) {
-                            post.tag_string.split(' ').forEach(t => categorizedTags.general.add(t));
+                        if (Object.values(categorizedTags).every(s => s.size === 0) && postForTooltip.tag_string) {
+                            postForTooltip.tag_string.split(' ').forEach(t => categorizedTags.general.add(t));
                         }
 
                         // 收集所有tags用于批量翻译
@@ -3506,6 +3641,11 @@ app.registerExtension({
 
                 // 收藏夹按钮点击事件
                 favoritesButton.addEventListener("click", async () => {
+                    if ((uiSettings.source_site || "danbooru") !== "danbooru") {
+                        showToast(t('sourceFavoritesUnsupported'), 'info');
+                        return;
+                    }
+
                     if (!userAuth.has_auth) {
                         showToast(t('authRequired'), 'warning');
                         return;
@@ -3594,13 +3734,14 @@ app.registerExtension({
                 });
 
                 // 将包含搜索框和建议面板的容器添加到总控件中
-                container.appendChild($el("div.danbooru-controls", [searchContainer, rankingButton, favoritesButton, ratingSelect, categoryDropdown, formattingDropdown, filterButton, clearSelectionButton, settingsButton, refreshButton]));
+                container.appendChild($el("div.danbooru-controls", [searchContainer, sourceSelect, displayAllSiteContentToggle, rankingButton, favoritesButton, ratingSelect, categoryDropdown, formattingDropdown, filterButton, clearSelectionButton, settingsButton, refreshButton]));
 
                 // 🔧 重要：在 searchInput 被添加到 DOM 之后才创建智能补全实例
                 // 这样 AutocompleteUI 才能正确获取父元素并将建议容器添加到 DOM
                 const searchAutocomplete = new AutocompleteUI({
                     inputElement: searchInput,
                     language: globalMultiLanguageManager.getLanguage(),
+                    source: uiSettings.source_site || "danbooru",
                     maxSuggestions: uiSettings.autocomplete_max_results || 20,
                     customClass: 'danbooru-gallery-autocomplete',
                     formatTag: (tag) => {
@@ -3760,6 +3901,16 @@ app.registerExtension({
                         // 加载UI设置
                         await loadUiSettings();
 
+                        const savedSourceSite = loadFromLocalStorage('sourceSite', null);
+                        if (savedSourceSite && SOURCE_SITES.some(site => site.value === savedSourceSite)) {
+                            uiSettings.source_site = savedSourceSite;
+                        }
+                        const savedDisplayAllSiteContent = loadFromLocalStorage('gelbooruDisplayAllSiteContent', null);
+                        if (typeof savedDisplayAllSiteContent === "boolean") {
+                            uiSettings.gelbooru_display_all_site_content = savedDisplayAllSiteContent;
+                        }
+                        updateSourceState();
+                        searchAutocomplete.source = uiSettings.source_site || "danbooru";
 
                         // 从 localStorage 加载并覆盖筛选状态
                         const savedSearch = loadFromLocalStorage('searchValue', null);
@@ -4134,6 +4285,9 @@ $el("style", {
     .danbooru-controls > .danbooru-search-container > .danbooru-search-input { background: var(--comfy-input-bg); border: 1px solid var(--input-border-color); padding: 5px 10px; border-radius: 4px; }
     .danbooru-controls .danbooru-search-input { flex-grow: 1; min-width: 150px; }
     .danbooru-controls > select { min-width: 100px; }
+    .danbooru-source-select { height: 32px; padding: 5px 8px; border-radius: 4px; border: 1px solid var(--input-border-color); background-color: var(--comfy-input-bg); color: var(--comfy-input-text); }
+    .danbooru-gelbooru-display-all-toggle { height: 32px; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 4px; border: 1px solid var(--input-border-color); background-color: var(--comfy-input-bg); color: var(--comfy-input-text); font-size: 12px; white-space: nowrap; cursor: pointer; }
+    .danbooru-gelbooru-display-all-toggle input { margin: 0; }
     .danbooru-image-wrapper.new-item { animation: fadeInUp 0.5s ease-out; }
     @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     .danbooru-settings-button {
