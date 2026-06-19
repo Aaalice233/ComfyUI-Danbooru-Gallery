@@ -17,6 +17,7 @@ class AutocompleteUI {
         this.inputElement = options.inputElement; // 输入框元素
         this.containerElement = options.containerElement || null; // 建议容器（可选，不提供则自动创建）
         this.language = options.language || 'zh'; // 语言
+        this.source = options.source || 'danbooru'; // 标签来源站点
         this.maxSuggestions = options.maxSuggestions || 10; // 最大建议数
         this.debounceDelay = options.debounceDelay || 200; // 防抖延迟（优化为200ms，平衡响应速度和性能）
         this.minQueryLength = options.minQueryLength || 2; // 最小查询长度（提高到2字符，减少无效请求）
@@ -232,12 +233,14 @@ class AutocompleteUI {
             if (containsChinese) {
                 // 中文搜索
                 suggestions = await globalAutocompleteCache.getChineseSearchSuggestions(query, {
-                    limit: this.maxSuggestions
+                    limit: this.maxSuggestions,
+                    source: this.source
                 });
             } else {
                 // 英文补全
                 suggestions = await globalAutocompleteCache.getAutocompleteSuggestions(query, {
-                    limit: this.maxSuggestions
+                    limit: this.maxSuggestions,
+                    source: this.source
                 });
             }
 

@@ -248,6 +248,10 @@ class AutocompleteCache {
             parts.push(`lang:${this.currentLanguage}`);
         }
 
+        if (options.source) {
+            parts.push(`source:${options.source}`);
+        }
+
         // 添加其他选项
         if (options.limit) {
             parts.push(`limit:${options.limit}`);
@@ -319,7 +323,8 @@ class AutocompleteCache {
 
             const params = new URLSearchParams({
                 query: query,
-                limit: options.limit || 20
+                limit: options.limit || 20,
+                source: options.source || 'danbooru'
             });
 
             const response = await fetch(`${apiEndpoint}?${params}`, {
@@ -443,7 +448,8 @@ class AutocompleteCache {
 
             const params = new URLSearchParams({
                 query: query,
-                limit: options.limit || 10
+                limit: options.limit || 10,
+                source: options.source || 'danbooru'
             });
 
             const response = await fetch(`${this.apiEndpoints.searchChinese}?${params}`, {

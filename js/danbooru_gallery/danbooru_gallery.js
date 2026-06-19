@@ -155,7 +155,8 @@ app.registerExtension({
                 // 检查网络连接状态
                 const checkNetworkStatus = async () => {
                     try {
-                        const response = await fetch('/danbooru_gallery/check_network');
+                        const source = uiSettings.source_site || "danbooru";
+                        const response = await fetch(`/danbooru_gallery/check_network?source=${encodeURIComponent(source)}`);
                         const data = await response.json();
                         const isConnected = data.success && data.connected;
                         const now = Date.now();
@@ -187,7 +188,7 @@ app.registerExtension({
                 let currentTooltipId = 0; // 用于追踪当前活动的tooltip请求
                 let posts = [], currentPage = 1, isLoading = false, endOfResults = false;
                 let filterState = { startTime: null, endTime: null, startPage: null };
-                let userAuth = { username: "", api_key: "", has_auth: false }; // 用户认证信息
+                let userAuth = { username: "", api_key: "", has_auth: false, gelbooru_user_id: "", gelbooru_api_key: "", gelbooru_has_auth: false }; // 用户认证信息
                 let userFavorites = []; // 用户收藏列表，确保字符串
                 let networkStatus = { connected: true, lastChecked: 0 }; // 网络状态跟踪
                 let previousSearchValue = ""; // 跟踪搜索框之前的值，用于检测清空操作
@@ -202,23 +203,30 @@ app.registerExtension({
                         return data;
                     } catch (e) {
                         logger.warn("加载用户认证信息失败:", e);
-                        userAuth = { username: "", api_key: "", has_auth: false };
+                        userAuth = { username: "", api_key: "", has_auth: false, gelbooru_user_id: "", gelbooru_api_key: "", gelbooru_has_auth: false };
                         return userAuth;
                     }
                 };
 
-                const saveUserAuth = async (username, api_key) => {
+                const saveUserAuth = async (username, api_key, gelbooru_user_id = "", gelbooru_api_key = "") => {
                     try {
                         const response = await fetch('/danbooru_gallery/user_auth', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                             },
-                            body: JSON.stringify({ username: username, api_key: api_key })
+                            body: JSON.stringify({ username: username, api_key: api_key, gelbooru_user_id, gelbooru_api_key })
                         });
                         const data = await response.json();
                         if (data.success) {
-                            userAuth = { username, api_key, has_auth: true };
+                            userAuth = {
+                                username,
+                                api_key,
+                                has_auth: Boolean(username && api_key),
+                                gelbooru_user_id,
+                                gelbooru_api_key,
+                                gelbooru_has_auth: Boolean(gelbooru_user_id && gelbooru_api_key)
+                            };
                         }
                         return data;
                     } catch (e) {
@@ -236,6 +244,18 @@ app.registerExtension({
                     toastManagerProxy.showToast(message, toastLevel, 3000, options);
                 };
 
+                const currentSource = () => uiSettings.source_site || "danbooru";
+                const hasFavoriteAuth = () => (
+                    currentSource() === "gelbooru"
+                        ? Boolean(userAuth.gelbooru_has_auth)
+                        : Boolean(userAuth.has_auth)
+                );
+                const currentFavoriteTag = () => (
+                    currentSource() === "gelbooru"
+                        ? `fav:${userAuth.gelbooru_user_id || ""}`
+                        : `ordfav:${userAuth.username || ""}`
+                );
+
                 const getToastLevel = (type) => {
                     // 将toast类型映射到全局toast管理器的等级
                     const levelMap = {
@@ -249,7 +269,7 @@ app.registerExtension({
 
                 // 收藏管理功能
                 const addToFavorites = async (postId, button = null) => {
-                    if (!userAuth.has_auth) {
+                    if (!hasFavoriteAuth()) {
                         showToast(t('authRequired'), 'warning');
                         return { success: false, error: t('authRequired') };
                     }
@@ -268,7 +288,7 @@ app.registerExtension({
                             headers: {
                                 'Content-Type': 'application/json',
                             },
-                            body: JSON.stringify({ post_id: postId })
+                            body: JSON.stringify({ post_id: postId, source: currentSource() })
                         });
                         const data = await response.json();
 
@@ -281,7 +301,7 @@ app.registerExtension({
                                 </svg>`;
                                 button.title = t('unfavorite');
                                 button.classList.add('favorited');
-                                if (!userFavorites.includes(postId)) {
+                                if (!userFavorites.includes(String(postId))) {
                                     userFavorites.push(String(postId));
                                 }
                                 // 显示收藏成功提示
@@ -311,7 +331,7 @@ app.registerExtension({
                         return data;
                     } catch (e) {
                         logger.warn("添加收藏失败:", e);
-                        showError("网络错误 - 无法连接到Danbooru服务器");
+                        showError(`网络错误 - 无法连接到${currentSource() === "gelbooru" ? "Gelbooru" : "Danbooru"}服务器`);
                         if (button) {
                             button.disabled = false;
                             button.innerHTML = button.dataset.originalHTML || '<svg>...</svg>';  // 恢复
@@ -322,7 +342,7 @@ app.registerExtension({
                 };
 
                 const removeFromFavorites = async (postId, button = null) => {
-                    if (!userAuth.has_auth) {
+                    if (!hasFavoriteAuth()) {
                         showToast(t('authRequired'), 'warning');
                         return { success: false, error: t('authRequired') };
                     }
@@ -341,7 +361,7 @@ app.registerExtension({
                             headers: {
                                 'Content-Type': 'application/json',
                             },
-                            body: JSON.stringify({ post_id: postId })
+                            body: JSON.stringify({ post_id: postId, source: currentSource() })
                         });
                         let data;
                         if (response.status === 204) {
@@ -391,7 +411,7 @@ app.registerExtension({
                         return data;
                     } catch (e) {
                         logger.warn("移除收藏失败:", e);
-                        showError("网络错误 - 无法连接到Danbooru服务器");
+                        showError(`网络错误 - 无法连接到${currentSource() === "gelbooru" ? "Gelbooru" : "Danbooru"}服务器`);
                         if (button) {
                             button.disabled = false;
                             button.innerHTML = button.dataset.originalHTML || '<svg>...</svg>';
@@ -403,9 +423,18 @@ app.registerExtension({
 
                 const loadFavorites = async () => {
                     try {
-                        const response = await fetch('/danbooru_gallery/favorites');
+                        const response = await fetch(`/danbooru_gallery/favorites?source=${encodeURIComponent(currentSource())}`);
                         const data = await response.json();
-                        userFavorites = data.favorites || [];
+                        if (!data.success) {
+                            const errorMsg = data.error || "收藏列表读取失败";
+                            logger.warn("加载收藏列表失败:", errorMsg);
+                            if (hasFavoriteAuth()) {
+                                showToast(errorMsg, "warning");
+                            }
+                            userFavorites = [];
+                            return userFavorites;
+                        }
+                        userFavorites = (data.favorites || []).map(id => String(id));
                         return userFavorites;
                     } catch (e) {
                         logger.warn("加载收藏列表失败:", e);
@@ -531,7 +560,38 @@ app.registerExtension({
                 };
 
                 const searchInput = $el("input.danbooru-search-input", { type: "text", placeholder: t('searchPlaceholder'), title: t('searchPlaceholder') });
+                const SOURCE_SITES = [
+                    { value: "danbooru", label: "Danbooru" },
+                    { value: "gelbooru", label: "Gelbooru" },
+                ];
+                const sourceSelect = $el("select.danbooru-source-select", {
+                    title: t('sourceTooltip')
+                }, SOURCE_SITES.map(site => $el("option", {
+                    value: site.value,
+                    textContent: site.label
+                })));
+                const displayAllSiteContentToggle = $el("label.danbooru-gelbooru-display-all-toggle", {
+                    title: t('displayAllSiteContentTooltip'),
+                    style: { display: "none" }
+                }, [
+                    $el("input", { type: "checkbox" }),
+                    $el("span", { textContent: t('displayAllSiteContent') })
+                ]);
+                const updateSourceState = () => {
+                    const selectedSource = uiSettings.source_site || "danbooru";
+                    sourceSelect.value = selectedSource;
+                    const favoritesDisabled = false;
+                    favoritesButton.disabled = favoritesDisabled;
+                    favoritesButton.style.opacity = favoritesDisabled ? "0.45" : "";
+                    favoritesButton.title = favoritesDisabled ? t('sourceFavoritesUnsupported') : t('favorites');
+                    displayAllSiteContentToggle.style.display = selectedSource === "gelbooru" ? "inline-flex" : "none";
+                    const displayAllInput = displayAllSiteContentToggle.querySelector("input");
+                    if (displayAllInput) {
+                        displayAllInput.checked = Boolean(uiSettings.gelbooru_display_all_site_content);
+                    }
+                };
                 const RATING_VALUES = ["general", "sensitive", "questionable", "explicit"];
+                const TAG_CATEGORY_ORDER = ["artist", "copyright", "character", "general", "meta"];
                 const normalizePostRating = (rating) => {
                     const map = { g: "general", s: "sensitive", q: "questionable", e: "explicit" };
                     return map[rating] || rating;
@@ -658,6 +718,7 @@ app.registerExtension({
                         uiSettings.selected_categories = newSelectedCategories;
                         saveToLocalStorage('selectedCategories', newSelectedCategories);
                         await saveUiSettings(uiSettings);
+                        await updateSelectionData();
                     });
                     return $el("div.danbooru-category-item", [
                         checkbox,
@@ -690,6 +751,7 @@ app.registerExtension({
                         uiSettings.formatting = newFormattingOptions;
                         saveToLocalStorage('formatting', newFormattingOptions);
                         await saveUiSettings(uiSettings);
+                        await updateSelectionData();
                     });
                     return $el("div.danbooru-category-item", [
                         checkbox,
@@ -707,6 +769,33 @@ app.registerExtension({
                         createFormattingCheckbox("replaceUnderscores", t('replaceUnderscores')),
                     ])
                 ]);
+
+                sourceSelect.addEventListener('change', async () => {
+                    uiSettings.source_site = sourceSelect.value;
+                    saveToLocalStorage('sourceSite', uiSettings.source_site);
+                    await saveUiSettings(uiSettings);
+                    await loadFavorites();
+                    updateSourceState();
+                    searchAutocomplete.source = uiSettings.source_site;
+                    posts = [];
+                    Object.keys(originalPostCache).forEach(key => delete originalPostCache[key]);
+                    temporaryTagEdits = {};
+                    updateSelectionData();
+                    fetchAndRender(true);
+                });
+
+                displayAllSiteContentToggle.querySelector("input").addEventListener('change', async (event) => {
+                    uiSettings.gelbooru_display_all_site_content = Boolean(event.target.checked);
+                    saveToLocalStorage('gelbooruDisplayAllSiteContent', uiSettings.gelbooru_display_all_site_content);
+                    await saveUiSettings(uiSettings);
+                    if ((uiSettings.source_site || "danbooru") === "gelbooru") {
+                        posts = [];
+                        Object.keys(originalPostCache).forEach(key => delete originalPostCache[key]);
+                        temporaryTagEdits = {};
+                        updateSelectionData();
+                        fetchAndRender(true);
+                    }
+                });
 
                 document.addEventListener("click", (e) => {
                     const dropdowns = [categoryDropdown, formattingDropdown, ratingSelect];
@@ -768,6 +857,7 @@ app.registerExtension({
                         },
                         ui: {
                             ...uiSettings,
+                            source_site: uiSettings.source_site || "danbooru",
                             // Ensure formatting is included from the checkboxes directly
                             formatting: {
                                 escapeBrackets: formattingDropdown.querySelector('[name="escapeBrackets"]').checked,
@@ -1217,6 +1307,47 @@ app.registerExtension({
                         }
                     });
 
+                    const gelbooruAuthDescription = $el("p", {
+                        textContent: t('gelbooruAuthDescription'),
+                        style: {
+                            margin: "12px 0 8px 0",
+                            color: "#888",
+                            fontSize: "0.9em"
+                        }
+                    });
+
+                    const gelbooruUserIdInput = $el("input", {
+                        type: "text",
+                        placeholder: t('gelbooruUserIdPlaceholder'),
+                        value: (initialState.gelbooruUserId ?? userAuth.gelbooru_user_id) || "",
+                        style: {
+                            width: "100%",
+                            padding: "8px 12px",
+                            border: "1px solid var(--input-border-color)",
+                            borderRadius: "6px",
+                            backgroundColor: "var(--comfy-menu-bg)",
+                            color: "var(--comfy-input-text)",
+                            fontSize: "14px",
+                            marginBottom: "8px"
+                        }
+                    });
+
+                    const gelbooruApiKeyInput = $el("input", {
+                        type: "password",
+                        placeholder: t('gelbooruApiKeyPlaceholder'),
+                        value: (initialState.gelbooruApiKey ?? userAuth.gelbooru_api_key) || "",
+                        style: {
+                            width: "100%",
+                            padding: "8px 12px",
+                            border: "1px solid var(--input-border-color)",
+                            borderRadius: "6px",
+                            backgroundColor: "var(--comfy-menu-bg)",
+                            color: "var(--comfy-input-text)",
+                            fontSize: "14px",
+                            marginBottom: "8px"
+                        }
+                    });
+
                     const apiKeyHelpButton = $el("button", {
                         textContent: t('apiKeyHelp'),
                         title: t('apiKeyTooltip'),
@@ -1240,6 +1371,9 @@ app.registerExtension({
                     authSection.appendChild(authDescription);
                     authSection.appendChild(usernameInput);
                     authSection.appendChild(apiKeyInput);
+                    authSection.appendChild(gelbooruAuthDescription);
+                    authSection.appendChild(gelbooruUserIdInput);
+                    authSection.appendChild(gelbooruApiKeyInput);
                     authSection.appendChild(apiKeyHelpButton);
 
                     // 自动补全设置
@@ -1486,9 +1620,16 @@ app.registerExtension({
                             // 保存用户认证信息
                             const newUsername = usernameInput.value.trim();
                             const newApiKey = apiKeyInput.value.trim();
+                            const newGelbooruUserId = gelbooruUserIdInput.value.trim();
+                            const newGelbooruApiKey = gelbooruApiKeyInput.value.trim();
                             let authSuccess = true;
-                            if (newUsername !== userAuth.username || newApiKey !== userAuth.api_key) {
-                                const authResult = await saveUserAuth(newUsername, newApiKey);
+                            if (
+                                newUsername !== userAuth.username ||
+                                newApiKey !== userAuth.api_key ||
+                                newGelbooruUserId !== userAuth.gelbooru_user_id ||
+                                newGelbooruApiKey !== userAuth.gelbooru_api_key
+                            ) {
+                                const authResult = await saveUserAuth(newUsername, newApiKey, newGelbooruUserId, newGelbooruApiKey);
                                 authSuccess = authResult.success;
                                 if (authSuccess) {
                                     await loadFavorites(); // 登录成功后重新加载收藏夹
@@ -1513,7 +1654,9 @@ app.registerExtension({
                                     tooltip_enabled: newTooltipEnabled,
                                     autocomplete_max_results: newAutocompleteMaxResults,
                                     selected_categories: newSelectedCategories,
-                                    multi_select_enabled: newMultiSelectEnabled
+                                    multi_select_enabled: newMultiSelectEnabled,
+                                    source_site: uiSettings.source_site || "danbooru",
+                                    gelbooru_display_all_site_content: uiSettings.gelbooru_display_all_site_content || false
                                 })
                             ]);
 
@@ -1527,6 +1670,8 @@ app.registerExtension({
                                 uiSettings.autocomplete_max_results = newAutocompleteMaxResults;
                                 uiSettings.selected_categories = newSelectedCategories;
                                 uiSettings.multi_select_enabled = newMultiSelectEnabled;
+                                uiSettings.source_site = sourceSelect.value || uiSettings.source_site || "danbooru";
+                                await updateSelectionData();
 
                                 dialog.remove();
                                 showToast(t('saveSuccess'), 'success');
@@ -1594,6 +1739,8 @@ app.registerExtension({
                                 filterEnabled: filterEnableCheckbox.checked,
                                 username: usernameInput.value,
                                 apiKey: apiKeyInput.value,
+                                gelbooruUserId: gelbooruUserIdInput.value,
+                                gelbooruApiKey: gelbooruApiKeyInput.value,
                                 autocompleteEnabled: autocompleteEnableCheckbox.checked,
                                 tooltipEnabled: tooltipEnableCheckbox.checked,
                                 autocompleteMaxResults: autocompleteMaxResultsInput.value,
@@ -1905,6 +2052,8 @@ app.registerExtension({
                     autocomplete_max_results: 20,
                     selected_categories: ["copyright", "character", "general"],
                     multi_select_enabled: false,
+                    source_site: "danbooru",
+                    gelbooru_display_all_site_content: false,
                     formatting: {
                         escapeBrackets: true,
                         replaceUnderscores: true,
@@ -1922,6 +2071,8 @@ app.registerExtension({
                                 autocomplete_max_results: data.settings.autocomplete_max_results || 20,
                                 selected_categories: data.settings.selected_categories || ["copyright", "character", "general"],
                                 multi_select_enabled: data.settings.multi_select_enabled || false,
+                                source_site: data.settings.source_site || "danbooru",
+                                gelbooru_display_all_site_content: data.settings.gelbooru_display_all_site_content || false,
                                 formatting: data.settings.formatting || { escapeBrackets: true, replaceUnderscores: true }
                             };
                         }
@@ -2009,6 +2160,10 @@ app.registerExtension({
                     // 允许的静态图像文件扩展名
                     const allowedImageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tiff', 'tif'];
 
+                    if (post.source_site === "gelbooru" && post._gelbooru_preview_only) {
+                        return true;
+                    }
+
                     // 检查文件扩展名
                     if (post.file_ext) {
                         const fileExt = post.file_ext.toLowerCase();
@@ -2068,7 +2223,17 @@ app.registerExtension({
                 // 获取单个帖子的原始数据
                 const fetchOriginalPost = async (postId) => {
                     try {
-                        const response = await fetch(`/danbooru_gallery/posts?search[id]=${postId}&limit=1`);
+                        const params = new URLSearchParams({
+                            source: uiSettings.source_site || "danbooru",
+                            "search[tags]": `id:${postId}`,
+                            limit: "1",
+                            page: "1",
+                        });
+                        params.set("gelbooru_display_all_site_content", uiSettings.gelbooru_display_all_site_content ? "1" : "0");
+                        if ((uiSettings.source_site || "danbooru") === "gelbooru") {
+                            params.set("force_public_detail", "1");
+                        }
+                        const response = await fetch(`/danbooru_gallery/posts?${params}`);
                         const data = await response.json();
                         if (data && data.length > 0) {
                             return data[0];
@@ -2081,6 +2246,131 @@ app.registerExtension({
                 };
 
                 // 反向转换函数：将显示格式的标签转换回Danbooru API格式
+                const splitTagString = (value) => String(value || "").split(/\s+/).map(tag => tag.trim()).filter(Boolean);
+
+                const hasCategorizedTags = (postData) => Boolean(
+                    postData?.tag_string_artist ||
+                    postData?.tag_string_copyright ||
+                    postData?.tag_string_character ||
+                    postData?.tag_string_meta
+                );
+
+                const isUsableOriginalUrl = (postData, url) => Boolean(
+                    url &&
+                    !postData?._gelbooru_preview_only &&
+                    !(postData?.source_site === "gelbooru" && postData?.preview_file_url && url === postData.preview_file_url)
+                );
+
+                const hydrateGelbooruPost = async (postData) => {
+                    const hasUsableOriginal = isUsableOriginalUrl(postData, postData?.file_url);
+                    if (!postData || postData.source_site !== "gelbooru" || postData._gelbooru_hydrated || (hasCategorizedTags(postData) && hasUsableOriginal)) {
+                        return postData;
+                    }
+
+                    const cachedPost = originalPostCache[postData.id];
+                    const cachedHasUsableOriginal = isUsableOriginalUrl(cachedPost, cachedPost?.file_url);
+                    if (cachedPost && (cachedPost._gelbooru_hydrated || (hasCategorizedTags(cachedPost) && cachedHasUsableOriginal))) {
+                        return originalPostCache[postData.id];
+                    }
+
+                    const hydratedPost = await fetchOriginalPost(postData.id);
+                    if (!hydratedPost) {
+                        return postData;
+                    }
+
+                    const mergedPost = { ...postData, ...hydratedPost, _gelbooru_hydrated: true };
+                    const postIndex = posts.findIndex(p => p.id == postData.id);
+                    if (postIndex !== -1) {
+                        posts[postIndex] = mergedPost;
+                    }
+                    originalPostCache[postData.id] = JSON.parse(JSON.stringify(mergedPost));
+                    return mergedPost;
+                };
+
+                const hydrateGelbooruTooltipPost = hydrateGelbooruPost;
+
+                const getBestImageUrl = (postData, allowPreviewFallback = true) => {
+                    if (!postData) return "";
+                    if (isUsableOriginalUrl(postData, postData.file_url)) return postData.file_url;
+                    if (isUsableOriginalUrl(postData, postData.large_file_url)) return postData.large_file_url;
+                    return allowPreviewFallback ? (postData.preview_file_url || "") : "";
+                };
+
+                const getPostWithOriginalMedia = async (postData) => {
+                    const basePost = temporaryTagEdits[postData.id] || postData;
+                    return await hydrateGelbooruPost(basePost);
+                };
+
+                const proxiedMediaUrl = (url) => `/danbooru_gallery/image_proxy?url=${encodeURIComponent(url)}`;
+
+                const getImageExtension = (postData, imageUrl) => {
+                    if (postData?.file_ext) return postData.file_ext;
+                    const match = String(imageUrl || "").toLowerCase().match(/\.([a-z0-9]+)(?:[?#]|$)/);
+                    return match ? match[1] : "jpg";
+                };
+
+                const getSelectedPromptCategories = () => {
+                    const selected = Array.from(categoryDropdown.querySelectorAll("input:checked"))
+                        .map(i => i.name)
+                        .filter(name => TAG_CATEGORY_ORDER.includes(name));
+                    return selected.length > 0 ? selected : [...TAG_CATEGORY_ORDER];
+                };
+
+                const buildCategorizedTagLists = (postData) => {
+                    const categorizedTags = Object.fromEntries(TAG_CATEGORY_ORDER.map(category => [category, []]));
+                    const seen = new Set();
+
+                    const addTag = (category, tag) => {
+                        const cleanTag = String(tag || "").trim();
+                        if (!cleanTag || seen.has(cleanTag)) return;
+                        categorizedTags[category].push(cleanTag);
+                        seen.add(cleanTag);
+                    };
+
+                    TAG_CATEGORY_ORDER.forEach(category => {
+                        splitTagString(postData?.[`tag_string_${category}`]).forEach(tag => addTag(category, tag));
+                    });
+
+                    if (Object.values(categorizedTags).every(tags => tags.length === 0)) {
+                        splitTagString(postData?.tag_string).forEach(tag => addTag("general", tag));
+                    }
+
+                    return categorizedTags;
+                };
+
+                const normalizeTagForFilter = (tag) => String(tag || "")
+                    .trim()
+                    .toLowerCase()
+                    .replace(/\\([()])/g, '$1')
+                    .replace(/[,\s]+/g, '_')
+                    .replace(/^_+|_+$/g, '');
+
+                const getFilterTagSet = () => {
+                    if (!filterEnabled || currentFilterTags.length === 0) {
+                        return null;
+                    }
+                    return new Set(currentFilterTags.map(normalizeTagForFilter).filter(Boolean));
+                };
+
+                const shouldKeepPromptTag = (tag, filterTagSet) => {
+                    if (!filterTagSet) return true;
+                    return !filterTagSet.has(normalizeTagForFilter(tag));
+                };
+
+                const formatPromptTag = (tag) => {
+                    const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]')?.checked ?? true;
+                    const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]')?.checked ?? true;
+                    let processedTag = String(tag || "").trim();
+                    if (!processedTag) return "";
+                    if (replaceUnderscores) {
+                        processedTag = processedTag.replace(/_/g, ' ');
+                    }
+                    if (escapeBrackets) {
+                        processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
+                    }
+                    return processedTag;
+                };
+
                 const convertTagsToApiFormat = (tagsString) => {
                     if (!tagsString) return "";
 
@@ -2176,6 +2466,8 @@ app.registerExtension({
                         const sendAll = selectedRatings.length === 0 || selectedRatings.length === RATING_VALUES.length;
                         const ratingForServer = sendAll ? "" : selectedRatings.join(",");
                         const params = new URLSearchParams({
+                            "source": uiSettings.source_site || "danbooru",
+                            "gelbooru_display_all_site_content": uiSettings.gelbooru_display_all_site_content ? "1" : "0",
                             "search[tags]": apiFormattedTags.trim(),
                             "search[rating]": ratingForServer,
                             limit: "40",
@@ -2294,49 +2586,7 @@ app.registerExtension({
                         // 更好的方式是直接更新 selectionWidget 的值
                         // targetWrapper.querySelector('img').click();
                         // 而是直接更新 selectionWidget
-                        const imageUrl = post.file_url || post.large_file_url;
-                        const selectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
-                        const postToUse = temporaryTagEdits[post.id] || post;
-                        let output_tags = [];
-                        selectedCategories.forEach(category => {
-                            const tags = postToUse[`tag_string_${category}`];
-                            if (tags) {
-                                output_tags.push(...tags.split(' '));
-                            }
-                        });
-                        let tagsToProcess = (output_tags.length > 0) ? output_tags : (postToUse.tag_string || '').split(' ');
-                        if (filterEnabled && currentFilterTags.length > 0) {
-                            const filterTagsLower = currentFilterTags.map(tag => tag.toLowerCase().trim());
-                            tagsToProcess = tagsToProcess.filter(tag => {
-                                const tagLower = tag.toLowerCase().trim();
-                                return !filterTagsLower.includes(tagLower);
-                            });
-                        }
-                        const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]').checked;
-                        const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]').checked;
-                        const processedTags = tagsToProcess.map(tag => {
-                            let processedTag = tag;
-                            if (replaceUnderscores) {
-                                processedTag = processedTag.replace(/_/g, ' ');
-                            }
-                            if (escapeBrackets) {
-                                processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
-                            }
-                            return processedTag;
-                        });
-                        const prompt = processedTags.join(', ');
-                        const selection = {
-                            prompt: prompt,
-                            image_url: imageUrl,
-                        };
-                        if (nodeInstance && nodeInstance.widgets) {
-                            const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
-                            if (selectionWidget) {
-                                selectionWidget.value = JSON.stringify(selection);
-                                selectionWidget.callback();
-
-                            }
-                        }
+                        updateSelectionData();
                     }
                     const isPostCurrentlySelected = true; // 因为我们已经强制选中了
 
@@ -2378,7 +2628,7 @@ app.registerExtension({
 
                     const tagsContainer = $el("div.danbooru-edit-tags-container", { style: { overflowY: "auto", flex: "1", paddingRight: "10px" } });
 
-                    const closePanel = (wasSelectedOnOpen) => { // 接收打开面板时的选中状态
+                    const closePanel = async (wasSelectedOnOpen) => { // 接收打开面板时的选中状态
                         panel.remove();
                         const currentPostInArray = posts.find(p => p.id == post.id); // 获取posts数组中最新的post数据
                         if (!currentPostInArray) {
@@ -2438,63 +2688,12 @@ app.registerExtension({
 
                         // 无论是否编辑，如果打开面板时是选中状态，都强制更新selectionWidget和选中样式
                         if (wasSelectedOnOpen) {
-                            const postToUpdate = posts[postIndex] || currentPostInArray;
-                            const imageUrl = postToUpdate.file_url || postToUpdate.large_file_url;
-                            const selectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
-
-                            let output_tags = [];
-                            selectedCategories.forEach(category => {
-                                const tags = postToUpdate[`tag_string_${category}`];
-                                if (tags) {
-                                    output_tags.push(...tags.split(' '));
-                                }
-                            });
-
-                            let tagsToProcess = (output_tags.length > 0) ? output_tags : (postToUpdate.tag_string || '').split(' ');
-
-                            // 应用提示词过滤
-                            if (filterEnabled && currentFilterTags.length > 0) {
-                                const filterTagsLower = currentFilterTags.map(tag => tag.toLowerCase().trim());
-                                tagsToProcess = tagsToProcess.filter(tag => {
-                                    const tagLower = tag.toLowerCase().trim();
-                                    return !filterTagsLower.includes(tagLower);
-                                });
-                            }
-
-                            const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]').checked;
-                            const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]').checked;
-
-                            // 格式化处理
-                            const processedTags = tagsToProcess.map(tag => {
-                                let processedTag = tag;
-                                if (replaceUnderscores) {
-                                    processedTag = processedTag.replace(/_/g, ' ');
-                                }
-                                if (escapeBrackets) {
-                                    processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
-                                }
-                                return processedTag;
-                            });
-
-                            const prompt = processedTags.join(', ');
-
-                            const selection = {
-                                prompt: prompt,
-                                image_url: imageUrl,
-                            };
-
-                            if (nodeInstance && nodeInstance.widgets) {
-                                const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
-                                if (selectionWidget) {
-                                    selectionWidget.value = JSON.stringify(selection);
-                                    selectionWidget.callback(); // 触发回调，通知ComfyUI值已更新
-                                }
-                            }
                             // 重新给新元素添加选中状态
                             if (newPostElement) {
                                 newPostElement.classList.add('selected');
 
                             }
+                            await updateSelectionData();
                         } else { // 如果打开面板时未选中，则清除所有选中的图像和提示词
 
                             imageGrid.querySelectorAll('.danbooru-image-wrapper.selected').forEach(w => {
@@ -2552,43 +2751,14 @@ app.registerExtension({
                             transition: "all 0.2s ease"
                         },
                         onclick: async () => {
-                            const tagsToCopy = [];
                             // Collect selected categories from checkboxes
                             const selectedCategoriesCheckboxes = panel.querySelectorAll('.danbooru-edit-category-checkbox:checked');
                             const selectedCategoriesToCopy = Array.from(selectedCategoriesCheckboxes).map(cb => cb.name);
 
-                            // Collect tags from the editable post, respecting selected categories
-                            const categories = ["artist", "copyright", "character", "general", "meta"];
                             const postToCopy = temporaryTagEdits[post.id] || post;
+                            const formattedTags = await buildPromptForPost(postToCopy, selectedCategoriesToCopy);
 
-                            categories.forEach(category => {
-                                if (selectedCategoriesToCopy.includes(category)) { // Only include if category is selected
-                                    const tags = postToCopy[`tag_string_${category}`];
-                                    if (tags) {
-                                        tagsToCopy.push(...tags.split(' '));
-                                    }
-                                }
-                            });
-
-                            if (tagsToCopy.length > 0) {
-                                // 获取格式化选项
-                                const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]').checked;
-                                const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]').checked;
-
-                                // 格式化标签
-                                const processedTags = tagsToCopy.map(tag => {
-                                    let processedTag = tag;
-                                    if (replaceUnderscores) {
-                                        processedTag = processedTag.replace(/_/g, ' ');
-                                    }
-                                    if (escapeBrackets) {
-                                        processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
-                                    }
-                                    return processedTag;
-                                });
-
-                                const formattedTags = processedTags.join(', ');
-
+                            if (formattedTags) {
                                 try {
                                     await navigator.clipboard.writeText(formattedTags);
                                     showToast(t('copyTagsSuccess'), 'success', copyTagsButton);
@@ -2632,48 +2802,7 @@ app.registerExtension({
 
                                 // 6. Update selectionWidget if the post is currently selected
                                 if (isPostCurrentlySelected) {
-                                    const imageUrl = originalPostData.file_url || originalPostData.large_file_url;
-                                    const selectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
-                                    let output_tags = [];
-                                    selectedCategories.forEach(category => {
-                                        const tags = originalPostData[`tag_string_${category}`];
-                                        if (tags) {
-                                            output_tags.push(...tags.split(' '));
-                                        }
-                                    });
-                                    let tagsToProcess = (output_tags.length > 0) ? output_tags : (originalPostData.tag_string || '').split(' ');
-                                    if (filterEnabled && currentFilterTags.length > 0) {
-                                        const filterTagsLower = currentFilterTags.map(tag => tag.toLowerCase().trim());
-                                        tagsToProcess = tagsToProcess.filter(tag => {
-                                            const tagLower = tag.toLowerCase().trim();
-                                            return !filterTagsLower.includes(tagLower);
-                                        });
-                                    }
-                                    const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]').checked;
-                                    const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]').checked;
-                                    const processedTags = tagsToProcess.map(tag => {
-                                        let processedTag = tag;
-                                        if (replaceUnderscores) {
-                                            processedTag = processedTag.replace(/_/g, ' ');
-                                        }
-                                        if (escapeBrackets) {
-                                            processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
-                                        }
-                                        return processedTag;
-                                    });
-                                    const prompt = processedTags.join(', ');
-                                    const selection = {
-                                        prompt: prompt,
-                                        image_url: imageUrl,
-                                    };
-                                    if (nodeInstance && nodeInstance.widgets) {
-                                        const selectionWidget = nodeInstance.widgets.find(w => w.name === "selection_data");
-                                        if (selectionWidget) {
-                                            selectionWidget.value = JSON.stringify(selection);
-                                            selectionWidget.callback();
-
-                                        }
-                                    }
+                                    await updateSelectionData();
                                 }
                                 showToast(t('resetTags') + '成功', 'success', resetTagsButton);
                             } else {
@@ -2796,7 +2925,7 @@ app.registerExtension({
                         return span;
                     };
 
-                    const categoryOrder = ["artist", "copyright", "character", "general", "meta"];
+                    const categoryOrder = TAG_CATEGORY_ORDER;
                     const categorizedTags = { artist: new Set(), copyright: new Set(), character: new Set(), general: new Set(), meta: new Set() };
 
                     if (postData.tag_string_artist) postData.tag_string_artist.split(' ').forEach(t => categorizedTags.artist.add(t));
@@ -2835,7 +2964,7 @@ app.registerExtension({
                                 type: "checkbox",
                                 id: categoryCheckboxId,
                                 name: categoryName,
-                                checked: categoryName === 'copyright' || categoryName === 'character' || categoryName === 'general', // Default to checked only for copyright, character, and general
+                                checked: getSelectedPromptCategories().includes(categoryName),
                                 className: "danbooru-edit-category-checkbox"
                             });
                             const categoryLabel = $el("label", {
@@ -2873,6 +3002,7 @@ app.registerExtension({
                                     const tagAutocomplete = new AutocompleteUI({
                                         inputElement: input,
                                         language: globalMultiLanguageManager.getLanguage(),
+                                        source: uiSettings.source_site || "danbooru",
                                         maxSuggestions: uiSettings.autocomplete_max_results || 20,
                                         customClass: 'danbooru-tag-editor-autocomplete',
                                         formatTag: (tag) => {
@@ -2954,65 +3084,43 @@ app.registerExtension({
                 };
 
                 // 辅助函数：为单个帖子构建提示词
-                const buildPromptForPost = (postData) => {
-                    const selectedCategories = Array.from(categoryDropdown.querySelectorAll("input:checked")).map(i => i.name);
-                    const postToUse = temporaryTagEdits[postData.id] || postData;
+                const buildPromptForPost = async (postData, selectedCategoriesOverride = null) => {
+                    let promptPost = temporaryTagEdits[postData.id] || postData;
+                    promptPost = await hydrateGelbooruPost(promptPost);
 
-                    let output_tags = [];
-                    selectedCategories.forEach(category => {
-                        const tags = postToUse[`tag_string_${category}`];
-                        if (tags) {
-                            output_tags.push(...tags.split(' '));
-                        }
-                    });
+                    const promptCategories = Array.isArray(selectedCategoriesOverride)
+                        ? selectedCategoriesOverride.filter(name => TAG_CATEGORY_ORDER.includes(name))
+                        : getSelectedPromptCategories();
+                    const categoriesToUse = promptCategories.length > 0 ? promptCategories : [...TAG_CATEGORY_ORDER];
+                    const categorizedPromptTags = buildCategorizedTagLists(promptPost);
+                    const filterTagSet = getFilterTagSet();
 
-                    let tagsToProcess = (output_tags.length > 0) ? output_tags : (postToUse.tag_string || '').split(' ');
+                    const orderedFilteredTags = categoriesToUse.flatMap(category => categorizedPromptTags[category] || [])
+                        .filter(tag => shouldKeepPromptTag(tag, filterTagSet));
 
-                    // 应用提示词过滤
-                    if (filterEnabled && currentFilterTags.length > 0) {
-                        const filterTagsLower = currentFilterTags.map(tag => tag.toLowerCase().trim());
-                        tagsToProcess = tagsToProcess.filter(tag => {
-                            const tagLower = tag.toLowerCase().trim();
-                            return !filterTagsLower.includes(tagLower);
-                        });
-                    }
-
-                    const escapeBrackets = formattingDropdown.querySelector('[name="escapeBrackets"]').checked;
-                    const replaceUnderscores = formattingDropdown.querySelector('[name="replaceUnderscores"]').checked;
-
-                    // 格式化处理
-                    const processedTags = tagsToProcess.map(tag => {
-                        let processedTag = tag;
-                        if (replaceUnderscores) {
-                            processedTag = processedTag.replace(/_/g, ' ');
-                        }
-                        if (escapeBrackets) {
-                            processedTag = processedTag.replaceAll('(', '\\(').replaceAll(')', '\\)');
-                        }
-                        return processedTag;
-                    });
-
-                    return processedTags.join(', ');
+                    return orderedFilteredTags.map(formatPromptTag).filter(Boolean).join(', ');
                 };
 
                 // 辅助函数：收集所有选中图片的数据并更新 widget
-                const updateSelectionData = () => {
+                const updateSelectionData = async () => {
                     const selectedWrappers = imageGrid.querySelectorAll('.danbooru-image-wrapper.selected');
                     const selections = [];
 
-                    selectedWrappers.forEach(wrapper => {
+                    for (const wrapper of selectedWrappers) {
                         const postId = wrapper.dataset.postId;
                         const postData = posts.find(p => p.id == postId) || temporaryTagEdits[postId];
                         if (postData) {
-                            const imageUrl = postData.file_url || postData.large_file_url;
-                            const prompt = buildPromptForPost(postData);
+                            const prompt = await buildPromptForPost(postData);
+                            const updatedPostData = posts.find(p => p.id == postId) || temporaryTagEdits[postId] || postData;
+                            const mediaPost = await getPostWithOriginalMedia(updatedPostData);
+                            const imageUrl = getBestImageUrl(mediaPost, false);
                             selections.push({
                                 post_id: postId,
                                 prompt: prompt,
                                 image_url: imageUrl
                             });
                         }
-                    });
+                    }
 
                     const selectionData = { selections: selections };
 
@@ -3071,8 +3179,12 @@ app.registerExtension({
                     // Check and apply edited status on creation
                     updateEditedStatus(wrapper, post.id);
 
+                    const previewUrl = (post.source_site === "gelbooru")
+                        ? post.preview_file_url
+                        : `${post.preview_file_url}?v=${post.md5}`;
+
                     const img = $el("img", {
-                        src: `/danbooru_gallery/image_proxy?url=${encodeURIComponent(post.preview_file_url + '?v=' + post.md5)}`,
+                        src: `/danbooru_gallery/image_proxy?url=${encodeURIComponent(previewUrl)}`,
                         loading: "lazy",
                         onload: scheduleResizeGrid,
                         onerror: () => { wrapper.style.display = 'none'; },
@@ -3114,17 +3226,18 @@ app.registerExtension({
                             e.stopPropagation(); // 阻止事件冒泡，避免触发图片选择
 
                             try {
-                                const imageUrl = post.file_url || post.large_file_url;
+                                const mediaPost = await getPostWithOriginalMedia(post);
+                                const imageUrl = getBestImageUrl(mediaPost, false);
                                 if (!imageUrl) {
                                     return;
                                 }
 
                                 // 获取图片文件扩展名
-                                const fileExt = post.file_ext || 'jpg';
+                                const fileExt = getImageExtension(mediaPost, imageUrl);
                                 const fileName = `danbooru_${post.id}.${fileExt}`;
 
                                 // 通过后端代理下载，避免被 Cloudflare 按 cross-site referer 拦截
-                                const proxyUrl = `/danbooru_gallery/image_proxy?url=${encodeURIComponent(imageUrl)}`;
+                                const proxyUrl = proxiedMediaUrl(imageUrl);
                                 const response = await fetch(proxyUrl);
                                 const blob = await response.blob();
                                 const url = window.URL.createObjectURL(blob);
@@ -3171,22 +3284,26 @@ app.registerExtension({
 
                         const tagsContainer = globalTooltip.querySelector('.danbooru-tooltip-tags');
                         tagsContainer.innerHTML = '';
+                        const postForTooltip = await hydrateGelbooruTooltipPost(post);
+                        if (thisTooltipId !== currentTooltipId) {
+                            return;
+                        }
 
                         // Details Section
                         const detailsSection = $el("div.danbooru-tooltip-section");
                         detailsSection.appendChild($el("div.danbooru-tooltip-category-header", { textContent: t('details') }));
-                        if (post.created_at) {
-                            const date = new Date(post.created_at);
+                        if (postForTooltip.created_at) {
+                            const date = new Date(postForTooltip.created_at);
                             const formattedDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
                             detailsSection.appendChild($el("div", { textContent: `${t('uploaded')}: ${formattedDate}`, className: "danbooru-tooltip-upload-date" }));
                         }
-                        if (post.image_width && post.image_height) {
-                            detailsSection.appendChild($el("div", { textContent: `${t('resolution')}: ${post.image_width}×${post.image_height}`, className: "danbooru-tooltip-upload-date" }));
+                        if (postForTooltip.image_width && postForTooltip.image_height) {
+                            detailsSection.appendChild($el("div", { textContent: `${t('resolution')}: ${postForTooltip.image_width}×${postForTooltip.image_height}`, className: "danbooru-tooltip-upload-date" }));
                         }
                         tagsContainer.appendChild(detailsSection);
 
                         // Tags Processing
-                        const categoryOrder = ["artist", "copyright", "character", "general", "meta"];
+                        const categoryOrder = TAG_CATEGORY_ORDER;
                         const categorizedTags = {
                             artist: new Set(),
                             copyright: new Set(),
@@ -3195,15 +3312,15 @@ app.registerExtension({
                             meta: new Set()
                         };
 
-                        if (post.tag_string_artist) post.tag_string_artist.split(' ').forEach(t => categorizedTags.artist.add(t));
-                        if (post.tag_string_copyright) post.tag_string_copyright.split(' ').forEach(t => categorizedTags.copyright.add(t));
-                        if (post.tag_string_character) post.tag_string_character.split(' ').forEach(t => categorizedTags.character.add(t));
-                        if (post.tag_string_general) post.tag_string_general.split(' ').forEach(t => categorizedTags.general.add(t));
-                        if (post.tag_string_meta) post.tag_string_meta.split(' ').forEach(t => categorizedTags.meta.add(t));
+                        if (postForTooltip.tag_string_artist) postForTooltip.tag_string_artist.split(' ').forEach(t => categorizedTags.artist.add(t));
+                        if (postForTooltip.tag_string_copyright) postForTooltip.tag_string_copyright.split(' ').forEach(t => categorizedTags.copyright.add(t));
+                        if (postForTooltip.tag_string_character) postForTooltip.tag_string_character.split(' ').forEach(t => categorizedTags.character.add(t));
+                        if (postForTooltip.tag_string_general) postForTooltip.tag_string_general.split(' ').forEach(t => categorizedTags.general.add(t));
+                        if (postForTooltip.tag_string_meta) postForTooltip.tag_string_meta.split(' ').forEach(t => categorizedTags.meta.add(t));
 
                         // Fallback for older posts or different tag string formats
-                        if (Object.values(categorizedTags).every(s => s.size === 0) && post.tag_string) {
-                            post.tag_string.split(' ').forEach(t => categorizedTags.general.add(t));
+                        if (Object.values(categorizedTags).every(s => s.size === 0) && postForTooltip.tag_string) {
+                            postForTooltip.tag_string.split(' ').forEach(t => categorizedTags.general.add(t));
                         }
 
                         // 收集所有tags用于批量翻译
@@ -3300,7 +3417,8 @@ app.registerExtension({
 
                     // 总是创建收藏按钮，无论用户是否登录
                     const currentSearch = searchInput.value.trim();
-                    const inFavoritesMode = userAuth.has_auth && currentSearch.includes(`ordfav:${userAuth.username}`);
+                    const postFavoriteTag = currentFavoriteTag();
+                    const inFavoritesMode = hasFavoriteAuth() && postFavoriteTag && currentSearch.includes(postFavoriteTag);
                     const isFavorited = inFavoritesMode || userFavorites.includes(String(post.id));
                     const favoriteButton = $el("button.danbooru-favorite-button", {
                         "data-post-id": post.id,
@@ -3317,7 +3435,7 @@ app.registerExtension({
                             e.stopPropagation(); // 阻止事件冒泡，避免触发图片选择
 
                             // 如果用户未登录，提示登录
-                            if (!userAuth.has_auth) {
+                            if (!hasFavoriteAuth()) {
                                 showToast(t('authRequired'), 'warning');
                                 return;
                             }
@@ -3333,7 +3451,7 @@ app.registerExtension({
                                 if (result.success) {
                                     // 如果在收藏夹视图中，直接移除元素
                                     const currentSearch = searchInput.value.trim();
-                                    if (currentSearch.includes(`ordfav:${userAuth.username}`)) {
+                                    if (postFavoriteTag && currentSearch.includes(postFavoriteTag)) {
                                         wrapper.remove();
                                     }
                                 }
@@ -3365,11 +3483,12 @@ app.registerExtension({
                     const viewImageButton = $el("button.danbooru-view-image-button", {
                         innerHTML: `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`,
                         title: t('viewImage'),
-                        onclick: (e) => {
+                        onclick: async (e) => {
                             e.stopPropagation();
-                            const imageUrl = post.large_file_url || post.file_url;
+                            const mediaPost = await getPostWithOriginalMedia(post);
+                            const imageUrl = getBestImageUrl(mediaPost, false);
                             if (imageUrl) {
-                                window.open(imageUrl, '_blank', 'noreferrer');
+                                window.open(proxiedMediaUrl(imageUrl), '_blank', 'noreferrer');
                             }
                         }
                     });
@@ -3471,13 +3590,14 @@ app.registerExtension({
                     // 始终显示收藏夹按钮
                     favoritesButton.style.display = 'flex';
 
-                    if (!userAuth.has_auth) {
+                    if (!hasFavoriteAuth()) {
                         favoritesButton.classList.remove('active');
                         return;
                     }
 
                     const currentValue = searchInput.value.trim();
-                    const hasFavs = currentValue.includes(`ordfav:${userAuth.username}`);
+                    const favTag = currentFavoriteTag();
+                    const hasFavs = Boolean(favTag) && currentValue.includes(favTag);
                     if (hasFavs) {
                         favoritesButton.classList.add('active');
                     } else {
@@ -3506,13 +3626,17 @@ app.registerExtension({
 
                 // 收藏夹按钮点击事件
                 favoritesButton.addEventListener("click", async () => {
-                    if (!userAuth.has_auth) {
+                    if (!hasFavoriteAuth()) {
                         showToast(t('authRequired'), 'warning');
                         return;
                     }
 
 
-                    const favTag = `ordfav:${userAuth.username}`;
+                    const favTag = currentFavoriteTag();
+                    if (!favTag) {
+                        showToast(t('authRequired'), 'warning');
+                        return;
+                    }
                     const currentValue = searchInput.value.trim();
                     const hasFavs = currentValue.includes(favTag);
 
@@ -3594,13 +3718,14 @@ app.registerExtension({
                 });
 
                 // 将包含搜索框和建议面板的容器添加到总控件中
-                container.appendChild($el("div.danbooru-controls", [searchContainer, rankingButton, favoritesButton, ratingSelect, categoryDropdown, formattingDropdown, filterButton, clearSelectionButton, settingsButton, refreshButton]));
+                container.appendChild($el("div.danbooru-controls", [searchContainer, sourceSelect, displayAllSiteContentToggle, rankingButton, favoritesButton, ratingSelect, categoryDropdown, formattingDropdown, filterButton, clearSelectionButton, settingsButton, refreshButton]));
 
                 // 🔧 重要：在 searchInput 被添加到 DOM 之后才创建智能补全实例
                 // 这样 AutocompleteUI 才能正确获取父元素并将建议容器添加到 DOM
                 const searchAutocomplete = new AutocompleteUI({
                     inputElement: searchInput,
                     language: globalMultiLanguageManager.getLanguage(),
+                    source: uiSettings.source_site || "danbooru",
                     maxSuggestions: uiSettings.autocomplete_max_results || 20,
                     customClass: 'danbooru-gallery-autocomplete',
                     formatTag: (tag) => {
@@ -3716,9 +3841,12 @@ app.registerExtension({
 
                         let networkConnected = true;
 
+                        await loadUiSettings();
+
                         // 优先检测网络连接状态
                         try {
-                            const networkResponse = await fetch('/danbooru_gallery/check_network');
+                            const sourceForNetworkCheck = loadFromLocalStorage('sourceSite', uiSettings.source_site || "danbooru");
+                            const networkResponse = await fetch(`/danbooru_gallery/check_network?source=${encodeURIComponent(sourceForNetworkCheck)}`);
                             const networkData = await networkResponse.json();
                             if (!networkData.success || !networkData.connected) {
                                 networkConnected = false;
@@ -3741,7 +3869,7 @@ app.registerExtension({
                         await loadUserAuth();
 
 
-                        if (networkConnected && userAuth.has_auth) {
+                        if (networkConnected && hasFavoriteAuth()) {
                             await loadFavorites();
                         }
 
@@ -3758,8 +3886,16 @@ app.registerExtension({
                         await loadFilterTags();
 
                         // 加载UI设置
-                        await loadUiSettings();
-
+                        const savedSourceSite = loadFromLocalStorage('sourceSite', null);
+                        if (savedSourceSite && SOURCE_SITES.some(site => site.value === savedSourceSite)) {
+                            uiSettings.source_site = savedSourceSite;
+                        }
+                        const savedDisplayAllSiteContent = loadFromLocalStorage('gelbooruDisplayAllSiteContent', null);
+                        if (typeof savedDisplayAllSiteContent === "boolean") {
+                            uiSettings.gelbooru_display_all_site_content = savedDisplayAllSiteContent;
+                        }
+                        updateSourceState();
+                        searchAutocomplete.source = uiSettings.source_site || "danbooru";
 
                         // 从 localStorage 加载并覆盖筛选状态
                         const savedSearch = loadFromLocalStorage('searchValue', null);
@@ -4134,6 +4270,9 @@ $el("style", {
     .danbooru-controls > .danbooru-search-container > .danbooru-search-input { background: var(--comfy-input-bg); border: 1px solid var(--input-border-color); padding: 5px 10px; border-radius: 4px; }
     .danbooru-controls .danbooru-search-input { flex-grow: 1; min-width: 150px; }
     .danbooru-controls > select { min-width: 100px; }
+    .danbooru-source-select { height: 32px; padding: 5px 8px; border-radius: 4px; border: 1px solid var(--input-border-color); background-color: var(--comfy-input-bg); color: var(--comfy-input-text); }
+    .danbooru-gelbooru-display-all-toggle { height: 32px; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 4px; border: 1px solid var(--input-border-color); background-color: var(--comfy-input-bg); color: var(--comfy-input-text); font-size: 12px; white-space: nowrap; cursor: pointer; }
+    .danbooru-gelbooru-display-all-toggle input { margin: 0; }
     .danbooru-image-wrapper.new-item { animation: fadeInUp 0.5s ease-out; }
     @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     .danbooru-settings-button {
