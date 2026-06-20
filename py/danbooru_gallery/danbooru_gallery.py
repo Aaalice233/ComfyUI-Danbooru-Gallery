@@ -273,7 +273,9 @@ def load_ui_settings():
         "selected_categories": settings.get("selected_categories", ["copyright", "character", "general"]),
         "multi_select_enabled": settings.get("multi_select_enabled", False),
         "source_site": settings.get("source_site", "danbooru"),
-        "gelbooru_display_all_site_content": settings.get("gelbooru_display_all_site_content", False)
+        "gelbooru_display_all_site_content": settings.get("gelbooru_display_all_site_content", False),
+        "preload_count": settings.get("preload_count", 40),
+        "gelbooru_dedup_mode": settings.get("gelbooru_dedup_mode", "off")
     }
 
 def save_ui_settings(ui_settings):
@@ -286,6 +288,8 @@ def save_ui_settings(ui_settings):
     settings["multi_select_enabled"] = ui_settings.get("multi_select_enabled", False)
     settings["source_site"] = ui_settings.get("source_site", "danbooru")
     settings["gelbooru_display_all_site_content"] = ui_settings.get("gelbooru_display_all_site_content", False)
+    settings["preload_count"] = ui_settings.get("preload_count", 40)
+    settings["gelbooru_dedup_mode"] = ui_settings.get("gelbooru_dedup_mode", "off")
     return save_settings(settings)
 
 # ================================
@@ -1509,7 +1513,9 @@ async def save_ui_settings_route(request):
             "selected_categories": data.get("selected_categories", ["copyright", "character", "general"]),
             "multi_select_enabled": data.get("multi_select_enabled", False),
             "source_site": data.get("source_site", "danbooru"),
-            "gelbooru_display_all_site_content": data.get("gelbooru_display_all_site_content", False)
+            "gelbooru_display_all_site_content": data.get("gelbooru_display_all_site_content", False),
+            "preload_count": data.get("preload_count", 40),
+            "gelbooru_dedup_mode": data.get("gelbooru_dedup_mode", "off")
         }
         success = save_ui_settings(ui_settings)
         return web.json_response({"success": success})
@@ -1800,9 +1806,20 @@ class DanbooruGalleryNode:
         if gelbooru_display_all_site_content is None:
             gelbooru_display_all_site_content = settings.get("gelbooru_display_all_site_content", False)
 
-        # 归一化 before_id（游标分页：只取数字，防止注入）
+        # 游标分页（page=b<id>）归一化：只接受纯数字，防注入
         before_id = str(before_id).strip() if before_id else ""
         if before_id and not before_id.isdigit():
+            before_id = ""
+        # order/ordfav/sort 改变 id 降序前提，任何站点都禁用游标（防乱序漏图）
+        gelbooru_dedup_mode = settings.get("gelbooru_dedup_mode", "off")
+        has_sort = bool(re.search(r'(?:^|\s)(?:order|ordfav|sort):', tags or ''))
+        if before_id and has_sort:
+            before_id = ""
+        # D 站默认排序始终用游标；G 站仅当 gelbooru_dedup_mode 开启时用；其余禁用
+        if before_id and not (
+            adapter.key == "danbooru"
+            or (adapter.key == "gelbooru" and gelbooru_dedup_mode in ("on", "on_auth"))
+        ):
             before_id = ""
 
         # 创建缓存键（rating 归一化排序，避免 "e,q" 与 "q,e" 命中两条缓存）
@@ -1810,6 +1827,8 @@ class DanbooruGalleryNode:
         site_options_key = ""
         if adapter.key == "gelbooru":
             site_options_key = "display_all" if gelbooru_display_all_site_content else "default"
+            # dedup 档位影响 tag 截断数量，纳入缓存键避免不同档位（尤其首页 before_id 同为空时）互相污染
+            site_options_key = f"{site_options_key}:dedup_{gelbooru_dedup_mode}"
         # before_id 纳入缓存键，避免不同游标页命中同一条缓存
         cache_key = f"{adapter.key}:{site_options_key}:{tags}:{limit}:{page}:{rating_key}:{before_id}"
 
@@ -1832,9 +1851,16 @@ class DanbooruGalleryNode:
             elif tag.strip():
                 other_tags.append(tag.strip())
 
-        # 限制其他标签的数量
-        if len(other_tags) > 2:
-            other_tags = other_tags[:2]
+        # 限制其他标签的数量。默认 2；G 站开启游标时按档位调整名额
+        max_tags = 2
+        if adapter.key == "gelbooru" and before_id:  # before_id 非空 = 已确认走 G 站游标
+            creds = get_site_credentials(adapter)
+            if gelbooru_dedup_mode == "on_auth" and has_required_site_credentials(adapter, creds):
+                max_tags = 10   # 已配密钥，解除限制（较大上限）
+            else:
+                max_tags = 1    # 未配密钥，留一个名额给游标 id:<X
+        if len(other_tags) > max_tags:
+            other_tags = other_tags[:max_tags]
         
         # 重新组合标签
         final_tags = ' '.join(other_tags)
@@ -1855,9 +1881,9 @@ class DanbooruGalleryNode:
         
         tags = final_tags
 
-        # 游标分页防重复：Gelbooru 无 page 游标，但支持 meta-tag id:<X（默认按 id 降序，等效"取这张之前的"）。
-        # Danbooru 走 page=b<id>（见下方 build 后覆盖），这里不动它的 tags。
-        if before_id and adapter.key != "danbooru":
+        # G 站游标：注入 id:<X 作为搜索 metatag（配合默认 id 降序 = 取该 id 之前的图）。
+        # 三条 G 站路径（force_public_detail / 无凭据公开抓取 / DAPI）都会带上。
+        if before_id and adapter.key == "gelbooru":
             tags = f"{tags} id:<{before_id}".strip()
 
         username, api_key = load_user_auth()
@@ -1882,7 +1908,8 @@ class DanbooruGalleryNode:
             return ("[]",)
             
         params = adapter.build_posts_params(tags, limit, page, rating_query)
-        # Danbooru 游标分页：page=b<id> 表示"id 小于该值的结果"，避免有新图上传时翻页重复。
+        # Danbooru 游标分页：page=b<id> 表示"id 小于该值的结果"，消除偏移翻页重复。
+        # 显式限定 danbooru，避免与 G 站 before_id（走 id:<X 注入）串台。
         if before_id and adapter.key == "danbooru":
             params["page"] = f"b{before_id}"
         params = adapter.apply_auth_params(params, credentials)
