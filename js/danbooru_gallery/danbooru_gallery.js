@@ -196,6 +196,7 @@ app.registerExtension({
                 let posts = [], currentPage = 1, isLoading = false, endOfResults = false;
                 let lastPostId = null;            // D 站游标分页：上一批最后一张的 id
                 const seenPostIds = new Set();    // 渲染前 id 去重兜底
+                let fillAnchor = 0;               // G 站续拉锚点：本轮自该 posts 数起凑够 fillTarget
                 let filterState = { startTime: null, endTime: null, startPage: null };
                 let userAuth = { username: "", api_key: "", has_auth: false, gelbooru_user_id: "", gelbooru_api_key: "", gelbooru_has_auth: false }; // 用户认证信息
                 let userFavorites = []; // 用户收藏列表，确保字符串
@@ -2453,12 +2454,24 @@ app.registerExtension({
                     }).join(' ');
                 };
 
-                const fetchAndRender = async (reset = false) => {
+                const fetchAndRender = async (reset = false, isContinuation = false) => {
                     if (isLoading) {
                         return;
                     }
                     if (endOfResults && !reset) {
                         return;
+                    }
+                    // G 站公开列表页每页固定约 42 张，单次请求凑不满较大的 preload_count。
+                    // 续拉机制：拿完一页后若本轮累计不足 fillTarget 且未到底，自动续拉下一页。
+                    // （D 站一次请求即可拿满 limit；G 站游标模式靠 lastPostId 翻批；均不续拉。）
+                    const src = uiSettings.source_site || "danbooru";
+                    const dedupMode = uiSettings.gelbooru_dedup_mode || "off";
+                    const needAutoFill = (src === "gelbooru" && dedupMode === "off");
+                    const fillTarget = needAutoFill ? (parseInt(uiSettings.preload_count, 10) || 40) : 0;
+                    // 续拉锚点：新一轮（reset 或用户滚动触发的非续拉调用）以当前 posts 数为基准，
+                    // 续拉到 posts 比基准多出 fillTarget 张为止。续拉调用(isContinuation)沿用旧基准。
+                    if (!isContinuation) {
+                        fillAnchor = reset ? 0 : posts.length;
                     }
                     isLoading = true;
                     refreshButton.classList.add("loading");
@@ -2606,6 +2619,15 @@ app.registerExtension({
                         if (indicator) {
                             indicator.remove();
                         }
+                    }
+
+                    // G 站续拉：本轮（自 fillAnchor 起）累计不足 fillTarget 且未到底，自动拉下一页。
+                    // 条件含 posts.length > fillAnchor（确有进展），避免出错时无限重试。
+                    if (needAutoFill && !endOfResults &&
+                        posts.length > fillAnchor &&
+                        (posts.length - fillAnchor) < fillTarget) {
+                        // 异步触发续拉，让出调用栈（避免深递归）；isLoading 已在 finally 释放
+                        setTimeout(() => fetchAndRender(false, true), 0);
                     }
                 };
 
