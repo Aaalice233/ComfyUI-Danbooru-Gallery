@@ -1321,6 +1321,7 @@ async def get_posts_for_front(request):
     limit = query.get("limit", "100")
     rating = query.get("search[rating]", "")
     source = query.get("source", "danbooru")
+    before_id = query.get("before_id", "")
     gelbooru_display_all_site_content = query.get("gelbooru_display_all_site_content", "").lower() in ("1", "true", "yes", "on")
     force_public_detail = query.get("force_public_detail", "").lower() in ("1", "true", "yes", "on")
 
@@ -1330,6 +1331,7 @@ async def get_posts_for_front(request):
         page=int(page),
         rating=rating,
         source=source,
+        before_id=before_id,
         gelbooru_display_all_site_content=gelbooru_display_all_site_content,
         force_public_detail=force_public_detail,
     )
@@ -1790,7 +1792,7 @@ class DanbooruGalleryNode:
         return (images, prompts)
     
     @staticmethod
-    def get_posts_internal(tags: str, limit: int = 100, page: int = 1, rating: str = None, source: str = "danbooru", gelbooru_display_all_site_content: bool = None, force_public_detail: bool = False):
+    def get_posts_internal(tags: str, limit: int = 100, page: int = 1, rating: str = None, source: str = "danbooru", before_id: str = None, gelbooru_display_all_site_content: bool = None, force_public_detail: bool = False):
         settings = load_settings()
         cache_enabled = settings.get("cache_enabled", True)
         max_cache_age = settings.get("max_cache_age", 3600)
@@ -1798,12 +1800,18 @@ class DanbooruGalleryNode:
         if gelbooru_display_all_site_content is None:
             gelbooru_display_all_site_content = settings.get("gelbooru_display_all_site_content", False)
 
+        # 归一化 before_id（游标分页：只取数字，防止注入）
+        before_id = str(before_id).strip() if before_id else ""
+        if before_id and not before_id.isdigit():
+            before_id = ""
+
         # 创建缓存键（rating 归一化排序，避免 "e,q" 与 "q,e" 命中两条缓存）
         rating_key = ','.join(sorted(r.strip().lower() for r in (rating or '').split(',') if r.strip()))
         site_options_key = ""
         if adapter.key == "gelbooru":
             site_options_key = "display_all" if gelbooru_display_all_site_content else "default"
-        cache_key = f"{adapter.key}:{site_options_key}:{tags}:{limit}:{page}:{rating_key}"
+        # before_id 纳入缓存键，避免不同游标页命中同一条缓存
+        cache_key = f"{adapter.key}:{site_options_key}:{tags}:{limit}:{page}:{rating_key}:{before_id}"
 
         # 判断是否获取收藏列表，如果是清除缓存以避免相同的请求前端列表不更新
         match = re.search(r'\bordfav:([^\s]+)', tags)
@@ -1847,6 +1855,11 @@ class DanbooruGalleryNode:
         
         tags = final_tags
 
+        # 游标分页防重复：Gelbooru 无 page 游标，但支持 meta-tag id:<X（默认按 id 降序，等效"取这张之前的"）。
+        # Danbooru 走 page=b<id>（见下方 build 后覆盖），这里不动它的 tags。
+        if before_id and adapter.key != "danbooru":
+            tags = f"{tags} id:<{before_id}".strip()
+
         username, api_key = load_user_auth()
         auth = HTTPBasicAuth(username, api_key) if adapter.requires_auth and username and api_key else None
         credentials = get_site_credentials(adapter)
@@ -1869,6 +1882,9 @@ class DanbooruGalleryNode:
             return ("[]",)
             
         params = adapter.build_posts_params(tags, limit, page, rating_query)
+        # Danbooru 游标分页：page=b<id> 表示"id 小于该值的结果"，避免有新图上传时翻页重复。
+        if before_id and adapter.key == "danbooru":
+            params["page"] = f"b{before_id}"
         params = adapter.apply_auth_params(params, credentials)
 
         try:
