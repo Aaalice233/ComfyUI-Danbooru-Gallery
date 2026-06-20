@@ -39,6 +39,10 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Danbooru API的基础URL
 BASE_URL = "https://danbooru.donmai.us"
 
+# Gelbooru 公开列表页（未登录 HTML 抓取）每页固定显示的图片数，用于 pid 偏移翻页。
+# 实测约 42；pid 必须按此对齐，否则 limit≠42 时翻页会跳过/重复。
+GELBOORU_PUBLIC_PAGE_SIZE = 42
+
 # 需要一个非 python-requests 的描述性 UA 才能过 Cloudflare（从 2026-04-23 起开启拦截）。
 # 实测 CF 对 UA 黑名单里包含 "ComfyUI" —— 推测 Danbooru 为抵制训练数据爬取主动加的规则。
 # 本节点只是图片浏览器（单图挑选，无批量导出），不参与训练数据收集，按 e621 式约定
@@ -1206,29 +1210,30 @@ def _fetch_supported_media(url):
     return response.content
 
 def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, display_all_site_content=False):
-    """Fetch Gelbooru posts from public HTML pages when DAPI credentials are unavailable."""
+    """Fetch Gelbooru posts from public HTML pages when DAPI credentials are unavailable.
+
+    单页抓取：每次只请求 Gelbooru 公开列表页的一页（约 42 张，由网站固定）。
+    pid 偏移基于固定页大小（GELBOORU_PUBLIC_PAGE_SIZE），与 limit 解耦——
+    否则 limit≠42 时 page 翻页会错位跳过/重复。凑够 preload_count 由前端连续翻页完成。
+    """
     id_match = re.search(r"(?:^|\s)id:(\d+)(?:\s|$)", tags or "")
     if id_match:
         refs = [{"id": id_match.group(1)}]
     else:
         session = _get_gelbooru_session(display_all_site_content)
-        list_response = session.get(
-            adapter.posts_url,
-            params=adapter.build_public_posts_params(tags, limit, page, rating_query),
-            timeout=(8, 15),
-        )
+        # 公开列表页 pid 是图片偏移量；每页固定约 42 张，按固定页大小推进，避免与 limit 错位
+        pid_value = max(page - 1, 0) * GELBOORU_PUBLIC_PAGE_SIZE
+        params = adapter.build_public_posts_params(tags, limit, page, rating_query)
+        params["pid"] = pid_value
+        list_response = session.get(adapter.posts_url, params=params, timeout=(8, 15))
         list_response.raise_for_status()
         if display_all_site_content and _gelbooru_public_page_requires_options(list_response.text):
             logger.warning("[GelbooruPublic] Result page still requested Display all site content; rebuilding session and retrying")
             session = _get_gelbooru_session(display_all_site_content, force_refresh=True)
-            list_response = session.get(
-                adapter.posts_url,
-                params=adapter.build_public_posts_params(tags, limit, page, rating_query),
-                timeout=(8, 15),
-            )
+            list_response = session.get(adapter.posts_url, params=params, timeout=(8, 15))
             list_response.raise_for_status()
         refs = adapter.extract_public_post_refs(list_response.text, limit)
-        logger.info(f"[GelbooruPublic] tags='{tags}' display_all={display_all_site_content} refs={len(refs)}")
+        logger.info(f"[GelbooruPublic] tags='{tags}' display_all={display_all_site_content} page={page} pid={pid_value} refs={len(refs)}")
 
     if not id_match:
         return refs
