@@ -187,6 +187,9 @@ app.registerExtension({
                 let globalTooltip, globalTooltipTimeout;
                 let currentTooltipId = 0; // 用于追踪当前活动的tooltip请求
                 let posts = [], currentPage = 1, isLoading = false, endOfResults = false;
+                let lastPostId = null; // 游标分页：最后一张图的 id，下次请求传 before_id 防重复
+                let initialLoadComplete = false; // 首次加载（含预加载缓冲）是否完成
+                const seenPostIds = new Set(); // 跨批次去重兜底，防止任何重复图渲染
                 let filterState = { startTime: null, endTime: null, startPage: null };
                 let userAuth = { username: "", api_key: "", has_auth: false, gelbooru_user_id: "", gelbooru_api_key: "", gelbooru_has_auth: false }; // 用户认证信息
                 let userFavorites = []; // 用户收藏列表，确保字符串
@@ -1678,6 +1681,7 @@ app.registerExtension({
 
                                 // 重新过滤当前已加载的帖子
                                 const filteredPosts = posts.filter(post => !isPostFiltered(post));
+                                posts = filteredPosts; // 同步数组，保证预加载缓冲计算准确
                                 imageGrid.innerHTML = "";
                                 filteredPosts.forEach(renderPost);
 
@@ -2393,7 +2397,7 @@ app.registerExtension({
                     }).join(' ');
                 };
 
-                const fetchAndRender = async (reset = false) => {
+                const fetchAndRender = async (reset = false, isPreload = false, preloadAmount = 0) => {
                     if (isLoading) {
                         return;
                     }
@@ -2401,16 +2405,23 @@ app.registerExtension({
                         return;
                     }
                     isLoading = true;
-                    refreshButton.classList.add("loading");
-                    refreshButton.disabled = true;
 
-                    const loadingIndicator = imageGrid.querySelector('.danbooru-loading');
-                    if (!loadingIndicator) {
-                        imageGrid.insertAdjacentHTML('beforeend', `<p class="danbooru-status danbooru-loading">${t('loading')}</p>`);
+                    // 只有非预加载时才显示加载动画（预加载是后台静默补缓冲）
+                    if (!isPreload) {
+                        refreshButton.classList.add("loading");
+                        refreshButton.disabled = true;
+
+                        const loadingIndicator = imageGrid.querySelector('.danbooru-loading');
+                        if (!loadingIndicator) {
+                            imageGrid.insertAdjacentHTML('beforeend', `<p class="danbooru-status danbooru-loading">${t('loading')}</p>`);
+                        }
                     }
 
                     if (reset) {
                         currentPage = filterState.startPage || 1;
+                        lastPostId = null; // 重置游标
+                        initialLoadComplete = false; // 重置首次加载标记
+                        seenPostIds.clear(); // 重置去重集合
                         posts = [];
                         endOfResults = false;
                         imageGrid.innerHTML = "";
@@ -2421,16 +2432,18 @@ app.registerExtension({
                     const isNetworkConnected = await checkNetworkStatus();
 
                     if (!isNetworkConnected) {
-                        // 网络连接失败，隐藏持久错误提示 - 本小姐才不想看到这些烦人的提示呢！
-                        // showError('网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接', true);
-                        console.log("网络错误已隐藏: 网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接");  // 仅在控制台记录
-                        imageGrid.innerHTML = `<p class="danbooru-status error">网络连接失败，请检查网络连接后重试</p>`;
+                        console.log("网络错误已隐藏: 网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接");
+                        if (!isPreload) {
+                            imageGrid.innerHTML = `<p class="danbooru-status error">网络连接失败，请检查网络连接后重试</p>`;
+                        }
                         isLoading = false;
-                        refreshButton.classList.remove("loading");
-                        refreshButton.disabled = false;
-                        const indicator = imageGrid.querySelector('.danbooru-loading');
-                        if (indicator) {
-                            indicator.remove();
+                        if (!isPreload) {
+                            refreshButton.classList.remove("loading");
+                            refreshButton.disabled = false;
+                            const indicator = imageGrid.querySelector('.danbooru-loading');
+                            if (indicator) {
+                                indicator.remove();
+                            }
                         }
                         return;
                     } else {
@@ -2445,10 +2458,9 @@ app.registerExtension({
                         const tagCount = tags.length;
 
                         // 如果超过2个tag，给用户提示
-                        if (tagCount > 2) {
+                        if (tagCount > 2 && !isPreload) {
                             showTagHint('搜索只考虑前两个tag，第三个及后续tag将被忽略', false);
-                        } else {
-                            // 清除之前的提示
+                        } else if (!isPreload) {
                             clearTagHint();
                         }
 
@@ -2465,64 +2477,138 @@ app.registerExtension({
                         const selectedRatings = getSelectedRatings();
                         const sendAll = selectedRatings.length === 0 || selectedRatings.length === RATING_VALUES.length;
                         const ratingForServer = sendAll ? "" : selectedRatings.join(",");
-                        const params = new URLSearchParams({
-                            "source": uiSettings.source_site || "danbooru",
-                            "gelbooru_display_all_site_content": uiSettings.gelbooru_display_all_site_content ? "1" : "0",
-                            "search[tags]": apiFormattedTags.trim(),
-                            "search[rating]": ratingForServer,
-                            limit: "40",
-                            page: currentPage,
-                        });
 
-                        const response = await fetch(`/danbooru_gallery/posts?${params}`);
-                        let newPosts = await response.json();
-
-                        if (!Array.isArray(newPosts)) throw new Error("API did not return a valid list of posts.");
-
-                        // 评分过滤已交给服务端，本地只做文件类型/黑名单过滤
-                        const filteredPosts = newPosts.filter(post => !isPostFiltered(post));
-
-                        const filteredCount = newPosts.length - filteredPosts.length;
-
-                        // API returned nothing → no more pages. Flag it so scroll events stop
-                        // triggering fetches; otherwise the bottom-proximity check would keep
-                        // firing and walk off the end of the result set indefinitely.
-                        if (newPosts.length === 0) {
-                            endOfResults = true;
-                            if (reset) {
-                                imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
-                            }
-                            return;
+                        // 计算目标加载数量：
+                        // - 首次加载：先铺一屏(40) + 预加载缓冲，让用户一打开就有富余
+                        // - 预加载补充：只补指定的少量(滑一个补一张式的小批)
+                        // - 普通触底加载：一屏量
+                        let targetCount;
+                        if (!initialLoadComplete && !isPreload) {
+                            targetCount = 40 + (uiSettings.preload_count || 50);
+                        } else if (isPreload && preloadAmount > 0) {
+                            targetCount = preloadAmount;
+                        } else {
+                            targetCount = 40;
                         }
 
-                        if (filteredPosts.length === 0 && reset) {
+                        // 单次请求上限（未登录 Danbooru 每次最多 20）
+                        const MAX_PER_REQUEST = 20;
+                        let totalLoaded = 0;
+                        let consecutiveEmpty = 0; // 连续空结果计数，避免死循环
+
+                        // 循环请求直到达到目标数量或没有更多数据
+                        while (totalLoaded < targetCount && consecutiveEmpty < 3) {
+                            const remaining = targetCount - totalLoaded;
+                            const requestSize = Math.min(remaining, MAX_PER_REQUEST);
+
+                            const params = new URLSearchParams({
+                                "source": uiSettings.source_site || "danbooru",
+                                "gelbooru_display_all_site_content": uiSettings.gelbooru_display_all_site_content ? "1" : "0",
+                                "search[tags]": apiFormattedTags.trim(),
+                                "search[rating]": ratingForServer,
+                                limit: requestSize.toString(),
+                                page: currentPage,
+                            });
+
+                            // 用 before_id 游标分页防重复（reset 后的第一次请求不带，从最新开始）
+                            if (lastPostId && !(reset && totalLoaded === 0)) {
+                                params.set("before_id", lastPostId);
+                            }
+
+                            const response = await fetch(`/danbooru_gallery/posts?${params}`);
+                            let newPosts = await response.json();
+
+                            if (!Array.isArray(newPosts)) throw new Error("API did not return a valid list of posts.");
+
+                            // 没有更多数据了
+                            if (newPosts.length === 0) {
+                                endOfResults = true;
+                                if (reset && totalLoaded === 0 && !isPreload) {
+                                    imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
+                                }
+                                break;
+                            }
+
+                            // 评分过滤交给服务端，本地做文件类型/黑名单过滤 + id 去重兜底
+                            const filteredPosts = newPosts.filter(post => {
+                                if (isPostFiltered(post)) return false;
+                                if (seenPostIds.has(post.id)) return false; // 跨批次重复图，丢弃
+                                seenPostIds.add(post.id);
+                                return true;
+                            });
+
+                            // 更新游标（用原始返回的最后一张，保证游标连续推进，
+                            // 即使这批全被过滤，下一批也能接着往后取）
+                            lastPostId = newPosts[newPosts.length - 1].id;
+                            currentPage++;
+
+                            if (filteredPosts.length > 0) {
+                                posts.push(...filteredPosts);
+                                filteredPosts.forEach(renderPost);
+                                totalLoaded += filteredPosts.length;
+                                consecutiveEmpty = 0;
+                            } else {
+                                // 这一批全被过滤了，继续请求下一批
+                                consecutiveEmpty++;
+                            }
+
+                            // API 返回数量少于请求数量，说明已到结果尾部
+                            if (newPosts.length < requestSize) {
+                                endOfResults = true;
+                                break;
+                            }
+                        }
+
+                        // 首次加载没有任何图片
+                        if (totalLoaded === 0 && reset && !isPreload) {
                             imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
                             return;
                         }
 
-                        currentPage++;
-                        posts.push(...filteredPosts);
-                        filteredPosts.forEach(renderPost);
-
-                        // Filter-cascade guard: if the blacklist/rating filter dropped every
-                        // post on this page, the grid didn't grow — the user's scroll is still
-                        // within the 400px bottom threshold, so the scroll listener would
-                        // re-fire immediately. Hold isLoading for ~1.5s (still inside the try
-                        // block, before the finally clears it) to space out these "auto-skip"
-                        // fetches.
-                        if (filteredPosts.length === 0 && !reset) {
-                            await new Promise(r => setTimeout(r, 1500));
+                        // 标记首次加载完成
+                        if (!initialLoadComplete && !isPreload && totalLoaded > 0) {
+                            initialLoadComplete = true;
                         }
 
                     } catch (e) {
-                        imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
+                        if (!isPreload) {
+                            imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
+                        }
                     } finally {
                         isLoading = false;
-                        refreshButton.classList.remove("loading");
-                        refreshButton.disabled = false;
-                        const indicator = imageGrid.querySelector('.danbooru-loading');
-                        if (indicator) {
-                            indicator.remove();
+                        if (!isPreload) {
+                            refreshButton.classList.remove("loading");
+                            refreshButton.disabled = false;
+                            const indicator = imageGrid.querySelector('.danbooru-loading');
+                            if (indicator) {
+                                indicator.remove();
+                            }
+                        }
+
+                        // 加载完成后检查是否还需要继续加载
+                        if (!endOfResults) {
+                            setTimeout(() => {
+                                if (isLoading) return;
+
+                                // 1. 接近底部 → 正常加载一屏
+                                if (imageGrid.scrollHeight - imageGrid.scrollTop - imageGrid.clientHeight < 400) {
+                                    fetchAndRender(false);
+                                    return;
+                                }
+
+                                // 2. 缓冲不足 → 预加载补充（滑一个补一张的"补"在这里发生）
+                                if (initialLoadComplete) {
+                                    const targetBufferSize = uiSettings.preload_count || 50;
+                                    const scrollableHeight = imageGrid.scrollHeight - imageGrid.clientHeight;
+                                    const scrollRatio = scrollableHeight > 0 ? imageGrid.scrollTop / scrollableHeight : 0;
+                                    const viewedCount = Math.floor(scrollRatio * posts.length);
+                                    const remainingBuffer = posts.length - viewedCount;
+
+                                    if (remainingBuffer < targetBufferSize) {
+                                        fetchAndRender(false, true, 20);
+                                    }
+                                }
+                            }, 100);
                         }
                     }
                 };
@@ -3519,8 +3605,23 @@ app.registerExtension({
 
                 let scrollTimeout;
                 imageGrid.addEventListener("scroll", () => {
-                    if (imageGrid.scrollHeight - imageGrid.scrollTop - imageGrid.clientHeight < 400) {
-                        fetchAndRender(false);
+                    if (!isLoading && !endOfResults) {
+                        // 触底 → 正常加载一屏
+                        if (imageGrid.scrollHeight - imageGrid.scrollTop - imageGrid.clientHeight < 400) {
+                            fetchAndRender(false);
+                        } else if (initialLoadComplete) {
+                            // 缓冲不足 → 后台预加载补充（滑一个补一张：前方始终保留 preload_count 张未看过的图）
+                            const targetBufferSize = uiSettings.preload_count || 50;
+                            const scrollableHeight = imageGrid.scrollHeight - imageGrid.clientHeight;
+                            if (scrollableHeight > 0) {
+                                const scrollRatio = imageGrid.scrollTop / scrollableHeight;
+                                const viewedCount = Math.floor(scrollRatio * posts.length);
+                                const remainingBuffer = posts.length - viewedCount;
+                                if (remainingBuffer < targetBufferSize) {
+                                    fetchAndRender(false, true, 20);
+                                }
+                            }
+                        }
                     }
 
                     // Debounced scroll logic for page indicator
