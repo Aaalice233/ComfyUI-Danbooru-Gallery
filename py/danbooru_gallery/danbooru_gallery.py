@@ -68,6 +68,9 @@ class _RateLimiter:
             self._last_ts = time.monotonic()
 
 _donmai_throttle = _RateLimiter(min_interval_sec=0.2)
+# Gelbooru 公开网页抓取限流：公开页对频繁请求敏感，缓冲补货会连发多次请求。
+# 取 2.5s 间隔：凑 200 张约需 5 次请求 ≈ 12.5s（落在期望的 10-20s 加载耗时区间），且避开 429。
+_gelbooru_public_throttle = _RateLimiter(min_interval_sec=2.5)
 
 def _danbooru_request(method, url, **kwargs):
     """统一的 donmai.us 请求入口：限流 + 默认 UA + 429/503 带 Retry-After 退避重试一次。"""
@@ -1225,15 +1228,41 @@ def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, displ
         pid_value = max(page - 1, 0) * GELBOORU_PUBLIC_PAGE_SIZE
         params = adapter.build_public_posts_params(tags, limit, page, rating_query)
         params["pid"] = pid_value
-        list_response = session.get(adapter.posts_url, params=params, timeout=(8, 15))
-        list_response.raise_for_status()
+
+        def _get_list_page(sess):
+            """限流 + 429/503 退避重试一次。返回 response 或 None（失败时不抛异常）。"""
+            for attempt in range(2):
+                _gelbooru_public_throttle.wait()
+                resp = sess.get(adapter.posts_url, params=params, timeout=(8, 15))
+                if resp.status_code not in (429, 503):
+                    resp.raise_for_status()
+                    return resp
+                if attempt == 0:
+                    retry_after = resp.headers.get("Retry-After")
+                    delay = 3.0
+                    try:
+                        if retry_after is not None:
+                            delay = min(max(float(retry_after), 1.0), 10.0)
+                    except ValueError:
+                        pass
+                    logger.warning(f"[GelbooruPublic] {resp.status_code} 限流，{delay:.1f}s 后重试 pid={pid_value}")
+                    time.sleep(delay)
+                else:
+                    logger.warning(f"[GelbooruPublic] 重试后仍 {resp.status_code}，本页放弃 pid={pid_value}")
+                    return None
+            return None
+
+        list_response = _get_list_page(session)
+        if list_response is None:
+            return []  # 被限流且重试失败 → 返回空，让前端按"暂无更多"处理，不崩溃
         if display_all_site_content and _gelbooru_public_page_requires_options(list_response.text):
             logger.warning("[GelbooruPublic] Result page still requested Display all site content; rebuilding session and retrying")
             session = _get_gelbooru_session(display_all_site_content, force_refresh=True)
-            list_response = session.get(adapter.posts_url, params=params, timeout=(8, 15))
-            list_response.raise_for_status()
+            list_response = _get_list_page(session)
+            if list_response is None:
+                return []
         refs = adapter.extract_public_post_refs(list_response.text, limit)
-        logger.info(f"[GelbooruPublic] tags='{tags}' display_all={display_all_site_content} page={page} pid={pid_value} refs={len(refs)}")
+        logger.info(f"[GelbooruPublic] tags='{tags}' display_all={display_all_site_content} refs={len(refs)}")
 
     if not id_match:
         return refs
