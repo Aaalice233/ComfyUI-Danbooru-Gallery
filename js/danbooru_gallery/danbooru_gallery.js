@@ -196,7 +196,6 @@ app.registerExtension({
                 let posts = [], currentPage = 1, isLoading = false, endOfResults = false;
                 let lastPostId = null;            // D 站游标分页：上一批最后一张的 id
                 const seenPostIds = new Set();    // 渲染前 id 去重兜底
-                let fillAnchor = 0;               // G 站续拉锚点：本轮自该 posts 数起凑够 fillTarget
                 let filterState = { startTime: null, endTime: null, startPage: null };
                 let userAuth = { username: "", api_key: "", has_auth: false, gelbooru_user_id: "", gelbooru_api_key: "", gelbooru_has_auth: false }; // 用户认证信息
                 let userFavorites = []; // 用户收藏列表，确保字符串
@@ -1483,6 +1482,7 @@ app.registerExtension({
                         'prompt': { title: t('promptSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>', elements: [filterSection] },
                         'ui': { title: t('uiSection'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>', elements: [autocompleteSection, tooltipSection, selectionModeSection] },
                         'preload': { title: "预加载", icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>', elements: [preloadSection] },
+                        'preload': { title: "预加载", icon: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>', elements: [preloadSection] },
                     };
 
                     const setActiveSection = (key) => {
@@ -2295,13 +2295,21 @@ app.registerExtension({
                             params.set("force_public_detail", "1");
                         }
                         const response = await fetch(`/danbooru_gallery/posts?${params}`);
-                        const data = await response.json();
-                        if (data && data.length > 0) {
+                        // 防御性解析：避免非 JSON 响应抛裸 JSON.parse 异常刷屏
+                        const rawText = await response.text();
+                        let data;
+                        try {
+                            data = JSON.parse(rawText);
+                        } catch (parseErr) {
+                            logger.warn(`[fetchOriginalPost] id=${postId} 响应非 JSON(status=${response.status})，跳过`);
+                            return null;
+                        }
+                        if (Array.isArray(data) && data.length > 0) {
                             return data[0];
                         }
                         return null;
                     } catch (error) {
-                        logger.error("Failed to fetch original post data:", error);
+                        logger.warn(`[fetchOriginalPost] id=${postId} 详情抓取失败:`, error?.message || error);
                         return null;
                     }
                 };
@@ -2454,25 +2462,17 @@ app.registerExtension({
                     }).join(' ');
                 };
 
-                const fetchAndRender = async (reset = false, isContinuation = false) => {
+                const fetchAndRender = async (reset = false) => {
                     if (isLoading) {
                         return;
                     }
                     if (endOfResults && !reset) {
                         return;
                     }
-                    // G 站公开列表页每页固定约 42 张，单次请求凑不满较大的 preload_count。
-                    // 续拉机制：拿完一页后若本轮累计不足 fillTarget 且未到底，自动续拉下一页。
-                    // （D 站一次请求即可拿满 limit；G 站游标模式靠 lastPostId 翻批；均不续拉。）
                     const src = uiSettings.source_site || "danbooru";
-                    const dedupMode = uiSettings.gelbooru_dedup_mode || "off";
-                    const needAutoFill = (src === "gelbooru" && dedupMode === "off");
-                    const fillTarget = needAutoFill ? (parseInt(uiSettings.preload_count, 10) || 40) : 0;
-                    // 续拉锚点：新一轮（reset 或用户滚动触发的非续拉调用）以当前 posts 数为基准，
-                    // 续拉到 posts 比基准多出 fillTarget 张为止。续拉调用(isContinuation)沿用旧基准。
-                    if (!isContinuation) {
-                        fillAnchor = reset ? 0 : posts.length;
-                    }
+                    // G 站游标模式（防重复开启）：分页靠 id:<X 推进，pid 必须恒为 0，
+                    // 否则 page 偏移与游标双重推进会跳图。此时翻批不递增 currentPage。
+                    const gelbooruCursorMode = (src === "gelbooru" && (uiSettings.gelbooru_dedup_mode || "off") !== "off");
                     isLoading = true;
                     refreshButton.classList.add("loading");
                     refreshButton.disabled = true;
@@ -2562,9 +2562,25 @@ app.registerExtension({
                         }
 
                         const response = await fetch(`/danbooru_gallery/posts?${params}`);
-                        let newPosts = await response.json();
+                        // 防御性解析：后端偶发返回非 JSON（错误页/半截响应）时，
+                        // 不让裸 JSON.parse 异常冒泡导致整屏清空。
+                        let newPosts;
+                        let parseFailed = false;
+                        try {
+                            const rawText = await response.text();
+                            newPosts = JSON.parse(rawText);
+                        } catch (parseErr) {
+                            logger.warn(`[fetchAndRender] 响应解析失败(status=${response.status})，本次跳过:`, parseErr?.message || parseErr);
+                            parseFailed = true;
+                            newPosts = [];
+                        }
 
-                        if (!Array.isArray(newPosts)) throw new Error("API did not return a valid list of posts.");
+                        if (!Array.isArray(newPosts)) newPosts = [];
+
+                        // 解析失败：不标记到底（可能只是偶发），保留已有内容，静默返回等下次触发
+                        if (parseFailed) {
+                            return;
+                        }
 
                         // 评分过滤已交给服务端，本地只做文件类型/黑名单过滤
                         const filteredPosts = newPosts.filter(post => !isPostFiltered(post));
@@ -2587,7 +2603,10 @@ app.registerExtension({
                             return;
                         }
 
-                        currentPage++;
+                        // 游标模式靠 id:<X 推进，pid 须恒为 0，不递增 page；其余模式正常翻页
+                        if (!gelbooruCursorMode) {
+                            currentPage++;
+                        }
                         // 渲染前 id 去重兜底（防游标边界残留重复）
                         const fresh = filteredPosts.filter(p => {
                             if (seenPostIds.has(p.id)) return false;
@@ -2598,6 +2617,14 @@ app.registerExtension({
                         lastPostId = newPosts[newPosts.length - 1].id;
                         posts.push(...fresh);
                         fresh.forEach(renderPost);
+
+                        // 防无限补货：本页返回了数据，但去重后 0 张新增（全是已见过的）。
+                        // 说明分页失效或到底（如 Gelbooru 空标签浏览时 pid 偏移无效，每页返回同样内容）。
+                        // 标记到底，停止后续补货，避免无限翻页空转。
+                        if (fresh.length === 0 && newPosts.length > 0 && !reset) {
+                            endOfResults = true;
+                            logger.warn(`[fetchAndRender] 本页 ${newPosts.length} 张全是重复，判定到底/分页失效，停止加载`);
+                        }
 
                         // Filter-cascade guard: if the blacklist/rating filter dropped every
                         // post on this page, the grid didn't grow — the user's scroll is still
@@ -2610,7 +2637,13 @@ app.registerExtension({
                         }
 
                     } catch (e) {
-                        imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
+                        // 仅首次加载(reset)时用整屏错误提示；滚动/续拉失败时保留已加载内容，
+                        // 不清屏（单次请求失败不该抹掉已经看到的图）。
+                        if (reset) {
+                            imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
+                        } else {
+                            logger.warn('[fetchAndRender] 加载失败，保留已有内容:', e?.message || e);
+                        }
                     } finally {
                         isLoading = false;
                         refreshButton.classList.remove("loading");
@@ -2621,13 +2654,27 @@ app.registerExtension({
                         }
                     }
 
-                    // G 站续拉：本轮（自 fillAnchor 起）累计不足 fillTarget 且未到底，自动拉下一页。
-                    // 条件含 posts.length > fillAnchor（确有进展），避免出错时无限重试。
-                    if (needAutoFill && !endOfResults &&
-                        posts.length > fillAnchor &&
-                        (posts.length - fillAnchor) < fillTarget) {
-                        // 异步触发续拉，让出调用栈（避免深递归）；isLoading 已在 finally 释放
-                        setTimeout(() => fetchAndRender(false, true), 0);
+                    // 加载完一页后，检查缓冲是否仍不足（前方未看的图 < preload_count），
+                    // 不足则继续补——渐进式补货，每次补一页，直到缓冲满或到底。
+                    maybeLoadMore();
+                };
+
+                // 统一的缓冲补货：估算"前方未看过的图片数"，不足 preload_count 就再加载一页。
+                // 两站、两档共用。reset 后首屏、滚动、每次加载完成都会调它。
+                const maybeLoadMore = () => {
+                    if (isLoading || endOfResults) return;
+                    const bufferTarget = parseInt(uiSettings.preload_count, 10) || 40;
+                    // 估算已浏览到的张数：按滚动位置比例 * 总数。grid 高度为 0（首屏未铺开）时按已看 0 处理。
+                    const scrollH = imageGrid.scrollHeight;
+                    let viewedCount = 0;
+                    if (scrollH > 0) {
+                        const viewedRatio = Math.min(1, (imageGrid.scrollTop + imageGrid.clientHeight) / scrollH);
+                        viewedCount = Math.floor(posts.length * viewedRatio);
+                    }
+                    const aheadBuffer = posts.length - viewedCount;  // 前方未看过的张数
+                    if (aheadBuffer < bufferTarget) {
+                        // 异步触发，让出调用栈避免深递归；isLoading 已释放
+                        setTimeout(() => fetchAndRender(false), 0);
                     }
                 };
 
@@ -3635,6 +3682,9 @@ app.registerExtension({
 
                 let scrollTimeout;
                 imageGrid.addEventListener("scroll", () => {
+                    // 滚动消耗了前方缓冲 → 检查是否需要补货（维持前方 preload_count 张未看）。
+                    // 同时保留"接近底部"作为兜底触发（缓冲估算在 0 尺寸图下可能偏差）。
+                    maybeLoadMore();
                     if (imageGrid.scrollHeight - imageGrid.scrollTop - imageGrid.clientHeight < 400) {
                         fetchAndRender(false);
                     }
