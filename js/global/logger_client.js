@@ -293,6 +293,12 @@ class LoggerClient {
      */
     setConsoleOutput(enabled) {
         this.consoleOutputEnabled = enabled;
+        // 当全局日志开启时，级别过滤器降到 DEBUG，确保所有日志都能被控制台输出
+        if (enabled) {
+            this.currentLevel = LOG_LEVELS.DEBUG;
+        } else {
+            this.currentLevel = LOG_LEVELS.INFO;
+        }
         this._saveConfig();
     }
 }
