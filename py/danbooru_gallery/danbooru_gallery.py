@@ -21,14 +21,16 @@ from pathlib import Path
 import sys
 from ..utils.logger import get_logger
 from .site_adapters import get_site_adapter
-from collections import deque
+from collections import defaultdict, deque
 
 logger = get_logger(__name__)
 
-# FIFO 选择队列：每次 Queue 时前端快照一个选中条目入队，
-# 节点执行时从队首 pop 出一个，彻底解耦缓存碰撞
-_selection_queue = deque()
-_selection_queue_lock = threading.Lock()
+# FIFO 选择队列（按 nodeId 分桶）：每次 Queue 时前端快照推入对应节点的队列，
+# 节点执行时只 pop 自己 nodeId 的条目，其他节点的条目不受影响。
+# 支持同一工作流中多个画廊节点互不干扰、主子工作流各自取自己的数据。
+_selection_queues = defaultdict(deque)
+_selection_queues_lock = threading.Lock()
+_selection_queue_gen = 0  # 每次 push 递增，IS_CHANGED 据此让所有节点都重新执行
 
 # 导入数据库管理器
 try:
@@ -1598,14 +1600,17 @@ async def save_ui_settings_route(request):
 
 @PromptServer.instance.routes.post("/danbooru_gallery/selection_queue_push")
 async def selection_queue_push(request):
-    """前端在每次 Queue 前把当前选中的条目推入 FIFO 队列"""
+    """前端在每次 Queue 前把当前选中的条目推入对应 nodeId 的 FIFO 桶"""
     try:
         data = await request.json()
         item = data.get("item")
+        node_id = data.get("nodeId", "")
         if item:
-            with _selection_queue_lock:
-                _selection_queue.append(item)
-            logger.debug(f"[SelectionQueue] push → 队列长度 {len(_selection_queue)}")
+            global _selection_queue_gen
+            with _selection_queues_lock:
+                _selection_queues[node_id].append(item)
+                _selection_queue_gen += 1
+            logger.debug(f"[SelectionQueue] push node={node_id} → 队列长度 {len(_selection_queues[node_id])}")
         return web.json_response({"success": True})
     except Exception as e:
         logger.error(f"[SelectionQueue] push error: {e}")
@@ -1858,32 +1863,49 @@ class DanbooruGalleryNode:
     @classmethod
     def IS_CHANGED(cls, selection_data="{}", **kwargs):
         """返回队首条目的 _queue_id（唯一），队列空时返回 ""（缓存命中不再重复执行）。
-        彻底解决快速选图 1→Queue→2→Queue→... 导致的提示词覆盖竞态。"""
-        with _selection_queue_lock:
-            if _selection_queue:
-                return _selection_queue[0].get("_queue_id", time.time())
-        return ""
+        彻底解决快速选图 1→Queue→2→Queue→... 导致的提示词覆盖竞态。
+        注意：此方法不感知 nodeId，但只要每个节点都有自己的 selection_data widget，
+        每次 Queue 序列化时都会 snapshot 各节点当前值，配合后端 FIFO 分桶即可逐节点隔离。"""
+        if not selection_data or selection_data == "{}":
+            return ""
+        try:
+            data = json.loads(selection_data)
+            node_id = data.get("nodeId", "")
+            with _selection_queues_lock:
+                q = _selection_queues.get(node_id)
+                if q and len(q) > 0:
+                    return str(q[0].get("_queue_id", ""))
+        except (json.JSONDecodeError, TypeError):
+            pass
+        if not selection_data or selection_data == "{}":
+            return ""
+        return selection_data
 
     def get_selected_data(self, selection_data="{}", **kwargs):
-        """处理选中的图片数据，从 FIFO 队列中 pop（优先），否则回退到 selection_data widget。
-        队列模式确保 1→Queue→2→Queue→3→Queue→4→Queue 依次正确输出，互不覆盖。"""
+        """处理选中的图片数据，从 FIFO 队列（按 nodeId 分桶）中 pop，否则回退。"""
         images = []
         prompts = []
+        my_node_id = ""
 
         try:
-            # 先从 FIFO 队列 pop（每次 Queue 时前端推入的 snapshot）
-            with _selection_queue_lock:
-                if _selection_queue:
-                    item = _selection_queue.popleft()
-                    logger.debug(f"[SelectionQueue] get_selected_data pop → 剩余 {len(_selection_queue)}")
-                else:
-                    item = None
+            # 解析自己的 selection_data 获取 nodeId
+            if selection_data and selection_data != "{}":
+                data = json.loads(selection_data)
+                my_node_id = data.get("nodeId", "")
+
+            # 从 FIFO 按 nodeId 分桶 pop
+            item = None
+            if my_node_id:
+                with _selection_queues_lock:
+                    q = _selection_queues.get(my_node_id)
+                    if q and len(q) > 0:
+                        item = q.popleft()
+                        logger.debug(f"[SelectionQueue] get_selected_data pop node={my_node_id} → 剩余 {len(q)}")
 
             if item:
-                # 队列模式：单个条目
                 selections = item.get("selections", [])
             else:
-                # 回退：widget 值（无 Queue 点击，手动拖线等场景）
+                # 回退：从自己的 widget 读取
                 if not selection_data or selection_data == "{}":
                     return ([torch.zeros(1, 1, 1, 3)], [""])
                 data = json.loads(selection_data)
@@ -1896,7 +1918,6 @@ class DanbooruGalleryNode:
                 prompt = sel.get("prompt", "")
                 image_url = sel.get("image_url")
                 prompts.append(prompt)
-
                 if image_url:
                     try:
                         img_data = _fetch_supported_media(image_url)
