@@ -118,8 +118,9 @@ class GelbooruAdapter(GallerySiteAdapter):
             "page": "post",
             "s": "list",
             "tags": public_tags,
-            # Gelbooru's public list page uses an offset-like pid.
-            "pid": max(page - 1, 0) * max(limit, 1),
+            # Gelbooru's public list page uses a fixed page size of 42.
+            # pid = (page-1) * 42, decoupled from the frontend's limit param.
+            "pid": max(page - 1, 0) * 42,
         }
 
     def build_public_post_params(self, post_id: Any) -> Dict[str, Any]:
