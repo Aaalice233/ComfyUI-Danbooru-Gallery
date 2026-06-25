@@ -2722,6 +2722,9 @@ app.registerExtension({
                 };
                 setTimeout(_hookQueueButton, 1000);
 
+                // 2 秒定时轮询检查前方缓冲，不够就自动补货
+                setInterval(maybeLoadMore, 2000);
+
                 const resizeGrid = () => {
                     try {
                         const cs = window.getComputedStyle(imageGrid);
@@ -3748,8 +3751,18 @@ app.registerExtension({
                 let scrollTimeout;
                 let scrollAnchorTimeout; // 锚点记录的防抖
                 imageGrid.addEventListener("scroll", () => {
-                    if (imageGrid.scrollHeight - imageGrid.scrollTop - imageGrid.clientHeight < 400) {
-                        fetchAndRender(false);
+                    // 每次滚动检查前方缓冲，不够就补
+                    if (!isLoading && !endOfResults) {
+                        const bufferTarget = parseInt(uiSettings.preload_count, 10) || 40;
+                        const scrollH = imageGrid.scrollHeight;
+                        let viewedCount = 0;
+                        if (scrollH > 0) {
+                            const viewedRatio = Math.min(1, (imageGrid.scrollTop + imageGrid.clientHeight) / scrollH);
+                            viewedCount = Math.floor(posts.length * viewedRatio);
+                        }
+                        if (posts.length - viewedCount < bufferTarget) {
+                            setTimeout(() => fetchAndRender(false), 0);
+                        }
                     }
 
                     // Debounced scroll logic for page indicator
