@@ -2537,13 +2537,17 @@ app.registerExtension({
                         const selectedRatings = getSelectedRatings();
                         const sendAll = selectedRatings.length === 0 || selectedRatings.length === RATING_VALUES.length;
                         const ratingForServer = sendAll ? "" : selectedRatings.join(",");
+                        // 首次加载取 40 + preload_count（上限 200 API），续加载统一 42
+                        const loadLimit = reset
+                            ? Math.min(40 + (parseInt(uiSettings.preload_count, 10) || 40), 200)
+                            : 42;
                         const params = new URLSearchParams({
                             "source": src,
                             "gelbooru_display_all_site_content": uiSettings.gelbooru_display_all_site_content ? "1" : "0",
                             "gelbooru_dedup_mode": dedup,
                             "search[tags]": apiFormattedTags.trim(),
                             "search[rating]": ratingForServer,
-                            limit: "42",
+                            limit: String(loadLimit),
                             page: currentPage,
                         });
 
