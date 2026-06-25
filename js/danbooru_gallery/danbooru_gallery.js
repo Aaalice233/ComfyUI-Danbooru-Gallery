@@ -2543,7 +2543,7 @@ app.registerExtension({
                             "gelbooru_dedup_mode": dedup,
                             "search[tags]": apiFormattedTags.trim(),
                             "search[rating]": ratingForServer,
-                            limit: "40",
+                            limit: "42",
                             page: currentPage,
                         });
 
