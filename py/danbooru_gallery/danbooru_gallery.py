@@ -1046,7 +1046,7 @@ _gelbooru_session_lock = threading.Lock()
 def _get_image_proxy_semaphore():
     global _image_proxy_semaphore
     if _image_proxy_semaphore is None:
-        _image_proxy_semaphore = asyncio.Semaphore(6)
+        _image_proxy_semaphore = asyncio.Semaphore(1)
     return _image_proxy_semaphore
 
 def _gelbooru_browser_headers(accept="text/html,*/*"):
