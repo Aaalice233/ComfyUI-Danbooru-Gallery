@@ -71,6 +71,14 @@ class _RateLimiter:
                 time.sleep(self.min_interval - elapsed)
             self._last_ts = time.monotonic()
 
+    async def async_wait(self):
+        """异步版 wait：不阻塞事件循环。无锁安全，asyncio 单线程无抢占，仅 await 处让出。"""
+        now = time.monotonic()
+        elapsed = now - self._last_ts
+        if elapsed < self.min_interval:
+            await asyncio.sleep(self.min_interval - elapsed)
+        self._last_ts = time.monotonic()
+
 _donmai_throttle = _RateLimiter(min_interval_sec=0.2)
 
 # Gelbooru 公开 HTML 页列表固定每页 42 张，pid 为该页首张图片的偏移量
@@ -78,6 +86,9 @@ GELBOORU_PUBLIC_PAGE_SIZE = 42
 
 # Gelbooru 公开页抓取限流器（0.75s = ~1.33 req/s，避开 429）
 _gelbooru_public_throttle = _RateLimiter(min_interval_sec=0.75)
+
+# Gelbooru 图片代理限流器（0.2s = 5 req/s，2 并发 = 10 张/s）
+_gelbooru_image_throttle = _RateLimiter(min_interval_sec=0.2)
 
 def _danbooru_request(method, url, **kwargs):
     """统一的 donmai.us 请求入口：限流 + 默认 UA + 429/503 带 Retry-After 退避重试一次。"""
@@ -1046,7 +1057,7 @@ _gelbooru_session_lock = threading.Lock()
 def _get_image_proxy_semaphore():
     global _image_proxy_semaphore
     if _image_proxy_semaphore is None:
-        _image_proxy_semaphore = asyncio.Semaphore(1)
+        _image_proxy_semaphore = asyncio.Semaphore(2)
     return _image_proxy_semaphore
 
 def _gelbooru_browser_headers(accept="text/html,*/*"):
@@ -1354,6 +1365,7 @@ async def image_proxy(request):
             if host == "gelbooru.com" or host.endswith(".gelbooru.com"):
                 display_all_site_content = load_ui_settings().get("gelbooru_display_all_site_content", False)
                 session = _get_gelbooru_session(display_all_site_content)
+                _gelbooru_image_throttle.async_wait()  # 图片代理限流 0.2s
                 resp = await asyncio.to_thread(
                     session.get,
                     url,
@@ -1618,15 +1630,17 @@ async def selection_queue_push(request):
 
 @PromptServer.instance.routes.post("/danbooru_gallery/selection_queue_pop")
 async def selection_queue_pop(request):
-    """节点执行时从队列头部 pop 一个条目（不移除则 peek）"""
+    """节点执行时从指定 nodeId 的队列头部 pop 一个条目"""
     try:
         data = await request.json() if request.can_read_body else {}
-        remove = data.get("remove", True)
-        with _selection_queue_lock:
-            if _selection_queue:
-                item = _selection_queue.popleft() if remove else _selection_queue[0]
-                logger.debug(f"[SelectionQueue] pop → 剩余 {len(_selection_queue)}")
-                return web.json_response({"success": True, "item": item})
+        node_id = data.get("nodeId")
+        if node_id:
+            with _selection_queues_lock:
+                q = _selection_queues.get(node_id)
+                if q and len(q) > 0:
+                    item = q.popleft()
+                    logger.debug(f"[SelectionQueue] pop node={node_id} → 剩余 {len(q)}")
+                    return web.json_response({"success": True, "item": item})
         return web.json_response({"success": True, "item": None})
     except Exception as e:
         logger.error(f"[SelectionQueue] pop error: {e}")

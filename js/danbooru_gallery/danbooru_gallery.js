@@ -193,7 +193,6 @@ app.registerExtension({
                 let currentTooltipId = 0; // 用于追踪当前活动的tooltip请求
                 let posts = [], currentPage = 1, isLoading = false, endOfResults = false;
                 let lastPostId = null;
-                let scrollAnchorPostId = null;
                 const seenPostIds = new Set();
                 let selectionQueueId = 0; // FIFO 队列唯一 ID 计数器
                 const nodeInstanceId = crypto.randomUUID ? crypto.randomUUID() : 'node_' + Math.random().toString(36).slice(2, 10);
@@ -2482,11 +2481,7 @@ app.registerExtension({
                         const newTags = searchInput.value.trim();
                         if (newTags !== currentTags) {
                             lastPostId = null;
-                            scrollAnchorPostId = null;
                             seenPostIds.clear();
-                        } else if (scrollAnchorPostId) {
-                            // 搜索条件没变 + 有锚点 → 用锚点做游标，往下接
-                            lastPostId = scrollAnchorPostId;
                         }
                         currentTags = newTags;
 
@@ -2656,21 +2651,6 @@ app.registerExtension({
                         refreshButton.disabled = false;
                         const indicator = imageGrid.querySelector('.danbooru-loading');
                         if (indicator) indicator.remove();
-                        // 刷新后还原滚动位置
-                        if (reset && scrollAnchorPostId) {
-                            // 等 maybeLoadMore 链走完（多个 setTimeout(…,0)）后尝试还原
-                            const attemptScroll = (retries = 8) => {
-                                const target = imageGrid.querySelector(`[data-post-id="${scrollAnchorPostId}"]`);
-                                if (target) {
-                                    target.scrollIntoView({ block: "start", behavior: "instant" });
-                                    return;
-                                }
-                                if (retries > 0) {
-                                    setTimeout(() => attemptScroll(retries - 1), 150);
-                                }
-                            };
-                            setTimeout(() => attemptScroll(), 300);
-                        }
                         // 每次加载完成后检查是否需要补充更多（maybeLoadMore）
                         if (!endOfResults && !parseFailed) {
                             maybeLoadMore();
@@ -3753,7 +3733,6 @@ app.registerExtension({
                 observer.observe(imageGrid);
 
                 let scrollTimeout;
-                let scrollAnchorTimeout; // 锚点记录的防抖
                 imageGrid.addEventListener("scroll", () => {
                     // 每次滚动检查前方缓冲，不够就补
                     if (!isLoading && !endOfResults) {
@@ -3772,27 +3751,6 @@ app.registerExtension({
                     // Debounced scroll logic for page indicator
                     clearTimeout(scrollTimeout);
                     scrollTimeout = setTimeout(updateCurrentPageIndicator, 150);
-
-                    // 记录滚动锚点（每秒；取视野最上方的图往前 8 张，刷新时用其 id 做游标往下接）
-                    clearTimeout(scrollAnchorTimeout);
-                    scrollAnchorTimeout = setTimeout(() => {
-                        const scrollRect = imageGrid.getBoundingClientRect();
-                        let closestIdx = -1, closestDist = Infinity;
-                        const children = Array.from(imageGrid.children);
-                        children.forEach((w, i) => {
-                            const rect = w.getBoundingClientRect();
-                            const dist = Math.abs(rect.top - scrollRect.top);
-                            if (dist < closestDist) { closestDist = dist; closestIdx = i; }
-                        });
-                        if (closestIdx >= 0) {
-                            const anchorIdx = Math.max(0, closestIdx - 8);
-                            const anchorEl = children[anchorIdx];
-                            if (anchorEl && anchorEl.dataset.postId) {
-                                scrollAnchorPostId = anchorEl.dataset.postId;
-                                saveToLocalStorage(`scrollAnchor_${nodeInstanceId}`, scrollAnchorPostId);
-                            }
-                        }
-                    }, 1000);
                 });
 
                 searchInput.addEventListener("keydown", (e) => {
@@ -4232,12 +4190,6 @@ app.registerExtension({
                         } else {
                             uiSettings.global_logging = false;
                             loggerClient.setConsoleOutput(false);
-                        }
-
-                        // 恢复保存的滚动锚点（刷新后用其 id 做游标往下接）
-                        const savedScrollAnchor = loadFromLocalStorage(`scrollAnchor_${nodeInstanceId}`, null);
-                        if (savedScrollAnchor) {
-                            scrollAnchorPostId = savedScrollAnchor;
                         }
 
                         // 初始化排行榜按钮状态
