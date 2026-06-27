@@ -3392,7 +3392,7 @@ app.registerExtension({
                     const img = $el("img", {
                         src: `/danbooru_gallery/image_proxy?url=${encodeURIComponent(previewUrl)}`,
                         onload: scheduleResizeGrid,
-                        onerror: () => { wrapper.style.display = 'none'; img.remove(); }
+                        onerror: () => { wrapper.style.display = 'none'; img.remove(); },
                         onclick: (e) => {
                             e.stopPropagation();
                             markActive(); // 标记自己为最后活跃节点

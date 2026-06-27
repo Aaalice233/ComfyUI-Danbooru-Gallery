@@ -1622,10 +1622,11 @@ async def selection_queue_pop(request):
     try:
         data = await request.json() if request.can_read_body else {}
         remove = data.get("remove", True)
-        with _selection_queue_lock:
-            if _selection_queue:
-                item = _selection_queue.popleft() if remove else _selection_queue[0]
-                logger.debug(f"[SelectionQueue] pop → 剩余 {len(_selection_queue)}")
+        with _selection_queues_lock:
+            q = _selection_queues.get(data.get("nodeId", ""))
+            if q and len(q) > 0:
+                item = q.popleft() if remove else q[0]
+                logger.debug(f"[SelectionQueue] pop → 剩余 {len(q)}")
                 return web.json_response({"success": True, "item": item})
         return web.json_response({"success": True, "item": None})
     except Exception as e:
