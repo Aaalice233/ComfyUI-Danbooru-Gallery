@@ -2636,8 +2636,6 @@ app.registerExtension({
                             return;
                         }
 
-                        // 对正常格做过滤
-                        const filteredPosts = freshRaw.filter(post => !isPostFiltered(post));
                         logger.info(`[fetchAndRender] 过滤后: freshRaw->filteredPosts=${filteredPosts.length}/${freshRaw.length}`);
 
                         if (filteredPosts.length === 0 && freshRaw.length === 0 && reset && errorPosts.length === 0) {
