@@ -2507,7 +2507,11 @@ app.registerExtension({
 
                         posts = [];
                         endOfResults = false;
-                        logger.info(`[fetchAndRender] reset完成: posts清空, endOfResults=置false`);
+                        // reset 始终清空 seenPostIds/lastPostId——否则标签不变时
+                        // seenPostIds残留旧ID导致新结果全被过滤, 总是"未找到结果"
+                        lastPostId = null;
+                        seenPostIds.clear();
+                        logger.info(`[fetchAndRender] reset完成: posts清空, endOfResults=置false, seenPostIds清空`);
                         imageGrid.innerHTML = "";
                         imageGrid.insertAdjacentHTML('beforeend', `<p class="danbooru-status danbooru-loading">${t('loading')}</p>`);
                     }
