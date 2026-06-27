@@ -2573,6 +2573,10 @@ app.registerExtension({
                         if (!Array.isArray(newPosts)) newPosts = [];
 
                         if (parseFailed) {
+                            if (reset) {
+                                imageGrid.innerHTML = `<p class="danbooru-status error">响应解析失败(status=${response.status})</p>`;
+                                return;
+                            }
                             renderPost({ error: `响应解析失败(status=${response.status})` });
                             return;
                         }
@@ -2622,8 +2626,9 @@ app.registerExtension({
                         posts.push(...filteredPosts);
                         filteredPosts.forEach(renderPost);
 
-                        // 去重陷阱检测：本页有返回值但全部是已见过的 → 判定到底
-                        if (freshRaw.length === 0 && normalRaw.length > 0 && !reset) {
+                        // 去重陷阱检测：仅当 dedup=off（G站 pid 翻页）时启用，游标模式下不误判
+                        const isDedupOff = src === "gelbooru" && dedup === "off";
+                        if (freshRaw.length === 0 && normalRaw.length > 0 && !reset && isDedupOff) {
                             endOfResults = true;
                             logger.warn(`[fetchAndRender] 本页 ${newPosts.length} 张全是重复，判定到底/分页失效，停止加载`);
                             return;
