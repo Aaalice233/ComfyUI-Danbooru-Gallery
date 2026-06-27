@@ -789,6 +789,8 @@ app.registerExtension({
                     updateSourceState();
                     searchAutocomplete.source = uiSettings.source_site;
                     posts = [];
+                    seenPostIds.clear();
+                    lastPostId = null;
                     Object.keys(originalPostCache).forEach(key => delete originalPostCache[key]);
                     temporaryTagEdits = {};
                     updateSelectionData();
@@ -2598,6 +2600,9 @@ app.registerExtension({
                             endOfResults = true;
                             if (reset) {
                                 imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
+                            } else {
+                                // 非首次：不销毁已加载内容，底部显示到底提示
+                                renderPost({ error: "没有更多结果了" });
                             }
                             return;
                         }
@@ -3392,7 +3397,26 @@ app.registerExtension({
                     const img = $el("img", {
                         src: `/danbooru_gallery/image_proxy?url=${encodeURIComponent(previewUrl)}`,
                         onload: scheduleResizeGrid,
-                        onerror: () => { wrapper.style.display = 'none'; img.remove(); },
+                        onerror: (evt) => {
+                            // 重试一次，仍失败则显示错误+刷新按钮
+                            if (!evt.target.dataset.retried) {
+                                evt.target.dataset.retried = '1';
+                                evt.target.src = evt.target.src;
+                                return;
+                            }
+                            wrapper.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:var(--comfy-input-bg);border-radius:4px;padding:8px;gap:6px;">
+                                <span style="color:#ff4444;font-size:11px;">加载失败</span>
+                                <button style="font-size:10px;padding:2px 8px;border:1px solid #666;border-radius:3px;background:transparent;color:var(--comfy-input-text);cursor:pointer;">刷新</button>
+                            </div>`;
+                            wrapper.querySelector('button').onclick = () => {
+                                const fresh = document.createElement('img');
+                                fresh.src = `/danbooru_gallery/image_proxy?url=${encodeURIComponent(previewUrl)}`;
+                                fresh.onload = scheduleResizeGrid;
+                                fresh.onerror = () => { wrapper.style.display = 'none'; };
+                                wrapper.innerHTML = '';
+                                wrapper.appendChild(fresh);
+                            };
+                        },
                         onclick: (e) => {
                             e.stopPropagation();
                             markActive(); // 标记自己为最后活跃节点
