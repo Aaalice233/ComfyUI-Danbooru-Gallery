@@ -2638,9 +2638,13 @@ app.registerExtension({
                         }
 
                     } catch (e) {
-                        // 报错不销毁已有内容，追加红色错误格
-                        logger.warn('[fetchAndRender] 加载失败，保留已有内容:', e?.message || e);
-                        renderPost({ error: `请求失败: ${e.message}` });
+                        // 首次加载→整屏错误；滚动续拉→保留内容+加错误格
+                        if (reset) {
+                            imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
+                        } else {
+                            logger.warn('[fetchAndRender] 加载失败，保留已有内容:', e?.message || e);
+                            renderPost({ error: `请求失败: ${e.message}` });
+                        }
                     } finally {
                         isLoading = false;
                         refreshButton.classList.remove("loading");
