@@ -79,6 +79,9 @@ GELBOORU_PUBLIC_PAGE_SIZE = 42
 # Gelbooru 公开页抓取限流器（0.75s = ~1.33 req/s，避开 429）
 _gelbooru_public_throttle = _RateLimiter(min_interval_sec=0.75)
 
+# Gelbooru 图片代理限流器（0.2s = 5 req/s，2 并发 = 10 张/s）
+_gelbooru_image_throttle = _RateLimiter(min_interval_sec=0.2)
+
 def _danbooru_request(method, url, **kwargs):
     """统一的 donmai.us 请求入口：限流 + 默认 UA + 429/503 带 Retry-After 退避重试一次。"""
     headers = dict(kwargs.pop("headers", None) or {})
@@ -1046,7 +1049,7 @@ _gelbooru_session_lock = threading.Lock()
 def _get_image_proxy_semaphore():
     global _image_proxy_semaphore
     if _image_proxy_semaphore is None:
-        _image_proxy_semaphore = asyncio.Semaphore(1)
+        _image_proxy_semaphore = asyncio.Semaphore(2)
     return _image_proxy_semaphore
 
 def _gelbooru_browser_headers(accept="text/html,*/*"):
@@ -1217,30 +1220,22 @@ def _fetch_supported_media(url):
 
 def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, display_all_site_content=False):
     """Fetch Gelbooru posts from public HTML pages when DAPI credentials are unavailable.
-
     Uses fixed page size GELBOORU_PUBLIC_PAGE_SIZE (42) so pid is decoupled from
-    the frontend's requested limit; the frontend chains multiple page fetches via
-    maybeLoadMore to reach the user's preload_count.
-
-    On transient failure (429/503) it retries once with Retry-After back-off.
-    If retry also fails or the response is non-recoverable, returns an error
-    placeholder object so the frontend can display a per-cell error rather than
-    crashing the whole gallery.
+    the frontend's limit.  Frontend chains multiple fetches via maybeLoadMore.
+    On 429/503 retries once with Retry-After.  Returns error placeholders on failure.
     """
     id_match = re.search(r"(?:^|\s)id:(\d+)(?:\s|$)", tags or "")
     if id_match:
         refs = [{"id": id_match.group(1)}]
     else:
-        # 固定页大小，pid 与 frontend 的 limit 解耦
         pid_value = max(page - 1, 0) * GELBOORU_PUBLIC_PAGE_SIZE
         params = adapter.build_public_posts_params(tags, limit, page, rating_query)
-        # override pid with fixed page size
         params["pid"] = pid_value
 
         session = _get_gelbooru_session(display_all_site_content)
 
         def _get_list_page(sess):
-            """Inner closure: fetch list page with rate limiting + retry."""
+            """Fetch list page with rate limiting + 429/503 retry."""
             for attempt in range(2):
                 _gelbooru_public_throttle.wait()
                 try:
@@ -1273,12 +1268,10 @@ def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, displ
 
         list_response = _get_list_page(session)
         if list_response is None:
-            # 返回 error 占位格（不含 list_response.text 细节）
-            driver_pid = params.get("pid", pid_value)
-            return [{"error": "Gelbooru 服务暂不可用", "pid": driver_pid, "page": page}]
+            return [{"error": "Gelbooru 服务暂不可用", "pid": pid_value, "page": page}]
 
         if display_all_site_content and _gelbooru_public_page_requires_options(list_response.text):
-            logger.warning("[GelbooruPublic] Result page still requested Display all site content; rebuilding session and retrying")
+            logger.warning("[GelbooruPublic] Display all site content needed; rebuilding session")
             session = _get_gelbooru_session(display_all_site_content, force_refresh=True)
             list_response = _get_list_page(session)
             if list_response is None:
@@ -1288,8 +1281,7 @@ def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, displ
         refs = adapter.extract_public_post_refs(list_response.text, limit)
         logger.info(f"[GelbooruPublic] tags='{tags}' display_all={display_all_site_content} refs={len(refs)}")
 
-    # G站公开页面标签不完整（只有 title 里的标签，无分类），自动 hydrate 所有 ref
-    # 让 tooltip 默认就显示完整分类标签，无需手动重置
+    # G站公开页面：标签只有 title 里的无分类版，hydrate 所有 ref 以显示完整分类标签
     if not id_match and refs:
         for ref in refs:
             try:
@@ -1304,18 +1296,18 @@ def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, displ
                     ref["file_url"] = hydrated["file_url"]
                     ref["_gelbooru_preview_only"] = False
             except Exception:
-                pass  # hydrate 失败不影响列表，tooltip 里会触发 hydrateGelbooruTooltipPost
+                pass
 
     if not id_match:
         return refs
 
+    # id_match 模式：逐帖 hydrate
     posts = []
     for ref in refs:
         post_id = ref.get("id")
         if not post_id:
             continue
 
-        # 0 引用重试：HTML 结构有可能解析失败
         for attempt in range(2):
             try:
                 post_response = _get_gelbooru_session(display_all_site_content).get(
@@ -1372,6 +1364,7 @@ async def image_proxy(request):
             if host == "gelbooru.com" or host.endswith(".gelbooru.com"):
                 display_all_site_content = load_ui_settings().get("gelbooru_display_all_site_content", False)
                 session = _get_gelbooru_session(display_all_site_content)
+                await _gelbooru_image_throttle.async_wait()
                 resp = await asyncio.to_thread(
                     session.get,
                     url,
@@ -1910,9 +1903,6 @@ class DanbooruGalleryNode:
 
     @classmethod
     def IS_CHANGED(cls, selection_data="{}", **kwargs):
-        """返回队首条目的 _queue_id（唯一），队列空时返回 ""（缓存命中不再重复执行）。
-        彻底解决快速选图 1→Queue→2→Queue→... 导致的提示词覆盖竞态。
-        兼容旧版无 nodeId 的 selection_data（回退到全量字符串做键）。"""
         if not selection_data or selection_data == "{}":
             return ""
         try:
@@ -1928,30 +1918,27 @@ class DanbooruGalleryNode:
         return selection_data
 
     def get_selected_data(self, selection_data="{}", **kwargs):
-        """处理选中的图片数据，从 FIFO 队列（按 nodeId 分桶）中 pop，否则回退。"""
         images = []
         prompts = []
         my_node_id = ""
 
         try:
-            # 解析自己的 selection_data 获取 nodeId
             if selection_data and selection_data != "{}":
                 data = json.loads(selection_data)
                 my_node_id = data.get("nodeId", "")
 
-            # 从 FIFO 按 nodeId 分桶 pop
+            # 从 FIFO 按 nodeId pop
             item = None
             if my_node_id:
                 with _selection_queues_lock:
                     q = _selection_queues.get(my_node_id)
                     if q and len(q) > 0:
                         item = q.popleft()
-                        logger.debug(f"[SelectionQueue] get_selected_data pop node={my_node_id} → 剩余 {len(q)}")
+                        logger.debug(f"[SelectionQueue] pop node={my_node_id} → 剩余 {len(q)}")
 
             if item:
                 selections = item.get("selections", [])
             else:
-                # 回退：从自己的 widget 读取
                 if not selection_data or selection_data == "{}":
                     return ([torch.zeros(1, 1, 1, 3)], [""])
                 data = json.loads(selection_data)
@@ -1972,7 +1959,7 @@ class DanbooruGalleryNode:
                         tensor = torch.from_numpy(img_array)[None,]
                         images.append(tensor)
                     except Exception as e:
-                        logger.error(f"加载图片失败 {image_url}: {e}")
+                        logger.error(f"图片加载失败 {image_url}: {e}")
                         images.append(torch.zeros(1, 1, 1, 3))
                 else:
                     images.append(torch.zeros(1, 1, 1, 3))
@@ -1981,7 +1968,7 @@ class DanbooruGalleryNode:
                 return ([torch.zeros(1, 1, 1, 3)], [""])
 
         except Exception as e:
-            logger.error(f"Error processing selection in DanbooruGalleryNode: {e}")
+            logger.error(f"选择处理错误: {e}")
             return ([torch.zeros(1, 1, 1, 3)], [""])
 
         return (images, prompts)
@@ -1998,14 +1985,12 @@ class DanbooruGalleryNode:
         if gelbooru_dedup_mode not in ("off", "on", "on_auth"):
             gelbooru_dedup_mode = "off"
 
-        # before_id分页：化 + 数字校验，防止 page=b; DROP TABLE 类拼接注入
+        # before_id 分页：数字校验，防注入
         before_id = str(before_id).strip() if before_id else ""
         if before_id and not before_id.isdigit():
             before_id = ""
-        # order/ordfav/sort变结果顺序，游标会漏图，禁用
         if before_id and re.search(r'(?:^|\s)(?:order|ordfav|sort):', tags or ''):
             before_id = ""
-        #仅在 Danbooru（官方 page=b<id>）或 Gelbooru + dedup 开启时生效
         if before_id and not (
             adapter.key == "danbooru"
             or (adapter.key == "gelbooru" and gelbooru_dedup_mode in ("on", "on_auth"))
@@ -2015,14 +2000,12 @@ class DanbooruGalleryNode:
         credentials = get_site_credentials(adapter)
         has_gelbooru_creds = has_required_site_credentials(adapter, credentials)
 
-        # 创建缓存键（rating 归一化排序，避免 "e,q" 与 "q,e" 命中两条缓存）
+        # 创建缓存键（rating一化排序，避免不同排序命中两条缓存）
         rating_key = ','.join(sorted(r.strip().lower() for r in (rating or '').split(',') if r.strip()))
         site_options_key = ""
         if adapter.key == "gelbooru":
             site_options_key = "display_all" if gelbooru_display_all_site_content else "default"
-            # dedup位影响 tag断数量，须区分，否则 on/off/on_auth 在 before_id 同为空时互相污染
             site_options_key += f"_dedup_{gelbooru_dedup_mode}"
-        # before_id 入键避免不同游标页相互污染
         cache_key = f"{adapter.key}:{site_options_key}:{tags}:{limit}:{page}:{rating_key}:{before_id}"
 
         # 判断是否获取收藏列表，如果是清除缓存以避免相同的请求前端列表不更新
@@ -2044,8 +2027,7 @@ class DanbooruGalleryNode:
             elif tag.strip():
                 other_tags.append(tag.strip())
 
-        # 限制其他标签的数量。Gelbooru标模式下 id:<X 占用一个 tag 名额（公开页/2-tag 限制），
-        # on_auth + 已配密钥走 DAPI 时可放宽到更多 tag。
+        # 动态 max_tags：Gelbooru cursor 模式下 id:<X 占用一个名额
         if adapter.key == "gelbooru" and gelbooru_dedup_mode in ("on", "on_auth"):
             if gelbooru_dedup_mode == "on_auth" and has_gelbooru_creds:
                 max_tags = 10
@@ -2074,7 +2056,8 @@ class DanbooruGalleryNode:
             rating_query = rating
         
         tags = final_tags
-        # Gelbooru：拼进 tags（公开页 / DAPI用 tags 参数，见 build_public_posts_params / build_posts_params）
+        # Gelbooru cursor（id:<X）要追加到 tags（cursor 在 tags 之后，不是之前）
+        # D站游标 page=b<id> 在下面单独处理，不拼 tags
         if before_id and adapter.key == "gelbooru":
             tags = f"{tags} id:<{before_id}".strip()
 
@@ -2104,7 +2087,7 @@ class DanbooruGalleryNode:
             
         params = adapter.build_posts_params(tags, limit, page, rating_query)
         params = adapter.apply_auth_params(params, credentials)
-        # Danbooru：走官方 page=b<id>
+        # D站游标 page=b<id>，G站已通过 tags 注入
         if before_id and adapter.key == "danbooru":
             params["page"] = f"b{before_id}"
 
@@ -2118,23 +2101,24 @@ class DanbooruGalleryNode:
                 posts = adapter.normalize_posts_response(response.json())
 
             result_text = json.dumps(posts, ensure_ascii=False)
-            
-            # 如果启用了缓存，则存储结果（跳过 error 占位格）
+
             if cache_enabled and not (adapter.key == "gelbooru" and gelbooru_display_all_site_content and not posts):
                 has_error_placeholder = posts and any(isinstance(p, dict) and p.get("error") for p in posts)
                 if not has_error_placeholder:
                     DanbooruGalleryNode._post_cache[cache_key] = (result_text, time.time())
-                # 清理旧缓存（可选，防止内存无限增长）
-                if len(DanbooruGalleryNode._post_cache) > 200: # 假设最多缓存200个请求
+                if len(DanbooruGalleryNode._post_cache) > 200:
                     oldest_key = min(DanbooruGalleryNode._post_cache.keys(), key=lambda k: DanbooruGalleryNode._post_cache[k][1])
                     del DanbooruGalleryNode._post_cache[oldest_key]
-            
+
             return (result_text,)
-        except requests.exceptions.RequestException as e:
-            logger.error(f"网络请求时发生错误: {e}")
+        except requests.Timeout as e:
+            logger.error(f"请求超时: {e}")
+            return ("[]",)
+        except requests.RequestException as e:
+            logger.error(f"请求异常: {e}")
             return ("[]",)
         except Exception as e:
-            logger.error(f"发生未知错误: {e}")
+            logger.error(f"未知错误: {e}")
             return ("[]",)
 
 # ComfyUI 必须的字典
