@@ -71,6 +71,15 @@ class _RateLimiter:
                 time.sleep(self.min_interval - elapsed)
             self._last_ts = time.monotonic()
 
+    async def async_wait(self):
+        """异步版限流，不阻塞事件循环"""
+        with self._lock:
+            now = time.monotonic()
+            elapsed = now - self._last_ts
+            if elapsed < self.min_interval:
+                await asyncio.sleep(self.min_interval - elapsed)
+            self._last_ts = time.monotonic()
+
 _donmai_throttle = _RateLimiter(min_interval_sec=0.2)
 
 # Gelbooru 公开 HTML 页列表固定每页 42 张，pid 为该页首张图片的偏移量
