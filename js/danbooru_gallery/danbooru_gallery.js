@@ -9,6 +9,8 @@ import { createLogger, loggerClient } from '../global/logger_client.js';
 
 // 创建logger实例
 const logger = createLogger('danbooru_gallery');
+// 打开全局日志，所有级别打到 ComfyUI 终端
+loggerClient.setConsoleOutput(true);
 
 app.registerExtension({
     name: "Comfy.DanbooruGallery",
@@ -791,6 +793,7 @@ app.registerExtension({
                     posts = [];
                     seenPostIds.clear();
                     lastPostId = null;
+                    logger.info(`[sourceChange] 源切换为${uiSettings.source_site}, seenPostIds清空, lastPostId清空`);
                     Object.keys(originalPostCache).forEach(key => delete originalPostCache[key]);
                     temporaryTagEdits = {};
                     updateSelectionData();
@@ -1736,6 +1739,7 @@ app.registerExtension({
                                 const newGelbooruDedupMode = ["off", "on", "on_auth"].includes(gelbooruDedupSelect.value) ? gelbooruDedupSelect.value : "off";
                                 uiSettings.gelbooru_dedup_mode = newGelbooruDedupMode;
                                 saveToLocalStorage('gelbooru_dedup_mode', newGelbooruDedupMode);
+                                logger.info(`[settings] 防重复模式改为: ${newGelbooruDedupMode}, 预加载: ${newPreloadCount}张`);
 
                                 const newGlobalLogging = globalLogCheck.checked;
                                 uiSettings.global_logging = newGlobalLogging;
@@ -2292,6 +2296,7 @@ app.registerExtension({
 
                 // 获取单个帖子的原始数据
                 const fetchOriginalPost = async (postId) => {
+                    logger.info(`[fetchOriginalPost] 开始hydrate postId=${postId}`);
                     try {
                         const params = new URLSearchParams({
                             source: uiSettings.source_site || "danbooru",
@@ -2334,15 +2339,18 @@ app.registerExtension({
                 const hydrateGelbooruPost = async (postData) => {
                     const hasUsableOriginal = isUsableOriginalUrl(postData, postData?.file_url);
                     if (!postData || postData.source_site !== "gelbooru" || postData._gelbooru_hydrated || (hasCategorizedTags(postData) && hasUsableOriginal)) {
+                        if (postData) logger.debug(`[hydrateGelbooruPost] 跳过: id=${postData.id} hydrated=${postData._gelbooru_hydrated} hasTags=${hasCategorizedTags(postData)} hasUrl=${hasUsableOriginal}`);
                         return postData;
                     }
 
                     const cachedPost = originalPostCache[postData.id];
                     const cachedHasUsableOriginal = isUsableOriginalUrl(cachedPost, cachedPost?.file_url);
                     if (cachedPost && (cachedPost._gelbooru_hydrated || (hasCategorizedTags(cachedPost) && cachedHasUsableOriginal))) {
+                        logger.debug(`[hydrateGelbooruPost] 缓存命中: id=${postData.id}`);
                         return originalPostCache[postData.id];
                     }
 
+                    logger.info(`[hydrateGelbooruPost] 需要hydrate: id=${postData.id}`);
                     const hydratedPost = await fetchOriginalPost(postData.id);
                     if (!hydratedPost) {
                         return postData;
@@ -2467,9 +2475,17 @@ app.registerExtension({
                 let currentTags = ""; // 追踪当前搜索条件，用于决定是否重置游标（搜索条件变化时清空 lastPostId）
 
                 const fetchAndRender = async (reset = false) => {
-                    if (isLoading) return;
-                    if (endOfResults && !reset) return;
+                    logger.info(`[fetchAndRender] called reset=${reset} isLoading=${isLoading} endOfResults=${endOfResults}`);
+                    if (isLoading) {
+                        logger.warn(`[fetchAndRender] 跳过: isLoading=true`);
+                        return;
+                    }
+                    if (endOfResults && !reset) {
+                        logger.warn(`[fetchAndRender] 跳过: endOfResults=true`);
+                        return;
+                    }
                     isLoading = true;
+                    logger.info(`[fetchAndRender] isLoading=置true 开始加载`);
                     refreshButton.classList.add("loading");
                     refreshButton.disabled = true;
 
@@ -2481,7 +2497,9 @@ app.registerExtension({
                     if (reset) {
                         currentPage = filterState.startPage || 1;
                         const newTags = searchInput.value.trim();
+                        logger.info(`[fetchAndRender] reset: tags="${newTags}" currentTags="${currentTags}"`);
                         if (newTags !== currentTags) {
+                            logger.info(`[fetchAndRender] 标签变化, 清空seenPostIds和lastPostId`);
                             lastPostId = null;
                             seenPostIds.clear();
                         }
@@ -2489,6 +2507,7 @@ app.registerExtension({
 
                         posts = [];
                         endOfResults = false;
+                        logger.info(`[fetchAndRender] reset完成: posts清空, endOfResults=置false`);
                         imageGrid.innerHTML = "";
                         imageGrid.insertAdjacentHTML('beforeend', `<p class="danbooru-status danbooru-loading">${t('loading')}</p>`);
                     }
@@ -2539,6 +2558,7 @@ app.registerExtension({
                         const sendAll = selectedRatings.length === 0 || selectedRatings.length === RATING_VALUES.length;
                         const ratingForServer = sendAll ? "" : selectedRatings.join(",");
                         const loadLimit = reset ? Math.min(40 + (parseInt(uiSettings.preload_count, 10) || 40), 200) : 42;
+                        logger.info(`[fetchAndRender] API参数: src=${src} dedup=${dedup} page=${currentPage} limit=${loadLimit} before_id=${lastPostId} reset=${reset}`);
                         const params = new URLSearchParams({
                             "source": src,
                             "gelbooru_display_all_site_content": uiSettings.gelbooru_display_all_site_content ? "1" : "0",
@@ -2553,12 +2573,16 @@ app.registerExtension({
                         const useCursor = src === "danbooru" || (src === "gelbooru" && dedup !== "off");
                         if (useCursor && lastPostId) {
                             params.set("before_id", lastPostId);
+                            logger.info(`[fetchAndRender] 游标模式: before_id=${lastPostId}`);
+                        } else {
+                            logger.info(`[fetchAndRender] 无游标: useCursor=${useCursor} lastPostId=${lastPostId}`);
                         }
 
                         // G站游标模式下 pid 恒为 0，不允许当前页推进
                         const gelbooruCursorMode = (src === "gelbooru" && dedup !== "off");
 
                         const response = await fetch(`/danbooru_gallery/posts?${params}`);
+                        logger.info(`[fetchAndRender] 响应: status=${response.status}`);
                         const rawText = await response.text();
 
                         // 防御性 JSON 解析：后端偶发返回非 JSON（错误页/半截响应），此时不销毁已有内容
@@ -2584,10 +2608,13 @@ app.registerExtension({
                         // 先分离 error 占位格与正常 post
                         const errorPosts = newPosts.filter(p => p && p.error);
                         const normalRaw = newPosts.filter(p => !p || !p.error);
+                        logger.info(`[fetchAndRender] 解析结果: total=${newPosts.length} error=${errorPosts.length} normalRaw=${normalRaw.length}`);
 
                         // 去重：seenPostIds 中已存在的跳过（防止 G站 pid 失效产生的重复被加入 posts 数组）
+                        const beforeCount = seenPostIds.size;
                         const freshRaw = normalRaw.filter(p => !seenPostIds.has(String(p.id)));
                         freshRaw.forEach(p => seenPostIds.add(String(p.id)));
+                        logger.info(`[fetchAndRender] 去重: seenPostIds从${beforeCount}到${seenPostIds.size} freshRaw=${freshRaw.length} 总posts=${posts.length}`);
 
                         // 对正常格做过滤
                         const filteredPosts = freshRaw.filter(post => !isPostFiltered(post));
@@ -2599,6 +2626,7 @@ app.registerExtension({
 
                         if (newPosts.length === 0 && errorPosts.length === 0) {
                             endOfResults = true;
+                            logger.info(`[fetchAndRender] → endOfResults=置true (newPosts=0 errorPosts=0)`);
                             if (reset) {
                                 imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
                             } else {
@@ -2608,7 +2636,12 @@ app.registerExtension({
                             return;
                         }
 
+                        // 对正常格做过滤
+                        const filteredPosts = freshRaw.filter(post => !isPostFiltered(post));
+                        logger.info(`[fetchAndRender] 过滤后: freshRaw->filteredPosts=${filteredPosts.length}/${freshRaw.length}`);
+
                         if (filteredPosts.length === 0 && freshRaw.length === 0 && reset && errorPosts.length === 0) {
+                            logger.info(`[fetchAndRender] reset无结果, 显示noResults`);
                             imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
                             return;
                         }
@@ -2616,30 +2649,40 @@ app.registerExtension({
                         // 确保即使在 cursor 模式下过滤掉了所有正常图片也能推进游标
                         if (normalRaw.length > 0) {
                             lastPostId = normalRaw[normalRaw.length - 1].id;
+                            logger.debug(`[fetchAndRender] 更新lastPostId=${lastPostId}`);
+                        } else {
+                            logger.warn(`[fetchAndRender] normalRaw为空, lastPostId不变=${lastPostId}`);
                         }
 
                         // G站游标模式下 pid 恒定不推进；D站正常推进 page
                         if (!gelbooruCursorMode) {
                             currentPage++;
+                            logger.debug(`[fetchAndRender] currentPage++ → ${currentPage}`);
                         }
 
                         posts.push(...filteredPosts);
                         filteredPosts.forEach(renderPost);
+                        logger.info(`[fetchAndRender] 渲染${filteredPosts.length}张, 总posts=${posts.length}`);
 
                         // 去重陷阱检测：仅当 dedup=off（G站 pid 翻页）时启用，游标模式下不误判
                         const isDedupOff = src === "gelbooru" && dedup === "off";
                         if (freshRaw.length === 0 && normalRaw.length > 0 && !reset && isDedupOff) {
                             endOfResults = true;
-                            logger.warn(`[fetchAndRender] 本页 ${newPosts.length} 张全是重复，判定到底/分页失效，停止加载`);
+                            logger.warn(`[fetchAndRender] ★去重陷阱触发★ freshRaw=0 normalRaw=${normalRaw.length} 判定到底 page=${currentPage}`);
                             return;
+                        }
+                        if (isDedupOff && normalRaw.length > 0 && freshRaw.length > 0) {
+                            logger.info(`[fetchAndRender] dedup陷阱未触发: freshRaw=${freshRaw.length}/${normalRaw.length}`);
                         }
 
                         // Filter-cascade guard
                         if (filteredPosts.length === 0 && !reset) {
+                            logger.warn(`[fetchAndRender] filteredPosts空(非reset), 延迟1.5s后重试`);
                             await new Promise(r => setTimeout(r, 1500));
                         }
 
                     } catch (e) {
+                        logger.error(`[fetchAndRender] 异常: ${e.message}`);
                         // 首次加载→整屏错误；滚动续拉→保留内容+加错误格
                         if (reset) {
                             imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
@@ -2649,19 +2692,26 @@ app.registerExtension({
                         }
                     } finally {
                         isLoading = false;
+                        logger.info(`[fetchAndRender] finally: isLoading=置false endOfResults=${endOfResults} parseFailed=${parseFailed}`);
                         refreshButton.classList.remove("loading");
                         refreshButton.disabled = false;
                         const indicator = imageGrid.querySelector('.danbooru-loading');
                         if (indicator) indicator.remove();
                         // 每次加载完成后检查是否需要补充更多（maybeLoadMore）
                         if (!endOfResults && !parseFailed) {
+                            logger.info(`[fetchAndRender] finally → 调用maybeLoadMore`);
                             maybeLoadMore();
+                        } else {
+                            logger.warn(`[fetchAndRender] finally → 跳过maybeLoadMore: endOfResults=${endOfResults} parseFailed=${parseFailed}`);
                         }
                     }
                 };
 
                 const maybeLoadMore = () => {
-                    if (isLoading || endOfResults) return;
+                    if (isLoading || endOfResults) {
+                        logger.warn(`[maybeLoadMore] 跳过: isLoading=${isLoading} endOfResults=${endOfResults}`);
+                        return;
+                    }
                     const bufferTarget = parseInt(uiSettings.preload_count, 10) || 40;
                     const scrollH = imageGrid.scrollHeight;
                     let viewedCount = 0;
@@ -2670,9 +2720,12 @@ app.registerExtension({
                         viewedCount = Math.floor(posts.length * viewedRatio);
                     }
                     const aheadBuffer = posts.length - viewedCount;
+                    logger.info(`[maybeLoadMore] posts=${posts.length} viewedCount=${viewedCount} aheadBuffer=${aheadBuffer} bufferTarget=${bufferTarget}`);
                     if (aheadBuffer < bufferTarget) {
-                        // 异步触发避免递归撑爆调用栈
+                        logger.info(`[maybeLoadMore] trigger: aheadBuffer=${aheadBuffer}<${bufferTarget}`);
                         setTimeout(() => fetchAndRender(false), 0);
+                    } else {
+                        logger.debug(`[maybeLoadMore] skip: aheadBuffer=${aheadBuffer}>=${bufferTarget}`);
                     }
                 };
 
@@ -2699,6 +2752,7 @@ app.registerExtension({
                         }
                         if (selections.length === 0) return;
                         selectionQueueId++;
+                        logger.info(`[QueueBtn] push ${selections.length}条 nodeId=${nodeInstanceId} queueId=${selectionQueueId}`);
                         await fetch("/danbooru_gallery/selection_queue_push", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
@@ -2709,7 +2763,10 @@ app.registerExtension({
                 setTimeout(_hookQueueButton, 1000);
 
                 // 2 秒定时轮询检查前方缓冲，不够就自动补货
-                setInterval(maybeLoadMore, 2000);
+                setInterval(() => {
+                    logger.debug(`[setInterval] tick`);
+                    maybeLoadMore();
+                }, 2000);
 
                 const resizeGrid = () => {
                     try {
@@ -3358,10 +3415,10 @@ app.registerExtension({
                 };
 
                 const createPostElement = (post) => {
-                    // error 占位格：红色边框，直接显示错误文本
+                    // error 占位格：红色边框，直接显示错误文本，占据一个图片格空间
                     if (post && post.error) {
                         const wrapper = $el("div.danbooru-image-wrapper", {
-                            style: { border: '1px solid #ff4444', minHeight: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ff4444', fontSize: '0.85em', padding: '8px', textAlign: 'center' }
+                            style: { border: '1px solid #ff4444', minHeight: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ff4444', fontSize: '0.85em', padding: '8px', textAlign: 'center', background: 'var(--comfy-input-bg)', gridRowEnd: `span ${Math.ceil(120 / 10)}` }
                         });
                         wrapper.dataset.postId = `err_${post.pid || post.page || '?'}`;
                         wrapper.textContent = post.error;
@@ -3741,6 +3798,11 @@ app.registerExtension({
                 };
 
                 const renderPost = (post) => {
+                    if (post && post.error) {
+                        logger.info(`[renderPost] 错误格: "${post.error}" pid=${post.pid || '?'} page=${post.page || '?'}`);
+                    } else if (post) {
+                        logger.debug(`[renderPost] 正常格: id=${post.id}`);
+                    }
                     const element = createPostElement(post);
                     if (element) {
                         imageGrid.appendChild(element);
@@ -3764,9 +3826,15 @@ app.registerExtension({
                             const viewedRatio = Math.min(1, (imageGrid.scrollTop + imageGrid.clientHeight) / scrollH);
                             viewedCount = Math.floor(posts.length * viewedRatio);
                         }
-                        if (posts.length - viewedCount < bufferTarget) {
+                        const aheadBuffer = posts.length - viewedCount;
+                        if (aheadBuffer < bufferTarget) {
+                            logger.info(`[scrollHandler] 触发: aheadBuffer=${aheadBuffer}<${bufferTarget} posts=${posts.length} viewedCount=${viewedCount}`);
                             setTimeout(() => fetchAndRender(false), 0);
+                        } else {
+                            logger.debug(`[scrollHandler] 跳过: aheadBuffer=${aheadBuffer}>=${bufferTarget}`);
                         }
+                    } else {
+                        logger.debug(`[scrollHandler] 跳过: isLoading=${isLoading} endOfResults=${endOfResults}`);
                     }
 
                     // Debounced scroll logic for page indicator
@@ -4208,9 +4276,11 @@ app.registerExtension({
                         if (typeof savedGlobalLogging === "boolean") {
                             uiSettings.global_logging = savedGlobalLogging;
                             loggerClient.setConsoleOutput(savedGlobalLogging);
+                            logger.info(`[init] 全局日志=${savedGlobalLogging}`);
                         } else {
                             uiSettings.global_logging = false;
                             loggerClient.setConsoleOutput(false);
+                            logger.info(`[init] 全局日志=默认关闭`);
                         }
 
                         // 初始化排行榜按钮状态
@@ -4225,6 +4295,7 @@ app.registerExtension({
 
                         // 页面加载时直接获取第一页的帖子（先同步 currentTags，否则重置块会因 '' !== 搜索值而清空锚点）
                         currentTags = searchInput.value.trim();
+                        logger.info(`[init] 开始首次加载: src=${uiSettings.source_site || "danbooru"} dedup=${uiSettings.gelbooru_dedup_mode || "off"} preload=${uiSettings.preload_count || 40} tags="${currentTags}"`);
                         fetchAndRender(true);
 
                     } catch (error) {
