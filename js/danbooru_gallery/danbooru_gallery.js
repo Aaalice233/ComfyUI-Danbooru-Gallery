@@ -2614,11 +2614,18 @@ app.registerExtension({
                         const normalRaw = newPosts.filter(p => !p || !p.error);
                         logger.info(`[fetchAndRender] 解析结果: total=${newPosts.length} error=${errorPosts.length} normalRaw=${normalRaw.length}`);
 
-                        // 去重：seenPostIds 中已存在的跳过（防止 G站 pid 失效产生的重复被加入 posts 数组）
-                        const beforeCount = seenPostIds.size;
-                        const freshRaw = normalRaw.filter(p => !seenPostIds.has(String(p.id)));
-                        freshRaw.forEach(p => seenPostIds.add(String(p.id)));
-                        logger.info(`[fetchAndRender] 去重: seenPostIds从${beforeCount}到${seenPostIds.size} freshRaw=${freshRaw.length} 总posts=${posts.length}`);
+                        // 先去重（仅 cursor/pid 模式，G站 dedup=off 纯翻页不过滤）
+                        const isGelbooruDedupOff = src === "gelbooru" && dedup === "off";
+                        let freshRaw;
+                        if (isGelbooruDedupOff) {
+                            freshRaw = normalRaw;
+                            logger.info(`[fetchAndRender] G站dedup=off纯翻页: seenPostIds跳过 normalRaw=${normalRaw.length}`);
+                        } else {
+                            const beforeCount = seenPostIds.size;
+                            freshRaw = normalRaw.filter(p => !seenPostIds.has(String(p.id)));
+                            freshRaw.forEach(p => seenPostIds.add(String(p.id)));
+                            logger.info(`[fetchAndRender] 去重: seenPostIds从${beforeCount}到${seenPostIds.size} freshRaw=${freshRaw.length}`);
+                        }
 
                         // 对正常格做过滤
                         const filteredPosts = freshRaw.filter(post => !isPostFiltered(post));
@@ -2666,15 +2673,17 @@ app.registerExtension({
                         filteredPosts.forEach(renderPost);
                         logger.info(`[fetchAndRender] 渲染${filteredPosts.length}张, 总posts=${posts.length}`);
 
-                        // 去重陷阱检测：仅当 dedup=off（G站 pid 翻页）时启用，游标模式下不误判
+                        // 去重陷阱检测：仅当启用 seenPostIds 过滤时启用（非纯翻页模式）
                         const isDedupOff = src === "gelbooru" && dedup === "off";
-                        if (freshRaw.length === 0 && normalRaw.length > 0 && !reset && isDedupOff) {
+                        if (!isDedupOff && freshRaw.length === 0 && normalRaw.length > 0 && !reset) {
                             endOfResults = true;
                             logger.warn(`[fetchAndRender] ★去重陷阱触发★ freshRaw=0 normalRaw=${normalRaw.length} 判定到底 page=${currentPage}`);
                             return;
                         }
-                        if (isDedupOff && normalRaw.length > 0 && freshRaw.length > 0) {
-                            logger.info(`[fetchAndRender] dedup陷阱未触发: freshRaw=${freshRaw.length}/${normalRaw.length}`);
+                        if (isGelbooruDedupOff) {
+                            logger.debug(`[fetchAndRender] G站纯翻页: 跳过去重陷阱`);
+                        } else if (normalRaw.length > 0 && freshRaw.length > 0) {
+                            logger.debug(`[fetchAndRender] 去重陷阱未触发: freshRaw=${freshRaw.length}/${normalRaw.length}`);
                         }
 
                         // Filter-cascade guard
