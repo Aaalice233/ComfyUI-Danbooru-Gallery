@@ -85,8 +85,8 @@ _donmai_throttle = _RateLimiter(min_interval_sec=0.2)
 # Gelbooru 公开 HTML 页列表固定每页 42 张，pid 为该页首张图片的偏移量
 GELBOORU_PUBLIC_PAGE_SIZE = 42
 
-# Gelbooru 公开页抓取限流器（0.75s = ~1.33 req/s，避开 429）
-_gelbooru_public_throttle = _RateLimiter(min_interval_sec=0.75)
+# Gelbooru 公开页抓取限流器（0.2s = 5 req/s，避免触发 429）
+_gelbooru_public_throttle = _RateLimiter(min_interval_sec=0.2)
 
 # Gelbooru 图片代理限流器（0.2s = 5 req/s，2 并发 = 10 张/s）
 _gelbooru_image_throttle = _RateLimiter(min_interval_sec=0.2)
@@ -1290,23 +1290,8 @@ def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, displ
         refs = adapter.extract_public_post_refs(list_response.text, limit)
         logger.info(f"[GelbooruPublic] tags='{tags}' display_all={display_all_site_content} refs={len(refs)}")
 
-    # G站公开页面：标签只有 title 里的无分类版，hydrate 所有 ref 以显示完整分类标签
-    if not id_match and refs:
-        for ref in refs:
-            try:
-                _gelbooru_public_throttle.wait()  # hydrate 每个帖子也要限流
-                post_page = session.get(adapter.posts_url, params=adapter.build_public_post_params(ref["id"]), timeout=(8, 15))
-                post_page.raise_for_status()
-                hydrated = adapter.normalize_public_post_page(ref["id"], post_page.text, ref)
-                for key in ("tag_string", "tag_string_artist", "tag_string_copyright", "tag_string_character", "tag_string_general", "tag_string_meta", "image_width", "image_height", "rating"):
-                    ref[key] = hydrated.get(key, ref.get(key, ""))
-                ref["preview_file_url"] = hydrated.get("preview_file_url") or ref.get("preview_file_url", "")
-                if hydrated.get("file_url"):
-                    ref["file_url"] = hydrated["file_url"]
-                    ref["_gelbooru_preview_only"] = False
-            except Exception:
-                pass
-
+    # 跳过批量 hydrate —— 前端 hydrateGelbooruPost 在 hover tooltip 时按需 hydrate
+    # 让列表页立即返回给前端渲染缩略图，不再等待逐帖详情（之前 ~42*0.75s=31s 空白期）
     if not id_match:
         return refs
 
