@@ -2561,7 +2561,7 @@ app.registerExtension({
                         const selectedRatings = getSelectedRatings();
                         const sendAll = selectedRatings.length === 0 || selectedRatings.length === RATING_VALUES.length;
                         const ratingForServer = sendAll ? "" : selectedRatings.join(",");
-                        const loadLimit = reset ? Math.min(40 + (parseInt(uiSettings.preload_count, 10) || 40), 200) : 84;
+                        const loadLimit = 84; // 2 页/次
                         logger.info(`[fetchAndRender] API参数: src=${src} dedup=${dedup} page=${currentPage} limit=${loadLimit} before_id=${lastPostId} reset=${reset}`);
                         const params = new URLSearchParams({
                             "source": src,
