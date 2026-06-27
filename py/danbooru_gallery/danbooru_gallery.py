@@ -19,6 +19,7 @@ from requests.auth import HTTPBasicAuth
 import urllib3
 from pathlib import Path
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from ..utils.logger import get_logger
 from .site_adapters import get_site_adapter
 from collections import defaultdict, deque
@@ -1307,13 +1308,15 @@ def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, displ
         logger.info(f"[GelbooruPublic] tags='{tags}' total_refs={len(refs)}")
 
     # G站公开页面：标签只有 title 里的无分类版，hydrate 所有 ref 以显示完整分类标签
+    # 按对处理：一次并发取2张图的详情，顺序请求不跨序
     if not id_match and refs:
-        for ref in refs:
+        def _hydrate_one(ref):
+            """Fetch and hydrate a single post's detail page."""
+            _gelbooru_hydrate_throttle.wait()
             try:
-                _gelbooru_hydrate_throttle.wait()  # 单帖 hydrate 限流 0.2s/张
-                post_page = session.get(adapter.posts_url, params=adapter.build_public_post_params(ref["id"]), timeout=(8, 15))
-                post_page.raise_for_status()
-                hydrated = adapter.normalize_public_post_page(ref["id"], post_page.text, ref)
+                resp = session.get(adapter.posts_url, params=adapter.build_public_post_params(ref["id"]), timeout=(8, 15))
+                resp.raise_for_status()
+                hydrated = adapter.normalize_public_post_page(ref["id"], resp.text, ref)
                 for key in ("tag_string", "tag_string_artist", "tag_string_copyright", "tag_string_character", "tag_string_general", "tag_string_meta", "image_width", "image_height", "rating"):
                     ref[key] = hydrated.get(key, ref.get(key, ""))
                 ref["preview_file_url"] = hydrated.get("preview_file_url") or ref.get("preview_file_url", "")
@@ -1322,6 +1325,14 @@ def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, displ
                     ref["_gelbooru_preview_only"] = False
             except Exception:
                 pass
+            return ref
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            for i in range(0, len(refs), 2):
+                pair = refs[i:i+2]
+                futures = [executor.submit(_hydrate_one, ref) for ref in pair]
+                for f in futures:
+                    f.result()  # 按序等待两张完成
 
     if not id_match:
         return refs
