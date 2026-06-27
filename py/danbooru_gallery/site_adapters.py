@@ -514,15 +514,22 @@ class GelbooruAdapter(GallerySiteAdapter):
 
     def _extract_created_at(self, html_text: str) -> str:
         """Extract post creation time from Gelbooru public post page."""
-        # Gelbooru's sidebar: "Stats:" section contains date as plain text
+        # Gelbooru's sidebar: "Posted: 2007-07-16 00:19:58" plain text
         match = re.search(
-            r'Stats:.*?<li>\s*(\d{4}-\d{2}-\d{2}[^\s<>]*)',
-            html_text or "", re.IGNORECASE | re.DOTALL,
+            r'Posted:\s*(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})',
+            html_text or "", re.IGNORECASE,
         )
         if match:
-            return match.group(1).strip()
+            return match.group(1).strip().replace(" ", "T")
         # fallback: try time tag
         match = re.search(r'<time\b[^>]*datetime="([^"]+)"', html_text or "", re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        # last resort: bare date
+        match = re.search(
+            r'Posted:\s*(\d{4}-\d{2}-\d{2})',
+            html_text or "", re.IGNORECASE,
+        )
         if match:
             return match.group(1).strip()
         return ""
