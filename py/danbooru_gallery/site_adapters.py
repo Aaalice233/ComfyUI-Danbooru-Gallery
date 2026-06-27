@@ -297,6 +297,7 @@ class GelbooruAdapter(GallerySiteAdapter):
             "image_width": image_width,
             "image_height": image_height,
             "md5": fallback.get("md5") or str(post_id),
+            "created_at": fallback.get("created_at") or self._extract_created_at(html_text),
             "rating": self._rating_from_tags(all_tags),
             "source_site": self.key,
         }
@@ -509,6 +510,21 @@ class GelbooruAdapter(GallerySiteAdapter):
         for tag in tags:
             if tag.startswith("rating:"):
                 return self._normalize_rating(tag.split(":", 1)[1])
+        return ""
+
+    def _extract_created_at(self, html_text: str) -> str:
+        """Extract post creation time from Gelbooru public post page."""
+        # Gelbooru's sidebar: "Stats:" section contains date as plain text
+        match = re.search(
+            r'Stats:.*?<li>\s*(\d{4}-\d{2}-\d{2}[^\s<>]*)',
+            html_text or "", re.IGNORECASE | re.DOTALL,
+        )
+        if match:
+            return match.group(1).strip()
+        # fallback: try time tag
+        match = re.search(r'<time\b[^>]*datetime="([^"]+)"', html_text or "", re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
         return ""
 
     def _tags_from_title(self, value: Optional[str]) -> str:
