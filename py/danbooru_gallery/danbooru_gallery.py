@@ -88,6 +88,9 @@ GELBOORU_PUBLIC_PAGE_SIZE = 42
 # Gelbooru 公开页抓取限流器（0.75s = ~1.33 req/s，避开 429）
 _gelbooru_public_throttle = _RateLimiter(min_interval_sec=0.75)
 
+# Gelbooru 单帖 hydrate 限流器（0.2s = 5 req/s，比页请求快）
+_gelbooru_hydrate_throttle = _RateLimiter(min_interval_sec=0.2)
+
 # Gelbooru 图片代理限流器（0.2s = 5 req/s，2 并发 = 10 张/s）
 _gelbooru_image_throttle = _RateLimiter(min_interval_sec=0.2)
 
@@ -1237,28 +1240,23 @@ def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, displ
     if id_match:
         refs = [{"id": id_match.group(1)}]
     else:
-        pid_value = max(page - 1, 0) * GELBOORU_PUBLIC_PAGE_SIZE
-        params = adapter.build_public_posts_params(tags, limit, page, rating_query)
-        params["pid"] = pid_value
-
         session = _get_gelbooru_session(display_all_site_content)
 
-        def _get_list_page(sess):
+        def _get_list_page(sess, _params, _pid):
             """Fetch list page with rate limiting + 429/503 retry."""
             for attempt in range(2):
                 _gelbooru_public_throttle.wait()
                 try:
-                    resp = sess.get(adapter.posts_url, params=params, timeout=(8, 15))
+                    resp = sess.get(adapter.posts_url, params=_params, timeout=(8, 15))
                 except requests.exceptions.RequestException as e:
                     if attempt == 0:
-                        _log_gelbooru_retry_warning(f"网络异常: {e}", pid_value=pid_value)
+                        _log_gelbooru_retry_warning(f"网络异常: {e}", pid_value=_pid)
                         time.sleep(3)
                     continue
 
                 if resp.status_code not in (429, 503):
-                    return resp  # 正常（含 200/500/403），交调用方判断
+                    return resp
 
-                # 429/503 限流: 读 Retry-After 退避一次
                 retry_after = resp.headers.get("Retry-After")
                 delay = 2.0
                 try:
@@ -1267,34 +1265,52 @@ def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, displ
                 except ValueError:
                     pass
                 if attempt == 0:
-                    _log_gelbooru_retry_warning(f"HTTP {resp.status_code} 限流，{delay:.1f}s 后重试", pid_value=pid_value)
+                    _log_gelbooru_retry_warning(f"HTTP {resp.status_code} 限流，{delay:.1f}s 后重试", pid_value=_pid)
                     time.sleep(delay)
                 else:
-                    _log_gelbooru_retry_warning(f"重试仍限流({resp.status_code})，跳过本页", pid_value=pid_value)
-                    return None  # 重试仍限流 → 跳过本页
+                    _log_gelbooru_retry_warning(f"重试仍限流({resp.status_code})，跳过本页", pid_value=_pid)
+                    return None
 
             return None
 
-        list_response = _get_list_page(session)
-        if list_response is None:
-            return [{"error": "Gelbooru 服务暂不可用", "pid": pid_value, "page": page}]
+        # 一次请求多页：limit > 42 时依次抓取多页再合并，顺序请求不跨序
+        pages_to_fetch = max(1, -(-limit // GELBOORU_PUBLIC_PAGE_SIZE))
+        all_refs = []
+        for pi in range(pages_to_fetch):
+            cur_page = page + pi
+            pid_value = max(cur_page - 1, 0) * GELBOORU_PUBLIC_PAGE_SIZE
+            params = adapter.build_public_posts_params(tags, limit, cur_page, rating_query)
+            params["pid"] = pid_value
 
-        if display_all_site_content and _gelbooru_public_page_requires_options(list_response.text):
-            logger.warning("[GelbooruPublic] Display all site content needed; rebuilding session")
-            session = _get_gelbooru_session(display_all_site_content, force_refresh=True)
-            list_response = _get_list_page(session)
+            list_response = _get_list_page(session, params, pid_value)
             if list_response is None:
-                driver_pid = params.get("pid", pid_value)
-                return [{"error": "Gelbooru 服务暂不可用", "pid": driver_pid, "page": page}]
+                all_refs.append({"error": "Gelbooru 服务暂不可用", "pid": pid_value, "page": cur_page})
+                continue
 
-        refs = adapter.extract_public_post_refs(list_response.text, limit)
-        logger.info(f"[GelbooruPublic] tags='{tags}' display_all={display_all_site_content} refs={len(refs)}")
+            if display_all_site_content and _gelbooru_public_page_requires_options(list_response.text):
+                logger.warning("[GelbooruPublic] Display all site content needed; rebuilding session")
+                session = _get_gelbooru_session(display_all_site_content, force_refresh=True)
+                list_response = _get_list_page(session, params, pid_value)
+                if list_response is None:
+                    all_refs.append({"error": "Gelbooru 服务暂不可用", "pid": pid_value, "page": cur_page})
+                    continue
+
+            remaining = limit - len(all_refs)
+            refs = adapter.extract_public_post_refs(list_response.text, remaining)
+            all_refs.extend(refs)
+            logger.info(f"[GelbooruPublic] page={cur_page} pid={pid_value} refs={len(refs)} 累计={len(all_refs)}")
+
+            if len(refs) < GELBOORU_PUBLIC_PAGE_SIZE:
+                break
+
+        refs = all_refs
+        logger.info(f"[GelbooruPublic] tags='{tags}' total_refs={len(refs)}")
 
     # G站公开页面：标签只有 title 里的无分类版，hydrate 所有 ref 以显示完整分类标签
     if not id_match and refs:
         for ref in refs:
             try:
-                _gelbooru_public_throttle.wait()  # hydrate 每个帖子也要限流
+                _gelbooru_hydrate_throttle.wait()  # 单帖 hydrate 限流 0.2s/张
                 post_page = session.get(adapter.posts_url, params=adapter.build_public_post_params(ref["id"]), timeout=(8, 15))
                 post_page.raise_for_status()
                 hydrated = adapter.normalize_public_post_page(ref["id"], post_page.text, ref)
