@@ -2495,7 +2495,11 @@ app.registerExtension({
                     const isNetworkConnected = await checkNetworkStatus();
                     if (!isNetworkConnected) {
                         console.log("网络错误已隐藏: 网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接");
-                        imageGrid.innerHTML = `<p class="danbooru-status error">网络连接失败，请检查网络连接后重试</p>`;
+                        if (reset) {
+                            imageGrid.innerHTML = `<p class="danbooru-status error">网络连接失败，请检查网络连接后重试</p>`;
+                        } else {
+                            renderPost({ error: `网络连接失败` });
+                        }
                         isLoading = false;
                         refreshButton.classList.remove("loading");
                         refreshButton.disabled = false;
@@ -2570,10 +2574,6 @@ app.registerExtension({
                         if (!Array.isArray(newPosts)) newPosts = [];
 
                         if (parseFailed) {
-                            if (reset) {
-                                imageGrid.innerHTML = `<p class="danbooru-status error">响应解析失败(status=${response.status})</p>`;
-                                return;
-                            }
                             renderPost({ error: `响应解析失败(status=${response.status})` });
                             return;
                         }
@@ -2590,12 +2590,7 @@ app.registerExtension({
                         const filteredPosts = freshRaw.filter(post => !isPostFiltered(post));
 
                         if (errorPosts.length > 0) {
-                            if (reset && filteredPosts.length === 0 && freshRaw.length === 0) {
-                                // 首次加载全是 error 格：整屏错误
-                                imageGrid.innerHTML = `<p class="danbooru-status error">${errorPosts[0].error}</p>`;
-                                return;
-                            }
-                            // 续加载/混合正常格：追加 error 格
+                            // 追加 error 格，不销毁已有内容
                             errorPosts.forEach(renderPost);
                         }
 
@@ -2638,13 +2633,9 @@ app.registerExtension({
                         }
 
                     } catch (e) {
-                        // 首次加载→整屏错误；滚动续拉→保留内容+加错误格
-                        if (reset) {
-                            imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
-                        } else {
-                            logger.warn('[fetchAndRender] 加载失败，保留已有内容:', e?.message || e);
-                            renderPost({ error: `请求失败: ${e.message}` });
-                        }
+                        // 报错不销毁已有内容，追加红色错误格
+                        logger.warn('[fetchAndRender] 加载失败，保留已有内容:', e?.message || e);
+                        renderPost({ error: `请求失败: ${e.message}` });
                     } finally {
                         isLoading = false;
                         refreshButton.classList.remove("loading");
@@ -3401,7 +3392,7 @@ app.registerExtension({
                     const img = $el("img", {
                         src: `/danbooru_gallery/image_proxy?url=${encodeURIComponent(previewUrl)}`,
                         onload: scheduleResizeGrid,
-                        onerror: () => { wrapper.style.display = 'none'; },
+                        onerror: () => { wrapper.style.display = 'none'; img.remove(); }
                         onclick: (e) => {
                             e.stopPropagation();
                             markActive(); // 标记自己为最后活跃节点
