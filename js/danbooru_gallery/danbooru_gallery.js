@@ -2541,7 +2541,12 @@ app.registerExtension({
                         const tags = searchValue.split(',').filter(tag => tag.trim() !== '');
                         const tagCount = tags.length;
 
-                        if (tagCount > 2) {
+                        // 按当前来源/去重模式的实际 tag 配额给提示，避免静默截断
+                        const _src = uiSettings.source_site || "danbooru";
+                        const _dedup = uiSettings.gelbooru_dedup_mode || "off";
+                        if (_src === "gelbooru" && _dedup === "on" && tagCount > 1) {
+                            showTagHint('开启去重时仅支持 1 个 tag（游标占用名额），其余 tag 将被忽略；如需多 tag 请配置密钥后选“开启·已配密钥”', false);
+                        } else if (tagCount > 2) {
                             showTagHint('搜索只考虑前两个tag，第三个及后续tag将被忽略', false);
                         } else {
                             clearTagHint();
