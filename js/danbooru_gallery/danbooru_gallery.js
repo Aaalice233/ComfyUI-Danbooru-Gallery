@@ -2673,6 +2673,9 @@ app.registerExtension({
                         filteredPosts.forEach(renderPost);
                         logger.info(`[fetchAndRender] 渲染${filteredPosts.length}张, 总posts=${posts.length}`);
 
+                        // 渲染后回收最老端，维持滑动窗口(浏览多少回收多少)
+                        recycleOldItems();
+
                         // 去重陷阱检测：仅当启用 seenPostIds 过滤时启用（非纯翻页模式）
                         const isDedupOff = src === "gelbooru" && dedup === "off";
                         if (!isDedupOff && freshRaw.length === 0 && normalRaw.length > 0 && !reset) {
@@ -2831,6 +2834,53 @@ app.registerExtension({
                         resizeGridTimer = null;
                         resizeGrid();
                     });
+                };
+
+                // DOM 滑动窗口回收：保留最近 ~100 页(4200张)，超出后从最老端回收，
+                // "浏览多少回收多少"。posts 数组与 imageGrid 子节点同序一一对应，
+                // 必须同步缩短前缀，否则补货比例(maybeLoadMore)和选中查找(Queue)会错位。
+                const MAX_KEPT_ITEMS = 4200; // ~100 页 @ 42/页
+                const recycleOldItems = () => {
+                    try {
+                        const children = imageGrid.children;
+                        const overflow = children.length - MAX_KEPT_ITEMS;
+                        if (overflow <= 0) return;
+
+                        // 记录回收前、当前视口顶端那个元素的位置，用于事后补偿滚动
+                        const gridTop = imageGrid.getBoundingClientRect().top;
+                        let anchorEl = null, anchorOffset = 0;
+                        for (const c of children) {
+                            const r = c.getBoundingClientRect();
+                            if (r.bottom - gridTop > 0) { // 第一个底边进入视口的元素
+                                anchorEl = c;
+                                anchorOffset = r.top - gridTop; // 相对网格顶端的偏移
+                                break;
+                            }
+                        }
+
+                        let removed = 0;
+                        // 从最老端逐个回收，遇到视口锚点或选中项即停(保护视口内容与用户选择)
+                        while (removed < overflow) {
+                            const el = imageGrid.firstElementChild;
+                            if (!el || el === anchorEl) break;
+                            if (el.classList && el.classList.contains('selected')) break;
+                            imageGrid.removeChild(el);
+                            removed++;
+                        }
+                        if (removed <= 0) return;
+
+                        // 同步缩短 posts 前缀，保持与 DOM 对齐
+                        posts.splice(0, removed);
+
+                        // 补偿滚动位置：回收后用锚点重新定位，避免视口跳动
+                        if (anchorEl && anchorEl.isConnected) {
+                            const newTop = anchorEl.getBoundingClientRect().top - imageGrid.getBoundingClientRect().top;
+                            imageGrid.scrollTop += (newTop - anchorOffset);
+                        }
+                        logger.info(`[recycle] 回收${removed}张, 剩余DOM=${imageGrid.children.length} posts=${posts.length}`);
+                    } catch (e) {
+                        logger.warn(`[recycle] 回收异常: ${e?.message || e}`);
+                    }
                 };
 
                 const showEditPanel = (post) => {
@@ -4695,7 +4745,7 @@ $el("style", {
         border-color: #DC3545;
     }
     .danbooru-favorites-button .icon { width: 16px; height: 16px; }
-    .danbooru-image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-gap: 5px; grid-auto-rows: 1px; overflow-y: auto; background-color: var(--comfy-input-bg); padding: 5px; border-radius: 4px; flex-grow: 1; height: 0; }
+    .danbooru-image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-gap: 5px; grid-auto-rows: 10px; overflow-y: auto; background-color: var(--comfy-input-bg); padding: 5px; border-radius: 4px; flex-grow: 1; height: 0; }
     .danbooru-image-wrapper {
         grid-row-start: auto;
         border: 2px solid transparent;
