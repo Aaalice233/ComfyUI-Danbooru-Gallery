@@ -62,7 +62,8 @@ class _RateLimiter:
     def __init__(self, min_interval_sec):
         self.min_interval = min_interval_sec
         self._last_ts = 0.0
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()       # 同步路径继续用，保持不变
+        self._async_lock = None             # 异步锁，首次 async_wait 时懒创建
 
     def wait(self):
         with self._lock:
@@ -73,8 +74,10 @@ class _RateLimiter:
             self._last_ts = time.monotonic()
 
     async def async_wait(self):
-        """异步版限流，不阻塞事件循环"""
-        with self._lock:
+        """异步版限流，不阻塞事件循环。用 asyncio.Lock 串行化，避免 threading.Lock + await 死锁。"""
+        if self._async_lock is None:
+            self._async_lock = asyncio.Lock()
+        async with self._async_lock:
             now = time.monotonic()
             elapsed = now - self._last_ts
             if elapsed < self.min_interval:
