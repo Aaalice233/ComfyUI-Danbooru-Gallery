@@ -1754,6 +1754,10 @@ app.registerExtension({
                                 const filteredPosts = posts.filter(post => !isPostFiltered(post));
                                 imageGrid.innerHTML = "";
                                 filteredPosts.forEach(renderPost);
+                                // posts 必须与 imageGrid 子节点同序一一对应(recycleOldItems 的不变式)，
+                                // 重渲染只保留 filteredPosts，故同步回写 posts，避免回收时前缀错位
+                                posts.length = 0;
+                                posts.push(...filteredPosts);
 
                                 // 如果过滤后帖子太少，自动加载更多
                                 if (filteredPosts.length < 20) {
