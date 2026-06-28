@@ -75,6 +75,8 @@ temp_*
 # Cache files
 py/character_feature_swap/cache/
 py/save_image_plus/hash_cache.json
+# 数据库备份文件（运行时产物，不入库）
+*.db.bak
 
 # Prompt Selector specific
 py/prompt_selector/preview/

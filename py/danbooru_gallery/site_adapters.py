@@ -118,8 +118,9 @@ class GelbooruAdapter(GallerySiteAdapter):
             "page": "post",
             "s": "list",
             "tags": public_tags,
-            # Gelbooru's public list page uses an offset-like pid.
-            "pid": max(page - 1, 0) * max(limit, 1),
+            # Gelbooru's public list page uses a fixed page size of 42.
+            # pid = (page-1) * 42, decoupled from the frontend's limit param.
+            "pid": max(page - 1, 0) * 42,
         }
 
     def build_public_post_params(self, post_id: Any) -> Dict[str, Any]:
@@ -296,6 +297,7 @@ class GelbooruAdapter(GallerySiteAdapter):
             "image_width": image_width,
             "image_height": image_height,
             "md5": fallback.get("md5") or str(post_id),
+            "created_at": fallback.get("created_at") or self._extract_created_at(html_text),
             "rating": self._rating_from_tags(all_tags),
             "source_site": self.key,
         }
@@ -508,6 +510,28 @@ class GelbooruAdapter(GallerySiteAdapter):
         for tag in tags:
             if tag.startswith("rating:"):
                 return self._normalize_rating(tag.split(":", 1)[1])
+        return ""
+
+    def _extract_created_at(self, html_text: str) -> str:
+        """Extract post creation time from Gelbooru public post page."""
+        # Gelbooru's sidebar: "Posted: 2007-07-16 00:19:58" plain text
+        match = re.search(
+            r'Posted:\s*(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})',
+            html_text or "", re.IGNORECASE,
+        )
+        if match:
+            return match.group(1).strip().replace(" ", "T")
+        # fallback: try time tag
+        match = re.search(r'<time\b[^>]*datetime="([^"]+)"', html_text or "", re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        # last resort: bare date
+        match = re.search(
+            r'Posted:\s*(\d{4}-\d{2}-\d{2})',
+            html_text or "", re.IGNORECASE,
+        )
+        if match:
+            return match.group(1).strip()
         return ""
 
     def _tags_from_title(self, value: Optional[str]) -> str:
