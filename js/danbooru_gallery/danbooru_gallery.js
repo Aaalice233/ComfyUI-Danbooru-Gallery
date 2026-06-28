@@ -2523,7 +2523,7 @@ app.registerExtension({
                         if (reset) {
                             imageGrid.innerHTML = `<p class="danbooru-status error">网络连接失败，请检查网络连接后重试</p>`;
                         } else {
-                            renderPost({ error: `网络连接失败` });
+                            renderErrorCell({ error: `网络连接失败` });
                         }
                         isLoading = false;
                         refreshButton.classList.remove("loading");
@@ -2610,7 +2610,7 @@ app.registerExtension({
                                 imageGrid.innerHTML = `<p class="danbooru-status error">响应解析失败(status=${response.status})</p>`;
                                 return;
                             }
-                            renderPost({ error: `响应解析失败(status=${response.status})` });
+                            renderErrorCell({ error: `响应解析失败(status=${response.status})` });
                             return;
                         }
 
@@ -2637,7 +2637,7 @@ app.registerExtension({
 
                         if (errorPosts.length > 0) {
                             // 追加 error 格，不销毁已有内容
-                            errorPosts.forEach(renderPost);
+                            errorPosts.forEach(renderErrorCell);
                         }
 
                         if (newPosts.length === 0 && errorPosts.length === 0) {
@@ -2647,7 +2647,7 @@ app.registerExtension({
                                 imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
                             } else {
                                 // 非首次：不销毁已加载内容，底部显示到底提示
-                                renderPost({ error: "没有更多结果了" });
+                                renderErrorCell({ error: "没有更多结果了" });
                             }
                             return;
                         }
@@ -2707,7 +2707,7 @@ app.registerExtension({
                             imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
                         } else {
                             logger.warn('[fetchAndRender] 加载失败，保留已有内容:', e?.message || e);
-                            renderPost({ error: `请求失败: ${e.message}` });
+                            renderErrorCell({ error: `请求失败: ${e.message}` });
                         }
                     } finally {
                         isLoading = false;
@@ -3873,6 +3873,15 @@ app.registerExtension({
                     if (element) {
                         imageGrid.appendChild(element);
                     }
+                };
+
+                // 错误格：渲染的同时 push 进 posts，保持 posts 与 DOM 一一对应
+                // （回收逻辑 recycleOldItems 依赖此不变式，否则 splice 会错删真实 post）
+                let _errSeq = 0;
+                const renderErrorCell = (errObj) => {
+                    const post = { ...errObj, id: `err_${errObj.pid || errObj.page || 'x'}_${_errSeq++}` };
+                    posts.push(post);
+                    renderPost(post);
                 };
 
                 const observer = new ResizeObserver(() => {
