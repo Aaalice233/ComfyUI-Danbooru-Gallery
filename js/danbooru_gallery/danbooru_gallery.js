@@ -2370,6 +2370,14 @@ app.registerExtension({
                 };
 
                 const hydrateGelbooruTooltipPost = hydrateGelbooruPost;
+                const hydrateGelbooruEditPost = async (postData) => {
+                    if (!postData || postData.source_site !== "gelbooru" || temporaryTagEdits[postData.id]) {
+                        return temporaryTagEdits[postData?.id] || postData;
+                    }
+
+                    const latestPost = posts.find(p => p.id == postData.id) || originalPostCache[postData.id] || postData;
+                    return await hydrateGelbooruPost(latestPost);
+                };
 
                 const getBestImageUrl = (postData, allowPreviewFallback = true) => {
                     if (!postData) return "";
@@ -3213,12 +3221,20 @@ app.registerExtension({
                             const deleteOption = $el("div.danbooru-context-menu-item", {
                                 textContent: '🗑️ ' + t('delete'),
                                 onclick: () => {
-                                    if (postData[`tag_string_${category}`]) {
-                                        const tags = postData[`tag_string_${category}`].split(' ');
+                                    const tagStringKey = `tag_string_${category}`;
+                                    if (postData[tagStringKey]) {
+                                        const tags = postData[tagStringKey].split(' ');
                                         const index = tags.indexOf(tag);
                                         if (index > -1) {
                                             tags.splice(index, 1);
-                                            postData[`tag_string_${category}`] = tags.join(' ');
+                                            postData[tagStringKey] = tags.join(' ');
+                                        }
+                                    } else if (category === "general" && postData.tag_string) {
+                                        const tags = postData.tag_string.split(' ');
+                                        const index = tags.indexOf(tag);
+                                        if (index > -1) {
+                                            tags.splice(index, 1);
+                                            postData.tag_string = tags.join(' ');
                                         }
                                     }
                                     // 强制重新渲染以更新状态
@@ -3249,19 +3265,8 @@ app.registerExtension({
                     };
 
                     const categoryOrder = TAG_CATEGORY_ORDER;
-                    const categorizedTags = { artist: new Set(), copyright: new Set(), character: new Set(), general: new Set(), meta: new Set() };
-
-                    if (postData.tag_string_artist) postData.tag_string_artist.split(' ').forEach(t => categorizedTags.artist.add(t));
-                    if (postData.tag_string_copyright) postData.tag_string_copyright.split(' ').forEach(t => categorizedTags.copyright.add(t));
-                    if (postData.tag_string_character) postData.tag_string_character.split(' ').forEach(t => categorizedTags.character.add(t));
-                    if (postData.tag_string_general) postData.tag_string_general.split(' ').forEach(t => categorizedTags.general.add(t));
-                    if (postData.tag_string_meta) postData.tag_string_meta.split(' ').forEach(t => categorizedTags.meta.add(t));
-
-                    if (Object.values(categorizedTags).every(s => s.size === 0) && postData.tag_string) {
-                        postData.tag_string.split(' ').forEach(t => categorizedTags.general.add(t));
-                    }
-
-                    const allTags = Array.from(new Set(categoryOrder.flatMap(cat => Array.from(categorizedTags[cat])))).filter(Boolean);
+                    const categorizedTags = buildCategorizedTagLists(postData);
+                    const allTags = Array.from(new Set(categoryOrder.flatMap(cat => categorizedTags[cat]))).filter(Boolean);
 
                     let translations = {};
                     if (globalMultiLanguageManager.getLanguage() === 'zh' && allTags.length > 0) {
@@ -3276,9 +3281,26 @@ app.registerExtension({
                         } catch (error) { logger.warn("Tag translation failed for edit panel:", error); }
                     }
 
+                    const hasDetails = Boolean(postData.created_at || (postData.image_width && postData.image_height));
+                    if (hasDetails) {
+                        const detailsSection = $el("div.danbooru-edit-panel-section.danbooru-edit-details-section");
+                        detailsSection.appendChild($el("div.danbooru-tooltip-category-header", { textContent: t('details') }));
+                        if (postData.created_at) {
+                            const date = new Date(postData.created_at);
+                            const formattedDate = Number.isNaN(date.getTime())
+                                ? String(postData.created_at)
+                                : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                            detailsSection.appendChild($el("div", { textContent: `${t('uploaded')}: ${formattedDate}`, className: "danbooru-tooltip-upload-date" }));
+                        }
+                        if (postData.image_width && postData.image_height) {
+                            detailsSection.appendChild($el("div", { textContent: `${t('resolution')}: ${postData.image_width}×${postData.image_height}`, className: "danbooru-tooltip-upload-date" }));
+                        }
+                        tagsContainer.appendChild(detailsSection);
+                    }
+
                     categoryOrder.forEach(categoryName => {
                         const tags = categorizedTags[categoryName];
-                        if (tags.size > 0) {
+                        if (tags.length > 0) {
                             const section = $el("div.danbooru-edit-panel-section"); // Changed class name for clarity
 
                             // Add a checkbox for each category in the edit panel
@@ -3837,9 +3859,21 @@ app.registerExtension({
                             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                         </svg>`,
                         title: t('editMode'),
-                        onclick: (e) => {
+                        onclick: async (e) => {
                             e.stopPropagation();
-                            showEditPanel(post);
+                            const originalHTML = editButton.innerHTML;
+                            editButton.disabled = true;
+                            editButton.innerHTML = '<div class="spinner"></div>';
+                            try {
+                                const postForEdit = await hydrateGelbooruEditPost(post);
+                                showEditPanel(postForEdit || post);
+                            } catch (error) {
+                                logger.warn("[editPanel] hydrate failed:", error);
+                                showEditPanel(post);
+                            } finally {
+                                editButton.disabled = false;
+                                editButton.innerHTML = originalHTML;
+                            }
                         }
                     });
 
