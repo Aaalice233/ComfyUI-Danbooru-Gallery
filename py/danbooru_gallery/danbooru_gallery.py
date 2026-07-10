@@ -43,6 +43,127 @@ except ImportError as e:
 # 禁用 SSL 警告（如果需要禁用证书验证）
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+REDACTED_QUERY_KEYS = {"api_key", "key", "login", "password", "token", "user_id"}
+
+HTTP_STATUS_HINTS = {
+    400: ("请求参数不太对", "检查标签、页码或筛选条件是否包含站点不支持的写法。"),
+    401: ("认证失败", "检查 User ID、用户名或 API Key 是否填错，必要时重新生成 API Key。"),
+    403: ("访问被拒绝", "站点可能拦截了当前网络/IP、权限不足，或触发了 Cloudflare/防爬策略。"),
+    404: ("资源不存在", "图片、收藏记录或接口路径可能已经不存在。"),
+    408: ("请求超时", "网络太慢或站点没有及时响应，可以稍后重试。"),
+    409: ("请求冲突", "资源状态可能已经改变，刷新后再试一次。"),
+    422: ("站点拒绝了这次操作", "通常是重复收藏、标签参数无效，或站点返回了校验错误。"),
+    423: ("资源被锁定", "站点暂时不允许修改该资源。"),
+    425: ("请求过早", "稍等几秒再试，避免站点把请求判定为异常。"),
+    429: ("请求过于频繁", "已经触发限流，请降低刷新/翻页速度，等一会儿再试。"),
+    500: ("站点内部错误", "对方服务器出错了，通常只能稍后再试。"),
+    502: ("网关错误", "站点或中间网关暂时不稳定，可以稍后重试。"),
+    503: ("服务暂不可用", "站点可能在维护、限流，或当前 IP 被临时挡住。"),
+    504: ("网关超时", "站点响应太慢，可能是网络链路或服务器拥堵。"),
+}
+
+
+def _redact_url(raw_url):
+    if not raw_url:
+        return ""
+    try:
+        parsed = urllib.parse.urlsplit(str(raw_url))
+        safe_query = []
+        for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True):
+            safe_query.append((key, "***" if key.lower() in REDACTED_QUERY_KEYS else value))
+        return urllib.parse.urlunsplit((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            urllib.parse.urlencode(safe_query),
+            parsed.fragment,
+        ))
+    except Exception:
+        return str(raw_url)
+
+
+def _response_excerpt(response, limit=500):
+    if response is None:
+        return ""
+    try:
+        text = response.text or ""
+    except Exception:
+        return ""
+    return text[:limit]
+
+
+def _classify_request_exception(exc):
+    if isinstance(exc, requests.exceptions.Timeout):
+        return "timeout"
+    if isinstance(exc, requests.exceptions.SSLError):
+        return "ssl"
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return "connection"
+    if isinstance(exc, requests.exceptions.HTTPError):
+        return "http"
+    return "request"
+
+
+def build_gallery_error_payload(source, action, exc=None, response=None, message=None, retries_exhausted=False, retry_count=None):
+    if response is None:
+        response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    status_title, status_advice = HTTP_STATUS_HINTS.get(status_code, ("网络请求失败", "检查网络、代理、DNS 或稍后重试。"))
+    site_name = "Gelbooru" if (source or "").lower() == "gelbooru" else "Danbooru"
+    category = _classify_request_exception(exc) if exc else ("http" if status_code else "unknown")
+
+    if category == "timeout":
+        status_title = "请求超时"
+        status_advice = "站点响应太慢，建议稍后重试；如果经常出现，可以检查代理或网络质量。"
+    elif category == "connection":
+        status_title = "连接失败"
+        status_advice = "无法连到站点，可能是 DNS/代理/IP 质量、网络中断，或站点临时拦截。"
+    elif category == "ssl":
+        status_title = "SSL 连接失败"
+        status_advice = "证书校验或 HTTPS 握手失败，常见于代理、抓包工具或系统证书异常。"
+
+    if retries_exhausted:
+        summary = f"{site_name} {action}失败：已达到最大尝试次数，最后一次结果是{status_title}。"
+    else:
+        summary = message or f"{site_name} {action}失败：{status_title}。"
+
+    raw_exception = f"{type(exc).__name__}: {exc}" if exc is not None else ""
+    if not raw_exception and response is not None:
+        raw_exception = f"HTTP {status_code}: {getattr(response, 'reason', '')}".strip()
+
+    details = {
+        "source": site_name,
+        "action": action,
+        "category": category,
+        "status_code": status_code,
+        "status_hint": status_title,
+        "retries_exhausted": bool(retries_exhausted),
+        "retry_count": retry_count,
+        "url": _redact_url(getattr(getattr(response, "request", None), "url", "") or getattr(response, "url", "")),
+        "raw_exception": raw_exception,
+        "response_excerpt": _response_excerpt(response),
+    }
+
+    return {
+        "error": summary,
+        "error_info": {
+            "title": f"{site_name} 连接详情",
+            "summary": summary,
+            "causes": [
+                status_advice,
+                "如果只有 Gelbooru 经常失败，可能与当前 IP 信誉、地区网络或站点反爬策略有关。",
+                "如果 Danbooru/Gelbooru 都失败，优先检查本机网络、代理软件、DNS 和防火墙。",
+            ],
+            "suggestions": [
+                "稍等 30-120 秒后重试，避免连续刷新触发限流。",
+                "确认代理/网络可以直接打开对应站点页面。",
+                "如果使用收藏或私有内容，重新检查 User ID/API Key 是否正确。",
+            ],
+            "tip": "看不懂也没关系，把详情复制给 AI 问问。它很擅长把这些小刺猬一样的报错梳顺。",
+            "details": details,
+        },
+    }
+
 # Danbooru API文档链接 https://danbooru.donmai.us/wiki_pages/help:api
 
 # Danbooru API的基础URL
@@ -597,20 +718,36 @@ def check_network_connection(source="danbooru"):
                 params=adapter.build_public_posts_params("", 1, 1, None),
                 timeout=(8, 10),
             )
-            return response.status_code == 200, False
+            if response.status_code == 200:
+                return True, False, None
+            return False, True, build_gallery_error_payload(
+                adapter.key,
+                "network check",
+                response=response,
+                retries_exhausted=True,
+                retry_count=1,
+            )
 
         test_url = f"{BASE_URL}/posts.json?limit=1"
         response = _danbooru_request("GET", test_url, timeout=10)
-        return response.status_code == 200, False
-    except requests.exceptions.Timeout:
+        if response.status_code == 200:
+            return True, False, None
+        return False, True, build_gallery_error_payload(
+            adapter.key,
+            "network check",
+            response=response,
+            retries_exhausted=True,
+            retry_count=1,
+        )
+    except requests.exceptions.Timeout as e:
         logger.error("网络连接超时")
-        return False, True
+        return False, True, build_gallery_error_payload(adapter.key, "network check", exc=e, retries_exhausted=True, retry_count=1)
     except requests.exceptions.RequestException as e:
         logger.error(f"网络连接失败: {e}")
-        return False, True
+        return False, True, build_gallery_error_payload(adapter.key, "network check", exc=e, retries_exhausted=True, retry_count=1)
     except Exception as e:
         logger.error(f"网络检测发生未知错误: {e}")
-        return False, True
+        return False, True, build_gallery_error_payload(adapter.key, "network check", exc=e, retries_exhausted=True, retry_count=1)
 
 def verify_danbooru_auth(username, api_key):
     """验证Danbooru用户认证"""
@@ -754,12 +891,16 @@ async def add_favorite(request):
             try:
                 ok, message = add_gelbooru_favorite(post_id, user_id, gelbooru_api_key)
                 return web.json_response({"success": ok, "message": message, "error": None if ok else message})
-            except requests.exceptions.Timeout:
+            except requests.exceptions.Timeout as e:
                 logger.error("[Gelbooru] 添加收藏请求超时")
-                return web.json_response({"success": False, "error": "Gelbooru 收藏请求超时，请稍后重试"})
+                payload = {"success": False}
+                payload.update(build_gallery_error_payload(adapter.key, "添加收藏", exc=e, retries_exhausted=True, retry_count=1))
+                return web.json_response(payload)
             except requests.exceptions.RequestException as e:
                 logger.error(f"[Gelbooru] 添加收藏请求失败: {type(e).__name__}")
-                return web.json_response({"success": False, "error": "Gelbooru 收藏请求失败，请检查网络或稍后重试"})
+                payload = {"success": False}
+                payload.update(build_gallery_error_payload(adapter.key, "添加收藏", exc=e, retries_exhausted=True, retry_count=1))
+                return web.json_response(payload)
 
         username, api_key = load_user_auth()
         if not username or not api_key:
@@ -817,12 +958,16 @@ async def add_favorite(request):
             logger.error(error_message)
             return web.json_response({"success": False, "error": error_message})
 
-        except requests.exceptions.Timeout:
+        except requests.exceptions.Timeout as e:
             logger.error("添加收藏时网络请求超时")
-            return web.json_response({"success": False, "error": "网络请求超时"})
+            payload = {"success": False}
+            payload.update(build_gallery_error_payload(adapter.key, "添加收藏", exc=e, retries_exhausted=True, retry_count=1))
+            return web.json_response(payload)
         except requests.exceptions.RequestException as e:
             logger.error(f"添加收藏时网络请求失败: {e}")
-            return web.json_response({"success": False, "error": f"网络请求失败: {e}"})
+            payload = {"success": False}
+            payload.update(build_gallery_error_payload(adapter.key, "添加收藏", exc=e, retries_exhausted=True, retry_count=1))
+            return web.json_response(payload)
         except Exception as e:
             import traceback
             logger.error(f"添加收藏时发生严重错误: {e}")
@@ -850,12 +995,16 @@ async def remove_favorite(request):
             try:
                 ok, message = remove_gelbooru_favorite(post_id, user_id, gelbooru_api_key)
                 return web.json_response({"success": ok, "message": message, "error": None if ok else message})
-            except requests.exceptions.Timeout:
+            except requests.exceptions.Timeout as e:
                 logger.error("[Gelbooru] 取消收藏请求超时")
-                return web.json_response({"success": False, "error": "Gelbooru 取消收藏请求超时，请稍后重试"})
+                payload = {"success": False}
+                payload.update(build_gallery_error_payload(adapter.key, "取消收藏", exc=e, retries_exhausted=True, retry_count=1))
+                return web.json_response(payload)
             except requests.exceptions.RequestException as e:
                 logger.error(f"[Gelbooru] 取消收藏请求失败: {type(e).__name__}")
-                return web.json_response({"success": False, "error": "Gelbooru 取消收藏请求失败，请检查网络或稍后重试"})
+                payload = {"success": False}
+                payload.update(build_gallery_error_payload(adapter.key, "取消收藏", exc=e, retries_exhausted=True, retry_count=1))
+                return web.json_response(payload)
         
         username, api_key = load_user_auth()
         if not username or not api_key:
@@ -909,12 +1058,16 @@ async def remove_favorite(request):
             logger.error(error_message)
             return web.json_response({"success": False, "error": error_message})
 
-        except requests.exceptions.Timeout:
+        except requests.exceptions.Timeout as e:
             logger.error("移除收藏时网络请求超时")
-            return web.json_response({"success": False, "error": "网络请求超时"})
+            payload = {"success": False}
+            payload.update(build_gallery_error_payload(adapter.key, "取消收藏", exc=e, retries_exhausted=True, retry_count=1))
+            return web.json_response(payload)
         except requests.exceptions.RequestException as e:
             logger.error(f"移除收藏时网络请求失败: {e}")
-            return web.json_response({"success": False, "error": f"网络请求失败: {e}"})
+            payload = {"success": False}
+            payload.update(build_gallery_error_payload(adapter.key, "取消收藏", exc=e, retries_exhausted=True, retry_count=1))
+            return web.json_response(payload)
         except Exception as e:
             import traceback
             logger.error(f"移除收藏时发生严重错误: {e}")
@@ -963,23 +1116,25 @@ async def get_favorites_route(request):
             try:
                 favorites = get_gelbooru_favorites(user_id, gelbooru_api_key)
                 return web.json_response({"success": True, "favorites": favorites, "source": adapter.key})
-            except requests.exceptions.Timeout:
+            except requests.exceptions.Timeout as e:
                 logger.error("[Gelbooru] 获取收藏列表超时")
-                return web.json_response({
+                payload = {
                     "success": False,
                     "favorites": [],
                     "source": adapter.key,
-                    "error": "Gelbooru 收藏列表读取超时，请稍后重试"
-                })
+                }
+                payload.update(build_gallery_error_payload(adapter.key, "读取收藏列表", exc=e, retries_exhausted=True, retry_count=1))
+                return web.json_response(payload)
             except requests.exceptions.HTTPError as e:
                 status_code = e.response.status_code if e.response is not None else "unknown"
                 logger.error(f"[Gelbooru] 获取收藏列表失败: HTTP {status_code}")
-                return web.json_response({
+                payload = {
                     "success": False,
                     "favorites": [],
                     "source": adapter.key,
-                    "error": "Gelbooru 收藏列表读取失败，请检查 User ID/API Key 是否有效"
-                })
+                }
+                payload.update(build_gallery_error_payload(adapter.key, "读取收藏列表", exc=e, retries_exhausted=True, retry_count=1))
+                return web.json_response(payload)
             except ValueError as e:
                 logger.error(f"[Gelbooru] 收藏列表配置无效: {e}")
                 return web.json_response({
@@ -990,12 +1145,13 @@ async def get_favorites_route(request):
                 })
             except requests.exceptions.RequestException as e:
                 logger.error(f"[Gelbooru] 获取收藏列表请求失败: {type(e).__name__}")
-                return web.json_response({
+                payload = {
                     "success": False,
                     "favorites": [],
                     "source": adapter.key,
-                    "error": "Gelbooru 收藏列表请求失败，请检查网络或稍后重试"
-                })
+                }
+                payload.update(build_gallery_error_payload(adapter.key, "读取收藏列表", exc=e, retries_exhausted=True, retry_count=1))
+                return web.json_response(payload)
 
         favorites = load_favorites()
         return web.json_response({"success": True, "favorites": favorites, "source": adapter.key})
@@ -1026,16 +1182,21 @@ async def check_network(request):
     try:
         source = request.query.get("source") or load_ui_settings().get("source_site", "danbooru")
         adapter = get_site_adapter(source)
-        is_connected, is_network_error = check_network_connection(adapter.key)
-        return web.json_response({
+        is_connected, is_network_error, error_payload = check_network_connection(adapter.key)
+        payload = {
             "success": True,
             "connected": is_connected,
             "network_error": is_network_error,
             "source": adapter.key
-        })
+        }
+        if error_payload:
+            payload.update(error_payload)
+        return web.json_response(payload)
     except Exception as e:
         logger.error(f"网络检测接口错误: {e}")
-        return web.json_response({"success": False, "error": "网络检测失败", "network_error": True}, status=500)
+        payload = {"success": False, "network_error": True}
+        payload.update(build_gallery_error_payload("danbooru", "network check", exc=e))
+        return web.json_response(payload, status=500)
 
 @PromptServer.instance.routes.post("/danbooru_gallery/verify_auth")
 async def verify_auth(request):
@@ -1288,7 +1449,14 @@ def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, displ
 
             list_response = _get_list_page(session, params, pid_value)
             if list_response is None:
-                all_refs.append({"error": "Gelbooru 服务暂不可用", "pid": pid_value, "page": cur_page})
+                payload = build_gallery_error_payload(
+                    adapter.key,
+                    "公开页抓取",
+                    message="Gelbooru 公开页抓取失败：已达到最大尝试次数，可能是限流、站点拦截或当前 IP 质量不佳。",
+                    retries_exhausted=True,
+                    retry_count=2,
+                )
+                all_refs.append({**payload, "pid": pid_value, "page": cur_page})
                 continue
 
             if display_all_site_content and _gelbooru_public_page_requires_options(list_response.text):
@@ -1296,7 +1464,14 @@ def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, displ
                 session = _get_gelbooru_session(display_all_site_content, force_refresh=True)
                 list_response = _get_list_page(session, params, pid_value)
                 if list_response is None:
-                    all_refs.append({"error": "Gelbooru 服务暂不可用", "pid": pid_value, "page": cur_page})
+                    payload = build_gallery_error_payload(
+                        adapter.key,
+                        "公开页抓取",
+                        message="Gelbooru 公开页抓取失败：已达到最大尝试次数，可能是限流、站点拦截或当前 IP 质量不佳。",
+                        retries_exhausted=True,
+                        retry_count=2,
+                    )
+                    all_refs.append({**payload, "pid": pid_value, "page": cur_page})
                     continue
 
             remaining = limit - len(all_refs)
@@ -2152,13 +2327,16 @@ class DanbooruGalleryNode:
             return (result_text,)
         except requests.Timeout as e:
             logger.error(f"请求超时: {e}")
-            return ("[]",)
+            payload = build_gallery_error_payload(adapter.key, "加载图片列表", exc=e, retries_exhausted=True, retry_count=1)
+            return (json.dumps([payload], ensure_ascii=False),)
         except requests.RequestException as e:
             logger.error(f"请求异常: {e}")
-            return ("[]",)
+            payload = build_gallery_error_payload(adapter.key, "加载图片列表", exc=e, retries_exhausted=True, retry_count=1)
+            return (json.dumps([payload], ensure_ascii=False),)
         except Exception as e:
             logger.error(f"未知错误: {e}")
-            return ("[]",)
+            payload = build_gallery_error_payload(adapter.key, "加载图片列表", exc=e, retries_exhausted=True, retry_count=1)
+            return (json.dumps([payload], ensure_ascii=False),)
 
 # ComfyUI 必须的字典
 def get_node_class_mappings():
