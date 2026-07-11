@@ -127,13 +127,128 @@ app.registerExtension({
                 });
                 container.appendChild(tagHintDisplay);
 
+                let errorDisplayTimer = null;
+
+                const stringifyErrorDetail = (value) => {
+                    if (value === null || value === undefined || value === "") return "";
+                    if (typeof value === "string") return value;
+                    try {
+                        return JSON.stringify(value, null, 2);
+                    } catch {
+                        return String(value);
+                    }
+                };
+
+                const formatGalleryError = (errorLike, fallbackMessage = "请求失败") => {
+                    const source = (() => {
+                        try {
+                            return (uiSettings?.source_site || "danbooru") === "gelbooru" ? "Gelbooru" : "Danbooru";
+                        } catch {
+                            return "Danbooru";
+                        }
+                    })();
+                    const rawMessage = typeof errorLike === "string"
+                        ? errorLike
+                        : (errorLike?.error || errorLike?.message || fallbackMessage);
+                    const info = errorLike?.error_info;
+
+                    if (info) {
+                        return {
+                            title: info.title || `${source} 请求失败`,
+                            summary: info.summary || rawMessage,
+                            causes: Array.isArray(info.causes) ? info.causes : [],
+                            suggestions: Array.isArray(info.suggestions) ? info.suggestions : [],
+                            tip: info.tip || "看不懂也没关系，把详情复制给 AI 问问，它会帮你翻译成大白话。",
+                            details: info.details || {},
+                        };
+                    }
+
+                    return {
+                        title: `${source} 请求失败`,
+                        summary: rawMessage,
+                        causes: [
+                            "网络、代理、DNS、站点限流或站点拦截都可能导致这类失败。",
+                            "如果只在 Gelbooru 失败，当前 IP 质量或站点反爬策略的可能性更高。",
+                        ],
+                        suggestions: [
+                            "稍等一会儿再试，避免连续刷新触发限流。",
+                            "确认浏览器或代理可以打开对应站点。",
+                            "如果在用收藏功能，检查 User ID/API Key 是否正确。",
+                        ],
+                        tip: "看不懂也没关系，把详情复制给 AI 问问，它会帮你翻译成大白话。",
+                        details: {
+                            raw_exception: rawMessage,
+                        },
+                    };
+                };
+
+                const buildGalleryErrorElement = (errorLike) => {
+                    const info = formatGalleryError(errorLike);
+                    const card = $el("div.danbooru-layered-error");
+                    card.appendChild($el("div.danbooru-layered-error-title", { textContent: info.title }));
+                    card.appendChild($el("div.danbooru-layered-error-summary", { textContent: info.summary }));
+
+                    if (info.causes.length > 0) {
+                        const causeList = $el("ul.danbooru-layered-error-list");
+                        info.causes.forEach(item => causeList.appendChild($el("li", { textContent: item })));
+                        card.appendChild($el("div.danbooru-layered-error-section", [
+                            $el("div.danbooru-layered-error-label", { textContent: "可能原因" }),
+                            causeList,
+                        ]));
+                    }
+
+                    if (info.suggestions.length > 0) {
+                        const suggestionList = $el("ul.danbooru-layered-error-list");
+                        info.suggestions.forEach(item => suggestionList.appendChild($el("li", { textContent: item })));
+                        card.appendChild($el("div.danbooru-layered-error-section", [
+                            $el("div.danbooru-layered-error-label", { textContent: "可以尝试" }),
+                            suggestionList,
+                        ]));
+                    }
+
+                    const rawDetails = stringifyErrorDetail(info.details);
+                    if (rawDetails) {
+                        card.appendChild($el("details.danbooru-layered-error-details", [
+                            $el("summary", { textContent: "原始异常详情（给 AI 看）" }),
+                            $el("pre", { textContent: rawDetails }),
+                        ]));
+                    }
+
+                    if (info.tip) {
+                        card.appendChild($el("div.danbooru-layered-error-tip", { textContent: info.tip }));
+                    }
+                    return card;
+                };
+
                 // 显示错误信息的函数
                 const showError = (message, persistent = false, anchorElement = null) => {
-                    showToast(message, 'error');
+                    const info = formatGalleryError(message);
+                    showToast(info.summary, 'error', anchorElement);
+
+                    if (message?.error_info || persistent) {
+                        if (errorDisplayTimer) {
+                            clearTimeout(errorDisplayTimer);
+                            errorDisplayTimer = null;
+                        }
+                        errorDisplay.innerHTML = "";
+                        errorDisplay.appendChild(buildGalleryErrorElement(message));
+                        errorDisplay.style.display = "block";
+                        if (!persistent) {
+                            errorDisplayTimer = setTimeout(() => {
+                                errorDisplay.style.display = "none";
+                                errorDisplay.innerHTML = "";
+                            }, 12000);
+                        }
+                    }
                 };
 
                 // 清除错误信息的函数
                 const clearError = () => {
+                    if (errorDisplayTimer) {
+                        clearTimeout(errorDisplayTimer);
+                        errorDisplayTimer = null;
+                    }
+                    errorDisplay.innerHTML = "";
                     errorDisplay.style.display = "none";
                 };
 
@@ -171,12 +286,24 @@ app.registerExtension({
                         // 更新网络状态
                         networkStatus.connected = isConnected;
                         networkStatus.lastChecked = now;
+                        networkStatus.lastError = isConnected ? null : data;
 
                         return isConnected;
                     } catch (e) {
                         logger.warn('网络检测失败:', e);
                         networkStatus.connected = false;
                         networkStatus.lastChecked = Date.now();
+                        networkStatus.lastError = {
+                            error: `网络检测失败：${e.message || e}`,
+                            error_info: {
+                                title: "网络检测失败",
+                                summary: `网络检测失败：${e.message || e}`,
+                                causes: ["浏览器到 ComfyUI 后端的请求失败，或后端网络检测接口异常。"],
+                                suggestions: ["刷新页面后重试。", "确认 ComfyUI 后端仍在运行。"],
+                                tip: "看不懂也没关系，把详情复制给 AI 问问，它会帮你翻译成大白话。",
+                                details: { raw_exception: `${e.name || "Error"}: ${e.message || e}` },
+                            },
+                        };
                         return false;
                     }
                 };
@@ -203,7 +330,7 @@ app.registerExtension({
                 let filterState = { startTime: null, endTime: null, startPage: null };
                 let userAuth = { username: "", api_key: "", has_auth: false, gelbooru_user_id: "", gelbooru_api_key: "", gelbooru_has_auth: false }; // 用户认证信息
                 let userFavorites = []; // 用户收藏列表，确保字符串
-                let networkStatus = { connected: true, lastChecked: 0 }; // 网络状态跟踪
+                let networkStatus = { connected: true, lastChecked: 0, lastError: null }; // 网络状态跟踪
                 let previousSearchValue = ""; // 跟踪搜索框之前的值，用于检测清空操作
                 let temporaryTagEdits = {}; // Keyed by post.id
 
@@ -326,25 +453,36 @@ app.registerExtension({
                         }
 
                         if (!data.success) {
-                            let errorMsg = data.error || "未知错误";
-                            if (data.error.includes("网络错误")) {
-                                showError(`${errorMsg} - 请检查网络连接`);
-                            } else if (data.error.includes("认证") || data.error.includes("401")) {
+                            const rawError = String(data.error || "");
+                            let errorMsg = formatGalleryError(data, "未知错误").summary;
+                            if (rawError.includes("网络错误")) {
+                                showError(data);
+                            } else if (rawError.includes("认证") || rawError.includes("401")) {
                                 errorMsg = `${errorMsg}\n\n${t('authRequired')}`;
                                 if (confirm(errorMsg + "\n\n是否打开设置？")) {
                                     showSettingsDialog();
                                 }
-                            } else if (data.error.includes("Rate Limited") || data.error.includes("429")) {
-                                showError(`${errorMsg} - 请稍后重试`);
+                            } else if (rawError.includes("Rate Limited") || rawError.includes("429")) {
+                                showError(data);
                             } else {
-                                showError(errorMsg);
+                                showError(data);
                             }
                         }
 
                         return data;
                     } catch (e) {
                         logger.warn("添加收藏失败:", e);
-                        showError(`网络错误 - 无法连接到${currentSource() === "gelbooru" ? "Gelbooru" : "Danbooru"}服务器`);
+                        showError({
+                            error: `网络错误 - 无法连接到${currentSource() === "gelbooru" ? "Gelbooru" : "Danbooru"}服务器`,
+                            error_info: {
+                                title: "收藏请求失败",
+                                summary: `网络错误 - 无法连接到${currentSource() === "gelbooru" ? "Gelbooru" : "Danbooru"}服务器`,
+                                causes: ["浏览器请求 ComfyUI 后端失败，或 ComfyUI 后端无法访问目标站点。"],
+                                suggestions: ["确认 ComfyUI 后端仍在运行。", "检查网络、代理和防火墙。"],
+                                tip: "看不懂也没关系，把详情复制给 AI 问问，它会帮你翻译成大白话。",
+                                details: { raw_exception: `${e.name || "Error"}: ${e.message || e}` },
+                            },
+                        });
                         if (button) {
                             button.disabled = false;
                             button.innerHTML = button.dataset.originalHTML || '<svg>...</svg>';  // 恢复
@@ -406,25 +544,36 @@ app.registerExtension({
                         }
 
                         if (!data.success) {
-                            let errorMsg = data.error || "未知错误";
-                            if (data.error.includes("网络错误")) {
-                                showError(`${errorMsg} - 请检查网络连接`);
-                            } else if (data.error.includes("认证") || data.error.includes("401")) {
+                            const rawError = String(data.error || "");
+                            let errorMsg = formatGalleryError(data, "未知错误").summary;
+                            if (rawError.includes("网络错误")) {
+                                showError(data);
+                            } else if (rawError.includes("认证") || rawError.includes("401")) {
                                 errorMsg = `${errorMsg}\n\n${t('authRequired')}`;
                                 if (confirm(errorMsg + "\n\n是否打开设置？")) {
                                     showSettingsDialog();
                                 }
-                            } else if (data.error.includes("Rate Limited") || data.error.includes("429")) {
-                                showError(`${errorMsg} - 请稍后重试`);
+                            } else if (rawError.includes("Rate Limited") || rawError.includes("429")) {
+                                showError(data);
                             } else {
-                                showError(errorMsg);
+                                showError(data);
                             }
                         }
 
                         return data;
                     } catch (e) {
                         logger.warn("移除收藏失败:", e);
-                        showError(`网络错误 - 无法连接到${currentSource() === "gelbooru" ? "Gelbooru" : "Danbooru"}服务器`);
+                        showError({
+                            error: `网络错误 - 无法连接到${currentSource() === "gelbooru" ? "Gelbooru" : "Danbooru"}服务器`,
+                            error_info: {
+                                title: "取消收藏请求失败",
+                                summary: `网络错误 - 无法连接到${currentSource() === "gelbooru" ? "Gelbooru" : "Danbooru"}服务器`,
+                                causes: ["浏览器请求 ComfyUI 后端失败，或 ComfyUI 后端无法访问目标站点。"],
+                                suggestions: ["确认 ComfyUI 后端仍在运行。", "检查网络、代理和防火墙。"],
+                                tip: "看不懂也没关系，把详情复制给 AI 问问，它会帮你翻译成大白话。",
+                                details: { raw_exception: `${e.name || "Error"}: ${e.message || e}` },
+                            },
+                        });
                         if (button) {
                             button.disabled = false;
                             button.innerHTML = button.dataset.originalHTML || '<svg>...</svg>';
@@ -2519,6 +2668,7 @@ app.registerExtension({
 
                         posts = [];
                         endOfResults = false;
+                        errorCellsBySignature.clear();
                         // reset 始终清空 seenPostIds/lastPostId——否则标签不变时
                         // seenPostIds残留旧ID导致新结果全被过滤, 总是"未找到结果"
                         lastPostId = null;
@@ -2532,10 +2682,13 @@ app.registerExtension({
                     const isNetworkConnected = await checkNetworkStatus();
                     if (!isNetworkConnected) {
                         console.log("网络错误已隐藏: 网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接");
+                        const networkError = networkStatus.lastError || { error: "网络连接失败" };
+                        endOfResults = true;
                         if (reset) {
-                            imageGrid.innerHTML = `<p class="danbooru-status error">网络连接失败，请检查网络连接后重试</p>`;
+                            imageGrid.innerHTML = "";
+                            renderErrorCell(networkError);
                         } else {
-                            renderErrorCell({ error: `网络连接失败` });
+                            renderErrorCell(networkError);
                         }
                         isLoading = false;
                         refreshButton.classList.remove("loading");
@@ -2618,11 +2771,26 @@ app.registerExtension({
                         if (!Array.isArray(newPosts)) newPosts = [];
 
                         if (parseFailed) {
+                            const parseError = {
+                                error: `响应解析失败(status=${response.status})`,
+                                error_info: {
+                                    title: "响应解析失败",
+                                    summary: `服务器返回了无法解析的响应(status=${response.status})。`,
+                                    causes: ["后端可能返回了非 JSON 错误页、半截响应，或请求被代理/站点中间层改写。"],
+                                    suggestions: ["刷新后重试。", "如果持续出现，请查看 ComfyUI 控制台日志。"],
+                                    tip: "看不懂也没关系，把详情复制给 AI 问问，它会帮你翻译成大白话。",
+                                    details: {
+                                        status: response.status,
+                                        response_excerpt: rawText.slice(0, 800),
+                                    },
+                                },
+                            };
                             if (reset) {
-                                imageGrid.innerHTML = `<p class="danbooru-status error">响应解析失败(status=${response.status})</p>`;
+                                imageGrid.innerHTML = "";
+                                renderErrorCell(parseError);
                                 return;
                             }
-                            renderErrorCell({ error: `响应解析失败(status=${response.status})` });
+                            renderErrorCell(parseError);
                             return;
                         }
 
@@ -2715,11 +2883,23 @@ app.registerExtension({
                     } catch (e) {
                         logger.error(`[fetchAndRender] 异常: ${e.message}`);
                         // 首次加载→整屏错误；滚动续拉→保留内容+加错误格
+                        const requestError = {
+                                error: `请求失败: ${e.message}`,
+                                error_info: {
+                                    title: "图库请求失败",
+                                    summary: `图库请求失败：${e.message}`,
+                                    causes: ["浏览器请求 ComfyUI 后端失败，或前端处理响应时出现异常。"],
+                                    suggestions: ["刷新页面后重试。", "查看浏览器控制台和 ComfyUI 控制台日志。"],
+                                    tip: "看不懂也没关系，把详情复制给 AI 问问，它会帮你翻译成大白话。",
+                                    details: { raw_exception: `${e.name || "Error"}: ${e.message || e}` },
+                                },
+                        };
                         if (reset) {
-                            imageGrid.innerHTML = `<p class="danbooru-status error">${e.message}</p>`;
+                            imageGrid.innerHTML = "";
+                            renderErrorCell(requestError);
                         } else {
                             logger.warn('[fetchAndRender] 加载失败，保留已有内容:', e?.message || e);
-                            renderErrorCell({ error: `请求失败: ${e.message}` });
+                            renderErrorCell(requestError);
                         }
                     } finally {
                         isLoading = false;
@@ -3510,10 +3690,16 @@ app.registerExtension({
                     // error 占位格：红色边框，直接显示错误文本，占据一个图片格空间
                     if (post && post.error) {
                         const wrapper = $el("div.danbooru-image-wrapper", {
-                            style: { border: '1px solid #ff4444', minHeight: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ff4444', fontSize: '0.85em', padding: '8px', textAlign: 'center', background: 'var(--comfy-input-bg)', gridRowEnd: `span ${Math.ceil(120 / 10)}` }
+                            style: { border: '1px solid #ff6b6b', minHeight: '180px', display: 'flex', alignItems: 'stretch', justifyContent: 'stretch', color: '#ff6b6b', fontSize: '0.85em', padding: '8px', textAlign: 'left', background: 'var(--comfy-input-bg)', gridRowEnd: `span ${Math.ceil(180 / 10)}` }
                         });
+                        wrapper.classList.add("danbooru-error-wrapper");
                         wrapper.dataset.postId = `err_${post.pid || post.page || '?'}`;
-                        wrapper.textContent = post.error;
+                        wrapper.dataset.errorCount = String(post.error_count || 1);
+                        wrapper.appendChild($el("div.danbooru-error-merge-badge", {
+                            textContent: `同类错误已合并 x${post.error_count || 1}`,
+                            style: { display: (post.error_count || 1) > 1 ? "block" : "none" }
+                        }));
+                        wrapper.appendChild(buildGalleryErrorElement(post));
                         return wrapper;
                     }
 
@@ -3916,10 +4102,47 @@ app.registerExtension({
                 // 错误格：渲染的同时 push 进 posts，保持 posts 与 DOM 一一对应
                 // （回收逻辑 recycleOldItems 依赖此不变式，否则 splice 会错删真实 post）
                 let _errSeq = 0;
+                const errorCellsBySignature = new Map();
+                const getGalleryErrorSignature = (errObj) => {
+                    const info = formatGalleryError(errObj);
+                    const details = errObj?.error_info?.details || {};
+                    return [
+                        info.title,
+                        info.summary,
+                        details.category || "",
+                        details.status_code || "",
+                        details.retries_exhausted ? "retries_exhausted" : "",
+                    ].join("|");
+                };
+                const updateErrorCellCount = (entry) => {
+                    entry.post.error_count = entry.count;
+                    if (!entry.element) return;
+                    entry.element.dataset.errorCount = String(entry.count);
+                    const badge = entry.element.querySelector(".danbooru-error-merge-badge");
+                    if (badge) {
+                        badge.textContent = `同类错误已合并 x${entry.count}`;
+                        badge.style.display = entry.count > 1 ? "block" : "none";
+                    }
+                };
                 const renderErrorCell = (errObj) => {
-                    const post = { ...errObj, id: `err_${errObj.pid || errObj.page || 'x'}_${_errSeq++}` };
+                    const signature = getGalleryErrorSignature(errObj);
+                    const existing = errorCellsBySignature.get(signature);
+                    if (existing && existing.element?.isConnected) {
+                        existing.count += 1;
+                        updateErrorCellCount(existing);
+                        return existing.element;
+                    }
+                    if (existing && !existing.element?.isConnected) {
+                        errorCellsBySignature.delete(signature);
+                    }
+                    const post = { ...errObj, id: `err_${errObj.pid || errObj.page || 'x'}_${_errSeq++}`, error_count: 1 };
                     posts.push(post);
-                    renderPost(post);
+                    const element = createPostElement(post);
+                    if (element) {
+                        imageGrid.appendChild(element);
+                        errorCellsBySignature.set(signature, { post, element, count: 1 });
+                    }
+                    return element;
                 };
 
                 const observer = new ResizeObserver(() => {
@@ -5021,6 +5244,81 @@ $el("style", {
         .danbooru-tooltip-tag.tag-category-character { background-color: #D4EDDA; color: #155724; } /* Character: Light Green */
         .danbooru-tooltip-tag.tag-category-general { background-color: #D1ECF1; color: #0C5460; } /* General: Light Blue */
         .danbooru-tooltip-tag.tag-category-meta { background-color: #F8F9FA; color: #383D41; border: 1px solid #DFE2E5; } /* Meta: Light Grey */
+
+        .danbooru-layered-error {
+            width: 100%;
+            color: #ffd8d8;
+            line-height: 1.45;
+            font-size: 12px;
+        }
+        .danbooru-error-wrapper {
+            position: relative;
+        }
+        .danbooru-error-merge-badge {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            padding: 2px 6px;
+            border-radius: 999px;
+            background: rgba(255, 107, 107, 0.18);
+            border: 1px solid rgba(255, 107, 107, 0.5);
+            color: #ffd8d8;
+            font-size: 10px;
+            font-weight: 700;
+            z-index: 1;
+        }
+        .danbooru-layered-error-title {
+            color: #ffb3b3;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .danbooru-layered-error-summary {
+            color: #ffffff;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .danbooru-layered-error-section {
+            margin-top: 8px;
+        }
+        .danbooru-layered-error-label {
+            color: #ffb3b3;
+            font-weight: 700;
+            margin-bottom: 3px;
+        }
+        .danbooru-layered-error-list {
+            margin: 0;
+            padding-left: 16px;
+        }
+        .danbooru-layered-error-list li {
+            margin: 2px 0;
+        }
+        .danbooru-layered-error-details {
+            margin-top: 10px;
+            padding: 6px 8px;
+            border: 1px solid rgba(255, 107, 107, 0.45);
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.22);
+        }
+        .danbooru-layered-error-details summary {
+            cursor: pointer;
+            color: #ffd0d0;
+            font-weight: 600;
+        }
+        .danbooru-layered-error-details pre {
+            margin: 8px 0 0;
+            max-height: 180px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: #f5f5f5;
+            font-size: 11px;
+        }
+        .danbooru-layered-error-tip {
+            margin-top: 8px;
+            color: #ffe7a3;
+            font-size: 11px;
+        }
         
         /* 黑名单对话框样式 */
         .danbooru-blacklist-dialog * { box-sizing: border-box; }
