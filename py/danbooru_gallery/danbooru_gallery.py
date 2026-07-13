@@ -22,7 +22,9 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from ..utils.logger import get_logger
 from .site_adapters import get_site_adapter
+from .post_cache import get_gallery_post_cache
 from collections import defaultdict, deque
+from functools import partial
 
 logger = get_logger(__name__)
 
@@ -266,6 +268,7 @@ def load_settings():
         "debug_mode": False,
         "cache_enabled": True,
         "max_cache_age": 3600,
+        "persistent_post_cache_age": 2592000,
         "default_page_size": 20,
         "autocomplete_enabled": True,
         "tooltip_enabled": True,
@@ -1395,7 +1398,15 @@ def _fetch_supported_media(url):
         raise ValueError(f"upstream returned non-image content: {content_type}")
     return response.content
 
-def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, display_all_site_content=False):
+def _fetch_gelbooru_public_posts(
+    adapter,
+    tags,
+    limit,
+    page,
+    rating_query,
+    display_all_site_content=False,
+    hydrate_details=False,
+):
     """Fetch Gelbooru posts from public HTML pages when DAPI credentials are unavailable.
     Uses fixed page size GELBOORU_PUBLIC_PAGE_SIZE (42) so pid is decoupled from
     the frontend's limit.  Frontend chains multiple fetches via maybeLoadMore.
@@ -1485,9 +1496,13 @@ def _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, displ
         refs = all_refs
         logger.info(f"[GelbooruPublic] tags='{tags}' total_refs={len(refs)}")
 
-    # G站公开页面：标签只有 title 里的无分类版，hydrate 所有 ref 以显示完整分类标签
-    # 按对处理：一次并发取2张图的详情，顺序请求不跨序
-    if not id_match and refs:
+    # Optional compatibility path for callers that explicitly request eager
+    # categorized details. Normal gallery loads use local classification and
+    # bounded viewport prefetch instead.
+    # The list HTML already carries the complete, uncategorized tag string in
+    # each thumbnail title. Avoid blocking the first render on up to 42
+    # rate-limited detail requests; categorized details are hydrated on demand.
+    if hydrate_details and not id_match and refs:
         def _hydrate_one(ref):
             """Fetch and hydrate a single post's detail page."""
             _gelbooru_hydrate_throttle.wait()
@@ -1630,16 +1645,24 @@ async def get_posts_for_front(request):
     if gelbooru_dedup_mode not in ("off", "on", "on_auth"):
         gelbooru_dedup_mode = "off"
 
-    posts_json_str, = DanbooruGalleryNode.get_posts_internal(
-        tags=tags,
-        limit=int(limit),
-        page=int(page),
-        rating=rating,
-        source=source,
-        gelbooru_display_all_site_content=gelbooru_display_all_site_content,
-        force_public_detail=force_public_detail,
-        before_id=before_id_raw,
-        gelbooru_dedup_mode=gelbooru_dedup_mode,
+    # Network and HTML parsing are synchronous. Keep them off aiohttp's event
+    # loop so settings/favorites calls and a newly selected source stay
+    # responsive while an older upstream request is still finishing.
+    loop = asyncio.get_running_loop()
+    posts_json_str, = await loop.run_in_executor(
+        None,
+        partial(
+            DanbooruGalleryNode.get_posts_internal,
+            tags=tags,
+            limit=int(limit),
+            page=int(page),
+            rating=rating,
+            source=source,
+            gelbooru_display_all_site_content=gelbooru_display_all_site_content,
+            force_public_detail=force_public_detail,
+            before_id=before_id_raw,
+            gelbooru_dedup_mode=gelbooru_dedup_mode,
+        ),
     )
     
     try:
@@ -2090,6 +2113,27 @@ async def get_autocomplete_with_translation(request):
 
 class DanbooruGalleryNode:
     _post_cache = {}
+    _post_cache_lock = threading.Lock()
+
+    @classmethod
+    def _get_cached_posts(cls, cache_key, max_age):
+        with cls._post_cache_lock:
+            cached = cls._post_cache.get(cache_key)
+            if cached is None:
+                return None
+            cached_data, timestamp = cached
+            if time.time() - timestamp < max_age:
+                return cached_data
+            cls._post_cache.pop(cache_key, None)
+            return None
+
+    @classmethod
+    def _cache_posts(cls, cache_key, result_text, max_entries=200):
+        with cls._post_cache_lock:
+            cls._post_cache[cache_key] = (result_text, time.time())
+            if len(cls._post_cache) > max_entries:
+                oldest_key = min(cls._post_cache, key=lambda key: cls._post_cache[key][1])
+                del cls._post_cache[oldest_key]
 
     @classmethod
     def INPUT_TYPES(s):
@@ -2192,6 +2236,7 @@ class DanbooruGalleryNode:
         settings = load_settings()
         cache_enabled = settings.get("cache_enabled", True)
         max_cache_age = settings.get("max_cache_age", 3600)
+        persistent_cache_age = settings.get("persistent_post_cache_age", 2592000)
         adapter = get_site_adapter(source)
         if gelbooru_display_all_site_content is None:
             gelbooru_display_all_site_content = settings.get("gelbooru_display_all_site_content", False)
@@ -2213,6 +2258,35 @@ class DanbooruGalleryNode:
 
         credentials = get_site_credentials(adapter)
         has_gelbooru_creds = has_required_site_credentials(adapter, credentials)
+        persistent_cache = get_gallery_post_cache() if adapter.key == "gelbooru" and cache_enabled else None
+        persistent_source = (
+            "gelbooru:display_all" if gelbooru_display_all_site_content else "gelbooru:default"
+        )
+
+        def enrich_gelbooru_posts(posts):
+            if not persistent_cache or not posts:
+                return posts
+            try:
+                normal_posts = [post for post in posts if isinstance(post, dict) and not post.get("error")]
+                # Preserve error slots and ordering while replacing normal posts by ID.
+                cached_by_id = {
+                    str(post.get("id")): post
+                    for post in persistent_cache.merge_cached_posts(
+                        persistent_source,
+                        normal_posts,
+                        persistent_cache_age,
+                    )
+                }
+                enriched = [
+                    cached_by_id.get(str(post.get("id")), post)
+                    if isinstance(post, dict) and not post.get("error")
+                    else post
+                    for post in posts
+                ]
+                return persistent_cache.classify_posts(persistent_source, enriched)
+            except Exception as exc:
+                logger.warning(f"[GelbooruCache] 本地分类/缓存读取失败，回退原始列表: {exc}")
+                return posts
 
         # 创建缓存键（rating一化排序，避免不同排序命中两条缓存）
         rating_key = ','.join(sorted(r.strip().lower() for r in (rating or '').split(',') if r.strip()))
@@ -2220,17 +2294,23 @@ class DanbooruGalleryNode:
         if adapter.key == "gelbooru":
             site_options_key = "display_all" if gelbooru_display_all_site_content else "default"
             site_options_key += f"_dedup_{gelbooru_dedup_mode}"
-        cache_key = f"{adapter.key}:{site_options_key}:{tags}:{limit}:{page}:{rating_key}:{before_id}"
+        response_shape_key = "detail" if force_public_detail else "list"
+        cache_key = f"{adapter.key}:{site_options_key}:{response_shape_key}:{tags}:{limit}:{page}:{rating_key}:{before_id}"
 
         # 判断是否获取收藏列表，如果是清除缓存以避免相同的请求前端列表不更新
         match = re.search(r'\bordfav:([^\s]+)', tags)
 
         # 如果启用了缓存，则检查缓存
         if cache_enabled and not match:
-            if cache_key in DanbooruGalleryNode._post_cache:
-                cached_data, timestamp = DanbooruGalleryNode._post_cache[cache_key]
-                if time.time() - timestamp < max_cache_age:
-                    return (cached_data,)
+            cached_data = DanbooruGalleryNode._get_cached_posts(cache_key, max_cache_age)
+            if cached_data is not None:
+                if adapter.key == "gelbooru" and not force_public_detail:
+                    try:
+                        cached_posts = json.loads(cached_data)
+                        cached_data = json.dumps(enrich_gelbooru_posts(cached_posts), ensure_ascii=False)
+                    except (TypeError, json.JSONDecodeError):
+                        pass
+                return (cached_data,)
 
         # 分离 date: 标签和其他标签
         date_tag = ''
@@ -2277,23 +2357,55 @@ class DanbooruGalleryNode:
 
         username, api_key = load_user_auth()
         auth = HTTPBasicAuth(username, api_key) if adapter.requires_auth and username and api_key else None
-        credentials = get_site_credentials(adapter)
         if adapter.key == "gelbooru" and force_public_detail:
-            posts = _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, gelbooru_display_all_site_content)
+            requested_id_match = re.search(r"(?:^|\s)id:(\d+)(?:\s|$)", tags or "")
+            if persistent_cache and requested_id_match:
+                try:
+                    cached_details = persistent_cache.get_posts(
+                        persistent_source,
+                        [requested_id_match.group(1)],
+                        persistent_cache_age,
+                    )
+                    cached_post = cached_details.get(requested_id_match.group(1))
+                    if cached_post:
+                        result_text = json.dumps([cached_post], ensure_ascii=False)
+                        DanbooruGalleryNode._cache_posts(cache_key, result_text)
+                        return (result_text,)
+                except Exception as exc:
+                    logger.warning(f"[GelbooruCache] 持久缓存读取失败，继续请求详情: {exc}")
+            posts = _fetch_gelbooru_public_posts(
+                adapter,
+                tags,
+                limit,
+                page,
+                rating_query,
+                gelbooru_display_all_site_content,
+                hydrate_details=True,
+            )
+            if persistent_cache:
+                try:
+                    for post in posts:
+                        if isinstance(post, dict) and not post.get("error"):
+                            persistent_cache.put_post(persistent_source, post)
+                except Exception as exc:
+                    logger.warning(f"[GelbooruCache] 详情持久化失败: {exc}")
             result_text = json.dumps(posts, ensure_ascii=False)
+            if cache_enabled and posts and not any(isinstance(p, dict) and p.get("error") for p in posts):
+                DanbooruGalleryNode._cache_posts(cache_key, result_text)
             return (result_text,)
 
         if not has_required_site_credentials(adapter, credentials):
             if adapter.key == "gelbooru":
                 logger.info("[Gelbooru] 未配置 User ID/API Key，改用公开网页解析模式")
                 posts = _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, gelbooru_display_all_site_content)
+                posts = enrich_gelbooru_posts(posts)
                 result_text = json.dumps(posts, ensure_ascii=False)
 
                 if cache_enabled and not (adapter.key == "gelbooru" and gelbooru_display_all_site_content and not posts):
                     # 跳过 error 占位格缓存（否则一次限流会让接下来 TTL 内都看不到新图）
                     has_error_placeholder = posts and any(isinstance(p, dict) and p.get("error") for p in posts)
                     if not has_error_placeholder:
-                        DanbooruGalleryNode._post_cache[cache_key] = (result_text, time.time())
+                        DanbooruGalleryNode._cache_posts(cache_key, result_text)
 
                 return (result_text,)
             logger.warning(f"[{adapter.key}] 缺少必要认证信息，已跳过帖子请求")
@@ -2314,15 +2426,15 @@ class DanbooruGalleryNode:
                 response.raise_for_status()
                 posts = adapter.normalize_posts_response(response.json())
 
+            if adapter.key == "gelbooru":
+                posts = enrich_gelbooru_posts(posts)
+
             result_text = json.dumps(posts, ensure_ascii=False)
 
             if cache_enabled and not (adapter.key == "gelbooru" and gelbooru_display_all_site_content and not posts):
                 has_error_placeholder = posts and any(isinstance(p, dict) and p.get("error") for p in posts)
                 if not has_error_placeholder:
-                    DanbooruGalleryNode._post_cache[cache_key] = (result_text, time.time())
-                if len(DanbooruGalleryNode._post_cache) > 200:
-                    oldest_key = min(DanbooruGalleryNode._post_cache.keys(), key=lambda k: DanbooruGalleryNode._post_cache[k][1])
-                    del DanbooruGalleryNode._post_cache[oldest_key]
+                    DanbooruGalleryNode._cache_posts(cache_key, result_text)
 
             return (result_text,)
         except requests.Timeout as e:

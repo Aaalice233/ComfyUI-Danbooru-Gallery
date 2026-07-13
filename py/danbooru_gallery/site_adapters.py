@@ -279,6 +279,7 @@ class GelbooruAdapter(GallerySiteAdapter):
             all_tags.extend(tag_groups.get(category, []))
 
         tag_string = " ".join(all_tags) or fallback.get("tag_string", "")
+        has_exact_categories = any(tag_groups.get(category) for category in ("artist", "copyright", "character", "general", "meta"))
         file_url = self._extract_public_file_url(html_text)
         preview_url = fallback.get("preview_file_url") or file_url
         image_width, image_height = self._extract_image_dimensions(html_text)
@@ -300,6 +301,9 @@ class GelbooruAdapter(GallerySiteAdapter):
             "created_at": fallback.get("created_at") or self._extract_created_at(html_text),
             "rating": self._rating_from_tags(all_tags),
             "source_site": self.key,
+            "_tag_categories_complete": has_exact_categories,
+            "_tag_categories_exact": has_exact_categories,
+            "_tag_categories_source": "gelbooru_detail" if has_exact_categories else "detail_fallback",
         }
 
         if normalized["file_url"]:
