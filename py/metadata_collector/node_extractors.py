@@ -786,7 +786,9 @@ NODE_EXTRACTORS = {
     "UNETLoader": UNETLoaderExtractor,          # Updated to use dedicated extractor
     "UnetLoaderGGUF": UNETLoaderExtractor,  # Updated to use dedicated extractor
     "LoraLoader": LoraLoaderExtractor,
-    "LoraManagerLoader": LoraLoaderManagerExtractor,
+    "LoraManagerLoader": LoraLoaderManagerExtractor,  # legacy alias
+    "LoraLoaderLM": LoraLoaderManagerExtractor,  # ComfyUI-Lora-Manager: Lora Loader (LoraManager)
+
     # Conditioning
     "CLIPTextEncode": CLIPTextEncodeExtractor,
     "PromptLoraManager": CLIPTextEncodeExtractor,

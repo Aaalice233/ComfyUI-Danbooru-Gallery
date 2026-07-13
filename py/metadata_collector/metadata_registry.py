@@ -3,6 +3,20 @@ import threading
 from nodes import NODE_CLASS_MAPPINGS
 from .node_extractors import NODE_EXTRACTORS, GenericNodeExtractor
 from .constants import METADATA_CATEGORIES, IMAGES
+from ..utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+def _is_prompt_link(value):
+    """True if value is a ComfyUI prompt link: [source_node_id, output_index]."""
+    return (
+        isinstance(value, list)
+        and len(value) == 2
+        and isinstance(value[0], (str, int))
+        and isinstance(value[1], int)
+    )
+
 
 class MetadataRegistry:
     """A singleton registry to store and retrieve workflow metadata"""
@@ -96,45 +110,81 @@ class MetadataRegistry:
             return self.prompt_metadata.get(key, {})
     
     def _fill_missing_metadata(self, prompt_id, original_prompt):
-        """Fill missing metadata from cache for non-executed nodes"""
+        """Fill missing metadata for non-executed nodes.
+
+        Prefer in-memory node_cache (from earlier runs). When the cache has no
+        entry (first use of a node id after restart/eviction, class rename, etc.),
+        fall back to re-running extractors on literal widget values from the
+        prompt definition so loader names and scalar sampler params still appear
+        in Save Image Plus metadata.
+        """
         if not original_prompt:
             return
-            
+
         executed_nodes = self.executed_nodes
         metadata = self.prompt_metadata[prompt_id]
-        
-        # Iterate through nodes in the original prompt
+
         for node_id, node_data in original_prompt.items():
-            # Skip if already executed in this run
             if node_id in executed_nodes:
                 continue
-                
-            # Get the node type from the prompt (this is the key in NODE_CLASS_MAPPINGS)
+
+            # class_type in the prompt is the NODE_CLASS_MAPPINGS key; cache uses
+            # the Python class name (same as record_node_execution).
             prompt_class_type = node_data.get("class_type")
             if not prompt_class_type:
                 continue
-                
-            # Convert to actual class name (which is what we use in our cache)
+
             class_type = prompt_class_type
             if prompt_class_type in NODE_CLASS_MAPPINGS:
                 class_obj = NODE_CLASS_MAPPINGS[prompt_class_type]
                 class_type = class_obj.__name__
-            
-            # Create cache key using the actual class name
+
+            if class_type not in NODE_EXTRACTORS:
+                continue
+
             cache_key = f"{node_id}:{class_type}"
-            
-            # Check if this node type is relevant for metadata collection
-            if class_type in NODE_EXTRACTORS:
-                # Check if we have cached metadata for this node
-                if cache_key in self.node_cache:
-                    cached_data = self.node_cache[cache_key]
-                    
-                    # Apply cached metadata to the current metadata
-                    for category in self.metadata_categories:
-                        if category in cached_data and node_id in cached_data[category]:
-                            if node_id not in metadata[category]:
-                                metadata[category][node_id] = cached_data[category][node_id]
-    
+
+            if cache_key in self.node_cache:
+                cached_data = self.node_cache[cache_key]
+                for category in self.metadata_categories:
+                    if category in cached_data and node_id in cached_data[category]:
+                        if node_id not in metadata[category]:
+                            metadata[category][node_id] = cached_data[category][node_id]
+            else:
+                self._extract_from_prompt_inputs(node_id, class_type, node_data, metadata)
+                # Cache only for the active prompt so history lookups do not
+                # overwrite current-run cache entries via current_prompt_id.
+                if prompt_id == self.current_prompt_id:
+                    self._cache_node_metadata(node_id, class_type)
+
+    def _extract_from_prompt_inputs(self, node_id, class_type, node_data, metadata):
+        """Run the node extractor using literal widget values from the prompt.
+
+        Linked inputs ([source_node_id, output_index]) need resolved runtime
+        objects and are skipped. Widget literals (ckpt/unet/gguf names, seed,
+        steps, lora widget JSON, etc.) are enough for most save-metadata fields.
+        """
+        raw_inputs = node_data.get("inputs", {})
+        if not raw_inputs:
+            return
+
+        literal_inputs = {}
+        for key, value in raw_inputs.items():
+            if _is_prompt_link(value):
+                continue
+            literal_inputs[key] = value
+
+        if not literal_inputs:
+            return
+
+        try:
+            extractor = NODE_EXTRACTORS[class_type]
+            extractor.extract(node_id, literal_inputs, None, metadata)
+        except Exception as e:
+            logger.debug(
+                f"Fallback extractor failed for {node_id} ({class_type}): {e}"
+            )
+
     def record_node_execution(self, node_id, class_type, inputs, outputs):
         """Record information about a node's execution"""
         with self._lock:
