@@ -320,9 +320,13 @@ app.registerExtension({
 
                 let globalTooltip, globalTooltipTimeout;
                 let currentTooltipId = 0; // 用于追踪当前活动的tooltip请求
-                let posts = [], currentPage = 1, isLoading = false, endOfResults = false;
+                const POSTS_PER_PAGE = 42;
+                let posts = [], currentPage = 1, isLoading = false, endOfResults = false; // currentPage 指向下一批逻辑页
+                let currentVisiblePage = 1; // 当前视口中最先可见的页
+                let pageWindowStart = 1; // 最近一次重置/跳转的起始页
                 let lastPostId = null;
                 const seenPostIds = new Set();
+                const postGalleryPages = new WeakMap(); // 重绘卡片时保留其逻辑页归属
                 let selectionQueueId = 0; // FIFO 队列唯一 ID 计数器
                 const nodeInstanceId = crypto.randomUUID ? crypto.randomUUID() : 'node_' + Math.random().toString(36).slice(2, 10);
                 // 标记自己为最后活跃节点（自己节点上的任何交互都更新全局指针）
@@ -331,7 +335,21 @@ app.registerExtension({
                 let userAuth = { username: "", api_key: "", has_auth: false, gelbooru_user_id: "", gelbooru_api_key: "", gelbooru_has_auth: false }; // 用户认证信息
                 let userFavorites = []; // 用户收藏列表，确保字符串
                 let networkStatus = { connected: true, lastChecked: 0, lastError: null }; // 网络状态跟踪
+                let activePostsController = null;
+                let postsRequestGeneration = 0;
+                const postHydrationRequests = new Map();
+                const gelbooruPrefetchQueue = [];
+                const gelbooruPrefetchQueuedIds = new Set();
+                const gelbooruPrefetchPosts = new WeakMap();
+                let gelbooruPrefetchGeneration = 0;
+                let gelbooruPrefetchActive = 0;
+                let gelbooruPrefetchObserver = null;
                 let previousSearchValue = ""; // 跟踪搜索框之前的值，用于检测清空操作
+
+                const normalizePageNumber = (value, fallback = null) => {
+                    const parsed = Number(String(value).trim());
+                    return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : fallback;
+                };
                 let temporaryTagEdits = {}; // Keyed by post.id
 
                 // 用户认证管理功能
@@ -583,10 +601,14 @@ app.registerExtension({
                     }
                 };
 
-                const loadFavorites = async () => {
+                const loadFavorites = async (source = currentSource()) => {
+                    const requestedSource = source;
                     try {
-                        const response = await fetch(`/danbooru_gallery/favorites?source=${encodeURIComponent(currentSource())}`);
+                        const response = await fetch(`/danbooru_gallery/favorites?source=${encodeURIComponent(requestedSource)}`);
                         const data = await response.json();
+                        // A rapid source switch can leave an older request in flight.
+                        // Never let that response replace the new source's favorites.
+                        if (requestedSource !== currentSource()) return userFavorites;
                         if (!data.success) {
                             const errorMsg = data.error || "收藏列表读取失败";
                             logger.warn("加载收藏列表失败:", errorMsg);
@@ -689,6 +711,16 @@ app.registerExtension({
                     refreshButton.title = t('refreshTooltip');
                     settingsButton.title = t('settings');
                     filterButton.title = t('filterTooltip');
+                    paginationControls.setAttribute('aria-label', t('pagination'));
+                    previousPageButton.title = t('previousPage');
+                    previousPageButton.setAttribute('aria-label', t('previousPage'));
+                    nextPageButton.title = t('nextPage');
+                    nextPageButton.setAttribute('aria-label', t('nextPage'));
+                    pageJumpInput.title = t('pageNumber');
+                    pageJumpInput.setAttribute('aria-label', t('pageNumber'));
+                    jumpPageButton.textContent = t('jumpToPage');
+                    jumpPageButton.title = t('jumpToPage');
+                    updatePaginationControls();
 
                     // 更新排行榜按钮文本
                     const rankingIcon = rankingButton.querySelector('.icon');
@@ -932,13 +964,15 @@ app.registerExtension({
                     ])
                 ]);
 
-                sourceSelect.addEventListener('change', async () => {
+                sourceSelect.addEventListener('change', () => {
                     uiSettings.source_site = sourceSelect.value;
                     saveToLocalStorage('sourceSite', uiSettings.source_site);
-                    await saveUiSettings(uiSettings);
-                    await loadFavorites();
                     updateSourceState();
                     searchAutocomplete.source = uiSettings.source_site;
+                    // Go straight to the useful posts request. A separate
+                    // connectivity preflight would add another upstream round
+                    // trip, while the posts endpoint already reports failures.
+                    networkStatus = { connected: true, lastChecked: Date.now(), lastError: null };
                     posts = [];
                     seenPostIds.clear();
                     lastPostId = null;
@@ -946,7 +980,13 @@ app.registerExtension({
                     Object.keys(originalPostCache).forEach(key => delete originalPostCache[key]);
                     temporaryTagEdits = {};
                     updateSelectionData();
+                    // Rendering is the critical path. Persistence and favorites
+                    // refresh are independent and must not delay the first grid.
                     fetchAndRender(true);
+                    void Promise.allSettled([
+                        saveUiSettings({ ...uiSettings }),
+                        loadFavorites(uiSettings.source_site),
+                    ]);
                 });
 
                 displayAllSiteContentToggle.querySelector("input").addEventListener('change', async (event) => {
@@ -1902,7 +1942,7 @@ app.registerExtension({
                                 // 重新过滤当前已加载的帖子
                                 const filteredPosts = posts.filter(post => !isPostFiltered(post));
                                 imageGrid.innerHTML = "";
-                                filteredPosts.forEach(renderPost);
+                                filteredPosts.forEach(post => renderPost(post));
                                 // posts 必须与 imageGrid 子节点同序一一对应(recycleOldItems 的不变式)，
                                 // 重渲染只保留 filteredPosts，故同步回写 posts，避免回收时前缀错位
                                 posts.length = 0;
@@ -2448,17 +2488,17 @@ app.registerExtension({
                 };
 
                 // 获取单个帖子的原始数据
-                const fetchOriginalPost = async (postId) => {
+                const fetchOriginalPost = async (postId, source = uiSettings.source_site || "danbooru") => {
                     logger.info(`[fetchOriginalPost] 开始hydrate postId=${postId}`);
                     try {
                         const params = new URLSearchParams({
-                            source: uiSettings.source_site || "danbooru",
+                            source,
                             "search[tags]": `id:${postId}`,
                             limit: "1",
                             page: "1",
                         });
                         params.set("gelbooru_display_all_site_content", uiSettings.gelbooru_display_all_site_content ? "1" : "0");
-                        if ((uiSettings.source_site || "danbooru") === "gelbooru") {
+                        if (source === "gelbooru") {
                             params.set("force_public_detail", "1");
                         }
                         const response = await fetch(`/danbooru_gallery/posts?${params}`);
@@ -2477,10 +2517,15 @@ app.registerExtension({
                 const splitTagString = (value) => String(value || "").split(/\s+/).map(tag => tag.trim()).filter(Boolean);
 
                 const hasCategorizedTags = (postData) => Boolean(
+                    postData?._tag_categories_complete ||
                     postData?.tag_string_artist ||
                     postData?.tag_string_copyright ||
                     postData?.tag_string_character ||
                     postData?.tag_string_meta
+                );
+
+                const hasExactCategorizedTags = (postData) => Boolean(
+                    postData?._tag_categories_exact || postData?._gelbooru_hydrated
                 );
 
                 const isUsableOriginalUrl = (postData, url) => Boolean(
@@ -2489,43 +2534,136 @@ app.registerExtension({
                     !(postData?.source_site === "gelbooru" && postData?.preview_file_url && url === postData.preview_file_url)
                 );
 
-                const hydrateGelbooruPost = async (postData) => {
-                    const hasUsableOriginal = isUsableOriginalUrl(postData, postData?.file_url);
-                    if (!postData || postData.source_site !== "gelbooru" || postData._gelbooru_hydrated || (hasCategorizedTags(postData) && hasUsableOriginal)) {
-                        if (postData) logger.debug(`[hydrateGelbooruPost] 跳过: id=${postData.id} hydrated=${postData._gelbooru_hydrated} hasTags=${hasCategorizedTags(postData)} hasUrl=${hasUsableOriginal}`);
+                const hydrationRequirementsMet = (postData, { requireTags, requireMedia, requireExactTags }) => {
+                    if (postData?._gelbooru_hydrated) return true;
+                    const tagsReady = !requireTags || (
+                        hasCategorizedTags(postData) && (!requireExactTags || hasExactCategorizedTags(postData))
+                    );
+                    const mediaReady = !requireMedia || isUsableOriginalUrl(postData, postData?.file_url);
+                    return tagsReady && mediaReady;
+                };
+
+                const hydrateGelbooruPost = async (postData, requirements = {}) => {
+                    const normalizedRequirements = {
+                        requireTags: requirements.requireTags !== false,
+                        requireMedia: requirements.requireMedia !== false,
+                        requireExactTags: Boolean(requirements.requireExactTags),
+                    };
+                    if (!postData || postData.source_site !== "gelbooru" || hydrationRequirementsMet(postData, normalizedRequirements)) {
+                        if (postData) logger.debug(`[hydrateGelbooruPost] 跳过: id=${postData.id} tags=${hasCategorizedTags(postData)} exact=${hasExactCategorizedTags(postData)} media=${isUsableOriginalUrl(postData, postData?.file_url)}`);
                         return postData;
                     }
 
                     const cachedPost = originalPostCache[postData.id];
-                    const cachedHasUsableOriginal = isUsableOriginalUrl(cachedPost, cachedPost?.file_url);
-                    if (cachedPost && (cachedPost._gelbooru_hydrated || (hasCategorizedTags(cachedPost) && cachedHasUsableOriginal))) {
+                    if (cachedPost && hydrationRequirementsMet(cachedPost, normalizedRequirements)) {
                         logger.debug(`[hydrateGelbooruPost] 缓存命中: id=${postData.id}`);
                         return originalPostCache[postData.id];
                     }
 
-                    logger.info(`[hydrateGelbooruPost] 需要hydrate: id=${postData.id}`);
-                    const hydratedPost = await fetchOriginalPost(postData.id);
-                    if (!hydratedPost) {
-                        return postData;
-                    }
+                    const source = postData.source_site || "gelbooru";
+                    const hydrationKey = `${source}:${postData.id}`;
+                    const pendingRequest = postHydrationRequests.get(hydrationKey);
+                    if (pendingRequest) return pendingRequest;
 
-                    const mergedPost = { ...postData, ...hydratedPost, _gelbooru_hydrated: true };
-                    const postIndex = posts.findIndex(p => p.id == postData.id);
-                    if (postIndex !== -1) {
-                        posts[postIndex] = mergedPost;
-                    }
-                    originalPostCache[postData.id] = JSON.parse(JSON.stringify(mergedPost));
-                    return mergedPost;
+                    logger.info(`[hydrateGelbooruPost] 需要hydrate: id=${postData.id}`);
+                    const hydrationRequest = (async () => {
+                        const hydratedPost = await fetchOriginalPost(postData.id, source);
+                        if (!hydratedPost) return postData;
+
+                        const mergedPost = { ...postData, ...hydratedPost, _gelbooru_hydrated: true };
+                        if ((uiSettings.source_site || "danbooru") === source) {
+                            const postIndex = posts.findIndex(p => p.id == postData.id);
+                            if (postIndex !== -1) posts[postIndex] = mergedPost;
+                            originalPostCache[postData.id] = JSON.parse(JSON.stringify(mergedPost));
+                        }
+                        return mergedPost;
+                    })().finally(() => postHydrationRequests.delete(hydrationKey));
+
+                    postHydrationRequests.set(hydrationKey, hydrationRequest);
+                    return hydrationRequest;
                 };
 
-                const hydrateGelbooruTooltipPost = hydrateGelbooruPost;
+                const hydrateGelbooruTooltipPost = (postData) => hydrateGelbooruPost(postData, {
+                    requireTags: true,
+                    requireMedia: false,
+                    requireExactTags: false,
+                });
                 const hydrateGelbooruEditPost = async (postData) => {
                     if (!postData || postData.source_site !== "gelbooru" || temporaryTagEdits[postData.id]) {
                         return temporaryTagEdits[postData?.id] || postData;
                     }
 
                     const latestPost = posts.find(p => p.id == postData.id) || originalPostCache[postData.id] || postData;
-                    return await hydrateGelbooruPost(latestPost);
+                    return await hydrateGelbooruPost(latestPost, {
+                        requireTags: true,
+                        requireMedia: false,
+                        requireExactTags: true,
+                    });
+                };
+
+                const GELBOORU_PREFETCH_QUEUE_LIMIT = 8;
+                const GELBOORU_PREFETCH_DELAY_MS = 250;
+
+                const cancelGelbooruPrefetch = () => {
+                    gelbooruPrefetchGeneration++;
+                    gelbooruPrefetchQueue.length = 0;
+                    gelbooruPrefetchQueuedIds.clear();
+                    gelbooruPrefetchObserver?.disconnect();
+                };
+
+                const runGelbooruPrefetch = async () => {
+                    if (gelbooruPrefetchActive > 0 || gelbooruPrefetchQueue.length === 0) return;
+                    const item = gelbooruPrefetchQueue.shift();
+                    if (!item) return;
+                    gelbooruPrefetchActive++;
+                    try {
+                        await new Promise(resolve => setTimeout(resolve, GELBOORU_PREFETCH_DELAY_MS));
+                        if (item.generation !== gelbooruPrefetchGeneration || document.hidden) return;
+                        await hydrateGelbooruPost(item.post, {
+                            requireTags: true,
+                            requireMedia: true,
+                            requireExactTags: true,
+                        });
+                    } catch (error) {
+                        logger.debug(`[gelbooruPrefetch] 跳过 id=${item.post?.id}: ${error?.message || error}`);
+                    } finally {
+                        gelbooruPrefetchQueuedIds.delete(String(item.post?.id));
+                        gelbooruPrefetchActive--;
+                        if (item.generation === gelbooruPrefetchGeneration) {
+                            void runGelbooruPrefetch();
+                        }
+                    }
+                };
+
+                const enqueueGelbooruPrefetch = (postData) => {
+                    if (!postData || postData.source_site !== "gelbooru" || document.hidden) return;
+                    if (navigator.connection?.saveData) return;
+                    const requirements = { requireTags: true, requireMedia: true, requireExactTags: true };
+                    if (hydrationRequirementsMet(postData, requirements)) return;
+                    const postId = String(postData.id);
+                    if (gelbooruPrefetchQueuedIds.has(postId)) return;
+                    if (gelbooruPrefetchQueue.length + gelbooruPrefetchActive >= GELBOORU_PREFETCH_QUEUE_LIMIT) return;
+                    gelbooruPrefetchQueuedIds.add(postId);
+                    gelbooruPrefetchQueue.push({
+                        post: postData,
+                        generation: gelbooruPrefetchGeneration,
+                    });
+                    void runGelbooruPrefetch();
+                };
+
+                const observeGelbooruPrefetch = (element, postData) => {
+                    if (!element || postData?.source_site !== "gelbooru" || typeof IntersectionObserver === "undefined") return;
+                    if (!gelbooruPrefetchObserver) {
+                        gelbooruPrefetchObserver = new IntersectionObserver((entries) => {
+                            entries.forEach((entry) => {
+                                if (!entry.isIntersecting) return;
+                                gelbooruPrefetchObserver.unobserve(entry.target);
+                                enqueueGelbooruPrefetch(gelbooruPrefetchPosts.get(entry.target));
+                            });
+                        }, { root: imageGrid, rootMargin: "200px 0px", threshold: 0.01 });
+                    }
+                    gelbooruPrefetchPosts.set(element, postData);
+                    gelbooruPrefetchObserver.observe(element);
                 };
 
                 const getBestImageUrl = (postData, allowPreviewFallback = true) => {
@@ -2537,7 +2675,8 @@ app.registerExtension({
 
                 const getPostWithOriginalMedia = (postData) => {
                     const basePost = temporaryTagEdits[postData.id] || postData;
-                    // 同步：帖子在加载时已完成 hydrate，选图时无需再 await 网络请求
+                    // Callers that require original media hydrate first; this
+                    // helper only resolves temporary edits synchronously.
                     return basePost;
                 };
 
@@ -2635,20 +2774,29 @@ app.registerExtension({
 
                 let currentTags = ""; // 追踪当前搜索条件，用于决定是否重置游标（搜索条件变化时清空 lastPostId）
 
-                const fetchAndRender = async (reset = false) => {
-                    logger.info(`[fetchAndRender] called reset=${reset} isLoading=${isLoading} endOfResults=${endOfResults}`);
+                const fetchAndRender = async (reset = false, startPageOverride = null) => {
+                    logger.info(`[fetchAndRender] called reset=${reset} startPageOverride=${startPageOverride} isLoading=${isLoading} endOfResults=${endOfResults}`);
                     if (isLoading) {
-                        logger.warn(`[fetchAndRender] 跳过: isLoading=true`);
-                        return;
+                        if (!reset) {
+                            logger.warn(`[fetchAndRender] 跳过: isLoading=true`);
+                            return;
+                        }
+                        // A reset (especially a source switch) supersedes the old
+                        // request. Abort it instead of dropping the user's action.
+                        activePostsController?.abort();
                     }
                     if (endOfResults && !reset) {
                         logger.warn(`[fetchAndRender] 跳过: endOfResults=true`);
                         return;
                     }
+                    const requestGeneration = ++postsRequestGeneration;
+                    const requestController = new AbortController();
+                    activePostsController = requestController;
                     isLoading = true;
                     logger.info(`[fetchAndRender] isLoading=置true 开始加载`);
                     refreshButton.classList.add("loading");
                     refreshButton.disabled = true;
+                    updatePaginationControls();
 
                     const loadingIndicator = imageGrid.querySelector('.danbooru-loading');
                     if (!loadingIndicator) {
@@ -2656,7 +2804,11 @@ app.registerExtension({
                     }
 
                     if (reset) {
-                        currentPage = filterState.startPage || 1;
+                        cancelGelbooruPrefetch();
+                        const requestedStartPage = normalizePageNumber(startPageOverride, normalizePageNumber(filterState.startPage, 1));
+                        currentPage = requestedStartPage;
+                        currentVisiblePage = requestedStartPage;
+                        pageWindowStart = requestedStartPage;
                         const newTags = searchInput.value.trim();
                         logger.info(`[fetchAndRender] reset: tags="${newTags}" currentTags="${currentTags}"`);
                         if (newTags !== currentTags) {
@@ -2676,25 +2828,31 @@ app.registerExtension({
                         logger.info(`[fetchAndRender] reset完成: posts清空, endOfResults=置false, seenPostIds清空`);
                         imageGrid.innerHTML = "";
                         imageGrid.insertAdjacentHTML('beforeend', `<p class="danbooru-status danbooru-loading">${t('loading')}</p>`);
+                        imageGrid.scrollTop = 0;
+                        updatePaginationControls();
                     }
+
+                    const requestPage = currentPage;
 
                     // 网络检查
                     const isNetworkConnected = await checkNetworkStatus();
+                    if (requestGeneration !== postsRequestGeneration) return;
                     if (!isNetworkConnected) {
                         console.log("网络错误已隐藏: 网络连接失败 - 无法连接到Danbooru服务器，请检查网络连接");
                         const networkError = networkStatus.lastError || { error: "网络连接失败" };
                         endOfResults = true;
                         if (reset) {
                             imageGrid.innerHTML = "";
-                            renderErrorCell(networkError);
+                            renderErrorCell(networkError, requestPage);
                         } else {
-                            renderErrorCell(networkError);
+                            renderErrorCell(networkError, requestPage);
                         }
                         isLoading = false;
                         refreshButton.classList.remove("loading");
                         refreshButton.disabled = false;
                         const indicator = imageGrid.querySelector('.danbooru-loading');
                         if (indicator) indicator.remove();
+                        updateCurrentPageIndicator();
                         return;
                     } else {
                         clearError();
@@ -2731,8 +2889,14 @@ app.registerExtension({
                         const selectedRatings = getSelectedRatings();
                         const sendAll = selectedRatings.length === 0 || selectedRatings.length === RATING_VALUES.length;
                         const ratingForServer = sendAll ? "" : selectedRatings.join(",");
-                        const loadLimit = 42; // 1 页/次
-                        logger.info(`[fetchAndRender] API参数: src=${src} dedup=${dedup} page=${currentPage} limit=${loadLimit} before_id=${lastPostId} reset=${reset}`);
+                        const loadLimit = POSTS_PER_PAGE; // 1 页/次
+                        // 游标分页：D站始终用游标；G站仅当 dedup 非 off 时。
+                        // G站游标续拉必须回到 pid=0，否则从高页跳转后会叠加页偏移。
+                        const useCursor = src === "danbooru" || (src === "gelbooru" && dedup !== "off");
+                        const hasCursor = useCursor && Boolean(lastPostId);
+                        const gelbooruCursorMode = src === "gelbooru" && dedup !== "off";
+                        const apiPage = gelbooruCursorMode && hasCursor ? 1 : requestPage;
+                        logger.info(`[fetchAndRender] API参数: src=${src} dedup=${dedup} logicalPage=${requestPage} apiPage=${apiPage} limit=${loadLimit} before_id=${lastPostId} reset=${reset}`);
                         const params = new URLSearchParams({
                             "source": src,
                             "gelbooru_display_all_site_content": uiSettings.gelbooru_display_all_site_content ? "1" : "0",
@@ -2740,24 +2904,22 @@ app.registerExtension({
                             "search[tags]": apiFormattedTags.trim(),
                             "search[rating]": ratingForServer,
                             limit: String(loadLimit),
-                            page: currentPage,
+                            page: String(apiPage),
                         });
 
-                        // 游标分页：D站始终用游标；G站仅当 dedup 非 off 时
-                        const useCursor = src === "danbooru" || (src === "gelbooru" && dedup !== "off");
-                        if (useCursor && lastPostId) {
+                        if (hasCursor) {
                             params.set("before_id", lastPostId);
                             logger.info(`[fetchAndRender] 游标模式: before_id=${lastPostId}`);
                         } else {
                             logger.info(`[fetchAndRender] 无游标: useCursor=${useCursor} lastPostId=${lastPostId}`);
                         }
 
-                        // G站游标模式下 pid 恒为 0，不允许当前页推进
-                        const gelbooruCursorMode = (src === "gelbooru" && dedup !== "off");
-
-                        const response = await fetch(`/danbooru_gallery/posts?${params}`);
+                        const response = await fetch(`/danbooru_gallery/posts?${params}`, {
+                            signal: requestController.signal,
+                        });
                         logger.info(`[fetchAndRender] 响应: status=${response.status}`);
                         const rawText = await response.text();
+                        if (requestGeneration !== postsRequestGeneration) return;
 
                         // 防御性 JSON 解析：后端偶发返回非 JSON（错误页/半截响应），此时不销毁已有内容
                         let newPosts;
@@ -2787,10 +2949,10 @@ app.registerExtension({
                             };
                             if (reset) {
                                 imageGrid.innerHTML = "";
-                                renderErrorCell(parseError);
+                                renderErrorCell(parseError, requestPage);
                                 return;
                             }
-                            renderErrorCell(parseError);
+                            renderErrorCell(parseError, requestPage);
                             return;
                         }
 
@@ -2817,7 +2979,7 @@ app.registerExtension({
 
                         if (errorPosts.length > 0) {
                             // 追加 error 格，不销毁已有内容
-                            errorPosts.forEach(renderErrorCell);
+                            errorPosts.forEach(errorPost => renderErrorCell(errorPost, requestPage));
                         }
 
                         if (newPosts.length === 0 && errorPosts.length === 0) {
@@ -2827,7 +2989,7 @@ app.registerExtension({
                                 imageGrid.innerHTML = `<p class="danbooru-status">${t('noResults')}</p>`;
                             } else {
                                 // 非首次：不销毁已加载内容，底部显示到底提示
-                                renderErrorCell({ error: "没有更多结果了" });
+                                renderErrorCell({ error: "没有更多结果了" }, requestPage);
                             }
                             return;
                         }
@@ -2848,14 +3010,12 @@ app.registerExtension({
                             logger.warn(`[fetchAndRender] normalRaw为空, lastPostId不变=${lastPostId}`);
                         }
 
-                        // G站游标模式下 pid 恒定不推进；D站正常推进 page
-                        if (!gelbooruCursorMode) {
-                            currentPage++;
-                            logger.debug(`[fetchAndRender] currentPage++ → ${currentPage}`);
-                        }
+                        // currentPage 表示下一批的逻辑页码；底层游标请求可使用不同的 API 页码。
+                        currentPage = requestPage + 1;
+                        logger.debug(`[fetchAndRender] next logical page → ${currentPage}`);
 
                         posts.push(...filteredPosts);
-                        filteredPosts.forEach(renderPost);
+                        filteredPosts.forEach(post => renderPost(post, requestPage));
                         logger.info(`[fetchAndRender] 渲染${filteredPosts.length}张, 总posts=${posts.length}`);
 
                         // 渲染后回收最老端，维持滑动窗口(浏览多少回收多少)
@@ -2881,6 +3041,10 @@ app.registerExtension({
                         }
 
                     } catch (e) {
+                        if (e?.name === "AbortError" || requestGeneration !== postsRequestGeneration) {
+                            logger.debug(`[fetchAndRender] superseded request ignored`);
+                            return;
+                        }
                         logger.error(`[fetchAndRender] 异常: ${e.message}`);
                         // 首次加载→整屏错误；滚动续拉→保留内容+加错误格
                         const requestError = {
@@ -2896,18 +3060,21 @@ app.registerExtension({
                         };
                         if (reset) {
                             imageGrid.innerHTML = "";
-                            renderErrorCell(requestError);
+                            renderErrorCell(requestError, requestPage);
                         } else {
                             logger.warn('[fetchAndRender] 加载失败，保留已有内容:', e?.message || e);
-                            renderErrorCell(requestError);
+                            renderErrorCell(requestError, requestPage);
                         }
                     } finally {
+                        if (requestGeneration !== postsRequestGeneration) return;
                         isLoading = false;
+                        if (activePostsController === requestController) activePostsController = null;
                         logger.info(`[fetchAndRender] finally: isLoading=置false endOfResults=${endOfResults} parseFailed=${parseFailed}`);
                         refreshButton.classList.remove("loading");
                         refreshButton.disabled = false;
                         const indicator = imageGrid.querySelector('.danbooru-loading');
                         if (indicator) indicator.remove();
+                        updateCurrentPageIndicator();
                         // 每次加载完成后检查是否需要补充更多（maybeLoadMore）
                         if (!endOfResults && !parseFailed) {
                             logger.info(`[fetchAndRender] finally → 调用maybeLoadMore`);
@@ -2950,17 +3117,23 @@ app.registerExtension({
                         if (window.__lastActiveGalleryNodeId !== nodeInstanceId) return;
                         const selectedWrappers = imageGrid.querySelectorAll('.danbooru-image-wrapper.selected');
                         if (selectedWrappers.length === 0) return;
-                        const selections = [];
-                        for (const wrapper of selectedWrappers) {
+                        const selections = (await Promise.all(Array.from(selectedWrappers, async (wrapper) => {
                             const postId = wrapper.dataset.postId;
                             const postData = posts.find(p => p.id == postId) || temporaryTagEdits[postId];
                             if (postData) {
-                                const prompt = buildPromptForPost(postData);
-                                const mediaPost = getPostWithOriginalMedia(postData);
+                                const hydratedPost = await hydrateGelbooruPost(postData, {
+                                    requireTags: true,
+                                    requireMedia: true,
+                                    requireExactTags: true,
+                                });
+                                const effectivePost = temporaryTagEdits[postId] || hydratedPost;
+                                const prompt = buildPromptForPost(effectivePost);
+                                const mediaPost = getPostWithOriginalMedia(effectivePost);
                                 const imageUrl = getBestImageUrl(mediaPost, false);
-                                selections.push({ post_id: postId, prompt, image_url: imageUrl });
+                                return { post_id: postId, prompt, image_url: imageUrl };
                             }
-                        }
+                            return null;
+                        }))).filter(Boolean);
                         if (selections.length === 0) return;
                         selectionQueueId++;
                         logger.info(`[QueueBtn] push ${selections.length}条 nodeId=${nodeInstanceId} queueId=${selectionQueueId}`);
@@ -3183,7 +3356,7 @@ app.registerExtension({
                         const oldPostElement = imageGrid.querySelector(`.danbooru-image-wrapper[data-post-id="${post.id}"]`);
 
                         const postIndex = posts.findIndex(p => p.id == post.id);
-                        const newPostElement = createPostElement(posts[postIndex]); // 使用 posts 数组中的最新数据
+                        const newPostElement = createPostElement(posts[postIndex], oldPostElement?.dataset.galleryPage); // 使用 posts 数组中的最新数据
                         if (newPostElement) {
                             if (oldPostElement && oldPostElement.parentNode) {
                                 oldPostElement.parentNode.replaceChild(newPostElement, oldPostElement);
@@ -3610,7 +3783,8 @@ app.registerExtension({
 
                 // 辅助函数：为单个帖子构建提示词
                 const buildPromptForPost = (postData, selectedCategoriesOverride = null) => {
-                    // 同步：G站在加载时已完成 hydrate，选图时 tag_xxx 已就绪，无需再 await 网络请求
+                    // Synchronous by design: list responses are categorized by
+                    // the backend's local index before they reach the UI.
                     const promptPost = temporaryTagEdits[postData.id] || postData;
 
                     const promptCategories = Array.isArray(selectedCategoriesOverride)
@@ -3686,7 +3860,11 @@ app.registerExtension({
                     updateSelectionData();
                 };
 
-                const createPostElement = (post) => {
+                const createPostElement = (post, galleryPage = null) => {
+                    const rememberedPage = post && typeof post === "object" ? postGalleryPages.get(post) : null;
+                    const resolvedGalleryPage = normalizePageNumber(galleryPage, normalizePageNumber(rememberedPage, currentVisiblePage));
+                    if (post && typeof post === "object") postGalleryPages.set(post, resolvedGalleryPage);
+
                     // error 占位格：红色边框，直接显示错误文本，占据一个图片格空间
                     if (post && post.error) {
                         const wrapper = $el("div.danbooru-image-wrapper", {
@@ -3695,6 +3873,7 @@ app.registerExtension({
                         wrapper.classList.add("danbooru-error-wrapper");
                         wrapper.dataset.postId = `err_${post.pid || post.page || '?'}`;
                         wrapper.dataset.errorCount = String(post.error_count || 1);
+                        if (resolvedGalleryPage) wrapper.dataset.galleryPage = String(resolvedGalleryPage);
                         wrapper.appendChild($el("div.danbooru-error-merge-badge", {
                             textContent: `同类错误已合并 x${post.error_count || 1}`,
                             style: { display: (post.error_count || 1) > 1 ? "block" : "none" }
@@ -3707,6 +3886,7 @@ app.registerExtension({
 
                     const wrapper = $el("div.danbooru-image-wrapper");
                     wrapper.dataset.postId = post.id; // 显式设置 data-post-id
+                    if (resolvedGalleryPage) wrapper.dataset.galleryPage = String(resolvedGalleryPage);
 
                     // Reserve grid space up-front from the post's real dimensions so the
                     // waterfall is stable before thumbnails finish loading.
@@ -3758,7 +3938,7 @@ app.registerExtension({
                                 wrapper.appendChild(fresh);
                             };
                         },
-                        onclick: (e) => {
+                        onclick: async (e) => {
                             e.stopPropagation();
                             markActive(); // 标记自己为最后活跃节点
                             const isSelected = wrapper.classList.contains('selected');
@@ -3782,6 +3962,17 @@ app.registerExtension({
 
                             // 收集所有选中图片的数据并更新 widget
                             updateSelectionData();
+                            // The list-page tag string is available immediately.
+                            // Fill categorized tags/original media in the background
+                            // and refresh the selection once that single detail is ready.
+                            if (!isSelected && post.source_site === "gelbooru") {
+                                await hydrateGelbooruPost(post, {
+                                    requireTags: true,
+                                    requireMedia: false,
+                                    requireExactTags: false,
+                                });
+                                if (wrapper.classList.contains('selected')) updateSelectionData();
+                            }
                         },
                     });
 
@@ -3797,7 +3988,11 @@ app.registerExtension({
                             e.stopPropagation(); // 阻止事件冒泡，避免触发图片选择
 
                             try {
-                                const mediaPost = getPostWithOriginalMedia(post);
+                                const hydratedPost = await hydrateGelbooruPost(post, {
+                                    requireTags: false,
+                                    requireMedia: true,
+                                });
+                                const mediaPost = getPostWithOriginalMedia(hydratedPost);
                                 const imageUrl = getBestImageUrl(mediaPost, false);
                                 if (!imageUrl) {
                                     return;
@@ -4068,7 +4263,11 @@ app.registerExtension({
                         title: t('viewImage'),
                         onclick: async (e) => {
                             e.stopPropagation();
-                            const mediaPost = getPostWithOriginalMedia(post);
+                            const hydratedPost = await hydrateGelbooruPost(post, {
+                                requireTags: false,
+                                requireMedia: true,
+                            });
+                            const mediaPost = getPostWithOriginalMedia(hydratedPost);
                             const imageUrl = getBestImageUrl(mediaPost, false);
                             if (imageUrl) {
                                 window.open(proxiedMediaUrl(imageUrl), '_blank', 'noreferrer');
@@ -4083,17 +4282,18 @@ app.registerExtension({
 
                     wrapper.appendChild(img);
                     wrapper.appendChild(buttonsContainer);
+                    observeGelbooruPrefetch(wrapper, post);
 
                     return wrapper;
                 };
 
-                const renderPost = (post) => {
+                const renderPost = (post, galleryPage = null) => {
                     if (post && post.error) {
                         logger.info(`[renderPost] 错误格: "${post.error}" pid=${post.pid || '?'} page=${post.page || '?'}`);
                     } else if (post) {
-                        logger.debug(`[renderPost] 正常格: id=${post.id}`);
+                        logger.debug(`[renderPost] 正常格: id=${post.id} galleryPage=${galleryPage || '?'}`);
                     }
-                    const element = createPostElement(post);
+                    const element = createPostElement(post, galleryPage);
                     if (element) {
                         imageGrid.appendChild(element);
                     }
@@ -4124,7 +4324,7 @@ app.registerExtension({
                         badge.style.display = entry.count > 1 ? "block" : "none";
                     }
                 };
-                const renderErrorCell = (errObj) => {
+                const renderErrorCell = (errObj, galleryPage = currentVisiblePage) => {
                     const signature = getGalleryErrorSignature(errObj);
                     const existing = errorCellsBySignature.get(signature);
                     if (existing && existing.element?.isConnected) {
@@ -4137,7 +4337,7 @@ app.registerExtension({
                     }
                     const post = { ...errObj, id: `err_${errObj.pid || errObj.page || 'x'}_${_errSeq++}`, error_count: 1 };
                     posts.push(post);
-                    const element = createPostElement(post);
+                    const element = createPostElement(post, galleryPage);
                     if (element) {
                         imageGrid.appendChild(element);
                         errorCellsBySignature.set(signature, { post, element, count: 1 });
@@ -4315,7 +4515,7 @@ app.registerExtension({
                 });
 
                 refreshButton.addEventListener("click", () => {
-                    fetchAndRender(true);
+                    fetchAndRender(true, currentVisiblePage);
                 });
 
                 const searchContainer = $el("div.danbooru-search-container");
@@ -4402,33 +4602,66 @@ app.registerExtension({
                         position: 'absolute',
                         bottom: '10px',
                         left: '10px',
+                        right: '10px',
                         zIndex: '20',
                         display: 'flex',
+                        flexWrap: 'wrap',
                         gap: '8px',
                         alignItems: 'center'
                     }
                 });
 
-                // 添加页码指示器
+                // 页码指示器与快捷跳页控件
                 const pageIndicator = $el("div.danbooru-page-indicator", {
-                    style: {
-                        display: 'none', // Initially hidden
-                        padding: '4px 8px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                        color: 'white',
-                        fontSize: '12px',
-                        borderRadius: '4px',
-                        backdropFilter: 'blur(5px)'
+                    textContent: `${t('currentPage')}: 1`,
+                    ariaLive: "polite"
+                });
+                const previousPageButton = $el("button.danbooru-page-button", {
+                    type: "button",
+                    textContent: "‹",
+                    title: t('previousPage'),
+                    ariaLabel: t('previousPage'),
+                    onclick: () => jumpToPage(currentVisiblePage - 1)
+                });
+                const pageJumpInput = $el("input.danbooru-page-input", {
+                    type: "number",
+                    min: "1",
+                    step: "1",
+                    value: "1",
+                    title: t('pageNumber'),
+                    ariaLabel: t('pageNumber'),
+                    onkeydown: (event) => {
+                        if (event.key === "Enter") {
+                            event.preventDefault();
+                            jumpToPage(pageJumpInput.value);
+                        }
                     }
                 });
+                const jumpPageButton = $el("button.danbooru-page-jump-button", {
+                    type: "button",
+                    textContent: t('jumpToPage'),
+                    title: t('jumpToPage'),
+                    onclick: () => jumpToPage(pageJumpInput.value)
+                });
+                const nextPageButton = $el("button.danbooru-page-button", {
+                    type: "button",
+                    textContent: "›",
+                    title: t('nextPage'),
+                    ariaLabel: t('nextPage'),
+                    onclick: () => jumpToPage(currentVisiblePage + 1)
+                });
+                const paginationControls = $el("div.danbooru-pagination-controls", {
+                    role: "group",
+                    ariaLabel: t('pagination')
+                }, [previousPageButton, pageIndicator, pageJumpInput, jumpPageButton, nextPageButton]);
 
-                // 将页码指示器和选择计数器添加到底部状态栏
-                bottomStatusBar.appendChild(pageIndicator);
+                // 将翻页控件和选择计数器添加到底部状态栏
+                bottomStatusBar.appendChild(paginationControls);
                 bottomStatusBar.appendChild(selectionCountBadge);
                 container.appendChild(bottomStatusBar);
 
                 const insertNewPost = (post) => {
-                    const newElement = createPostElement(post);
+                    const newElement = createPostElement(post, currentVisiblePage);
                     if (newElement) {
                         imageGrid.prepend(newElement);
                         newElement.classList.add('new-item');
@@ -4498,6 +4731,11 @@ app.registerExtension({
                             const sourceForNetworkCheck = loadFromLocalStorage('sourceSite', uiSettings.source_site || "danbooru");
                             const networkResponse = await fetch(`/danbooru_gallery/check_network?source=${encodeURIComponent(sourceForNetworkCheck)}`);
                             const networkData = await networkResponse.json();
+                            networkStatus = {
+                                connected: Boolean(networkData.success && networkData.connected),
+                                lastChecked: Date.now(),
+                                lastError: networkData.success && networkData.connected ? null : networkData,
+                            };
                             if (!networkData.success || !networkData.connected) {
                                 networkConnected = false;
                                 // 注释掉网络错误toast提示 - 本小姐才不想看到这些烦人的提示呢！
@@ -4640,35 +4878,55 @@ app.registerExtension({
                     }
                 };
 
-                const updateCurrentPageIndicator = () => {
-                    if (posts.length === 0) {
-                        pageIndicator.style.display = 'none';
+                const updatePaginationControls = () => {
+                    const page = normalizePageNumber(currentVisiblePage, pageWindowStart);
+                    currentVisiblePage = page;
+                    pageIndicator.textContent = `${t('currentPage')}: ${page}`;
+                    if (document.activeElement !== pageJumpInput) {
+                        pageJumpInput.value = String(page);
+                    }
+
+                    const controlsDisabled = isLoading;
+                    const lastLoadedPage = Math.max(pageWindowStart, currentPage - 1);
+                    const atKnownEnd = endOfResults && page >= lastLoadedPage;
+                    previousPageButton.disabled = controlsDisabled || page <= 1;
+                    nextPageButton.disabled = controlsDisabled || atKnownEnd;
+                    pageJumpInput.disabled = controlsDisabled;
+                    jumpPageButton.disabled = controlsDisabled;
+                };
+
+                const jumpToPage = (value) => {
+                    const targetPage = normalizePageNumber(value);
+                    if (!targetPage) {
+                        showToast(t('invalidPage'), 'warning', pageJumpInput);
+                        pageJumpInput.value = String(currentVisiblePage);
+                        pageJumpInput.focus();
+                        pageJumpInput.select();
                         return;
                     }
+                    if (isLoading) return;
 
-                    const itemsPerPage = 100;
+                    currentVisiblePage = targetPage;
+                    pageWindowStart = targetPage;
+                    pageJumpInput.value = String(targetPage);
+                    updatePaginationControls();
+                    fetchAndRender(true, targetPage);
+                };
 
-                    // Find the first visible element in the grid
+                const updateCurrentPageIndicator = () => {
+                    const gridRect = imageGrid.getBoundingClientRect();
                     const firstVisibleChild = Array.from(imageGrid.children).find(child => {
+                        if (!child.dataset.galleryPage) return false;
                         const rect = child.getBoundingClientRect();
-                        const gridRect = imageGrid.getBoundingClientRect();
                         return rect.bottom > gridRect.top && rect.top < gridRect.bottom;
                     });
-
-                    if (firstVisibleChild) {
-                        const postId = firstVisibleChild.dataset.postId;
-                        const postIndex = posts.findIndex(p => String(p.id) === postId);
-
-                        if (postIndex !== -1) {
-                            const currentPageInView = Math.floor(postIndex / itemsPerPage) + (filterState.startPage || 1);
-                            pageIndicator.textContent = `${t('currentPage')}: ${currentPageInView}`;
-                            pageIndicator.style.display = 'block';
-                        } else {
-                            pageIndicator.style.display = 'none';
-                        }
-                    } else {
-                        pageIndicator.style.display = 'none';
+                    const visiblePage = normalizePageNumber(firstVisibleChild?.dataset.galleryPage);
+                    if (visiblePage) {
+                        currentVisiblePage = visiblePage;
+                    } else if (posts.length === 0) {
+                        currentVisiblePage = pageWindowStart;
                     }
+                    updatePaginationControls();
                 };
 
                 // 启动应用
@@ -4940,7 +5198,49 @@ $el("style", {
        transform: translate(-50%, -50%);
    }
 
-    .danbooru-gallery { width: 100%; display: flex; flex-direction: column; min-height: 200px; }
+    .danbooru-gallery { width: 100%; display: flex; flex-direction: column; min-height: 200px; position: relative; }
+    .danbooru-pagination-controls {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        max-width: 100%;
+        padding: 4px;
+        border: 1px solid var(--input-border-color);
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.72);
+        color: white;
+        backdrop-filter: blur(5px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
+    .danbooru-page-indicator { min-width: 72px; padding: 0 4px; font-size: 12px; text-align: center; white-space: nowrap; }
+    .danbooru-page-button, .danbooru-page-jump-button {
+        min-width: 28px;
+        height: 28px;
+        padding: 0 8px;
+        border: 1px solid var(--input-border-color);
+        border-radius: 4px;
+        background: var(--comfy-input-bg);
+        color: var(--comfy-input-text);
+        cursor: pointer;
+    }
+    .danbooru-page-button { font-size: 20px; line-height: 1; }
+    .danbooru-page-jump-button { font-size: 12px; }
+    .danbooru-page-button:hover:not(:disabled), .danbooru-page-jump-button:hover:not(:disabled) { background: var(--comfy-menu-bg); }
+    .danbooru-page-button:disabled, .danbooru-page-jump-button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .danbooru-page-input {
+        width: 64px;
+        height: 28px;
+        box-sizing: border-box;
+        padding: 3px 6px;
+        border: 1px solid var(--input-border-color);
+        border-radius: 4px;
+        background: var(--comfy-input-bg);
+        color: var(--comfy-input-text);
+        text-align: center;
+    }
+    .danbooru-page-input:focus { outline: 1px solid #7B68EE; border-color: #7B68EE; }
     .danbooru-controls { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; align-items: stretch; }
     .danbooru-auth-controls { display: flex; gap: 5px; }
     .danbooru-controls > button, .danbooru-controls > div { padding: 5px; border-radius: 4px; border: 1px solid var(--input-border-color); background-color: var(--comfy-input-bg); color: var(--comfy-input-text); }

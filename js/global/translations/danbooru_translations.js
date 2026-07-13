@@ -135,6 +135,12 @@ export const danbooruTranslations = {
         filterActive: "筛选已生效",
         currentPage: "当前页",
         totalPages: "总页数",
+        pagination: "翻页",
+        previousPage: "上一页",
+        nextPage: "下一页",
+        pageNumber: "页码",
+        jumpToPage: "跳转",
+        invalidPage: "请输入大于 0 的整数页码",
 
         // 多选模式
         selectionModeSettings: "选择模式设置",
@@ -274,6 +280,12 @@ export const danbooruTranslations = {
         filterActive: "Filter is active",
         currentPage: "Current Page",
         totalPages: "Total Pages",
+        pagination: "Pagination",
+        previousPage: "Previous Page",
+        nextPage: "Next Page",
+        pageNumber: "Page Number",
+        jumpToPage: "Go",
+        invalidPage: "Enter a positive integer page number",
 
         // Multi-select mode
         selectionModeSettings: "Selection Mode Settings",
