@@ -2507,6 +2507,7 @@ app.registerExtension({
                             // 如果当前选中的分类存在，标记为selected
                             modal.querySelectorAll('.ps-tree-item.selected, .ps-favorites-btn.selected').forEach(el => el.classList.remove('selected'));
                             selectedItem.classList.add('selected');
+                            modal.dataset.currentBrowsingCategory = this.selectedCategory;
                             // 展开父级分类
                             let parentLi = selectedItem.closest('li.parent');
                             while (parentLi) {
@@ -2783,6 +2784,12 @@ app.registerExtension({
                     // 新增提示词按钮
                     const addPromptBtn = modal.querySelector('#ps-add-prompt-btn');
                     addPromptBtn.addEventListener('click', () => {
+                        const browsingCategory = modal.dataset.currentBrowsingCategory;
+                        if (!browsingCategory || browsingCategory === "__favorites__") {
+                            this.showToast(t('select_category_before_adding'), 'warning');
+                            return;
+                        }
+
                         this.showEditModal({
                             id: `new-${Date.now()}`,
                             alias: '',
@@ -2791,7 +2798,7 @@ app.registerExtension({
                             tags: [],
                             favorite: false,
                             description: ''
-                        }, this.selectedCategory, true);
+                        }, browsingCategory, true);
                     });
 
                     const moveFavoritesBtn = modal.querySelector('#ps-move-favorites-top-btn');
