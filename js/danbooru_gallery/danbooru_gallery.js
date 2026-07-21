@@ -12,8 +12,26 @@ const logger = createLogger('danbooru_gallery');
 // 打开全局日志，所有级别打到 ComfyUI 终端
 loggerClient.setConsoleOutput(true);
 
+const galleryQueuePreparers = new Map();
+let galleryQueueChain = Promise.resolve();
+
 app.registerExtension({
     name: "Comfy.DanbooruGallery",
+    async setup() {
+        const originalQueuePrompt = app.queuePrompt;
+        app.queuePrompt = function (...args) {
+            const queuedRun = galleryQueueChain.then(async () => {
+                const enabledPreparers = Array.from(galleryQueuePreparers.entries())
+                    .filter(([node]) => node?.mode === 0)
+                    .map(([, prepare]) => prepare());
+                await Promise.all(enabledPreparers);
+                return originalQueuePrompt.apply(this, args);
+            });
+            galleryQueueChain = queuedRun.catch(() => undefined);
+            return queuedRun;
+        };
+        logger.info('[Queue] 已安装画廊入队前数据准备钩子');
+    },
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name === "DanbooruGalleryNode") {
             // 使用全局多语言系统（danbooru命名空间）
@@ -327,7 +345,7 @@ app.registerExtension({
                 let lastPostId = null;
                 const seenPostIds = new Set();
                 const postGalleryPages = new WeakMap(); // 重绘卡片时保留其逻辑页归属
-                let selectionQueueId = 0; // FIFO 队列唯一 ID 计数器
+                let selectionQueueId = 0; // 每次入队递增，确保后端不会复用旧执行结果
                 const nodeInstanceId = crypto.randomUUID ? crypto.randomUUID() : 'node_' + Math.random().toString(36).slice(2, 10);
                 // 标记自己为最后活跃节点（自己节点上的任何交互都更新全局指针）
                 const markActive = () => { window.__lastActiveGalleryNodeId = nodeInstanceId; };
@@ -2525,7 +2543,7 @@ app.registerExtension({
                 );
 
                 const hasExactCategorizedTags = (postData) => Boolean(
-                    postData?._tag_categories_exact || postData?._gelbooru_hydrated
+                    postData?._tag_categories_exact
                 );
 
                 const isUsableOriginalUrl = (postData, url) => Boolean(
@@ -2535,13 +2553,18 @@ app.registerExtension({
                 );
 
                 const hydrationRequirementsMet = (postData, { requireTags, requireMedia, requireExactTags }) => {
-                    if (postData?._gelbooru_hydrated) return true;
                     const tagsReady = !requireTags || (
                         hasCategorizedTags(postData) && (!requireExactTags || hasExactCategorizedTags(postData))
                     );
                     const mediaReady = !requireMedia || isUsableOriginalUrl(postData, postData?.file_url);
                     return tagsReady && mediaReady;
                 };
+
+                const queueHydrationRequirements = Object.freeze({
+                    requireTags: true,
+                    requireMedia: true,
+                    requireExactTags: true,
+                });
 
                 const hydrateGelbooruPost = async (postData, requirements = {}) => {
                     const normalizedRequirements = {
@@ -3106,45 +3129,6 @@ app.registerExtension({
                         logger.debug(`[maybeLoadMore] skip: aheadBuffer=${aheadBuffer}>=${bufferTarget}`);
                     }
                 };
-
-                // Queue 按钮拦截：每次点击时将当前选中快照推入后端 FIFO 队列
-                const _hookQueueButton = () => {
-                    // 兼容不同 ComfyUI 前端版本：data-testid（新版）/ #comfy-queue-btn（旧版）
-                    const queueBtn = document.querySelector('[data-testid="queue-button"]') || document.getElementById("comfy-queue-btn");
-                    if (!queueBtn) { setTimeout(_hookQueueButton, 500); return; }
-                    queueBtn.addEventListener("click", async () => {
-                        // 只处理最后活跃的节点，其他画廊节点跳过
-                        if (window.__lastActiveGalleryNodeId !== nodeInstanceId) return;
-                        const selectedWrappers = imageGrid.querySelectorAll('.danbooru-image-wrapper.selected');
-                        if (selectedWrappers.length === 0) return;
-                        const selections = (await Promise.all(Array.from(selectedWrappers, async (wrapper) => {
-                            const postId = wrapper.dataset.postId;
-                            const postData = posts.find(p => p.id == postId) || temporaryTagEdits[postId];
-                            if (postData) {
-                                const hydratedPost = await hydrateGelbooruPost(postData, {
-                                    requireTags: true,
-                                    requireMedia: true,
-                                    requireExactTags: true,
-                                });
-                                const effectivePost = temporaryTagEdits[postId] || hydratedPost;
-                                const prompt = buildPromptForPost(effectivePost);
-                                const mediaPost = getPostWithOriginalMedia(effectivePost);
-                                const imageUrl = getBestImageUrl(mediaPost, false);
-                                return { post_id: postId, prompt, image_url: imageUrl };
-                            }
-                            return null;
-                        }))).filter(Boolean);
-                        if (selections.length === 0) return;
-                        selectionQueueId++;
-                        logger.info(`[QueueBtn] push ${selections.length}条 nodeId=${nodeInstanceId} queueId=${selectionQueueId}`);
-                        await fetch("/danbooru_gallery/selection_queue_push", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ item: { selections, _queue_id: selectionQueueId, nodeId: nodeInstanceId }, nodeId: nodeInstanceId })
-                        });
-                    }, true); // useCapture = true：在原始 onclick 之前触发
-                };
-                setTimeout(_hookQueueButton, 1000);
 
                 // 2 秒定时轮询检查前方缓冲，不够就自动补货
                 setInterval(() => {
@@ -3813,10 +3797,16 @@ app.registerExtension({
                             const updatedPostData = posts.find(p => p.id == postId) || temporaryTagEdits[postId] || postData;
                             const mediaPost = getPostWithOriginalMedia(updatedPostData);
                             const imageUrl = getBestImageUrl(mediaPost, false);
+                            const sourceSite = updatedPostData.source_site || currentSource();
                             selections.push({
                                 post_id: postId,
                                 prompt: prompt,
-                                image_url: imageUrl
+                                image_url: imageUrl,
+                                source_site: sourceSite,
+                                _queue_prepared: sourceSite !== "gelbooru" || hydrationRequirementsMet(
+                                    updatedPostData,
+                                    queueHydrationRequirements,
+                                ),
                             });
                         }
                     }
@@ -3838,6 +3828,116 @@ app.registerExtension({
                     // 更新选中计数显示
                     updateSelectionCount(selections.length);
                 };
+
+                const prepareSelectionForQueue = async () => {
+                    try {
+                        const selectedWrappers = imageGrid.querySelectorAll('.danbooru-image-wrapper.selected');
+                        if (selectedWrappers.length === 0) {
+                            let savedSelectionData = {};
+                            try {
+                                savedSelectionData = JSON.parse(selectionWidget.value || "{}");
+                            } catch (error) {
+                                logger.warn(`[Queue] 已保存的选择数据无法解析，将按空选择处理: ${error?.message || error}`);
+                            }
+                            const rawSavedSelections = Array.isArray(savedSelectionData.selections)
+                                ? savedSelectionData.selections
+                                : [];
+                            const savedSelections = await Promise.all(rawSavedSelections.map(async (selection) => {
+                                const sourceSite = selection.source_site
+                                    || (/gelbooru\.com/i.test(selection.image_url || "") ? "gelbooru" : null)
+                                    || (/donmai\.us/i.test(selection.image_url || "") ? "danbooru" : null)
+                                    || currentSource();
+                                if (sourceSite !== "gelbooru") {
+                                    return { ...selection, source_site: sourceSite, _queue_prepared: true };
+                                }
+                                if (selection._queue_prepared === true && selection.image_url) {
+                                    return { ...selection, source_site: sourceSite };
+                                }
+
+                                const hydratedPost = await fetchOriginalPost(selection.post_id, sourceSite);
+                                if (!hydrationRequirementsMet(hydratedPost, queueHydrationRequirements)) {
+                                    throw new Error(`${t('queueHydrationFailed')}: ${selection.post_id}`);
+                                }
+                                const imageUrl = getBestImageUrl(getPostWithOriginalMedia(hydratedPost), false);
+                                if (!imageUrl) {
+                                    throw new Error(`${t('queueHydrationFailed')}: ${selection.post_id}`);
+                                }
+                                return {
+                                    post_id: selection.post_id,
+                                    prompt: typeof selection.prompt === "string"
+                                        ? selection.prompt
+                                        : buildPromptForPost(hydratedPost),
+                                    image_url: imageUrl,
+                                    source_site: sourceSite,
+                                    _queue_prepared: true,
+                                };
+                            }));
+                            const savedQueueId = Number(savedSelectionData._queue_id);
+                            if (Number.isSafeInteger(savedQueueId) && savedQueueId > selectionQueueId) {
+                                selectionQueueId = savedQueueId;
+                            }
+                            selectionQueueId++;
+                            selectionWidget.value = JSON.stringify({
+                                selections: savedSelections,
+                                nodeId: nodeInstanceId,
+                                _queue_id: selectionQueueId,
+                            });
+                            selectionWidget.callback();
+                            logger.info(`[Queue] 保留已保存的 ${savedSelections.length} 条选择 nodeId=${nodeInstanceId} queueId=${selectionQueueId}`);
+                            return;
+                        }
+                        const selections = (await Promise.all(Array.from(selectedWrappers, async (wrapper) => {
+                            const postId = wrapper.dataset.postId;
+                            const postData = posts.find(p => p.id == postId) || temporaryTagEdits[postId];
+                            if (!postData) {
+                                throw new Error(`${t('queuePostMissing')}: ${postId}`);
+                            }
+
+                            let effectivePost = postData;
+                            if (postData.source_site === "gelbooru") {
+                                const hydratedPost = await hydrateGelbooruPost(postData, queueHydrationRequirements);
+                                if (!hydrationRequirementsMet(hydratedPost, queueHydrationRequirements)) {
+                                    throw new Error(`${t('queueHydrationFailed')}: ${postId}`);
+                                }
+                                effectivePost = temporaryTagEdits[postId]
+                                    ? { ...hydratedPost, ...temporaryTagEdits[postId] }
+                                    : hydratedPost;
+                            } else if (temporaryTagEdits[postId]) {
+                                effectivePost = temporaryTagEdits[postId];
+                            }
+
+                            const prompt = buildPromptForPost(effectivePost);
+                            const mediaPost = getPostWithOriginalMedia(effectivePost);
+                            const imageUrl = getBestImageUrl(mediaPost, false);
+                            if (postData.source_site === "gelbooru" && !imageUrl) {
+                                throw new Error(`${t('queueHydrationFailed')}: ${postId}`);
+                            }
+                            return {
+                                post_id: postId,
+                                prompt,
+                                image_url: imageUrl,
+                                source_site: postData.source_site || currentSource(),
+                                _queue_prepared: true,
+                            };
+                        }))).filter(Boolean);
+
+                        selectionQueueId++;
+                        const selectionData = {
+                            selections,
+                            nodeId: nodeInstanceId,
+                            _queue_id: selectionQueueId,
+                        };
+                        selectionWidget.value = JSON.stringify(selectionData);
+                        selectionWidget.callback();
+                        logger.info(`[Queue] 已准备 ${selections.length} 条 nodeId=${nodeInstanceId} queueId=${selectionQueueId}`);
+                    } catch (error) {
+                        const message = error?.message || String(error);
+                        logger.error(`[Queue] 数据准备失败，已阻止本次入队: ${message}`);
+                        showToast(`${t('queueBlocked')}: ${message}`, 'error');
+                        throw error;
+                    }
+                };
+                galleryQueuePreparers.set(nodeInstance, prepareSelectionForQueue);
 
                 // 辅助函数：更新选中计数显示
                 const updateSelectionCount = (count) => {
@@ -4951,6 +5051,7 @@ app.registerExtension({
 
             const onRemoved = nodeType.prototype.onRemoved;
             nodeType.prototype.onRemoved = function () {
+                galleryQueuePreparers.delete(this);
                 // 移除所有可能由该节点创建的全局UI元素
                 const elementsToRemove = document.querySelectorAll(
                     ".danbooru-settings-dialog, .danbooru-edit-panel, .danbooru-tag-tooltip, .danbooru-tag-context-menu, .danbooru-toast"

@@ -22,18 +22,11 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from ..utils.logger import get_logger
 from .site_adapters import get_site_adapter
+from .site_clients import DanbooruHttpClient, GelbooruHttpClient
 from .post_cache import get_gallery_post_cache
-from collections import defaultdict, deque
 from functools import partial
 
 logger = get_logger(__name__)
-
-# FIFO 选择队列（按 nodeId 分桶）：每次 Queue 时前端快照推入对应节点的队列，
-# 节点执行时只 pop 自己 nodeId 的条目，其他节点的条目不受影响。
-# 支持同一工作流中多个画廊节点互不干扰、主子工作流各自取自己的数据。
-_selection_queues = defaultdict(deque)
-_selection_queues_lock = threading.Lock()
-_selection_queue_gen = 0  # 每次 push 递增，IS_CHANGED 据此让所有节点都重新执行
 
 # 导入数据库管理器
 try:
@@ -171,78 +164,33 @@ def build_gallery_error_payload(source, action, exc=None, response=None, message
 # Danbooru API的基础URL
 BASE_URL = "https://danbooru.donmai.us"
 
-# 需要一个非 python-requests 的描述性 UA 才能过 Cloudflare（从 2026-04-23 起开启拦截）。
-# 实测 CF 对 UA 黑名单里包含 "ComfyUI" —— 推测 Danbooru 为抵制训练数据爬取主动加的规则。
-# 本节点只是图片浏览器（单图挑选，无批量导出），不参与训练数据收集，按 e621 式约定
-# 使用描述性项目 UA；避开 "ComfyUI" 字样以免被 CF 误伤。
-DANBOORU_HEADERS = {
-    "User-Agent": "Danbooru-Gallery/1.0"
-}
-
-# 官方文档限速为 10 req/s，保守取一半 = 5 req/s（200ms 间隔），避免触发 CF 或被站方拉黑。
-# 参考 deepghs/waifuc#22：Danbooru 管理员明确要求 "proper waits or backoffs"，否则会封项目。
-class _RateLimiter:
-    def __init__(self, min_interval_sec):
-        self.min_interval = min_interval_sec
-        self._last_ts = 0.0
-        self._lock = threading.Lock()       # 同步路径继续用，保持不变
-        self._async_lock = None             # 异步锁，首次 async_wait 时懒创建
-
-    def wait(self):
-        with self._lock:
-            now = time.monotonic()
-            elapsed = now - self._last_ts
-            if elapsed < self.min_interval:
-                time.sleep(self.min_interval - elapsed)
-            self._last_ts = time.monotonic()
-
-    async def async_wait(self):
-        """异步版限流，不阻塞事件循环。用 asyncio.Lock 串行化，避免 threading.Lock + await 死锁。"""
-        if self._async_lock is None:
-            self._async_lock = asyncio.Lock()
-        async with self._async_lock:
-            now = time.monotonic()
-            elapsed = now - self._last_ts
-            if elapsed < self.min_interval:
-                await asyncio.sleep(self.min_interval - elapsed)
-            self._last_ts = time.monotonic()
-
-_donmai_throttle = _RateLimiter(min_interval_sec=0.2)
+_danbooru_client = DanbooruHttpClient()
+_gelbooru_client = GelbooruHttpClient()
 
 # Gelbooru 公开 HTML 页列表固定每页 42 张，pid 为该页首张图片的偏移量
 GELBOORU_PUBLIC_PAGE_SIZE = 42
 
-# Gelbooru 公开页抓取限流器（0.75s = ~1.33 req/s，避开 429）
-_gelbooru_public_throttle = _RateLimiter(min_interval_sec=0.75)
-
-# Gelbooru 单帖 hydrate 限流器（0.2s = 5 req/s，比页请求快）
-_gelbooru_hydrate_throttle = _RateLimiter(min_interval_sec=0.2)
-
-# Gelbooru 图片代理限流器（0.2s = 5 req/s，2 并发 = 10 张/s）
-_gelbooru_image_throttle = _RateLimiter(min_interval_sec=0.2)
-
 def _danbooru_request(method, url, **kwargs):
-    """统一的 donmai.us 请求入口：限流 + 默认 UA + 429/503 带 Retry-After 退避重试一次。"""
-    headers = dict(kwargs.pop("headers", None) or {})
-    for k, v in DANBOORU_HEADERS.items():
-        headers.setdefault(k, v)
+    """Compatibility wrapper for the isolated Danbooru transport."""
+    return _danbooru_client.request(method, url, **kwargs)
 
-    resp = None
-    for attempt in range(2):
-        _donmai_throttle.wait()
-        resp = requests.request(method, url, headers=headers, **kwargs)
-        if resp.status_code not in (429, 503) or attempt == 1:
-            return resp
-        retry_after = resp.headers.get("Retry-After")
-        delay = 2.0
-        try:
-            if retry_after is not None:
-                delay = min(max(float(retry_after), 0.5), 10.0)
-        except ValueError:
-            pass
-        logger.warning(f"[Danbooru] {resp.status_code} 限流，{delay:.1f}s 后重试: {url}")
-        time.sleep(delay)
-    return resp
+
+def _gelbooru_request(method, url, request_kind="api", display_all=False, force_refresh=False, **kwargs):
+    """Route Gelbooru traffic through its own sessions and throttles."""
+    return _gelbooru_client.request(
+        method,
+        url,
+        request_kind=request_kind,
+        display_all=display_all,
+        force_refresh=force_refresh,
+        **kwargs,
+    )
+
+
+async def _run_http_request(request_func, *args, **kwargs):
+    """Run a synchronous site client without blocking aiohttp's event loop."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, partial(request_func, *args, **kwargs))
 
 # 获取插件目录路径
 # 获取当前文件所在目录
@@ -715,9 +663,12 @@ def check_network_connection(source="danbooru"):
         # 使用一个简单的公开API端点来检测连接
         if adapter.key == "gelbooru":
             ui_settings = load_ui_settings()
-            session = _get_gelbooru_session(ui_settings.get("gelbooru_display_all_site_content", False))
-            response = session.get(
+            display_all = ui_settings.get("gelbooru_display_all_site_content", False)
+            response = _gelbooru_request(
+                "GET",
                 adapter.posts_url,
+                request_kind="public",
+                display_all=display_all,
                 params=adapter.build_public_posts_params("", 1, 1, None),
                 timeout=(8, 10),
             )
@@ -797,7 +748,7 @@ def get_gelbooru_favorites(user_id, api_key, limit=1000):
     while len(favorite_posts) < limit:
         params = adapter.build_posts_params(f"fav:{user_id}", per_page, page, None)
         params = adapter.apply_auth_params(params, credentials)
-        response = _danbooru_request("GET", adapter.posts_url, params=params, timeout=15)
+        response = _gelbooru_request("GET", adapter.posts_url, request_kind="api", params=params, timeout=15)
         response.raise_for_status()
         posts = adapter.normalize_posts_response(response.json())
         if not posts:
@@ -816,7 +767,7 @@ def get_gelbooru_favorites(user_id, api_key, limit=1000):
     while len(all_ids) < limit:
         params = adapter.build_favorites_params(user_id, per_page, page)
         params = adapter.apply_auth_params(params, credentials)
-        response = _danbooru_request("GET", adapter.posts_url, params=params, timeout=15)
+        response = _gelbooru_request("GET", adapter.posts_url, request_kind="api", params=params, timeout=15)
         if response.status_code == 401:
             raise requests.exceptions.HTTPError("Gelbooru favorite API authentication failed", response=response)
         response.raise_for_status()
@@ -835,9 +786,12 @@ def add_gelbooru_favorite(post_id, user_id, api_key):
     if not user_id or not api_key:
         return False, "请先在设置中配置 Gelbooru User ID 和 API Key"
 
-    session = _get_gelbooru_session(load_ui_settings().get("gelbooru_display_all_site_content", False))
-    response = session.get(
+    display_all = load_ui_settings().get("gelbooru_display_all_site_content", False)
+    response = _gelbooru_request(
+        "GET",
         "https://gelbooru.com/public/addfav.php",
+        request_kind="api",
+        display_all=display_all,
         params={"id": str(post_id), "user_id": user_id, "api_key": api_key},
         headers=_gelbooru_browser_headers("*/*"),
         timeout=(8, 15),
@@ -855,9 +809,12 @@ def remove_gelbooru_favorite(post_id, user_id, api_key):
     if not user_id or not api_key:
         return False, "请先在设置中配置 Gelbooru User ID 和 API Key"
 
-    session = _get_gelbooru_session(load_ui_settings().get("gelbooru_display_all_site_content", False))
-    response = session.get(
+    display_all = load_ui_settings().get("gelbooru_display_all_site_content", False)
+    response = _gelbooru_request(
+        "GET",
         "https://gelbooru.com/index.php",
+        request_kind="api",
+        display_all=display_all,
         params={
             "page": "favorites",
             "s": "delete",
@@ -892,7 +849,12 @@ async def add_favorite(request):
         if adapter.key == "gelbooru":
             user_id, gelbooru_api_key = load_gelbooru_auth()
             try:
-                ok, message = add_gelbooru_favorite(post_id, user_id, gelbooru_api_key)
+                ok, message = await _run_http_request(
+                    add_gelbooru_favorite,
+                    post_id,
+                    user_id,
+                    gelbooru_api_key,
+                )
                 return web.json_response({"success": ok, "message": message, "error": None if ok else message})
             except requests.exceptions.Timeout as e:
                 logger.error("[Gelbooru] 添加收藏请求超时")
@@ -910,7 +872,11 @@ async def add_favorite(request):
             return web.json_response({"success": False, "error": "请先在设置中配置用户名和API Key"})
 
         # 验证认证
-        is_valid, is_network_error = verify_danbooru_auth(username, api_key)
+        is_valid, is_network_error = await _run_http_request(
+            verify_danbooru_auth,
+            username,
+            api_key,
+        )
         if is_network_error:
             return web.json_response({"success": False, "error": "网络错误，无法连接到Danbooru服务器"})
         if not is_valid:
@@ -918,7 +884,8 @@ async def add_favorite(request):
 
         try:
             favorite_url = f"{BASE_URL}/favorites.json?login={username}&api_key={api_key}"
-            response = _danbooru_request(
+            response = await _run_http_request(
+                _danbooru_request,
                 "POST",
                 favorite_url,
                 auth=HTTPBasicAuth(username, api_key),
@@ -996,7 +963,12 @@ async def remove_favorite(request):
         if adapter.key == "gelbooru":
             user_id, gelbooru_api_key = load_gelbooru_auth()
             try:
-                ok, message = remove_gelbooru_favorite(post_id, user_id, gelbooru_api_key)
+                ok, message = await _run_http_request(
+                    remove_gelbooru_favorite,
+                    post_id,
+                    user_id,
+                    gelbooru_api_key,
+                )
                 return web.json_response({"success": ok, "message": message, "error": None if ok else message})
             except requests.exceptions.Timeout as e:
                 logger.error("[Gelbooru] 取消收藏请求超时")
@@ -1014,7 +986,11 @@ async def remove_favorite(request):
             return web.json_response({"success": False, "error": "请先在设置中配置用户名和API Key"})
 
         # 验证认证
-        is_valid, is_network_error = verify_danbooru_auth(username, api_key)
+        is_valid, is_network_error = await _run_http_request(
+            verify_danbooru_auth,
+            username,
+            api_key,
+        )
         if is_network_error:
             return web.json_response({"success": False, "error": "网络错误，无法连接到Danbooru服务器"})
         if not is_valid:
@@ -1023,7 +999,13 @@ async def remove_favorite(request):
         try:
             # 直接使用帖子ID删除收藏
             delete_url = f"{BASE_URL}/favorites/{post_id}.json?login={username}&api_key={api_key}"
-            delete_response = _danbooru_request("DELETE", delete_url, auth=HTTPBasicAuth(username, api_key), timeout=15)
+            delete_response = await _run_http_request(
+                _danbooru_request,
+                "DELETE",
+                delete_url,
+                auth=HTTPBasicAuth(username, api_key),
+                timeout=15,
+            )
 
 
             if delete_response.status_code in [200, 204]:
@@ -1117,7 +1099,11 @@ async def get_favorites_route(request):
                     "error": "请先在设置中配置 Gelbooru User ID 和 API Key"
                 })
             try:
-                favorites = get_gelbooru_favorites(user_id, gelbooru_api_key)
+                favorites = await _run_http_request(
+                    get_gelbooru_favorites,
+                    user_id,
+                    gelbooru_api_key,
+                )
                 return web.json_response({"success": True, "favorites": favorites, "source": adapter.key})
             except requests.exceptions.Timeout as e:
                 logger.error("[Gelbooru] 获取收藏列表超时")
@@ -1185,7 +1171,10 @@ async def check_network(request):
     try:
         source = request.query.get("source") or load_ui_settings().get("source_site", "danbooru")
         adapter = get_site_adapter(source)
-        is_connected, is_network_error, error_payload = check_network_connection(adapter.key)
+        is_connected, is_network_error, error_payload = await _run_http_request(
+            check_network_connection,
+            adapter.key,
+        )
         payload = {
             "success": True,
             "connected": is_connected,
@@ -1212,7 +1201,11 @@ async def verify_auth(request):
         if not username or not api_key:
             return web.json_response({"success": False, "error": "缺少用户名或API Key"})
 
-        is_valid, is_network_error = verify_danbooru_auth(username, api_key)
+        is_valid, is_network_error = await _run_http_request(
+            verify_danbooru_auth,
+            username,
+            api_key,
+        )
         return web.json_response({"success": True, "valid": is_valid, "network_error": is_network_error})
     except Exception as e:
         logger.error(f"验证认证接口错误: {e}")
@@ -1222,9 +1215,6 @@ async def verify_auth(request):
 # 后端同时发出十几个 CDN 请求，配合全局限流会形成长队列；限到 3 并发即可让缩略图
 # 平滑流入，又避免瞬时流量把 CF 的 rate rule 触发。
 _image_proxy_semaphore = None
-_gelbooru_session = None
-_gelbooru_session_display_all = None
-_gelbooru_session_lock = threading.Lock()
 
 def _get_image_proxy_semaphore():
     global _image_proxy_semaphore
@@ -1233,15 +1223,7 @@ def _get_image_proxy_semaphore():
     return _image_proxy_semaphore
 
 def _gelbooru_browser_headers(accept="text/html,*/*"):
-    return {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36",
-        "Accept": accept,
-        "Referer": "https://gelbooru.com/",
-    }
-
-def _gelbooru_set_cookie(session, name, value):
-    for domain in ("gelbooru.com", ".gelbooru.com"):
-        session.cookies.set(name, value, domain=domain, path="/")
+    return _gelbooru_client.browser_headers(accept)
 
 def _gelbooru_public_page_requires_options(html_text):
     """Detect Gelbooru's anonymous page that says results are hidden by site options."""
@@ -1251,113 +1233,6 @@ def _gelbooru_public_page_requires_options(html_text):
         "Check your blacklist" in html_text
         and "Nobody here but us" in html_text
     )
-
-def _configure_gelbooru_display_all_session(session):
-    """Apply Gelbooru anonymous options for fringe/gore searches."""
-    _gelbooru_set_cookie(session, "fringeBenefits", "yup")
-    _gelbooru_set_cookie(session, "post_threshold", "0")
-    _gelbooru_set_cookie(session, "comment_threshold", "0")
-
-    options_response = session.get(
-        "https://gelbooru.com/index.php",
-        params={"page": "account", "s": "options"},
-        timeout=(8, 15),
-    )
-    options_response.raise_for_status()
-
-    csrf_match = re.search(r'name=["\']csrf-token["\']\s+value=["\']([^"\']+)["\']', options_response.text, re.IGNORECASE)
-    csrf_token = csrf_match.group(1) if csrf_match else ""
-    if not csrf_token:
-        logger.warning("[Gelbooru] options CSRF token was not found; Display all site content may not persist")
-
-    response = session.post(
-        "https://gelbooru.com/index.php?page=account&s=options",
-        data={
-            "tags": "",
-            "fringeBenefits": "on",
-            "cthreshold": "0",
-            "pthreshold": "0",
-            "my_tags": "",
-            "ad_type[]": ["1", "2", "3"],
-            "show_comments": "on",
-            "searchPostView": "on",
-            "csrf-token": csrf_token,
-            "submit": "Save",
-        },
-        timeout=(8, 15),
-    )
-    response.raise_for_status()
-
-    _gelbooru_set_cookie(session, "fringeBenefits", "yup")
-    _gelbooru_set_cookie(session, "post_threshold", "0")
-    _gelbooru_set_cookie(session, "comment_threshold", "0")
-
-    fringe_enabled = bool(re.search(r'name=["\']fringeBenefits["\'][^>]*checked', response.text, re.IGNORECASE))
-    blacklist_empty = bool(re.search(r'<textarea\b[^>]*\bid=["\']tags["\'][^>]*>\s*</textarea>', response.text, re.IGNORECASE))
-    if fringe_enabled:
-        logger.info("[Gelbooru] Display all site content enabled for anonymous session")
-    else:
-        logger.warning("[Gelbooru] Display all site content submitted, but options page did not show it as checked")
-    if not blacklist_empty:
-        logger.warning("[Gelbooru] Tag blacklist may not be empty after options submit")
-
-def _get_gelbooru_session(display_all_site_content=False, force_refresh=False):
-    """Return a Gelbooru session, optionally enabling the public fringe content option."""
-    global _gelbooru_session, _gelbooru_session_display_all
-
-    display_all_site_content = bool(display_all_site_content)
-    with _gelbooru_session_lock:
-        if not force_refresh and _gelbooru_session is not None and _gelbooru_session_display_all == display_all_site_content:
-            return _gelbooru_session
-
-        session = requests.Session()
-        session.headers.update(_gelbooru_browser_headers())
-
-        if display_all_site_content:
-            try:
-                _configure_gelbooru_display_all_session(session)
-            except requests.exceptions.RequestException as e:
-                logger.warning(f"[Gelbooru] Failed to enable Display all site content; continuing with normal session: {e}")
-        if False and display_all_site_content:
-            session.cookies.set("fringeBenefits", "yup", domain="gelbooru.com", path="/")
-            try:
-                options_response = session.get(
-                    "https://gelbooru.com/index.php",
-                    params={"page": "account", "s": "options"},
-                    timeout=(8, 15),
-                )
-                csrf_match = re.search(r'name=["\']csrf-token["\']\s+value=["\']([^"\']+)["\']', options_response.text, re.IGNORECASE)
-                csrf_token = csrf_match.group(1) if csrf_match else ""
-                if not csrf_token:
-                    logger.warning("[Gelbooru] 未找到 options CSRF token，Display all site content 可能无法保存")
-
-                response = session.post(
-                    "https://gelbooru.com/index.php?page=account&s=options",
-                    data={
-                        "tags": "",
-                        "fringeBenefits": "on",
-                        "cthreshold": "0",
-                        "pthreshold": "0",
-                        "my_tags": "",
-                        "ad_type[]": ["1", "2", "3"],
-                        "show_comments": "on",
-                        "searchPostView": "on",
-                        "csrf-token": csrf_token,
-                        "submit": "Save",
-                    },
-                    timeout=(8, 15),
-                )
-                fringe_enabled = bool(re.search(r'name=["\']fringeBenefits["\'][^>]*checked', response.text, re.IGNORECASE))
-                if fringe_enabled:
-                    logger.info("[Gelbooru] 已启用 Display all site content 匿名会话")
-                else:
-                    logger.warning("[Gelbooru] 已提交 Display all site content，但返回页未显示 checked")
-            except requests.exceptions.RequestException as e:
-                logger.warning(f"[Gelbooru] 启用 Display all site content 失败，将继续普通会话: {e}")
-
-        _gelbooru_session = session
-        _gelbooru_session_display_all = display_all_site_content
-        return _gelbooru_session
 
 def _image_proxy_headers_for_host(host):
     """Return browser-like headers for image CDNs that are sensitive to generic requests."""
@@ -1378,9 +1253,11 @@ def _fetch_supported_media(url):
 
     if host == "gelbooru.com" or host.endswith(".gelbooru.com"):
         display_all_site_content = load_ui_settings().get("gelbooru_display_all_site_content", False)
-        session = _get_gelbooru_session(display_all_site_content)
-        response = session.get(
+        response = _gelbooru_request(
+            "GET",
             url,
+            request_kind="image",
+            display_all=display_all_site_content,
             headers=_image_proxy_headers_for_host(host),
             timeout=(8, 30),
         )
@@ -1416,38 +1293,25 @@ def _fetch_gelbooru_public_posts(
     if id_match:
         refs = [{"id": id_match.group(1)}]
     else:
-        session = _get_gelbooru_session(display_all_site_content)
-
-        def _get_list_page(sess, _params, _pid):
-            """Fetch list page with rate limiting + 429/503 retry."""
-            for attempt in range(2):
-                _gelbooru_public_throttle.wait()
-                try:
-                    resp = sess.get(adapter.posts_url, params=_params, timeout=(8, 15))
-                except requests.exceptions.RequestException as e:
-                    if attempt == 0:
-                        _log_gelbooru_retry_warning(f"网络异常: {e}", pid_value=_pid)
-                        time.sleep(3)
-                    continue
-
-                if resp.status_code not in (429, 503):
-                    return resp
-
-                retry_after = resp.headers.get("Retry-After")
-                delay = 2.0
-                try:
-                    if retry_after is not None:
-                        delay = min(max(float(retry_after), 0.5), 10.0)
-                except ValueError:
-                    pass
-                if attempt == 0:
-                    _log_gelbooru_retry_warning(f"HTTP {resp.status_code} 限流，{delay:.1f}s 后重试", pid_value=_pid)
-                    time.sleep(delay)
-                else:
-                    _log_gelbooru_retry_warning(f"重试仍限流({resp.status_code})，跳过本页", pid_value=_pid)
+        def _get_list_page(_params, _pid, force_refresh=False):
+            """Fetch a list page through the isolated Gelbooru transport."""
+            try:
+                response = _gelbooru_request(
+                    "GET",
+                    adapter.posts_url,
+                    request_kind="public",
+                    display_all=display_all_site_content,
+                    force_refresh=force_refresh,
+                    params=_params,
+                    timeout=(8, 15),
+                )
+                if response.status_code in (429, 503):
+                    _log_gelbooru_retry_warning(f"重试仍限流({response.status_code})，跳过本页", pid_value=_pid)
                     return None
-
-            return None
+                return response
+            except requests.exceptions.RequestException as exc:
+                _log_gelbooru_retry_warning(f"网络异常: {exc}", pid_value=_pid)
+                return None
 
         # 一次请求多页：limit > 42 时依次抓取多页再合并，顺序请求不跨序
         pages_to_fetch = max(1, -(-limit // GELBOORU_PUBLIC_PAGE_SIZE))
@@ -1458,7 +1322,7 @@ def _fetch_gelbooru_public_posts(
             params = adapter.build_public_posts_params(tags, limit, cur_page, rating_query)
             params["pid"] = pid_value
 
-            list_response = _get_list_page(session, params, pid_value)
+            list_response = _get_list_page(params, pid_value)
             if list_response is None:
                 payload = build_gallery_error_payload(
                     adapter.key,
@@ -1472,8 +1336,7 @@ def _fetch_gelbooru_public_posts(
 
             if display_all_site_content and _gelbooru_public_page_requires_options(list_response.text):
                 logger.warning("[GelbooruPublic] Display all site content needed; rebuilding session")
-                session = _get_gelbooru_session(display_all_site_content, force_refresh=True)
-                list_response = _get_list_page(session, params, pid_value)
+                list_response = _get_list_page(params, pid_value, force_refresh=True)
                 if list_response is None:
                     payload = build_gallery_error_payload(
                         adapter.key,
@@ -1505,9 +1368,15 @@ def _fetch_gelbooru_public_posts(
     if hydrate_details and not id_match and refs:
         def _hydrate_one(ref):
             """Fetch and hydrate a single post's detail page."""
-            _gelbooru_hydrate_throttle.wait()
             try:
-                resp = session.get(adapter.posts_url, params=adapter.build_public_post_params(ref["id"]), timeout=(8, 15))
+                resp = _gelbooru_request(
+                    "GET",
+                    adapter.posts_url,
+                    request_kind="hydrate",
+                    display_all=display_all_site_content,
+                    params=adapter.build_public_post_params(ref["id"]),
+                    timeout=(8, 15),
+                )
                 resp.raise_for_status()
                 hydrated = adapter.normalize_public_post_page(ref["id"], resp.text, ref)
                 for key in ("tag_string", "tag_string_artist", "tag_string_copyright", "tag_string_character", "tag_string_general", "tag_string_meta", "image_width", "image_height", "rating"):
@@ -1537,24 +1406,21 @@ def _fetch_gelbooru_public_posts(
         if not post_id:
             continue
 
-        for attempt in range(2):
-            try:
-                post_response = _get_gelbooru_session(display_all_site_content).get(
-                    adapter.posts_url,
-                    params=adapter.build_public_post_params(post_id),
-                    timeout=(8, 15),
-                )
-                post_response.raise_for_status()
-                post = adapter.normalize_public_post_page(post_id, post_response.text, ref)
-                if post.get("preview_file_url") or post.get("file_url"):
-                    posts.append(post)
-                    break
-            except requests.exceptions.RequestException as e:
-                if attempt == 0:
-                    logger.warning(f"[GelbooruPublic] 帖子页面解析失败/id={post_id} 尝试重试: {e}")
-                    time.sleep(1)
-                else:
-                    logger.warning(f"[GelbooruPublic] 帖子页面解析失败/id={post_id} 放弃: {e}")
+        try:
+            post_response = _gelbooru_request(
+                "GET",
+                adapter.posts_url,
+                request_kind="hydrate",
+                display_all=display_all_site_content,
+                params=adapter.build_public_post_params(post_id),
+                timeout=(8, 15),
+            )
+            post_response.raise_for_status()
+            post = adapter.normalize_public_post_page(post_id, post_response.text, ref)
+            if post.get("preview_file_url") or post.get("file_url"):
+                posts.append(post)
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"[GelbooruPublic] 帖子页面解析失败/id={post_id} 放弃: {e}")
 
     return posts
 
@@ -1569,7 +1435,7 @@ def _log_gelbooru_retry_warning(message, pid_value=None):
 @PromptServer.instance.routes.get("/danbooru_gallery/image_proxy")
 async def image_proxy(request):
     # 浏览器直连 cdn.donmai.us 会被 Cloudflare 按 cross-site <img> 请求挑战并返回 403，
-    # 而后端用描述性 UA (DANBOORU_HEADERS) 能过 CF。转发一次即可让前端拿到缩略图。
+    # 而 Danbooru 客户端使用描述性 UA 能过 CF。转发一次即可让前端拿到缩略图。
     url = request.query.get("url", "")
     if not url:
         return web.Response(status=400, text="missing url")
@@ -1592,11 +1458,12 @@ async def image_proxy(request):
         try:
             if host == "gelbooru.com" or host.endswith(".gelbooru.com"):
                 display_all_site_content = load_ui_settings().get("gelbooru_display_all_site_content", False)
-                session = _get_gelbooru_session(display_all_site_content)
-                await _gelbooru_image_throttle.async_wait()
                 resp = await asyncio.to_thread(
-                    session.get,
+                    _gelbooru_request,
+                    "GET",
                     url,
+                    request_kind="image",
+                    display_all=display_all_site_content,
                     headers=_image_proxy_headers_for_host(host),
                     timeout=(8, 15),
                 )
@@ -1728,7 +1595,14 @@ async def get_autocomplete(request):
                     if adapter.key == "gelbooru":
                         logger.info("[Gelbooru] 未配置 User ID/API Key，改用公开 autocomplete2")
                         params = adapter.build_public_autocomplete_params(query, limit)
-                        response = _danbooru_request("GET", tags_url, params=params, timeout=timeout)
+                        response = await _run_http_request(
+                            _gelbooru_request,
+                            "GET",
+                            tags_url,
+                            request_kind="api",
+                            params=params,
+                            timeout=timeout,
+                        )
                         response.raise_for_status()
                         return web.json_response(adapter.normalize_public_autocomplete_response(response.json()))
                     logger.warning(f"[{adapter.key}] 缺少必要认证信息，已跳过自动补全请求")
@@ -1739,7 +1613,24 @@ async def get_autocomplete(request):
                 auth = HTTPBasicAuth(username, api_key) if adapter.requires_auth and username and api_key else None
 
                 logger.debug(f"[Autocomplete] 调用远程API({adapter.key}): '{query}' (超时: {timeout}s)")
-                response = _danbooru_request("GET", tags_url, params=params, auth=auth, timeout=timeout)
+                if adapter.key == "gelbooru":
+                    response = await _run_http_request(
+                        _gelbooru_request,
+                        "GET",
+                        tags_url,
+                        request_kind="api",
+                        params=params,
+                        timeout=timeout,
+                    )
+                else:
+                    response = await _run_http_request(
+                        _danbooru_request,
+                        "GET",
+                        tags_url,
+                        params=params,
+                        auth=auth,
+                        timeout=timeout,
+                    )
                 response.raise_for_status()
 
                 result = adapter.normalize_autocomplete_response(response.json())
@@ -1848,35 +1739,22 @@ async def save_ui_settings_route(request):
 
 @PromptServer.instance.routes.post("/danbooru_gallery/selection_queue_push")
 async def selection_queue_push(request):
-    """前端在每次 Queue 前把当前选中的条目推入对应 nodeId 的 FIFO 桶"""
+    """Deprecated compatibility endpoint; selection state now travels in the prompt."""
     try:
-        data = await request.json()
-        item = data.get("item")
-        node_id = data.get("nodeId", "")
-        if item:
-            global _selection_queue_gen
-            with _selection_queues_lock:
-                _selection_queues[node_id].append(item)
-                _selection_queue_gen += 1
-            logger.debug(f"[SelectionQueue] push node={node_id} → 队列长度 {len(_selection_queues[node_id])}")
-        return web.json_response({"success": True})
+        if request.can_read_body:
+            await request.json()
+        return web.json_response({"success": True, "deprecated": True})
     except Exception as e:
         logger.error(f"[SelectionQueue] push error: {e}")
         return web.json_response({"success": False, "error": str(e)})
 
 @PromptServer.instance.routes.post("/danbooru_gallery/selection_queue_pop")
 async def selection_queue_pop(request):
-    """节点执行时从队列头部 pop 一个条目（不移除则 peek）"""
+    """Deprecated compatibility endpoint; no server-side queue is retained."""
     try:
-        data = await request.json() if request.can_read_body else {}
-        remove = data.get("remove", True)
-        with _selection_queues_lock:
-            q = _selection_queues.get(data.get("nodeId", ""))
-            if q and len(q) > 0:
-                item = q.popleft() if remove else q[0]
-                logger.debug(f"[SelectionQueue] pop → 剩余 {len(q)}")
-                return web.json_response({"success": True, "item": item})
-        return web.json_response({"success": True, "item": None})
+        if request.can_read_body:
+            await request.json()
+        return web.json_response({"success": True, "item": None, "deprecated": True})
     except Exception as e:
         logger.error(f"[SelectionQueue] pop error: {e}")
         return web.json_response({"success": False, "error": str(e)})
@@ -2065,7 +1943,14 @@ async def get_autocomplete_with_translation(request):
                     if adapter.key == "gelbooru":
                         logger.info("[Gelbooru] 未配置 User ID/API Key，改用公开 autocomplete2")
                         params = adapter.build_public_autocomplete_params(query, limit)
-                        response = _danbooru_request("GET", tags_url, params=params, timeout=timeout)
+                        response = await _run_http_request(
+                            _gelbooru_request,
+                            "GET",
+                            tags_url,
+                            request_kind="api",
+                            params=params,
+                            timeout=timeout,
+                        )
                         response.raise_for_status()
                         result = adapter.normalize_public_autocomplete_response(response.json())
                         for tag_data in result:
@@ -2080,7 +1965,24 @@ async def get_autocomplete_with_translation(request):
                 auth = HTTPBasicAuth(username, api_key) if adapter.requires_auth and username and api_key else None
 
                 logger.debug(f"[AutocompleteTranslation] 调用远程API({adapter.key}): '{query}' (超时: {timeout}s)")
-                response = _danbooru_request("GET", tags_url, params=params, auth=auth, timeout=timeout)
+                if adapter.key == "gelbooru":
+                    response = await _run_http_request(
+                        _gelbooru_request,
+                        "GET",
+                        tags_url,
+                        request_kind="api",
+                        params=params,
+                        timeout=timeout,
+                    )
+                else:
+                    response = await _run_http_request(
+                        _danbooru_request,
+                        "GET",
+                        tags_url,
+                        params=params,
+                        auth=auth,
+                        timeout=timeout,
+                    )
                 response.raise_for_status()
 
                 result = adapter.normalize_autocomplete_response(response.json())
@@ -2161,46 +2063,17 @@ class DanbooruGalleryNode:
 
     @classmethod
     def IS_CHANGED(cls, selection_data="{}", **kwargs):
-        if not selection_data or selection_data == "{}":
-            return ""
-        try:
-            data = json.loads(selection_data)
-            node_id = data.get("nodeId")
-            if node_id:
-                with _selection_queues_lock:
-                    q = _selection_queues.get(node_id)
-                    if q and len(q) > 0:
-                        return str(q[0].get("_queue_id", ""))
-        except (json.JSONDecodeError, TypeError):
-            pass
-        return selection_data
+        return selection_data or ""
 
     def get_selected_data(self, selection_data="{}", **kwargs):
         images = []
         prompts = []
-        my_node_id = ""
 
         try:
-            if selection_data and selection_data != "{}":
-                data = json.loads(selection_data)
-                my_node_id = data.get("nodeId", "")
-
-            # 从 FIFO 按 nodeId pop
-            item = None
-            if my_node_id:
-                with _selection_queues_lock:
-                    q = _selection_queues.get(my_node_id)
-                    if q and len(q) > 0:
-                        item = q.popleft()
-                        logger.debug(f"[SelectionQueue] pop node={my_node_id} → 剩余 {len(q)}")
-
-            if item:
-                selections = item.get("selections", [])
-            else:
-                if not selection_data or selection_data == "{}":
-                    return ([torch.zeros(1, 1, 1, 3)], [""])
-                data = json.loads(selection_data)
-                selections = data.get("selections", [])
+            if not selection_data or selection_data == "{}":
+                return ([torch.zeros(1, 1, 1, 3)], [""])
+            data = json.loads(selection_data)
+            selections = data.get("selections", [])
 
             if not selections:
                 return ([torch.zeros(1, 1, 1, 3)], [""])
@@ -2358,6 +2231,14 @@ class DanbooruGalleryNode:
         username, api_key = load_user_auth()
         auth = HTTPBasicAuth(username, api_key) if adapter.requires_auth and username and api_key else None
         if adapter.key == "gelbooru" and force_public_detail:
+            def is_queue_ready_detail(post):
+                return bool(
+                    isinstance(post, dict)
+                    and post.get("file_url")
+                    and post.get("_tag_categories_exact")
+                    and not post.get("_gelbooru_preview_only")
+                )
+
             requested_id_match = re.search(r"(?:^|\s)id:(\d+)(?:\s|$)", tags or "")
             if persistent_cache and requested_id_match:
                 try:
@@ -2367,7 +2248,7 @@ class DanbooruGalleryNode:
                         persistent_cache_age,
                     )
                     cached_post = cached_details.get(requested_id_match.group(1))
-                    if cached_post:
+                    if is_queue_ready_detail(cached_post):
                         result_text = json.dumps([cached_post], ensure_ascii=False)
                         DanbooruGalleryNode._cache_posts(cache_key, result_text)
                         return (result_text,)
@@ -2385,12 +2266,12 @@ class DanbooruGalleryNode:
             if persistent_cache:
                 try:
                     for post in posts:
-                        if isinstance(post, dict) and not post.get("error"):
+                        if is_queue_ready_detail(post):
                             persistent_cache.put_post(persistent_source, post)
                 except Exception as exc:
                     logger.warning(f"[GelbooruCache] 详情持久化失败: {exc}")
             result_text = json.dumps(posts, ensure_ascii=False)
-            if cache_enabled and posts and not any(isinstance(p, dict) and p.get("error") for p in posts):
+            if cache_enabled and posts and all(is_queue_ready_detail(post) for post in posts):
                 DanbooruGalleryNode._cache_posts(cache_key, result_text)
             return (result_text,)
 
@@ -2418,7 +2299,10 @@ class DanbooruGalleryNode:
             params["page"] = f"b{before_id}"
 
         try:
-            response = _danbooru_request("GET", adapter.posts_url, params=params, auth=auth, timeout=15)
+            if adapter.key == "gelbooru":
+                response = _gelbooru_request("GET", adapter.posts_url, request_kind="api", params=params, timeout=15)
+            else:
+                response = _danbooru_request("GET", adapter.posts_url, params=params, auth=auth, timeout=15)
             if response.status_code == 401 and adapter.key == "gelbooru":
                 logger.warning("[Gelbooru] DAPI 返回 401，改用公开网页解析模式")
                 posts = _fetch_gelbooru_public_posts(adapter, tags, limit, page, rating_query, gelbooru_display_all_site_content)

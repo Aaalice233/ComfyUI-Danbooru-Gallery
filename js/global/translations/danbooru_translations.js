@@ -141,6 +141,9 @@ export const danbooruTranslations = {
         pageNumber: "页码",
         jumpToPage: "跳转",
         invalidPage: "请输入大于 0 的整数页码",
+        queuePostMissing: "找不到所选图片数据",
+        queueHydrationFailed: "无法取得所选 Gelbooru 图片的原图或精确标签",
+        queueBlocked: "图片准备失败，本次工作流未入队",
 
         // 多选模式
         selectionModeSettings: "选择模式设置",
@@ -286,6 +289,9 @@ export const danbooruTranslations = {
         pageNumber: "Page Number",
         jumpToPage: "Go",
         invalidPage: "Enter a positive integer page number",
+        queuePostMissing: "Selected post data is unavailable",
+        queueHydrationFailed: "Could not load the original image or exact tags for the selected Gelbooru post",
+        queueBlocked: "Image preparation failed; the workflow was not queued",
 
         // Multi-select mode
         selectionModeSettings: "Selection Mode Settings",
@@ -294,5 +300,12 @@ export const danbooruTranslations = {
         clearAllSelection: "Clear Selection",
         selectedCount: "{count} selected",
     }
+};
+
+danbooruTranslations.ko = {
+    ...danbooruTranslations.en,
+    queuePostMissing: "선택한 이미지 데이터를 찾을 수 없습니다",
+    queueHydrationFailed: "선택한 Gelbooru 이미지의 원본 또는 정확한 태그를 불러올 수 없습니다",
+    queueBlocked: "이미지 준비에 실패하여 워크플로를 대기열에 추가하지 않았습니다",
 };
 
