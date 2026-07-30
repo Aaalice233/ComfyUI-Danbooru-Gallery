@@ -1407,6 +1407,11 @@ def _fetch_gelbooru_public_posts(
             continue
 
         try:
+            logger.info(
+                "[GelbooruPublic] 详情请求开始 id=%s display_all=%s",
+                post_id,
+                bool(display_all_site_content),
+            )
             post_response = _gelbooru_request(
                 "GET",
                 adapter.posts_url,
@@ -1415,12 +1420,53 @@ def _fetch_gelbooru_public_posts(
                 params=adapter.build_public_post_params(post_id),
                 timeout=(8, 15),
             )
+            logger.info(
+                "[GelbooruPublic] 详情响应 id=%s status=%s content_type=%s bytes=%s",
+                post_id,
+                post_response.status_code,
+                post_response.headers.get("Content-Type", "unknown"),
+                len(post_response.content),
+            )
             post_response.raise_for_status()
             post = adapter.normalize_public_post_page(post_id, post_response.text, ref)
+            has_original = bool(post.get("file_url"))
+            exact_tags = bool(post.get("_tag_categories_exact"))
+            preview_only = bool(post.get("_gelbooru_preview_only"))
+            tag_count = len(str(post.get("tag_string") or "").split())
+            logger.info(
+                "[GelbooruPublic] 详情解析 id=%s has_original=%s exact_tags=%s "
+                "preview_only=%s tag_count=%s",
+                post_id,
+                has_original,
+                exact_tags,
+                preview_only,
+                tag_count,
+            )
+            if not has_original or not exact_tags or preview_only:
+                logger.warning(
+                    "[GelbooruPublic] 详情不满足入队要求 id=%s missing_original=%s "
+                    "missing_exact_tags=%s preview_only=%s",
+                    post_id,
+                    not has_original,
+                    not exact_tags,
+                    preview_only,
+                )
             if post.get("preview_file_url") or post.get("file_url"):
                 posts.append(post)
         except requests.exceptions.RequestException as e:
-            logger.warning(f"[GelbooruPublic] 帖子页面解析失败/id={post_id} 放弃: {e}")
+            status_code = e.response.status_code if e.response is not None else "none"
+            logger.warning(
+                "[GelbooruPublic] 详情请求失败 id=%s display_all=%s status=%s "
+                "error=%s: %s",
+                post_id,
+                bool(display_all_site_content),
+                status_code,
+                type(e).__name__,
+                e,
+            )
+        except Exception:
+            logger.exception("[GelbooruPublic] 详情解析异常 id=%s", post_id)
+            raise
 
     return posts
 

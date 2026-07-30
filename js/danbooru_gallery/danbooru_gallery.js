@@ -2507,7 +2507,7 @@ app.registerExtension({
 
                 // 获取单个帖子的原始数据
                 const fetchOriginalPost = async (postId, source = uiSettings.source_site || "danbooru") => {
-                    logger.info(`[fetchOriginalPost] 开始hydrate postId=${postId}`);
+                    logger.info(`[fetchOriginalPost] 开始获取详情 source=${source} postId=${postId}`);
                     try {
                         const params = new URLSearchParams({
                             source,
@@ -2520,13 +2520,47 @@ app.registerExtension({
                             params.set("force_public_detail", "1");
                         }
                         const response = await fetch(`/danbooru_gallery/posts?${params}`);
-                        const data = await response.json();
-                        if (data && data.length > 0) {
-                            return data[0];
+                        const contentType = response.headers.get("content-type") || "unknown";
+                        let data;
+                        try {
+                            data = await response.json();
+                        } catch (error) {
+                            logger.error(
+                                `[fetchOriginalPost] 详情接口返回的不是合法 JSON source=${source} postId=${postId} `
+                                + `status=${response.status} contentType=${contentType}: ${error?.message || error}`
+                            );
+                            return null;
                         }
-                        return null;
+
+                        if (!response.ok) {
+                            logger.error(
+                                `[fetchOriginalPost] 详情接口请求失败 source=${source} postId=${postId} `
+                                + `status=${response.status} statusText=${response.statusText || "unknown"}`
+                            );
+                            return null;
+                        }
+
+                        if (!Array.isArray(data) || data.length === 0) {
+                            logger.error(
+                                `[fetchOriginalPost] 详情接口未返回图片 source=${source} postId=${postId} `
+                                + `status=${response.status} responseType=${Array.isArray(data) ? "empty_array" : typeof data}`
+                            );
+                            return null;
+                        }
+
+                        const detail = data[0];
+                        logger.info(
+                            `[fetchOriginalPost] 详情结果 source=${source} postId=${postId} `
+                            + `hasOriginal=${Boolean(detail?.file_url)} exactTags=${Boolean(detail?._tag_categories_exact)} `
+                            + `previewOnly=${Boolean(detail?._gelbooru_preview_only)} `
+                            + `tagCount=${String(detail?.tag_string || "").split(/\s+/).filter(Boolean).length}`
+                        );
+                        return detail;
                     } catch (error) {
-                        logger.error("Failed to fetch original post data:", error);
+                        logger.error(
+                            `[fetchOriginalPost] 详情请求异常 source=${source} postId=${postId}: `
+                            + `${error?.message || error}`
+                        );
                         return null;
                     }
                 };
