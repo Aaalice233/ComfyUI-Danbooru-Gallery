@@ -2507,7 +2507,6 @@ app.registerExtension({
 
                 // 获取单个帖子的原始数据
                 const fetchOriginalPost = async (postId, source = uiSettings.source_site || "danbooru") => {
-                    logger.info(`[fetchOriginalPost] 开始获取详情 source=${source} postId=${postId}`);
                     try {
                         const params = new URLSearchParams({
                             source,
@@ -2548,14 +2547,7 @@ app.registerExtension({
                             return null;
                         }
 
-                        const detail = data[0];
-                        logger.info(
-                            `[fetchOriginalPost] 详情结果 source=${source} postId=${postId} `
-                            + `hasOriginal=${Boolean(detail?.file_url)} exactTags=${Boolean(detail?._tag_categories_exact)} `
-                            + `previewOnly=${Boolean(detail?._gelbooru_preview_only)} `
-                            + `tagCount=${String(detail?.tag_string || "").split(/\s+/).filter(Boolean).length}`
-                        );
-                        return detail;
+                        return data[0];
                     } catch (error) {
                         logger.error(
                             `[fetchOriginalPost] 详情请求异常 source=${source} postId=${postId}: `

@@ -1407,11 +1407,6 @@ def _fetch_gelbooru_public_posts(
             continue
 
         try:
-            logger.info(
-                "[GelbooruPublic] 详情请求开始 id=%s display_all=%s",
-                post_id,
-                bool(display_all_site_content),
-            )
             post_response = _gelbooru_request(
                 "GET",
                 adapter.posts_url,
@@ -1420,36 +1415,25 @@ def _fetch_gelbooru_public_posts(
                 params=adapter.build_public_post_params(post_id),
                 timeout=(8, 15),
             )
-            logger.info(
-                "[GelbooruPublic] 详情响应 id=%s status=%s content_type=%s bytes=%s",
-                post_id,
-                post_response.status_code,
-                post_response.headers.get("Content-Type", "unknown"),
-                len(post_response.content),
-            )
             post_response.raise_for_status()
             post = adapter.normalize_public_post_page(post_id, post_response.text, ref)
             has_original = bool(post.get("file_url"))
             exact_tags = bool(post.get("_tag_categories_exact"))
             preview_only = bool(post.get("_gelbooru_preview_only"))
             tag_count = len(str(post.get("tag_string") or "").split())
-            logger.info(
-                "[GelbooruPublic] 详情解析 id=%s has_original=%s exact_tags=%s "
-                "preview_only=%s tag_count=%s",
-                post_id,
-                has_original,
-                exact_tags,
-                preview_only,
-                tag_count,
-            )
             if not has_original or not exact_tags or preview_only:
                 logger.warning(
-                    "[GelbooruPublic] 详情不满足入队要求 id=%s missing_original=%s "
-                    "missing_exact_tags=%s preview_only=%s",
+                    "[GelbooruPublic] 详情不满足入队要求 id=%s status=%s "
+                    "content_type=%s bytes=%s missing_original=%s "
+                    "missing_exact_tags=%s preview_only=%s tag_count=%s",
                     post_id,
+                    post_response.status_code,
+                    post_response.headers.get("Content-Type", "unknown"),
+                    len(post_response.content),
                     not has_original,
                     not exact_tags,
                     preview_only,
+                    tag_count,
                 )
             if post.get("preview_file_url") or post.get("file_url"):
                 posts.append(post)
