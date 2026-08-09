@@ -1,3 +1,10 @@
+> [!CAUTION]
+> ### 🚚 项目已迁移
+>
+> 本仓库已停止新功能开发，仅保留历史代码与文档。节点功能及后续更新已迁移至 **[ComfyUI-Aaalice-Nodes](https://github.com/Aaalice233/ComfyUI-Aaalice-Nodes)**，请前往新项目安装和使用。
+>
+> 新版工作流请查看 **[Aaalice-Workflows](https://github.com/Aaalice233/Aaalice-Workflows)**；工作流管理与分享功能请查看 **[ComfyUI-Aaalice-Workflow-Hub](https://github.com/Aaalice233/ComfyUI-Aaalice-Workflow-Hub)**。
+
 # 🎨 ComfyUI-Danbooru-Gallery
 
 🇨🇳 本节点专为 [ShiQi_Workflow](https://github.com/Aaalice233/ShiQi_Workflow) 工作流打造，聚焦中文用户的实际使用场景与体验。
