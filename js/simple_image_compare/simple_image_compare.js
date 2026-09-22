@@ -1,6 +1,12 @@
 import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 
+const SIMPLE_IMAGE_COMPARE_WIDGET = "simple_image_compare_widget";
+
+function findSimpleImageCompareWidget(node) {
+    return node.widgets?.find(widget => widget.name === SIMPLE_IMAGE_COMPARE_WIDGET);
+}
+
 /**
  * 简易图像对比节点 - 性能优化版
  *
@@ -34,7 +40,7 @@ function imageDataToUrl(data) {
 class SimpleImageCompare {
     constructor(node) {
         this.node = node;
-        this.name = "simple_image_compare_widget";
+        this.name = SIMPLE_IMAGE_COMPARE_WIDGET;
         this.type = "custom";
 
         // 状态
@@ -59,7 +65,7 @@ class SimpleImageCompare {
     // 处理执行输出
     onExecuted(output) {
         if ("images" in output) {
-            this.setValue({
+            this.setImages({
                 images: (output.images || []).map((d, i) => ({
                     name: i === 0 ? "A" : "B",
                     selected: true,
@@ -88,12 +94,12 @@ class SimpleImageCompare {
                 });
             }
 
-            this.setValue({ images: imagesToChoose });
+            this.setImages({ images: imagesToChoose });
         }
     }
 
     // 设置值
-    setValue(v) {
+    setImages(v) {
         let cleanedVal;
         if (Array.isArray(v)) {
             cleanedVal = v.map((d, i) => {
@@ -405,7 +411,7 @@ app.registerExtension({
             const onMouseEnter = nodeType.prototype.onMouseEnter;
             nodeType.prototype.onMouseEnter = function (event) {
                 const r = onMouseEnter ? onMouseEnter.apply(this, arguments) : undefined;
-                const widget = this.widgets?.find(w => w instanceof SimpleImageCompare);
+                const widget = findSimpleImageCompareWidget(this);
                 if (widget) {
                     widget.onMouseEnter(event);
                 }
@@ -415,7 +421,7 @@ app.registerExtension({
             const onMouseLeave = nodeType.prototype.onMouseLeave;
             nodeType.prototype.onMouseLeave = function (event) {
                 const r = onMouseLeave ? onMouseLeave.apply(this, arguments) : undefined;
-                const widget = this.widgets?.find(w => w instanceof SimpleImageCompare);
+                const widget = findSimpleImageCompareWidget(this);
                 if (widget) {
                     widget.onMouseLeave(event);
                 }
@@ -425,7 +431,7 @@ app.registerExtension({
             const onMouseMove = nodeType.prototype.onMouseMove;
             nodeType.prototype.onMouseMove = function (event, pos, canvas) {
                 const r = onMouseMove ? onMouseMove.apply(this, arguments) : undefined;
-                const widget = this.widgets?.find(w => w instanceof SimpleImageCompare);
+                const widget = findSimpleImageCompareWidget(this);
                 if (widget) {
                     widget.onMouseMove(event, pos, canvas);
                 }
@@ -436,7 +442,7 @@ app.registerExtension({
             const onExecuted = nodeType.prototype.onExecuted;
             nodeType.prototype.onExecuted = function (output) {
                 const r = onExecuted ? onExecuted.apply(this, arguments) : undefined;
-                const widget = this.widgets?.find(w => w instanceof SimpleImageCompare);
+                const widget = findSimpleImageCompareWidget(this);
                 if (widget && output) {
                     widget.onExecuted(output);
                 }
@@ -449,7 +455,7 @@ app.registerExtension({
                 onSerialize?.apply(this, arguments);
 
                 for (let [index, widget] of (this.widgets || []).entries()) {
-                    if (widget instanceof SimpleImageCompare) {
+                    if (widget.name === SIMPLE_IMAGE_COMPARE_WIDGET) {
                         if (!serialised.widgets_values) {
                             serialised.widgets_values = [];
                         }
